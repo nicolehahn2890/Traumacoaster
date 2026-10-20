@@ -17,7 +17,7 @@ import { evaluate, type Evaluation } from '@/levels/evaluator';
 import { Terrain } from '@/physics/terrain';
 import { TrainSim, simOptionsForLevel, type FailReason } from '@/physics/trainSim';
 import { PassengerSim, initPhysics } from '@/physics/passengers';
-import { clonePath, closestSample, createNode, sampleTrack, trackStats, type ElementKind, type StartType, type TrackNode, type TrackPath, type TrackSamples, type TrackStats } from '@/track/model';
+import { clonePath, closestSample, createNode, emptyPath, sampleTrack, trackStats, type ElementKind, type StartType, type TrackNode, type TrackPath, type TrackSamples, type TrackStats } from '@/track/model';
 import { strokeToTrack, closePath } from '@/track/strokeToTrack';
 import { applyOverdraw, overdrawAnchors } from '@/track/overdraw';
 import { laneRise, laneScale, nearestLane, toStage, toWorld, type StagePoint, LANE_MIN, LANE_MAX } from '@/track/stage';
@@ -501,7 +501,7 @@ export class LevelScene implements Scene {
       this.redrawTrack();
       return;
     }
-    if (this.path) this.pushHistory();
+    this.pushHistory();
     r.path.startType = this.path?.startType ?? 'chainlift';
     this.setPath(r.path, true);
     if (r.events.some((e) => e.kind === 'turn')) this.view.effects.glitter(0, 0);
@@ -536,10 +536,17 @@ export class LevelScene implements Scene {
   }
 
   // ------------------------------------------------------------------ Bahn-Zustand
-  private setPath(path: TrackPath, animate: boolean): void {
+  private setPath(path: TrackPath | null, animate: boolean): void {
     this.path = path;
     this.selected = -1;
     this.redrawTrack();
+    if (!path) {
+      this.view.terrainR.setTunnelPortals([]);
+      this.updateGoals();
+      this.updateHint();
+      if (!this.sandbox) storage.saveDraft(this.level.id, emptyPath());
+      return;
+    }
     if (animate && this.samples) {
       // kleiner Glitzer an der Station
       const n = path.nodes[0];
@@ -573,9 +580,9 @@ export class LevelScene implements Scene {
     if (!this.sandbox) storage.saveDraft(this.level.id, this.path);
   }
 
+  /** Verlauf: leerer Pfad = „keine Bahn“, damit auch der erste Strich rückgängig geht */
   private pushHistory(): void {
-    if (!this.path) return;
-    this.history.push(clonePath(this.path));
+    this.history.push(this.path ? clonePath(this.path) : emptyPath());
     if (this.history.length > 60) this.history.shift();
     this.future = [];
     this.updateUndoButtons();
@@ -584,16 +591,16 @@ export class LevelScene implements Scene {
     if (this.mode !== 'draw') return;
     const prev = this.history.pop();
     if (!prev) return;
-    if (this.path) this.future.push(clonePath(this.path));
-    this.setPath(prev, false);
+    this.future.push(this.path ? clonePath(this.path) : emptyPath());
+    this.setPath(prev.nodes.length >= 2 ? prev : null, false);
     this.updateUndoButtons();
   }
   private redo(): void {
     if (this.mode !== 'draw') return;
     const next = this.future.pop();
     if (!next) return;
-    if (this.path) this.history.push(clonePath(this.path));
-    this.setPath(next, false);
+    this.history.push(this.path ? clonePath(this.path) : emptyPath());
+    this.setPath(next.nodes.length >= 2 ? next : null, false);
     this.updateUndoButtons();
   }
   private updateUndoButtons(): void {

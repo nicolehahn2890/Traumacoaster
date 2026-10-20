@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "levels:doc": "tsx scripts/gen-levels-doc.ts",
-    "screenshots": "node scripts/screenshots.mjs"
+    "screenshots": "node scripts/screenshots.mjs",
+    "scenario": "node scripts/scenario.mjs"
   },
   "dependencies": {
     "@dimforge/rapier2d-compat": "^0.21.0",

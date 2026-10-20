@@ -281,12 +281,12 @@ export class StartScene implements Scene {
       const r = this.radius - 30 - Math.abs(noise1(i * 1.3, 4)) * 80;
       this.globeBody.circle(Math.cos(a) * r, Math.sin(a) * r, 18 + Math.abs(noise1(i * 2.1, 5)) * 30).fill({ color: hexNum(shade(col, 0.15)), alpha: 0.5 });
     }
-    this.title.position.set(w / 2, portrait ? 70 : 54);
-    this.title.style.fontSize = portrait ? 40 : 46;
+    this.title.position.set(w / 2, portrait ? 118 : 54);
+    this.title.style.fontSize = portrait ? 38 : 46;
     this.worldName.position.set(w / 2, portrait ? h * 0.78 - 118 : h * 0.72 - 110);
     this.worldInfo.position.set(w / 2, this.worldName.y + 34);
     this.playBtn.position.set(w / 2, portrait ? h - 70 : h - 54);
-    this.tracksBtn.position.set(w - 115, 44);
+    this.tracksBtn.position.set(w - (portrait ? 105 : 115), 44);
     this.gearBtn.position.set(44, 44);
     this.peopleBtn.position.set(110, 44);
     this.toast.position.set(w / 2, h * 0.5);

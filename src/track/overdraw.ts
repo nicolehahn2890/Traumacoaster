@@ -8,7 +8,7 @@ import { dedupe, simplifyRDP, smoothStroke } from '@/core/rdp';
 import { fitWithCorners } from '@/core/bezierFit';
 import { closestSample, createNode, sampleTrack, type TrackNode, type TrackPath, type TrackSamples } from './model';
 import { toWorld, type StagePoint } from './stage';
-import { assignDepth, detectLoops, detectTurns, liftOverGround } from './strokeToTrack';
+import { assignDepth, detectLoops, detectTurns, liftOverGround, roundCorners } from './strokeToTrack';
 
 export interface OverdrawOptions {
   /** Max. Abstand (Welt-Meter) von Strichanfang/-ende zur Bahn */
@@ -85,6 +85,7 @@ export function applyOverdraw(path: TrackPath, stroke: StagePoint[], opts: Overd
   pts = dedupe(pts, 0.15);
   pts = smoothStroke(pts, 5);
   pts = simplifyRDP(pts, opts.simplifyTolerance ?? 0.6);
+  pts = roundCorners(pts);
   if (pts.length < 2) return null;
 
   const loops = opts.allowLoops === false ? [] : detectLoops(pts);

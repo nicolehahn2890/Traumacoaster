@@ -103,8 +103,10 @@ export interface TrainSimOptions {
   allowTunnels: boolean;
 }
 
-const LIFT_SPEED = 2.6;
-const VERTICAL_LIFT_SPEED = 4.0;
+const LIFT_SPEED = 4.0;
+const VERTICAL_LIFT_SPEED = 5.5;
+const MAX_CURVATURE = 1 / 2.5;
+const BLACKOUT_G = 7;
 const LAUNCH_LENGTH = 26;
 const LAUNCH_ACCEL = 12;
 const HYDRO_ACCEL = 24;
@@ -315,11 +317,14 @@ export class TrainSim {
       const sz = sz0 * cr - st.upz * sr;
       car.upx = upx; car.upy = upy; car.upz = upz;
       // Beschleunigung des Wagens: Normalanteil v²·k + Tangentialanteil (Hangabtrieb)
+      // Krümmung auf einen Mindestradius von 1,5 m begrenzen (numerische Spitzen an Knicken)
       const v2 = this.v * this.v;
       const aTan = -g * st.t3y;
-      const ax = v2 * st.k3x + aTan * st.t3x;
-      const ay = v2 * st.k3y + aTan * st.t3y;
-      const az = v2 * st.k3z + aTan * st.t3z;
+      const kMag = Math.hypot(st.k3x, st.k3y, st.k3z);
+      const kScale = kMag > MAX_CURVATURE ? MAX_CURVATURE / kMag : 1;
+      const ax = v2 * st.k3x * kScale + aTan * st.t3x;
+      const ay = v2 * st.k3y * kScale + aTan * st.t3y;
+      const az = v2 * st.k3z * kScale + aTan * st.t3z;
       // gefühlt = a − g_vec, g_vec = (0, −g, 0)
       const fx = ax;
       const fy = ay + g;
@@ -347,7 +352,7 @@ export class TrainSim {
     this.stats.minG = Math.min(this.stats.minG, front.gSeat);
     this.stats.maxLatG = Math.max(this.stats.maxLatG, front.gLat);
     if (front.gSeat < 0) this.stats.airtime += h;
-    if (front.gSeat > 6) this.stats.blackout = true;
+    if (front.gSeat > BLACKOUT_G) this.stats.blackout = true;
     if (front.inverted && !this.invertedPrev) {
       this.stats.inversions++;
       this.events.push({ kind: 'inversion', time: this.t, car: 0 });

@@ -103,7 +103,16 @@ Config-Hinweise: `webDir: 'dist'`, `server.androidScheme: 'https'`, Statusbar ov
 ## 10. Deployment
 GitHub Pages über `.github/workflows/deploy.yml`: Bei Push auf den Hauptbranch wird gebaut und `dist/` veröffentlicht. In den Repo-Einstellungen unter Pages muss „GitHub Actions“ als Quelle gewählt sein.
 
-## 11. Entwicklungsbefehle
+## 11. Umsetzungsstand und bekannte Eigenheiten
+- Alle Zeichnungen in Metern: Formen mit kleinen Radien (Augen, Räder, Coins) werden über `MGraphics` (src/render/mgraphics.ts) intern in Zentimetern tesselliert, sonst entstehen Vielecke.
+- Die Bahn wird nach Spuren (gerundetes z) in Stücke geteilt und in die passende Tiefenebene gelegt; Berge/Wasser liegen über Bahn und Zug (Tunnel-Effekt).
+- Der automatische Rückweg (offener Strich) läuft als Halbkreis-Kehre über die Nachbarspur und ist eine Bremsstrecke (max. 8 m/s), zählt nicht für Ziele.
+- Der Oben-Vektor wird per Parallel-Transport berechnet und bei waagerechter Bahn stetig zur Welt-Senkrechten zurückgezogen; so bleiben Kurven Kurven und Loopings Loopings.
+- Fahrgäste werden im Wagen-System simuliert (Rapier, Kraft = −m·gefühlte Beschleunigung); beim Verlassen der Wanne werden sie in eine Welt-Simulation mit Boden übergeben.
+- Zeitschritt: `Game` begrenzt dt auf 50 ms; auf sehr langsamen Renderern läuft das Spiel dann in Zeitlupe. `?fast=N` beschleunigt für Tests.
+- Nicht umgesetzt (siehe README): Vorlagen-Elemente, Roll-Handle, Weiche/Kippschiene/Rückwärts-Weiche/Fallschacht, Audio, Capacitor-Builds.
+
+## 12. Entwicklungsbefehle
 ```
 npm install
 npm run dev          # http://localhost:5173
@@ -112,4 +121,5 @@ npm run build        # Typecheck + Build nach dist/
 npm run preview      # Build lokal ansehen
 npm run levels:doc   # docs/LEVELS.md neu erzeugen
 npm run screenshots  # Playwright-Screenshots nach screenshots/
+npm run scenario     # Szenario-Test: Looping, Kurve, Fahrt bis zum Ergebnis
 ```

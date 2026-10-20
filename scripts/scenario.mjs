@@ -27,19 +27,27 @@ const errors = [];
 page.on('pageerror', (e) => { errors.push(e.message); console.error('PAGEERROR', e.message); });
 page.on('console', (m) => { if (m.type() === 'error') { errors.push(m.text()); console.error('CONSOLE', m.text()); } });
 
+/** Weicher Strich: Catmull-Rom durch die Stützpunkte, wie ein echter Finger */
 async function stroke(points, steps = 8) {
+  const P = (i) => points[Math.max(0, Math.min(points.length - 1, i))];
   await page.mouse.move(points[0][0], points[0][1]);
   await page.mouse.down();
-  for (let i = 1; i < points.length; i++) {
-    const [x0, y0] = points[i - 1];
-    const [x1, y1] = points[i];
-    for (let s = 1; s <= steps; s++) await page.mouse.move(x0 + (x1 - x0) * (s / steps), y0 + (y1 - y0) * (s / steps));
+  for (let i = 0; i < points.length - 1; i++) {
+    const [p0, p1, p2, p3] = [P(i - 1), P(i), P(i + 1), P(i + 2)];
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      const x = 0.5 * (2 * p1[0] + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3);
+      const y = 0.5 * (2 * p1[1] + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3);
+      await page.mouse.move(x, y);
+    }
   }
   await page.mouse.up();
 }
 const state = () => page.evaluate(() => {
   const s = window.tcGame.current;
-  return { scene: s?.constructor?.name, mode: s?.mode, nodes: s?.path?.nodes?.length, loops: s?.stats?.loops, turns: s?.stats?.turns, lanes: s?.stats?.lanes, height: s?.stats?.maxHeight?.toFixed(1), sim: s?.sim ? { phase: s.sim.phase, fail: s.sim.failReason, t: s.sim.t.toFixed(1), coins: s.sim.stats.coins } : null };
+  return { scene: s?.constructor?.name, mode: s?.mode, nodes: s?.path?.nodes?.length, loops: s?.stats?.loops, turns: s?.stats?.turns, lanes: s?.stats?.lanes, height: s?.stats?.maxHeight?.toFixed(1), sim: s?.sim ? { phase: s.sim.phase, fail: s.sim.failReason, t: s.sim.t.toFixed(1), coins: s.sim.stats.coins, maxG: s.sim.stats.maxG.toFixed(1), maxSpeed: (s.sim.stats.maxSpeed * 3.6).toFixed(0) } : null };
 });
 
 await page.goto(`${BASE}?scene=start&fast=6`, { waitUntil: 'networkidle' });
@@ -49,7 +57,7 @@ await sleep(1200);
 console.log('state', await state());
 // Bahn mit Looping: Boden links, hoch, Schleife, runter
 const gy = 560;
-await stroke([[200, gy], [330, gy - 8], [520, 250], [600, 200], [680, 230], [690, 320], [620, 360], [540, 310], [560, 220], [700, 180], [860, 300], [1000, gy - 10], [1100, gy]], 10);
+await stroke([[200, gy], [330, gy - 8], [430, 230], [520, 230], [640, gy - 40], [720, gy - 120], [700, gy - 220], [620, gy - 220], [600, gy - 130], [700, gy - 60], [900, gy - 20], [1100, gy]], 10);
 await sleep(700);
 console.log('after loop stroke', await state());
 await page.screenshot({ path: 'screenshots/scenario-1-loop.png' });
@@ -63,10 +71,10 @@ await page.screenshot({ path: 'screenshots/scenario-2-turn.png' });
 // Fahrt bis zum Ende
 await page.keyboard.press('Control+z');
 await sleep(300);
-await stroke([[200, gy], [330, gy - 8], [520, 250], [600, 200], [680, 230], [690, 320], [620, 360], [540, 310], [560, 220], [700, 180], [860, 300], [1000, gy - 10], [1100, gy]], 10);
+await stroke([[200, gy], [330, gy - 8], [430, 230], [520, 230], [640, gy - 40], [720, gy - 120], [700, gy - 220], [620, gy - 220], [600, gy - 130], [700, gy - 60], [900, gy - 20], [1100, gy]], 10);
 await sleep(600);
 await page.mouse.click(640, 800 - 56);
-for (let i = 0; i < 40; i++) {
+for (let i = 0; i < 90; i++) {
   await sleep(1000);
   const st = await state();
   if (i % 5 === 0) console.log('ride', st.sim, st.mode);

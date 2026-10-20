@@ -111,7 +111,7 @@ export class TrainRenderer {
       // Roll als Stauchung (pseudo-3D) und Querneigung
       const rollScale = Math.max(0.35, Math.abs(Math.cos(st.roll)));
       view.container.scale.set(k, k * (st.roll !== 0 ? rollScale : 1));
-      view.container.visible = !st.inTunnel || true; // im Tunnel verdeckt der Berg den Wagen
+      // im Tunnel verdeckt der Berg den Wagen (Zeichenreihenfolge), kein Ausblenden nötig
       // Fahrgäste
       const seated = passengers.filter((pv) => pv.car === c);
       seated.forEach((pv, i) => {

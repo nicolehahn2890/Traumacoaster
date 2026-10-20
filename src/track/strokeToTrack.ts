@@ -138,6 +138,40 @@ export function detectTurns(points: Vec2[], minTurnWidth: number, loopRanges: Ar
   return events;
 }
 
+/**
+ * Rundet scharfe Knicke (Winkel > minAngleDeg) mit einem kleinen Bogen ab, damit der Fit keine
+ * Ecken mit unendlicher Krümmung erzeugt (die würden die Fahrgäste aus dem Wagen schleudern).
+ */
+export function roundCorners(points: Vec2[], radius = 5, minAngleDeg = 35): Vec2[] {
+  if (points.length < 3) return points.slice();
+  const cosLimit = Math.cos((minAngleDeg * Math.PI) / 180);
+  const out: Vec2[] = [points[0]];
+  for (let i = 1; i < points.length - 1; i++) {
+    const p = points[i];
+    const a = sub(p, points[i - 1]);
+    const b = sub(points[i + 1], p);
+    const la = Math.hypot(a.x, a.y);
+    const lb = Math.hypot(b.x, b.y);
+    if (la < 1e-6 || lb < 1e-6) continue;
+    const c = (a.x * b.x + a.y * b.y) / (la * lb);
+    if (c >= cosLimit) {
+      out.push(p);
+      continue;
+    }
+    const r = Math.min(radius, la * 0.45, lb * 0.45);
+    const p0 = add(p, scale(normalize(scale(a, -1)), r));
+    const p1 = add(p, scale(normalize(b), r));
+    // quadratischer Bogen p0 → p (Kontrolle) → p1
+    for (let k = 0; k <= 4; k++) {
+      const t = k / 4;
+      const mt = 1 - t;
+      out.push({ x: mt * mt * p0.x + 2 * mt * t * p.x + t * t * p1.x, y: mt * mt * p0.y + 2 * mt * t * p.y + t * t * p1.y });
+    }
+  }
+  out.push(points[points.length - 1]);
+  return out;
+}
+
 /** Verdichtet eine Punktfolge (mit Tiefe) auf höchstens `maxStep` Abstand. */
 export function densify(points: Vec2[], z: number[], maxStep: number): { points: Vec2[]; z: number[] } {
   const outP: Vec2[] = [];
@@ -245,6 +279,7 @@ export function strokeToTrack(stroke: StagePoint[], opts: StrokeOptions = {}): S
   let pts = dedupe(raw, 0.15);
   pts = smoothStroke(pts, 5);
   pts = simplifyRDP(pts, o.simplifyTolerance);
+  pts = roundCorners(pts);
   if (pts.length < 2) return { path: emptyPath(), events: [], points: [] };
 
   // Ereignisse
