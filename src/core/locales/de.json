@@ -17,6 +17,7 @@
   "drawHint": "Zeichne deine Bahn mit einem Strich. Den Rückweg zur Station baut das Spiel von selbst.",
   "drawHintTurn": "Am Boden: Bogen nach hinten = flache Kurve. In der Höhe: umdrehen = Steilkurve",
   "drawHintLoop": "In der Höhe kreuzen: Looping",
+  "newStrokeHint": "Neuer Strich ersetzt die Bahn. Zum Verbessern auf der Bahn beginnen.",
   "overdrawHint": "Zeichne über die Bahn, um sie zu verbessern",
   "success": "Geschafft!",
   "failed": "Nicht geschafft",

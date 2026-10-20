@@ -17,6 +17,7 @@
   "drawHint": "Draw your coaster with one stroke. The way back to the station is built for you.",
   "drawHintTurn": "On the ground: arc towards the back = flat curve. Up high: turn around = banked curve",
   "drawHintLoop": "Cross the stroke up high: loop",
+  "newStrokeHint": "A new stroke replaces the track. Start on the track to improve it.",
   "overdrawHint": "Draw over the track to improve it",
   "success": "Done!",
   "failed": "Not done",

@@ -256,7 +256,7 @@ export class LevelScene implements Scene {
         else if (this.onStage(st) && this.unlocked.has('mountain') && this.terrainEditable() && !this.nearStation(st)) this.strokeKind = 'terrain';
         else {
           this.strokeKind = 'new';
-          this.toast.show(t('overdrawHint'), 2.2);
+          this.toast.show(t('newStrokeHint'), 2.2);
         }
       }
       this.selected = -1;
@@ -1250,12 +1250,21 @@ export class LevelScene implements Scene {
       c.addChild(u);
     }
     const by = h / 2 - 40;
-    const retry = new Button(t('retry'), { width: 130, height: 48, size: 18, color: '#4f8dff' });
-    retry.position.set(-w / 2 + 80, by);
+    const bw = Math.min(108, (w - 40) / 3);
+    const retry = new Button(t('retry'), { width: bw, height: 48, size: 16, color: '#4f8dff' });
+    retry.position.set(-bw - 10, by);
     retry.onTap = () => this.stopRide();
     c.addChild(retry);
-    const menu = new Button(t('menu'), { width: 110, height: 48, size: 18, color: '#9b6dff' });
-    menu.position.set(0, by);
+    // Bahn wegräumen und neu anfangen, direkt aus dem Ergebnis heraus
+    const clear = new Button(t('clear'), { width: bw, height: 48, size: 15, color: '#d64545' });
+    clear.position.set(0, by);
+    clear.onTap = () => {
+      this.stopRide();
+      this.clearTrack();
+    };
+    c.addChild(clear);
+    const menu = new Button(t('menu'), { width: bw, height: 48, size: 16, color: '#9b6dff' });
+    menu.position.set(bw + 10, by);
     menu.onTap = () => this.leave();
     c.addChild(menu);
     if (success && this.level.id < LEVELS.length) {

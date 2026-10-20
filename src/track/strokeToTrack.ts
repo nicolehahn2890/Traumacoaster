@@ -781,9 +781,11 @@ export function closePath(path: TrackPath, returnHeight = 0.7): void {
   }
 
   if (gap < 1.5 && nodes.length > 2) {
-    // Strichende liegt auf dem Start: Eingangs-Handle übernehmen, Endknoten verwerfen → geschlossen
-    first.inX = last.inX; first.inY = last.inY; first.inZ = last.inZ;
+    // Strichende liegt auf dem Start: Endknoten verwerfen, Ankunft in Abfahrtsrichtung der Station
+    // (sonst kommt der Strich z. B. von oben herab und die Bahn macht an der Station einen Schlenker)
+    const len = Math.max(1.5, Math.hypot(last.inX, last.inY, last.inZ * LANE_DEPTH));
     nodes.pop();
+    first.inX = -startDir.x * len; first.inY = -startDir.y * len; first.inZ = (-startDir.z * len) / LANE_DEPTH;
     first.kind = 'station';
     return;
   }
