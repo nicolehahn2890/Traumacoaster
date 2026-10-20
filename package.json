@@ -1,0 +1,31 @@
+{
+  "name": "trauma-coaster",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Trauma Coaster – 2.5D-Physik-Achterbahnspiel mit Gesten-Zeichnen (illudiy)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview --host --port 4173",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "levels:doc": "tsx scripts/gen-levels-doc.ts",
+    "screenshots": "node scripts/screenshots.mjs"
+  },
+  "dependencies": {
+    "@dimforge/rapier2d-compat": "^0.21.0",
+    "pixi.js": "^8.22.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
