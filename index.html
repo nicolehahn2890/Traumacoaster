@@ -38,9 +38,33 @@
           boot.innerHTML = '<div style="max-width:520px;background:rgba(0,0,0,.45);border-radius:16px;padding:20px"><b>Trauma Coaster konnte nicht starten.</b><br><br>' +
             String(msg).replace(/</g, '&lt;') + '</div>';
         }
-        window.tcBootDone = function () { done = true; if (boot) boot.style.display = 'none'; };
+        var reloadKey = 'tc.reloadedAfterScriptError';
+        window.tcBootDone = function () {
+          done = true;
+          if (boot) boot.style.display = 'none';
+          try { sessionStorage.removeItem(reloadKey); } catch (err) { /* ignore */ }
+        };
         window.tcBootError = show;
+        // Skript nicht ladbar: fast immer eine veraltete, gecachte Startseite direkt nach einem Deploy
+        // (sie verweist auf eine Skriptdatei, die es nicht mehr gibt). Einmal am Cache vorbei neu laden, sonst Hinweis.
+        function scriptFailed(src) {
+          var already = false;
+          try { already = sessionStorage.getItem(reloadKey) === '1'; } catch (err) { /* ignore */ }
+          if (!already) {
+            try { sessionStorage.setItem(reloadKey, '1'); } catch (err) { /* ignore */ }
+            var u = new URL(location.href);
+            u.searchParams.set('r', String(Date.now()));
+            location.replace(u.toString());
+            return;
+          }
+          show('Das Spiel-Skript konnte nicht geladen werden (' + src + '). Bitte die Seite neu laden, am Computer mit Strg+F5.');
+        }
         window.addEventListener('error', function (e) {
+          var t = e && e.target;
+          if (t && t !== window && t.tagName === 'SCRIPT' && t.src) scriptFailed(t.src);
+        }, true);
+        window.addEventListener('error', function (e) {
+          if (e && e.target && e.target !== window && e.target.tagName) return; // Ressourcenfehler: oben behandelt
           show((e && e.message) || 'Unbekannter Fehler');
         });
         window.addEventListener('unhandledrejection', function (e) {
@@ -55,7 +79,7 @@
         } catch (err) { problems.push('WebGL ist nicht verfügbar.'); }
         if (problems.length) show(problems.join(' ') + ' Bitte in Safari oder Chrome öffnen.');
         setTimeout(function () {
-          if (!done && boot && boot.textContent === 'Trauma Coaster lädt …') show('Das Spiel antwortet nicht. Vermutlich wurde das Laden des Skripts blockiert. Alternative: GitHub Pages oder lokal starten.');
+          if (!done && boot && boot.textContent === 'Trauma Coaster lädt …') show('Das Spiel antwortet nicht. Bitte die Seite neu laden, am Computer mit Strg+F5. Hilft das nicht, wurde vermutlich das Laden des Skripts blockiert.');
         }, 20000);
       })();
     </script>
