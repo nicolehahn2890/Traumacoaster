@@ -23,7 +23,7 @@ export interface Settings {
   language: 'de' | 'en';
   shakeUndo: boolean;
   seenSplash: boolean;
-  /** Zeitraffer der Fahrt (1, 2 oder 3) */
+  /** Zeitraffer der Fahrt (1, 2, 3 oder 5) */
   rideSpeed: number;
 }
 
@@ -49,7 +49,7 @@ interface Store {
 function defaults(): Store {
   return {
     progress: { stars: {}, highest: 0, current: 1, drafts: {} },
-    settings: { sound: true, music: true, language: 'de', shakeUndo: true, seenSplash: false, rideSpeed: 2 },
+    settings: { sound: true, music: true, language: 'de', shakeUndo: true, seenSplash: false, rideSpeed: 3 },
     tracks: [],
     characters: DEFAULT_CHARACTERS.map((c) => ({ ...c })),
     riders: DEFAULT_CHARACTERS.map((c) => c.id),

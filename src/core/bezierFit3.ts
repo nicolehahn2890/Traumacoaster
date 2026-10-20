@@ -25,7 +25,7 @@ export function fitCurve3(points: Vec3[], error: number): CubicSegment3[] {
 }
 
 /** Fit mit Ecken: scharfe Knicke teilen die Punktfolge, der Knoten bekommt gebrochene Tangenten. */
-export function fitWithCorners3(points: Vec3[], error: number, cornerDeg = 60): CubicSegment3[] {
+export function fitWithCorners3(points: Vec3[], error: number, cornerDeg = 75): CubicSegment3[] {
   if (points.length < 3) return fitCurve3(points, error);
   const cosLimit = Math.cos((cornerDeg * Math.PI) / 180);
   const cuts: number[] = [0];

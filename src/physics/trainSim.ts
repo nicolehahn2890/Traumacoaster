@@ -98,8 +98,8 @@ export interface TrainSimOptions {
   allowTunnels: boolean;
 }
 
-const STATION_PUSH = 1.6; // m/s
-const LIFT_SPEED = 4.0;
+const STATION_PUSH = 2.0; // m/s: rollt auf ebener Strecke gut 10 m aus und bleibt stehen
+const LIFT_SPEED = 6.0; // zügiger Kettenzug, damit der Start nicht zäh wirkt
 const VERTICAL_LIFT_SPEED = 5.5;
 const LIFT_SEARCH = 30; // m: so weit nach der Station darf der Anstieg beginnen
 const LIFT_MIN_SLOPE = 0.06;

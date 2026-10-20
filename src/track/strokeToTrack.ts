@@ -17,7 +17,7 @@ import type { Vec3 } from '@/core/math3';
 import { add3, dist3, normalize3, scale3, sub3 } from '@/core/math3';
 import { dedupe, smoothStroke } from '@/core/rdp';
 import { fitWithCorners3 } from '@/core/bezierFit3';
-import { createNode, emptyPath, isAutoNode, nodeIn, nodeOut, nodePos, type TrackNode, type TrackPath } from './model';
+import { createNode, emptyPath, isAutoNode, isClosed, nodeIn, nodeOut, nodePos, type TrackNode, type TrackPath } from './model';
 import { LANE_DEPTH, LANE_MAX, LANE_MIN, LANE_RISE, laneRise, laneScale, type StagePoint } from './stage';
 
 export type StrokeMode = 'floor' | 'height';
@@ -37,6 +37,8 @@ export interface StrokeOptions {
   endZ?: number;
   /** Tiefenverschiebung je Strichpunkt (Steilkurven, zweiter Durchlauf) */
   zShift?: (index: number) => number;
+  /** Offene Bahn sofort mit automatischem Rückweg schließen (Standard: nein, die Bahn bleibt offen) */
+  autoClose?: boolean;
 }
 
 export interface StrokeEvent {
@@ -79,8 +81,11 @@ const CLOSE_ZONE = 8;
 const TURN_RADIUS_MIN = LANE_DEPTH * 0.75;
 const TURN_RADIUS_MAX = LANE_DEPTH * 1.5;
 const turnHalfLength = (radius: number): number => (Math.PI * radius) / 2;
-const TURN_BLEND = 10; // Bühnen-Meter: Anschluss des gezeichneten Rückwegs an den Halbkreis
+const TURN_BLEND = 10; // Bühnen-Meter: Anschluss des gezeichneten Rückwegs an den Halbkreis (x)
+const TURN_BLEND_Y = 16; // Bühnen-Meter: Höhe nach der Kurve weich auf die gezeichnete Höhe führen
 const RESAMPLE = 0.5;
+/** Rückwärts-Haken bis zu dieser Weite (Bühnen-Meter) sind Zittern und werden entfernt */
+const HOOK_MAX = 3;
 
 /** Bühnen-Y der Bodenlinie an Welt-x und Tiefe z */
 function groundY(ground: (x: number, z: number) => number, X: number, z: number): number {
@@ -242,6 +247,61 @@ function isClimb(pts: Vec2[], run: StrokeRun, ground: (x: number, z: number) => 
     if (!xRetreats(pts, a, b, dir)) return true;
   }
   return false;
+}
+
+/** Kleine Rückwärts-Haken (x kehrt um weniger als minRetreat um und läuft dann weiter) sind Handzittern,
+ *  keine Kehren: Ohne diesen Filter würden sie zu Spitzen oder Mini-Schleifen in der Bahn. */
+export function removeHooks(pts: Vec2[], minRetreat = HOOK_MAX): Vec2[] {
+  const n = pts.length;
+  if (n < 3) return pts.slice();
+  const out: Vec2[] = [pts[0]];
+  let dir = 0;
+  let ext = pts[0].x;
+  let i = 1;
+  while (i < n) {
+    const x = pts[i].x;
+    if (dir === 0) {
+      if (Math.abs(x - out[0].x) > 0.5) dir = Math.sign(x - out[0].x);
+      ext = x;
+      out.push(pts[i]);
+      i++;
+      continue;
+    }
+    if ((x - ext) * dir >= 0) {
+      ext = x;
+      out.push(pts[i]);
+      i++;
+      continue;
+    }
+    // Rückwärts: wie weit, bevor der Strich wieder über das bisherige Extrem hinausläuft?
+    let j = i;
+    let retreat = 0;
+    while (j < n && (pts[j].x - ext) * dir < 0) {
+      retreat = Math.max(retreat, (ext - pts[j].x) * dir);
+      j++;
+    }
+    if (retreat >= minRetreat || j >= n) {
+      // echte Kehre (oder der Strich endet rückwärts): Richtung wechseln
+      dir = -dir;
+      ext = x;
+      out.push(pts[i]);
+      i++;
+      continue;
+    }
+    // kleiner Haken: Punkte i..j−1 fallen weg
+    i = j;
+  }
+  return out;
+}
+
+/** Strich aufbereiten: Doppelte raus, glätten, gleichmäßig abtasten, Haken entfernen */
+export function prepareStroke(stroke: StagePoint[]): Vec2[] {
+  let pts: Vec2[] = stroke.map((p) => ({ x: p.X, y: p.Y }));
+  pts = dedupe(pts, 0.15);
+  pts = smoothStroke(pts, 5);
+  pts = resample(pts, RESAMPLE);
+  pts = removeHooks(pts);
+  return pts;
 }
 
 /**
@@ -534,7 +594,6 @@ export function shapeTurns(points: InterpretedPoint[], stroke: Vec2[], turns: St
     const xA = points[i0].x;
     const zA = points[i0].z;
     const yA = absY(i0);
-    const yB = absY(i1);
     const dirX = Math.sign(points[t.index].x - xA) || 1;
     const sgn = t.dir ?? 1;
     const drawnEnd = points[i1].x;
@@ -542,17 +601,19 @@ export function shapeTurns(points: InterpretedPoint[], stroke: Vec2[], turns: St
       const th = Math.min(Math.PI, Math.max(0, (cum[i] - s0) / R));
       points[i].x = xA + dirX * R * Math.sin(th);
       points[i].z = Math.max(LANE_MIN, Math.min(LANE_MAX, zA + (sgn * R * (1 - Math.cos(th))) / LANE_DEPTH));
-      // Höhe weich durch die Kurve (absolut): Die gezeichnete Bild-Höhe enthält den Anstieg der Bodenlinie der
-      // neuen Spur; was davon übrig bleibt, wäre ein Buckel genau im Scheitel (Airtime in der Steilkurve).
-      const yAbs = yA + (yB - yA) * smoothstep((cum[i] - cum[i0]) / Math.max(1e-6, cum[i1] - cum[i0]));
-      points[i].y = Math.max(0, yAbs - ground(points[i].x, points[i].z));
+      // Die Kurve selbst bleibt auf der Einfahrtshöhe (absolut). Die gezeichnete Bild-Höhe des Rückwegs
+      // enthält den Anstieg der Bodenlinie der neuen Spur; eine Kurve, die gleichzeitig fällt, wäre bei
+      // Tempo nicht fahrbar (keine Kraft in den Sitz, volle Querkraft). Der Höhenunterschied wird
+      // danach weich über TURN_BLEND_Y abgebaut.
+      points[i].y = Math.max(0, yA - ground(points[i].x, points[i].z));
     }
     const delta = points[i1].x - drawnEnd;
     for (let i = i1 + 1; i < n && points[i].mode === 'height'; i++) {
-      const f = 1 - (cum[i] - cum[i1]) / TURN_BLEND;
-      if (f <= 0) break;
-      const yAbs = absY(i);
-      points[i].x += delta * f;
+      const fx = 1 - (cum[i] - cum[i1]) / TURN_BLEND;
+      const fy = smoothstep((cum[i] - cum[i1]) / TURN_BLEND_Y);
+      if (fx <= 0 && fy >= 1) break;
+      const yAbs = yA + (absY(i) - yA) * fy;
+      if (fx > 0) points[i].x += delta * fx;
       points[i].y = Math.max(0, yAbs - ground(points[i].x, points[i].z));
     }
     lastEnd = s1;
@@ -699,10 +760,7 @@ export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, e
 
 /** Die vollständige Pipeline für einen neuen Strich (Bühnenkoordinaten). */
 export function strokeToTrack(stroke: StagePoint[], opts: StrokeOptions = {}): StrokeResult {
-  let pts: Vec2[] = stroke.map((p) => ({ x: p.X, y: p.Y }));
-  pts = dedupe(pts, 0.15);
-  pts = smoothStroke(pts, 5);
-  pts = resample(pts, RESAMPLE);
+  const pts = prepareStroke(stroke);
   if (pts.length < 2) return { path: emptyPath(), events: [], points: [] };
   const { points, events } = interpretWithEvents(pts, opts);
   if (points.length < 2) return { path: emptyPath(), events: [], points: [] };
@@ -711,7 +769,43 @@ export function strokeToTrack(stroke: StagePoint[], opts: StrokeOptions = {}): S
   nodes[0].kind = 'station';
   const path: TrackPath = { ...emptyPath(), nodes };
   closePath(path);
+  if (opts.autoClose) closeTrack(path);
   return { path, events, points };
+}
+
+/**
+ * Bahn am offenen Ende fortsetzen: Der neue Strich beginnt am Endknoten (in dessen Tiefe und Lesart)
+ * und wird angehängt. Endet er am Start, schließt sich die Bahn.
+ */
+export function extendTrack(path: TrackPath, stroke: StagePoint[], opts: StrokeOptions = {}): TrackPath | null {
+  if (isClosed(path) || path.nodes.length < 2) return null;
+  const pts = prepareStroke(stroke);
+  if (pts.length < 2) return null;
+  const ground = opts.groundHeight ?? (() => 0);
+  const end = path.nodes[path.nodes.length - 1];
+  const startMode: StrokeMode = end.y - ground(end.x, end.z) > 1.2 ? 'height' : 'floor';
+  const { points, events } = interpretWithEvents(pts, { ...opts, startZ: end.z, startMode });
+  if (points.length < 2) return null;
+  const newNodes = pointsToNodes(points, opts, events);
+  if (newNodes.length < 2) return null;
+  const out: TrackPath = { ...path, nodes: path.nodes.map((n) => ({ ...n })), elements: path.elements.map((e) => ({ ...e })), templates: { ...path.templates } };
+  const last = out.nodes[out.nodes.length - 1];
+  // erster neuer Knoten liegt praktisch auf dem Ende → weglassen
+  if (dist3(nodePos(last), nodePos(newNodes[0])) < 1.0) newNodes.shift();
+  if (newNodes.length < 1) return null;
+  const dirL = normalize3(sub3(nodePos(last), nodeIn(last)));
+  const toNext = normalize3(sub3(nodePos(newNodes[0]), nodePos(last)));
+  const h = Math.max(1, dist3(nodePos(last), nodePos(newNodes[0])) / 3);
+  const outDir = normalize3(add3(scale3(dirL, 0.5), scale3(toNext, 0.5)));
+  last.outX = outDir.x * h; last.outY = outDir.y * h; last.outZ = (outDir.z * h) / LANE_DEPTH;
+  const first = newNodes[0];
+  const dirF = normalize3(sub3(nodeOut(first), nodePos(first)));
+  const inDir = normalize3(add3(scale3(dirF, -0.5), scale3(toNext, -0.5)));
+  first.inX = inDir.x * h; first.inY = inDir.y * h; first.inZ = (inDir.z * h) / LANE_DEPTH;
+  out.nodes.push(...newNodes);
+  out.closed = false;
+  closePath(out);
+  return out;
 }
 
 /** Halbkreis-Kehre in der x/z-Ebene (3D-Knoten mit Handles). dir = ±1 in x. */
@@ -741,15 +835,17 @@ export function buildTurnArc(xCenter: number, dir: number, yFrom: number, yTo: n
 }
 
 /**
- * Schließt den Pfad (3D).
- * - Ende nahe am Start: direkte weiche Verbindung.
- * - Sonst: automatischer Rückweg mit zwei Halbkreis-Kehren über die Nachbarspur (Bremsstrecke).
+ * Verbindet das Ende mit dem Start, wenn der Spieler die Bahn selbst dorthin gezeichnet hat (3D):
+ * - Ende auf dem Start: direkt geschlossen (bei Ankunft gegen die Fahrtrichtung mit Kehre in die Station).
+ * - Ende nahe am Start (≤ 6 m): weiche Verbindung.
+ * - Sonst bleibt die Bahn offen (closed = false). Den automatischen Rückweg ergänzt erst closeTrack.
  */
-export function closePath(path: TrackPath, returnHeight = 0.7): void {
+export function closePath(path: TrackPath): void {
   const nodes = path.nodes;
   if (nodes.length < 2) return;
   for (let i = nodes.length - 1; i >= 0; i--) if (isAutoNode(nodes[i])) nodes.splice(i, 1);
   if (nodes.length < 2) return;
+  path.closed = true;
   const first = nodes[0];
   const last = nodes[nodes.length - 1];
   const pf = nodePos(first);
@@ -761,7 +857,7 @@ export function closePath(path: TrackPath, returnHeight = 0.7): void {
   // Ende am Start, aber Ankunft gegen die Abfahrtsrichtung der Station (Rundkurs von Hand geschlossen,
   // Rückweg hinter der Station): ohne Kehre gäbe es eine Spitzkehre an der Station. Die letzten Knoten,
   // die schon im Bereich der Kehre liegen, werden durch einen Halbkreis in die Station ersetzt.
-  if (gap <= 10 && endDir.x * startDir.x < -0.2) {
+  if (gap <= 6 && endDir.x * startDir.x < -0.2) {
     const l2Z = nodes[nodes.length - 1].z;
     const R = Math.max(TURN_RADIUS_MIN, (Math.abs(l2Z - first.z) * LANE_DEPTH) / 2);
     while (nodes.length > 3 && Math.abs(nodes[nodes.length - 1].x - first.x) < 2 * R) nodes.pop();
@@ -795,7 +891,7 @@ export function closePath(path: TrackPath, returnHeight = 0.7): void {
     return;
   }
 
-  if (gap <= 10) {
+  if (gap <= 6) {
     const h = Math.max(1.5, gap / 3);
     const toStart = normalize3(sub3(pf, pl));
     const outDir = normalize3(add3(scale3(endDir, 0.5), scale3(toStart, 0.5)));
@@ -805,6 +901,28 @@ export function closePath(path: TrackPath, returnHeight = 0.7): void {
     nodes[0].kind = 'station';
     return;
   }
+
+  // offen lassen: der Spieler zeichnet weiter oder Play ergänzt den Rückweg
+  nodes[0].kind = 'station';
+  path.closed = false;
+}
+
+/**
+ * Automatischer Rückweg für eine offene Bahn (nur für die Fahrt): zwei Halbkreis-Kehren über die
+ * Nachbarspur und eine Bremsstrecke zurück zur Station. Geschlossene Bahnen bleiben unverändert.
+ */
+export function closeTrack(path: TrackPath, returnHeight = 0.7): void {
+  if (isClosed(path)) return;
+  const nodes = path.nodes;
+  if (nodes.length < 2) return;
+  for (let i = nodes.length - 1; i >= 0; i--) if (isAutoNode(nodes[i])) nodes.splice(i, 1);
+  const first = nodes[0];
+  const last = nodes[nodes.length - 1];
+  const pf = nodePos(first);
+  const pl = nodePos(last);
+  const endDir = normalize3(sub3(pl, nodeIn(last)));
+  const startDir = normalize3(sub3(nodeOut(first), pf));
+  path.closed = true;
 
   const z0 = Math.round(first.z);
   const ze = Math.round(last.z);

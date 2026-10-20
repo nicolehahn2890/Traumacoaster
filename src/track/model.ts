@@ -39,18 +39,22 @@ export interface TrackPath {
   elements: TrackElement[];
   startType: StartType;
   templates: Record<string, number>;
+  /** false = offene Bahn (Ende noch nicht mit der Station verbunden); fehlt = geschlossen */
+  closed?: boolean;
 }
+
+export const isClosed = (p: TrackPath): boolean => p.closed !== false;
 
 export function createNode(x: number, y: number, z = 0, kind: NodeKind = 'normal'): TrackNode {
   return { x, y, z, inX: 0, inY: 0, inZ: 0, outX: 0, outY: 0, outZ: 0, roll: NaN, kind };
 }
 
 export function emptyPath(): TrackPath {
-  return { nodes: [], elements: [], startType: 'chainlift', templates: {} };
+  return { nodes: [], elements: [], startType: 'chainlift', templates: {}, closed: true };
 }
 
 export function clonePath(p: TrackPath): TrackPath {
-  return { nodes: p.nodes.map((n) => ({ ...n })), elements: p.elements.map((e) => ({ ...e })), startType: p.startType, templates: { ...p.templates } };
+  return { nodes: p.nodes.map((n) => ({ ...n })), elements: p.elements.map((e) => ({ ...e })), startType: p.startType, templates: { ...p.templates }, closed: p.closed !== false };
 }
 
 export const isAutoNode = (n: TrackNode): boolean => n.kind === 'closeTurn' || n.kind === 'closeReturn';
@@ -72,6 +76,8 @@ export interface TrackSamples {
   count: number;
   length: number;
   step: number;
+  /** zyklisch (geschlossene Bahn) oder offen bis zum letzten Knoten */
+  closed: boolean;
   s: Float64Array;
   x: Float64Array;
   y: Float64Array;
@@ -117,19 +123,21 @@ export interface TrackState {
 }
 
 const EMPTY = (): TrackSamples => ({
-  count: 0, length: 0, step: 0.25, s: new Float64Array(0), x: new Float64Array(0), y: new Float64Array(0), z: new Float64Array(0),
+  count: 0, length: 0, step: 0.25, closed: true, s: new Float64Array(0), x: new Float64Array(0), y: new Float64Array(0), z: new Float64Array(0),
   t3x: new Float64Array(0), t3y: new Float64Array(0), t3z: new Float64Array(0), k3x: new Float64Array(0), k3y: new Float64Array(0), k3z: new Float64Array(0),
   upx: new Float64Array(0), upy: new Float64Array(0), upz: new Float64Array(0), roll: new Float64Array(0), seg: new Int32Array(0), t: new Float64Array(0), auto: new Uint8Array(0),
 });
 
-/** Tastet die geschlossene 3D-Bahn mit festem Schritt ab. */
+/** Tastet die 3D-Bahn mit festem Schritt ab (geschlossen zyklisch, offen bis zum letzten Knoten). */
 export function sampleTrack(path: TrackPath, step = 0.25): TrackSamples {
   const n = path.nodes.length;
   if (n < 2) return EMPTY();
+  const closed = isClosed(path);
+  const segCount = closed ? n : n - 1;
 
   // 1) Grobe Abtastung in t
   const raw: Array<{ seg: number; t: number; p: Vec3; d1: Vec3; d2: Vec3; roll: number }> = [];
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < segCount; i++) {
     const [p0, p1, p2, p3] = segmentPoints(path, i);
     const a = path.nodes[i];
     const b = path.nodes[(i + 1) % n];
@@ -146,15 +154,21 @@ export function sampleTrack(path: TrackPath, step = 0.25): TrackSamples {
       raw.push({ seg: i, t, p: bezier3(p0, p1, p2, p3, t), d1: bezier3d1(p0, p1, p2, p3, t), d2: bezier3d2(p0, p1, p2, p3, t), roll });
     }
   }
-  raw.push({ ...raw[0], seg: n - 1, t: 1 });
+  if (closed) raw.push({ ...raw[0], seg: n - 1, t: 1 });
+  else {
+    const [p0, p1, p2, p3] = segmentPoints(path, n - 2);
+    const endRoll = Number.isNaN(path.nodes[n - 1].roll) ? NaN : path.nodes[n - 1].roll;
+    raw.push({ seg: n - 2, t: 1, p: bezier3(p0, p1, p2, p3, 1), d1: bezier3d1(p0, p1, p2, p3, 1), d2: bezier3d2(p0, p1, p2, p3, 1), roll: endRoll });
+  }
 
   // 2) Bogenlänge
   const cum = new Float64Array(raw.length);
   for (let i = 1; i < raw.length; i++) cum[i] = cum[i - 1] + len3(sub3(raw[i].p, raw[i - 1].p));
   const length = cum[raw.length - 1];
-  const count = Math.max(2, Math.floor(length / step) + 1);
+  // letzter Abtastpunkt liegt genau am Ende (offene Bahn endet dort, geschlossene schließt den Kreis)
+  const count = Math.max(2, Math.ceil(length / step - 1e-9) + 1);
   const out: TrackSamples = {
-    ...EMPTY(), count, length, step,
+    ...EMPTY(), count, length, step, closed,
     s: new Float64Array(count), x: new Float64Array(count), y: new Float64Array(count), z: new Float64Array(count),
     t3x: new Float64Array(count), t3y: new Float64Array(count), t3z: new Float64Array(count), k3x: new Float64Array(count), k3y: new Float64Array(count), k3z: new Float64Array(count),
     upx: new Float64Array(count), upy: new Float64Array(count), upz: new Float64Array(count), roll: new Float64Array(count), seg: new Int32Array(count), t: new Float64Array(count), auto: new Uint8Array(count),
@@ -236,10 +250,11 @@ export function stateAt(samples: TrackSamples, s: number): TrackState {
   }
   let sw = s % L;
   if (sw < 0) sw += L;
+  if (!samples.closed) sw = Math.max(0, Math.min(L, s));
   const fi = sw / samples.step;
   const i = Math.min(samples.count - 1, Math.floor(fi));
-  const j = (i + 1) % samples.count;
-  const f = fi - i;
+  const j = samples.closed ? (i + 1) % samples.count : Math.min(samples.count - 1, i + 1);
+  const f = Math.min(1, fi - i);
   const lerp = (arr: Float64Array) => arr[i] + (arr[j] - arr[i]) * f;
   let t3x = lerp(samples.t3x);
   let t3y = lerp(samples.t3y);
@@ -297,7 +312,7 @@ export function bankAt(st: TrackState, v: number, gravity = 9.81): { angle: numb
 }
 
 /** Maximale automatische Überhöhung (echte Bahnen fahren enge, schnelle Kurven mit 70–90°) */
-export const MAX_BANK = (72 * Math.PI) / 180;
+export const MAX_BANK = (80 * Math.PI) / 180;
 
 /** Wagen-Rahmen (vorwärts, oben, seitlich) inkl. Schräglage */
 export function carFrame(st: TrackState, v: number, gravity = 9.81): { T: Vec3; U: Vec3; S: Vec3; bank: number } {

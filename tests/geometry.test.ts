@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { simplifyRDP, smoothStroke } from '@/core/rdp';
 import { fitCurve } from '@/core/bezierFit';
 import { bezierPoint } from '@/core/math';
-import { detectLoops, detectTurns, interpretStroke, interpretWithEvents, stageCurve, strokeToTrack } from '@/track/strokeToTrack';
+import { closeTrack, detectLoops, detectTurns, extendTrack, interpretStroke, interpretWithEvents, removeHooks, stageCurve, strokeToTrack } from '@/track/strokeToTrack';
 import { sampleTrack, stateAt, trackStats, type TrackSamples } from '@/track/model';
 import { applyOverdraw } from '@/track/overdraw';
 import { laneRise, laneScale, nearestLane, toStage, toWorld, type StagePoint } from '@/track/stage';
@@ -251,11 +251,20 @@ describe('Kreis schließen', () => {
 });
 
 describe('Strich → Bahn', () => {
-  it('erzeugt eine geschlossene Bahn mit Höhe', () => {
+  it('lässt einen offenen Strich offen und schließt ihn erst für die Fahrt', () => {
     const stroke = stageCurve(0, 60, 120, (x) => 15 * Math.exp(-((x - 30) ** 2) / 120));
     const r = strokeToTrack(stroke);
     expect(r.path.nodes.length).toBeGreaterThan(3);
     expect(r.path.nodes[0].kind).toBe('station');
+    expect(r.path.closed).toBe(false);
+    expect(r.path.nodes.some((n) => n.kind === 'closeReturn')).toBe(false);
+    // offen abgetastet: endet am letzten Knoten
+    const open = sampleTrack(r.path);
+    const endNode = r.path.nodes[r.path.nodes.length - 1];
+    const last = stateAt(open, open.length - 0.01);
+    expect(Math.hypot(last.x - endNode.x, last.y - endNode.y)).toBeLessThan(0.5);
+    closeTrack(r.path);
+    expect(r.path.closed).toBe(true);
     const samples = sampleTrack(r.path);
     const stats = trackStats(r.path, samples);
     expect(stats.maxHeight).toBeGreaterThan(13);
@@ -288,11 +297,44 @@ describe('Strich → Bahn', () => {
     expect(stats.maxHeight).toBeLessThan(1.5);
     expect(minUpY(s)).toBeGreaterThan(0.9);
   });
+  it('entfernt kleine Rückwärts-Haken aus dem Strich, behält echte Kehren', () => {
+    const line = Array.from({ length: 40 }, (_, i) => ({ x: i, y: 0 }));
+    // Haken bei x=20: 1,5 m zurück, dann weiter
+    const hook = [...line.slice(0, 21), { x: 19.5, y: 0.4 }, { x: 19, y: 0.6 }, { x: 19.5, y: 0.8 }, ...line.slice(21)];
+    const cleaned = removeHooks(hook, 3);
+    expect(cleaned.every((p, i) => i === 0 || p.x >= cleaned[i - 1].x)).toBe(true);
+    // echte Kehre (8 m zurück) bleibt
+    const turn = [...line.slice(0, 21), ...Array.from({ length: 8 }, (_, i) => ({ x: 19 - i, y: 3 }))];
+    expect(removeHooks(turn, 3).length).toBe(turn.length);
+  });
+  it('setzt eine offene Bahn am Ende fort und schließt sie, wenn der Strich zur Station führt', () => {
+    const r = strokeToTrack(stageCurve(0, 30, 60, (x) => 15 * Math.exp(-((x - 15) ** 2) / 40)));
+    expect(r.path.closed).toBe(false);
+    const end = r.path.nodes[r.path.nodes.length - 1];
+    const se = toStage(end.x, end.y, end.z);
+    // vom Ende aus am Boden weiter nach rechts (offen bleibt offen)
+    const ext = extendTrack(r.path, param(30, (t) => [se.X + t * 20, se.Y]));
+    expect(ext).not.toBeNull();
+    expect(ext!.closed).toBe(false);
+    expect(ext!.nodes.length).toBeGreaterThan(r.path.nodes.length);
+    // Bogen über die hintere Spur zurück zur Station → geschlossen
+    const R = laneRise(1);
+    const back = extendTrack(ext!, [
+      ...param(20, (t) => [se.X + 20 + 7 * Math.sin(Math.PI * t), R - R * Math.cos(Math.PI * t)]),
+      ...param(40, (t) => [se.X + 20 - t * (se.X + 20), 2 * R]),
+      ...param(20, (t) => [-7 * Math.sin(Math.PI * t), R + R * Math.cos(Math.PI * t)]),
+    ]);
+    expect(back).not.toBeNull();
+    expect(back!.closed).toBe(true);
+    const stats = trackStats(back!, sampleTrack(back!));
+    expect(stats.loops).toBe(0);
+  });
   it('hebt die Bahn über das Terrain', () => {
     // Berg von x=20 bis 40, 5 m hoch, auf allen Spuren; der Strich folgt der Silhouette
     const ground = (x: number) => (x > 20 && x < 40 ? 5 * Math.sin(((x - 20) / 20) * Math.PI) : 0);
     const stroke = stageCurve(0, 60, 120, (x) => ground(x) + 0.2);
     const r = strokeToTrack(stroke, { groundHeight: ground, groundClearance: 0.8 });
+    closeTrack(r.path);
     const s = sampleTrack(r.path);
     let minClearance = Infinity;
     let maxY = 0;
@@ -310,6 +352,7 @@ describe('Strich → Bahn', () => {
 describe('Überzeichnen', () => {
   const flat = () => strokeToTrack(stageCurve(0, 80, 100, () => 0)).path;
   it('ersetzt nur den überzeichneten Abschnitt durch einen Hügel', () => {
+    // offene Bahn (Strich endet weit weg vom Start)
     const base = flat();
     const before = sampleTrack(base);
     const y0 = base.nodes[0].y; // Bahn liegt um die Mindesthöhe über dem Boden

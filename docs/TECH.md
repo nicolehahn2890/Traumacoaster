@@ -45,7 +45,7 @@ interface TrackNode {
 interface TrackPath { nodes: TrackNode[]; elements: TrackElement[]; startType: StartType; templates: Record<string, number>; }
 ```
 - Die Bahn ist ein geschlossener Pfad kubischer Bezier-Segmente in 3D (`src/track/model.ts`). `sampleTrack` liefert alle 0,25 m Position, 3D-Tangente, 3D-Krümmungsvektor (analytisch aus erster und zweiter Ableitung), Oben-Vektor (Paralleltransport mit Rückzug zur Welt-Senkrechten auf waagerechter Strecke) und Rollwinkel.
-- `carFrame(state, v)` gibt den Wagen-Rahmen (T, U, S) mit Schräglage: manuell (`roll`) oder automatisch (`bankAt`: Oben-Vektor zur gefühlten Kraft v²·κ⃗ + g gedreht, max. 72°, keine Neigung bei Airtime).
+- `carFrame(state, v)` gibt den Wagen-Rahmen (T, U, S) mit Schräglage: manuell (`roll`) oder automatisch (`bankAt`: Oben-Vektor zur gefühlten Kraft v²·κ⃗ + g gedreht, max. 80°, keine Neigung bei Airtime).
 - `closeTurn`/`closeReturn` sind automatische Knoten (Rückweg); `trackStats` und die Entgleis-Prüfung ignorieren sie.
 - Projektion auf die Bühne (`src/track/stage.ts`): `X = x · k(z)`, `Y = y · k(z) + 4,2 · z`, `k(z) = 0,94^z`. Die Kamera rechnet Bühnen-Meter in Pixel um.
 
