@@ -24,6 +24,40 @@
   </head>
   <body>
     <div id="app"></div>
+    <div id="boot" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font:600 16px/1.5 Nunito,system-ui,sans-serif;text-align:center;padding:24px;pointer-events:none">Trauma Coaster lädt …</div>
+    <script>
+      // Startanzeige und sichtbare Fehler, damit ein schwarzer Bildschirm nie stumm bleibt
+      (function () {
+        var boot = document.getElementById('boot');
+        var done = false;
+        function show(msg) {
+          if (!boot) return;
+          boot.style.display = 'flex';
+          boot.style.pointerEvents = 'auto';
+          boot.innerHTML = '<div style="max-width:520px;background:rgba(0,0,0,.45);border-radius:16px;padding:20px"><b>Trauma Coaster konnte nicht starten.</b><br><br>' +
+            String(msg).replace(/</g, '&lt;') + '</div>';
+        }
+        window.tcBootDone = function () { done = true; if (boot) boot.style.display = 'none'; };
+        window.tcBootError = show;
+        window.addEventListener('error', function (e) {
+          show((e && e.message) || 'Unbekannter Fehler');
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e && e.reason;
+          show(r && (r.stack || r.message) ? (r.stack || r.message) : String(r));
+        });
+        var problems = [];
+        if (typeof WebAssembly === 'undefined') problems.push('WebAssembly ist nicht verfügbar.');
+        try {
+          var c = document.createElement('canvas');
+          if (!(c.getContext('webgl2') || c.getContext('webgl'))) problems.push('WebGL ist nicht verfügbar.');
+        } catch (err) { problems.push('WebGL ist nicht verfügbar.'); }
+        if (problems.length) show(problems.join(' ') + ' Bitte in Safari oder Chrome öffnen.');
+        setTimeout(function () {
+          if (!done && boot && boot.textContent === 'Trauma Coaster lädt …') show('Das Spiel antwortet nicht. Vermutlich wurde das Laden des Skripts blockiert. Alternative: GitHub Pages oder lokal starten.');
+        }, 20000);
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

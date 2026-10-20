@@ -6,10 +6,16 @@ import { storage } from './core/storage';
 import { StartScene } from './app/scenes/start';
 import { LevelScene } from './app/scenes/level';
 
+type BootWindow = Window & { tcBootDone?: () => void; tcBootError?: (msg: string) => void; tcGame?: Game };
+
 async function boot(): Promise<void> {
-  await Promise.all([initPhysics(), loadArtOverrides(), (document as Document & { fonts?: FontFaceSet }).fonts?.ready ?? Promise.resolve()]);
+  // Physik (WebAssembly) im Hintergrund vorbereiten; das Level wartet selbst darauf.
+  // Splash und Startscreen sollen auch dann erscheinen, wenn WebAssembly hier nicht geladen werden kann.
+  void initPhysics().catch((err) => console.error('Physik konnte nicht geladen werden', err));
+  await Promise.all([loadArtOverrides(), (document as Document & { fonts?: FontFaceSet }).fonts?.ready ?? Promise.resolve()]);
   const game = new Game();
   await game.init();
+  (window as BootWindow).tcBootDone?.();
   // Splash nur beim ersten Start pro Sitzung
   const seen = sessionStorage.getItem('tc.splash') === '1';
   const params = new URLSearchParams(location.search);
@@ -23,13 +29,18 @@ async function boot(): Promise<void> {
     /* ignore */
   }
   void storage.settings;
-  (window as unknown as { tcGame: Game }).tcGame = game;
+  (window as BootWindow).tcGame = game;
 }
 
 boot().catch((err) => {
   console.error(err);
-  const el = document.createElement('pre');
-  el.style.cssText = 'color:#fff;padding:20px;font:14px monospace;white-space:pre-wrap';
-  el.textContent = `Fehler beim Start: ${err instanceof Error ? err.stack ?? err.message : String(err)}`;
-  document.body.appendChild(el);
+  const msg = `Fehler beim Start: ${err instanceof Error ? err.stack ?? err.message : String(err)}`;
+  const w = window as BootWindow;
+  if (w.tcBootError) w.tcBootError(msg);
+  else {
+    const el = document.createElement('pre');
+    el.style.cssText = 'color:#fff;padding:20px;font:14px monospace;white-space:pre-wrap';
+    el.textContent = msg;
+    document.body.appendChild(el);
+  }
 });
