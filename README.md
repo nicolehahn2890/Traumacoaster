@@ -52,4 +52,4 @@ Noch nicht im Prototyp (im GDD spezifiziert): Vorlagen-Elemente (Helix, Top Hat,
 
 ## Lizenzhinweis
 
-Fonts: Fredoka und Nunito über Google Fonts (OFL). Alles andere eigene Entwicklung für illudiy.
+Fonts: Fredoka und Nunito über Google Fonts (OFL), Lobster (OFL, illudiy-Markenschrift) lokal unter `public/fonts/`. Das illudiy-Logo liegt unter `public/brand/`. Alles andere eigene Entwicklung für illudiy.
