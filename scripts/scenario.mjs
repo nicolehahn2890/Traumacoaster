@@ -73,6 +73,19 @@ const state = () => page.evaluate(() => {
 
 /** Fahrt bis zum Ergebnis; sammelt min(upy) und max|bank| des ersten Wagens */
 async function ride(tag, shotAt = 6) {
+  // min(upy) und max|bank| im Seitenkontext pro Frame sammeln (die Fahrt läuft im Zeitraffer, Polling wäre zu grob)
+  await page.evaluate(() => {
+    window.__ride = { minUp: 1, maxBank: 0 };
+    const tick = () => {
+      const car = window.tcGame?.current?.sim?.cars?.[0];
+      if (car) {
+        window.__ride.minUp = Math.min(window.__ride.minUp, car.upy);
+        window.__ride.maxBank = Math.max(window.__ride.maxBank, Math.abs((car.bank * 180) / Math.PI));
+      }
+      if (window.tcGame?.current?.mode !== 'result') requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
   await page.mouse.click(640, 800 - 56);
   let minUp = 1;
   let maxBank = 0;
@@ -81,9 +94,10 @@ async function ride(tag, shotAt = 6) {
   for (let i = 0; i < 120; i++) {
     await sleep(500);
     st = await state();
-    if (st.car) {
-      minUp = Math.min(minUp, Number(st.car.upy));
-      maxBank = Math.max(maxBank, Math.abs(Number(st.car.bank)));
+    const acc = await page.evaluate(() => window.__ride);
+    if (acc) {
+      minUp = Math.min(minUp, acc.minUp);
+      maxBank = Math.max(maxBank, acc.maxBank);
     }
     if (!shot && st.sim && Number(st.sim.t) >= shotAt) {
       shot = true;
