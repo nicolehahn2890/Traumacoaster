@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import { fileURLToPath, URL } from 'node:url';
 
 // base './' sorgt dafür, dass der Build unter jedem Pfad läuft
