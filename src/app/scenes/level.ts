@@ -1229,8 +1229,14 @@ export class LevelScene implements Scene {
       this.toast.show(t('drawHint'), 2);
       return;
     }
-    const name = prompt(t('paint.name'), this.sandbox?.saved?.name ?? `${this.world.name} ${new Date().toLocaleDateString()}`);
-    if (!name) return;
+    const fallback = this.sandbox?.saved?.name ?? `${this.world.name} ${new Date().toLocaleDateString()}`;
+    let name = fallback;
+    try {
+      // prompt() fehlt in manchen eingebetteten Ansichten: dann Standardname
+      name = prompt(t('paint.name'), fallback) || fallback;
+    } catch {
+      name = fallback;
+    }
     const track: SavedTrack = {
       id: this.sandbox?.saved?.id ?? `t${Date.now().toString(36)}`,
       name, world: this.world.id, created: Date.now(), path: clonePath(this.path), width: this.level.width,

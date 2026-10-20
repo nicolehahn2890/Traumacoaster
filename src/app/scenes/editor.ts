@@ -78,7 +78,12 @@ export class EditorScene implements Scene {
     };
     this.newBtn.onTap = () => {
       const r = randomCharacter();
-      const name = prompt(t('paint.name'), r.name) ?? r.name;
+      let name = r.name;
+      try {
+        name = prompt(t('paint.name'), r.name) || r.name;
+      } catch {
+        name = r.name;
+      }
       this.def = { ...r, name };
       this.refresh();
     };
