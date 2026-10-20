@@ -14,8 +14,8 @@
   "world": "World {n}",
   "requirements": "Goals",
   "drawHint": "Draw your coaster with one stroke",
-  "drawHintTurn": "Reverse the stroke without crossing it: turn to the back",
-  "drawHintLoop": "Cross the stroke: loop",
+  "drawHintTurn": "On the ground: arc towards the back = flat curve. Up high: turn around = banked curve",
+  "drawHintLoop": "Cross the stroke up high: loop",
   "overdrawHint": "Draw over the track to improve it",
   "success": "Done!",
   "failed": "Not done",
@@ -82,6 +82,6 @@
   "worldLocked": "Finish world {n} to travel on",
   "tutorial.l1": "Put your finger on the ground and draw a hill",
   "tutorial.l2": "Tap the track and drag the handles",
-  "tutorial.l5": "Draw to the right, then come back to the left above the way out",
-  "tutorial.l8": "Draw a loop that crosses itself"
+  "tutorial.l5": "Draw a flat arc towards the back on the ground (higher on screen = further back)",
+  "tutorial.l8": "Climb steeply and draw a loop in the air that crosses itself"
 }

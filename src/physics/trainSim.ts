@@ -1,12 +1,14 @@
 /**
- * Zug-Simulation entlang der Bogenlänge der Bahn.
- * Energie-Modell: Schwerkraft entlang der Tangente, Rollreibung, Luftwiderstand,
- * Kettenzug/Launch am Start, Booster/Bremsen als Elemente, automatische Bremsstrecke auf dem Rückweg.
- * Liefert pro Wagen Position, Ausrichtung und die gefühlten g-Kräfte (Sitz und seitlich).
+ * Zug-Simulation entlang der Bogenlänge der 3D-Bahn.
+ * - Station gibt nur einen kleinen Schubs; auf ebener Strecke rollt der Zug aus und bleibt stehen.
+ * - Kettenzug greift nur an einem Anstieg nahe der Station, Launch beschleunigt auf dem ersten Stück.
+ * - Kurven werden automatisch überhöht (Schräglage aus Tempo und Radius) oder manuell per Roll-Handle.
+ * - g-Kräfte im Wagen-System (vorwärts, oben, seitlich) für Fahrgäste, Entgleisen und Ziele.
  */
 import type { CoinSpec, LevelDef } from '@/levels/types';
 import type { TrackPath, TrackSamples, TrackState } from '@/track/model';
-import { stateAt } from '@/track/model';
+import { carFrame, stateAt } from '@/track/model';
+import { LANE_DEPTH, toStage } from '@/track/stage';
 import type { Terrain } from './terrain';
 
 export const G = 9.81;
@@ -16,18 +18,17 @@ export interface SkinPhysics {
   lateralLimit: number;
 }
 
-/** Reibung und Querkraft-Grenze pro Schienenstil */
 export const SKIN_PHYSICS: Record<string, SkinPhysics> = {
-  skinWood: { friction: 0.015, lateralLimit: 2.5 },
-  skinHybrid: { friction: 0.013, lateralLimit: 3.0 },
-  skinMine: { friction: 0.016, lateralLimit: 2.6 },
-  skinSteel: { friction: 0.01, lateralLimit: 3.5 },
-  skinGold: { friction: 0.01, lateralLimit: 3.5 },
-  skinNeon: { friction: 0.01, lateralLimit: 3.6 },
-  skinIce: { friction: 0.004, lateralLimit: 3.0 },
-  skinGhost: { friction: 0.014, lateralLimit: 2.8 },
-  skinLava: { friction: 0.011, lateralLimit: 3.5 },
-  skinSpace: { friction: 0.008, lateralLimit: 4.0 },
+  skinWood: { friction: 0.015, lateralLimit: 2.0 },
+  skinHybrid: { friction: 0.013, lateralLimit: 2.4 },
+  skinMine: { friction: 0.016, lateralLimit: 2.2 },
+  skinSteel: { friction: 0.01, lateralLimit: 3.0 },
+  skinGold: { friction: 0.01, lateralLimit: 3.0 },
+  skinNeon: { friction: 0.01, lateralLimit: 3.2 },
+  skinIce: { friction: 0.004, lateralLimit: 2.6 },
+  skinGhost: { friction: 0.014, lateralLimit: 2.3 },
+  skinLava: { friction: 0.011, lateralLimit: 3.0 },
+  skinSpace: { friction: 0.008, lateralLimit: 3.5 },
 };
 
 export type RidePhase = 'lift' | 'launch' | 'coast' | 'done' | 'failed';
@@ -38,24 +39,18 @@ export interface CarState {
   s: number;
   x: number;
   y: number;
-  z: number;
-  /** Fahrtrichtung in der Profil-Ebene (Einheitsvektor, für die Darstellung) */
-  tx: number;
-  ty: number;
-  /** Oben-Vektor des Wagens in 3D inkl. Roll */
-  upx: number;
-  upy: number;
-  upz: number;
-  roll: number;
-  /** Winkel der Profil-Tangente */
+  z: number; // Spuren
+  /** 3D-Rahmen: vorwärts, oben (mit Schräglage), seitlich */
+  tx: number; ty: number; tz: number;
+  upx: number; upy: number; upz: number;
+  sx: number; sy: number; sz: number;
+  /** Schräglage (Radiant) */
+  bank: number;
+  /** Winkel der projizierten Fahrtrichtung auf der Bühne (für Billboards) */
   angle: number;
-  /** gefühlte g in den Sitz (positiv = gedrückt, negativ = Airtime) */
   gSeat: number;
-  /** gefühlte g nach vorne (Beschleunigung) */
   gFwd: number;
-  /** seitliche g (Betrag, nach automatischer Überhöhung) */
   gLat: number;
-  /** gefühlte Beschleunigung im Wagen-System (m/s²): vorwärts, oben, seitlich. Fahrgast-Kraft = −m·felt */
   feltFwd: number;
   feltUp: number;
   feltSide: number;
@@ -65,7 +60,7 @@ export interface CarState {
 
 export interface RideStats {
   time: number;
-  maxSpeed: number; // m/s
+  maxSpeed: number;
   maxG: number;
   minG: number;
   maxLatG: number;
@@ -81,7 +76,7 @@ export interface RideStats {
 }
 
 export interface RideEvent {
-  kind: 'coin' | 'tunnelEnter' | 'tunnelExit' | 'booster' | 'brake' | 'splash' | 'liftEnd' | 'launchEnd' | 'peak' | 'fail' | 'finish' | 'inversion';
+  kind: 'coin' | 'tunnelEnter' | 'tunnelExit' | 'booster' | 'brake' | 'splash' | 'liftStart' | 'liftEnd' | 'launchEnd' | 'peak' | 'fail' | 'finish' | 'inversion';
   time: number;
   car?: number;
   index?: number;
@@ -103,10 +98,11 @@ export interface TrainSimOptions {
   allowTunnels: boolean;
 }
 
+const STATION_PUSH = 1.6; // m/s
 const LIFT_SPEED = 4.0;
 const VERTICAL_LIFT_SPEED = 5.5;
-const MAX_CURVATURE = 1 / 2.5;
-const BLACKOUT_G = 7;
+const LIFT_SEARCH = 30; // m: so weit nach der Station darf der Anstieg beginnen
+const LIFT_MIN_SLOPE = 0.06;
 const LAUNCH_LENGTH = 26;
 const LAUNCH_ACCEL = 12;
 const HYDRO_ACCEL = 24;
@@ -116,7 +112,8 @@ const BRAKE_TARGET = 4;
 const RETURN_SPEED_LIMIT = 8;
 const RETURN_LOOKAHEAD = 14;
 const DRAG = 0.0008;
-const BANKING = 0.6; // automatische Überhöhung senkt die seitlichen g
+const MAX_CURVATURE = 1 / 2.5;
+const BLACKOUT_G = 7;
 
 export class TrainSim {
   readonly samples: TrackSamples;
@@ -125,23 +122,23 @@ export class TrainSim {
   readonly cars: CarState[] = [];
   readonly events: RideEvent[] = [];
   readonly stats: RideStats = {
-    time: 0, maxSpeed: 0, maxG: 1, minG: 1, maxLatG: 0, airtime: 0, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0,
-    blackout: false, brakesUsed: false, distance: 0,
+    time: 0, maxSpeed: 0, maxG: 1, minG: 1, maxLatG: 0, airtime: 0, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0, blackout: false, brakesUsed: false, distance: 0,
   };
   readonly collected: boolean[];
   phase: RidePhase = 'coast';
   failReason: FailReason | null = null;
-  /** Bogenlänge des vorderen Wagens */
   s = 0;
   v = 0;
   t = 0;
-  /** Zeit seit Fehlschlag (für Nachlauf-Animation) */
   sinceFail = 0;
-  private liftEnd = 0;
+  liftStart = -1;
+  liftEnd = -1;
+  private liftActive = false;
   private wasInTunnel: boolean[] = [];
   private passedElements = new Set<number>();
   private invertedPrev = false;
   private fallTimer = 0;
+  private stallTimer = 0;
   private lapDone = false;
   private peakReported = false;
 
@@ -151,35 +148,45 @@ export class TrainSim {
     this.opts = opts;
     this.collected = opts.coins.map(() => false);
     for (let i = 0; i < opts.cars; i++) {
-      this.cars.push({ index: i, s: 0, x: 0, y: 0, z: 0, tx: 1, ty: 0, upx: 0, upy: 1, upz: 0, roll: 0, angle: 0, gSeat: 1, gFwd: 0, gLat: 0, feltFwd: 0, feltUp: G, feltSide: 0, inTunnel: false, inverted: false });
+      this.cars.push({ index: i, s: 0, x: 0, y: 0, z: 0, tx: 1, ty: 0, tz: 0, upx: 0, upy: 1, upz: 0, sx: 0, sy: 0, sz: 1, bank: 0, angle: 0, gSeat: 1, gFwd: 0, gLat: 0, feltFwd: 0, feltUp: G, feltSide: 0, inTunnel: false, inverted: false });
       this.wasInTunnel.push(false);
     }
-    this.liftEnd = this.findLiftEnd();
-    this.phase = opts.startType === 'launch' || opts.startType === 'hydro' || opts.startType === 'swing' ? 'launch' : 'lift';
-    this.v = this.phase === 'lift' ? LIFT_SPEED : 0.5;
-    this.updateCars(0);
+    const launch = opts.startType === 'launch' || opts.startType === 'hydro' || opts.startType === 'swing';
+    if (!launch) this.findLift();
+    this.phase = launch ? 'launch' : 'coast';
+    this.v = launch ? 0.5 : STATION_PUSH;
+    this.updateCars();
   }
 
-  /** Ende des ersten Anstiegs (erster Scheitel nach der Station) */
-  private findLiftEnd(): number {
+  /** Anstieg nahe der Station suchen: Lift von dessen Beginn bis zum ersten Scheitel */
+  private findLift(): void {
     const sm = this.samples;
-    let climbing = false;
+    let start = -1;
     for (let i = 1; i < sm.count; i++) {
-      if (sm.ty[i] > 0.02) climbing = true;
-      if (climbing && sm.ty[i] <= 0) return sm.s[i];
+      if (sm.s[i] > LIFT_SEARCH && start < 0) break;
+      if (start < 0 && sm.t3y[i] > LIFT_MIN_SLOPE) start = i;
+      if (start >= 0 && sm.t3y[i] <= 0 && sm.s[i] - sm.s[start] > 1) {
+        this.liftStart = sm.s[start];
+        this.liftEnd = sm.s[i];
+        return;
+      }
     }
-    return climbing ? sm.length * 0.5 : 0;
+    if (start >= 0) {
+      this.liftStart = sm.s[start];
+      this.liftEnd = sm.length * 0.5;
+    }
   }
 
   get skinPhysics(): SkinPhysics {
     return SKIN_PHYSICS[this.opts.skin] ?? SKIN_PHYSICS.skinWood;
   }
-
   get finished(): boolean {
     return this.phase === 'done' || this.phase === 'failed';
   }
+  get kmh(): number {
+    return Math.abs(this.v) * 3.6;
+  }
 
-  /** Simulationsschritt mit festem Teilschritt */
   step(dt: number): void {
     const sub = Math.max(1, Math.ceil(dt / (1 / 120)));
     const h = dt / sub;
@@ -189,14 +196,13 @@ export class TrainSim {
   private substep(h: number): void {
     if (this.phase === 'failed') {
       this.sinceFail += h;
-      // Nachlauf: Zug rollt weiter bzw. zurück, Reibung bremst
       this.integrate(h, true);
-      this.updateCars(h);
+      this.updateCars();
       return;
     }
     if (this.phase === 'done') return;
     this.integrate(h, false);
-    this.updateCars(h);
+    this.updateCars();
     this.t += h;
     this.stats.time = this.t;
     this.checkEvents(h);
@@ -206,7 +212,6 @@ export class TrainSim {
     const g = G * this.opts.gravityScale;
     const mu = this.skinPhysics.friction * this.opts.frictionScale;
     const L = this.samples.length;
-    // mittlere Hangabtriebskraft über alle Wagen
     let aGrav = 0;
     let anyAuto = false;
     for (let c = 0; c < this.opts.cars; c++) {
@@ -219,23 +224,27 @@ export class TrainSim {
     let a = aGrav - mu * g * vSign - DRAG * this.v * Math.abs(this.v);
 
     if (!afterFail) {
-      // Startphasen
-      if (this.phase === 'lift') {
+      // Kettenzug: nur am Anstieg
+      if (this.liftStart >= 0 && this.s >= this.liftStart && this.s < this.liftEnd && this.phase !== 'launch') {
         const liftSpeed = this.opts.startType === 'verticalLift' ? VERTICAL_LIFT_SPEED : LIFT_SPEED;
-        if (this.s < this.liftEnd) {
-          if (this.v < liftSpeed) {
-            this.v = liftSpeed;
-            a = Math.max(a, 0);
-          }
-        } else {
-          this.phase = 'coast';
-          this.events.push({ kind: 'liftEnd', time: this.t });
+        if (!this.liftActive) {
+          this.liftActive = true;
+          this.phase = 'lift';
+          this.events.push({ kind: 'liftStart', time: this.t });
         }
-      } else if (this.phase === 'launch') {
+        if (this.v < liftSpeed) {
+          this.v = liftSpeed;
+          a = Math.max(a, 0);
+        }
+      } else if (this.liftActive) {
+        this.liftActive = false;
+        this.phase = 'coast';
+        this.events.push({ kind: 'liftEnd', time: this.t });
+      }
+      if (this.phase === 'launch') {
         const accel = this.opts.startType === 'hydro' ? HYDRO_ACCEL : this.opts.startType === 'swing' ? SWING_ACCEL : LAUNCH_ACCEL;
-        if (this.s < LAUNCH_LENGTH) {
-          a += accel;
-        } else {
+        if (this.s < LAUNCH_LENGTH) a += accel;
+        else {
           this.phase = 'coast';
           this.events.push({ kind: 'launchEnd', time: this.t });
         }
@@ -269,27 +278,26 @@ export class TrainSim {
           }
         }
       }
-      // automatische Bremsstrecke auf dem Rückweg (bremst schon vor der Kehre ab)
       const ahead = stateAt(this.samples, this.s + RETURN_LOOKAHEAD);
       if ((anyAuto || ahead.auto) && this.v > RETURN_SPEED_LIMIT) a -= 7;
     }
 
-    // symplektischer Euler
     this.v += a * h;
-    // Stillstand am Berg → Rückroller
-    if (!afterFail && this.phase === 'coast' && this.v <= 0.02 && aGrav < -0.05) {
-      this.fail('stall');
-      this.v = -0.05;
-    }
+    // Stillstand: auf ebener Strecke oder am Berg → nicht geschafft
+    if (!afterFail && this.phase === 'coast' && this.v <= 0.03) {
+      this.stallTimer += h;
+      if (this.stallTimer > 0.4 || aGrav < -0.05) {
+        this.fail('stall');
+        this.v = Math.min(this.v, -0.02);
+      }
+    } else this.stallTimer = 0;
     this.s += this.v * h;
     this.stats.distance += Math.abs(this.v) * h;
-    if (!afterFail && this.s >= L && this.phase === 'coast') {
-      this.lapDone = true;
-    }
+    if (!afterFail && this.s >= L && this.phase === 'coast') this.lapDone = true;
     this.stats.maxSpeed = Math.max(this.stats.maxSpeed, Math.abs(this.v));
   }
 
-  private updateCars(h: number): void {
+  private updateCars(): void {
     const g = G * this.opts.gravityScale;
     const L = this.samples.length;
     for (const car of this.cars) {
@@ -299,55 +307,37 @@ export class TrainSim {
       car.x = st.x;
       car.y = st.y;
       car.z = st.z;
-      car.tx = st.tx;
-      car.ty = st.ty;
-      car.roll = st.roll;
-      car.angle = Math.atan2(st.ty, st.tx);
-      // Seitenvektor = T × up, dann Roll um die Tangente
-      const sx0 = st.t3y * st.upz - st.t3z * st.upy;
-      const sy0 = st.t3z * st.upx - st.t3x * st.upz;
-      const sz0 = st.t3x * st.upy - st.t3y * st.upx;
-      const cr = Math.cos(st.roll);
-      const sr = Math.sin(st.roll);
-      const upx = st.upx * cr + sx0 * sr;
-      const upy = st.upy * cr + sy0 * sr;
-      const upz = st.upz * cr + sz0 * sr;
-      const sx = sx0 * cr - st.upx * sr;
-      const sy = sy0 * cr - st.upy * sr;
-      const sz = sz0 * cr - st.upz * sr;
-      car.upx = upx; car.upy = upy; car.upz = upz;
-      // Beschleunigung des Wagens: Normalanteil v²·k + Tangentialanteil (Hangabtrieb)
-      // Krümmung auf einen Mindestradius von 1,5 m begrenzen (numerische Spitzen an Knicken)
+      const frame = carFrame(st, Math.abs(this.v), g);
+      car.tx = frame.T.x; car.ty = frame.T.y; car.tz = frame.T.z;
+      car.upx = frame.U.x; car.upy = frame.U.y; car.upz = frame.U.z;
+      car.sx = frame.S.x; car.sy = frame.S.y; car.sz = frame.S.z;
+      car.bank = frame.bank;
+      // projizierte Fahrtrichtung auf der Bühne
+      const p0 = toStage(st.x, st.y, st.z);
+      const p1 = toStage(st.x + st.t3x, st.y + st.t3y, st.z + st.t3z / LANE_DEPTH);
+      car.angle = Math.atan2(p1.Y - p0.Y, p1.X - p0.X);
+      // Beschleunigung: Normalanteil v²·k (Mindestradius 2,5 m) + Hangabtrieb
       const v2 = this.v * this.v;
       const aTan = -g * st.t3y;
       const kMag = Math.hypot(st.k3x, st.k3y, st.k3z);
       const kScale = kMag > MAX_CURVATURE ? MAX_CURVATURE / kMag : 1;
-      const ax = v2 * st.k3x * kScale + aTan * st.t3x;
-      const ay = v2 * st.k3y * kScale + aTan * st.t3y;
-      const az = v2 * st.k3z * kScale + aTan * st.t3z;
-      // gefühlt = a − g_vec, g_vec = (0, −g, 0)
-      const fx = ax;
-      const fy = ay + g;
-      const fz = az;
-      car.feltFwd = fx * st.t3x + fy * st.t3y + fz * st.t3z;
-      car.feltUp = fx * upx + fy * upy + fz * upz;
-      const side = fx * sx + fy * sy + fz * sz;
-      // automatische Überhöhung: Teil der Querkraft wird in Sitzdruck umgewandelt
-      car.feltSide = side * (1 - BANKING);
-      car.feltUp += Math.abs(side) * BANKING * 0.5;
+      const fx = v2 * st.k3x * kScale + aTan * st.t3x;
+      const fy = v2 * st.k3y * kScale + aTan * st.t3y + g;
+      const fz = v2 * st.k3z * kScale + aTan * st.t3z;
+      car.feltFwd = fx * car.tx + fy * car.ty + fz * car.tz;
+      car.feltUp = fx * car.upx + fy * car.upy + fz * car.upz;
+      car.feltSide = fx * car.sx + fy * car.sy + fz * car.sz;
       car.gSeat = car.feltUp / G;
       car.gFwd = car.feltFwd / G;
       car.gLat = Math.abs(car.feltSide) / G;
-      car.inverted = upy < -0.2;
+      car.inverted = car.upy < -0.2;
       car.inTunnel = this.opts.terrain.insideMountain(st.x, st.y, st.z);
     }
-    void h;
   }
 
   private checkEvents(h: number): void {
     const front = this.cars[0];
     const L = this.samples.length;
-    // Statistik
     this.stats.maxG = Math.max(this.stats.maxG, front.gSeat);
     this.stats.minG = Math.min(this.stats.minG, front.gSeat);
     this.stats.maxLatG = Math.max(this.stats.maxLatG, front.gLat);
@@ -358,25 +348,20 @@ export class TrainSim {
       this.events.push({ kind: 'inversion', time: this.t, car: 0 });
     }
     this.invertedPrev = front.inverted;
-
-    // Scheitel (höchster Punkt) melden
     if (!this.peakReported && this.phase === 'coast') {
-      const stNext = stateAt(this.samples, this.s + 1);
-      if (stNext.y < front.y - 0.05 && front.y > 3) {
+      const next = stateAt(this.samples, this.s + 1);
+      if (next.y < front.y - 0.05 && front.y > 3) {
         this.peakReported = true;
         this.events.push({ kind: 'peak', time: this.t, x: front.x, y: front.y, z: front.z });
       }
     }
-
-    // Coins: jeder Wagen sammelt
     for (let i = 0; i < this.opts.coins.length; i++) {
       if (this.collected[i]) continue;
       const c = this.opts.coins[i];
       const lane = c.lane ?? 0;
       for (const car of this.cars) {
         if (Math.abs(car.z - lane) > 0.5) continue;
-        const d = Math.hypot(car.x - c.x, car.y - c.y);
-        if (d < 2.0) {
+        if (Math.hypot(car.x - c.x, car.y - c.y) < 2.0) {
           this.collected[i] = true;
           this.stats.coins++;
           this.events.push({ kind: 'coin', time: this.t, index: i, car: car.index });
@@ -384,22 +369,14 @@ export class TrainSim {
         }
       }
     }
-
-    // Tunnel
     for (const car of this.cars) {
       const was = this.wasInTunnel[car.index];
-      if (car.inTunnel && !was) {
-        if (car.index === 0) {
-          this.stats.tunnels++;
-          this.events.push({ kind: 'tunnelEnter', time: this.t, car: 0 });
-        }
-      } else if (!car.inTunnel && was && car.index === 0) {
-        this.events.push({ kind: 'tunnelExit', time: this.t, car: 0 });
-      }
+      if (car.inTunnel && !was && car.index === 0) {
+        this.stats.tunnels++;
+        this.events.push({ kind: 'tunnelEnter', time: this.t, car: 0 });
+      } else if (!car.inTunnel && was && car.index === 0) this.events.push({ kind: 'tunnelExit', time: this.t, car: 0 });
       this.wasInTunnel[car.index] = car.inTunnel;
     }
-
-    // Entgleisen: seitliche g über dem Limit (nicht auf der Bremsstrecke)
     const st = stateAt(this.samples, this.s);
     if (!st.auto) {
       for (const car of this.cars) {
@@ -409,17 +386,13 @@ export class TrainSim {
         }
       }
     }
-    // Aus dem Looping fallen: kopfüber und keine Andruckkraft
     if (front.inverted && front.gSeat < -0.15) {
       this.fallTimer += h;
       if (this.fallTimer > 0.12) {
         this.fail('fall', 0);
         return;
       }
-    } else {
-      this.fallTimer = 0;
-    }
-    // Wasser ohne Splash-Element
+    } else this.fallTimer = 0;
     if (!st.auto && this.opts.terrain.waterAt(front.x, front.z) && front.y < 0.35) {
       const onSplash = this.path.elements.some((e) => e.kind === 'splash' && ((this.s - e.s) % L + L) % L < e.length + 2);
       if (!onSplash) {
@@ -427,7 +400,6 @@ export class TrainSim {
         return;
       }
     }
-    // Ziel: eine volle Runde, alle Wagen zurück in der Station
     if (this.lapDone && this.s >= L + this.opts.cars * this.opts.carLength) {
       this.phase = 'done';
       this.events.push({ kind: 'finish', time: this.t });
@@ -440,24 +412,11 @@ export class TrainSim {
     this.failReason = reason;
     this.events.push({ kind: 'fail', time: this.t, reason, car });
   }
-
-  /** Geschwindigkeit in km/h */
-  get kmh(): number {
-    return Math.abs(this.v) * 3.6;
-  }
 }
 
-/** Baut die Sim-Optionen aus einem Level. */
 export function simOptionsForLevel(level: LevelDef, path: TrackPath, terrain: Terrain, skin: string, allowTunnels: boolean): TrainSimOptions {
   return {
-    cars: level.cars ?? 2,
-    carLength: 2.4,
-    skin,
-    frictionScale: level.physics?.friction ?? 1,
-    gravityScale: level.physics?.gravity ?? 1,
-    startType: path.startType,
-    coins: level.coins ?? [],
-    terrain,
-    allowTunnels,
+    cars: level.cars ?? 2, carLength: 2.4, skin, frictionScale: level.physics?.friction ?? 1, gravityScale: level.physics?.gravity ?? 1,
+    startType: path.startType, coins: level.coins ?? [], terrain, allowTunnels,
   };
 }

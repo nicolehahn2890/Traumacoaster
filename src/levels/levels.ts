@@ -73,7 +73,7 @@ const W1: LevelDef[] = [
   L('Hoch hinaus', 'Höher bauen heißt schneller fahren. Sammle dabei die Coins.', {
     goals: [g('height', 18), g('coins', 4)], unlocks: ['turn'], width: 70, terrain: [hill(50, 20, 4)], coins: col(20, 6, 16, 4),
   }),
-  L('Die erste Kurve', 'Dreh den Strich um, ohne ihn zu kreuzen: Die Bahn wechselt in die hintere Spur.', {
+  L('Die erste Kurve', 'Am Boden ist oben gleich hinten: Zeichne einen flachen Bogen über die Bühne. In der Höhe wird eine Kehre zur Steilkurve.', {
     goals: [g('turns', 1), g('height', 12), bonus('coins', 5)], width: 70, coins: row(20, 50, 5, 5, 1),
   }),
   L('Hin und zurück', 'Zwei Kurven bringen dich wieder nach vorne. Die Coins liegen auf drei Spuren.', {

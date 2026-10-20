@@ -14,7 +14,7 @@ Automatisch erzeugt aus `src/levels/levels.ts` (`npm run levels:doc`). Jedes Lev
 | 2 | Feinschliff | Tippe die Bahn an und zieh an den Handles, bis der Hügel 12 Meter hoch ist. | Höhe ≥ 12 m, *Strecke ≤ 90 m* | eben (1 Wagen) | 60 m | Coins |
 | 3 | Goldregen | Coins liegen in der Luft. Führe die Bahn hindurch. | 5 Coins, *6 Coins* | eben | 70 m | – |
 | 4 | Hoch hinaus | Höher bauen heißt schneller fahren. Sammle dabei die Coins. | Höhe ≥ 18 m, 4 Coins | Hügel 4 m | 70 m | Kurve (Spurwechsel) |
-| 5 | Die erste Kurve | Dreh den Strich um, ohne ihn zu kreuzen: Die Bahn wechselt in die hintere Spur. | 1 Kurve, Höhe ≥ 12 m, *5 Coins* | eben | 70 m | – |
+| 5 | Die erste Kurve | Am Boden ist oben gleich hinten: Zeichne einen flachen Bogen über die Bühne. In der Höhe wird eine Kehre zur Steilkurve. | 1 Kurve, Höhe ≥ 12 m, *5 Coins* | eben | 70 m | – |
 | 6 | Hin und zurück | Zwei Kurven bringen dich wieder nach vorne. Die Coins liegen auf drei Spuren. | 2 Kurven, 6 Coins | eben | 80 m | – |
 | 7 | Tal der Wiesen | Ein Tal in der Mitte: Nutze es für einen großen Drop. | Höhe ≥ 20 m, Drop ≥ 15 m | Tal 8 m | 90 m | Looping |
 | 8 | Looping! | Kreuze deinen Strich: Daraus wird ein Looping. Genug Tempo mitnehmen! | 1 Looping, Höhe ≥ 15 m, *Tempo ≥ 50 km/h* | eben | 90 m | – |

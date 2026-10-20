@@ -14,8 +14,8 @@
   "world": "Welt {n}",
   "requirements": "Anforderung",
   "drawHint": "Zeichne deine Bahn mit einem Strich",
-  "drawHintTurn": "Dreh den Strich um, ohne ihn zu kreuzen: Kurve nach hinten",
-  "drawHintLoop": "Kreuze den Strich: Looping",
+  "drawHintTurn": "Am Boden: Bogen nach hinten = flache Kurve. In der Höhe: umdrehen = Steilkurve",
+  "drawHintLoop": "In der Höhe kreuzen: Looping",
   "overdrawHint": "Zeichne über die Bahn, um sie zu verbessern",
   "success": "Geschafft!",
   "failed": "Nicht geschafft",
@@ -82,6 +82,6 @@
   "worldLocked": "Schließe Welt {n} ab, um weiterzureisen",
   "tutorial.l1": "Setze den Finger auf den Boden und zeichne einen Hügel",
   "tutorial.l2": "Tippe die Bahn an und zieh an den Handles",
-  "tutorial.l5": "Zeichne nach rechts, dann über dem Hinweg zurück nach links",
-  "tutorial.l8": "Zeichne eine Schleife, die sich kreuzt"
+  "tutorial.l5": "Zeichne am Boden einen Bogen nach hinten (höher im Bild = weiter hinten)",
+  "tutorial.l8": "Steil hoch und in der Luft eine Schleife zeichnen, die sich kreuzt"
 }

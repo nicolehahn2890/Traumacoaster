@@ -14,8 +14,12 @@ export const LANE_MAX = 2;
 export const LANE_COUNT = 5;
 /** Tiefenabstand zwischen zwei Spuren in Metern (für die horizontale Krümmung der Kurven) */
 export const LANE_DEPTH = 7;
-/** Perspektivische Skalierung pro Spur */
-export const LANE_SCALE = 0.88;
+/**
+ * Perspektivische Skalierung pro Spur. Bewusst dezent: Je stärker hinten verkleinert wird, desto schiefer
+ * wird eine auf dem Bildschirm gezeichnete Bodenkurve in der Welt (die hintere Hälfte wird gestreckt) und
+ * desto enger werden ihre Radien beim Übergang nach hinten.
+ */
+export const LANE_SCALE = 0.94;
 /** Anhebung der Bodenlinie pro Spur in Bühnen-Metern */
 export const LANE_RISE = 4.2;
 

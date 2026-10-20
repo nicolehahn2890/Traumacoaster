@@ -1,16 +1,18 @@
 /**
  * Schienen, Schwellen, Streben und Elemente in gemaltem Stil, pro Schienen-Skin.
- * Die Bahn wird nach Spuren in Stücke geteilt, damit sie in der richtigen Tiefenebene liegt.
+ * Die Schienen liegen in 3D: linke/rechte Schiene = Bahn ± Spurweite · Seitenvektor (mit Schräglage),
+ * perspektivisch auf die Bühne projiziert. Die Bahn wird nach Spuren in Stücke geteilt.
  */
 import { Container, Graphics } from 'pixi.js';
-import { MGraphics } from './mgraphics';
 import type { TrackPath, TrackSamples } from '@/track/model';
+import { carFrame, stateAt } from '@/track/model';
 import type { Terrain } from '@/physics/terrain';
 import type { WorldDef } from '@/levels/types';
-import { laneScale, toStage, LANE_MIN, LANE_MAX } from '@/track/stage';
+import { laneScale, toStage, LANE_MIN, LANE_MAX, LANE_DEPTH } from '@/track/stage';
 import { hexNum, mix, shade } from './paint';
 import { noise1 } from '@/core/math';
 import { atmosphere } from './terrainRenderer';
+import { MGraphics } from './mgraphics';
 
 export interface SkinStyle {
   rail: string;
@@ -36,6 +38,8 @@ export const SKIN_STYLES: Record<string, SkinStyle> = {
   skinSpace: { rail: '#ffffff', railLight: '#bfe6ff', tie: '#7fd3ff', post: '#7d6fa8', brace: '#a89ad6', support: 'space', glow: '#7fd3ff', postSpacing: 6 },
 };
 
+export const GAUGE = 0.55;
+
 export interface TrackLayers {
   supports: Map<number, Graphics>;
   rails: Map<number, Graphics>;
@@ -47,6 +51,11 @@ export interface TunnelPortal {
   y: number;
   z: number;
   dir: number;
+}
+
+/** Geschätzte Fahrgeschwindigkeit für die statische Schräglage: Energie aus der Höhendifferenz */
+function designSpeed(samples: TrackSamples, i: number, maxY: number): number {
+  return Math.sqrt(Math.max(0, 2 * 9.81 * (maxY - samples.y[i]))) * 0.8 + 2;
 }
 
 export class TrackRenderer {
@@ -68,25 +77,45 @@ export class TrackRenderer {
     for (const g of this.layers.rails.values()) g.clear();
   }
 
-  /** Zeichnet die Bahn komplett neu. Liefert die Tunnelportale (Ein-/Austritte in Berge). */
   draw(path: TrackPath, samples: TrackSamples, skin: string, terrain: Terrain, allowTunnels: boolean, preview = false): TunnelPortal[] {
     this.clear();
     const portals: TunnelPortal[] = [];
     if (samples.count < 2) return portals;
     const style = SKIN_STYLES[skin] ?? SKIN_STYLES.skinWood;
     const sky = this.world.sky[1];
+    let maxY = 0;
+    for (let i = 0; i < samples.count; i++) maxY = Math.max(maxY, samples.y[i]);
 
-    // Streben
-    if (!preview) this.drawSupports(samples, style, terrain, sky);
-
-    // Schienen in Stücken je Spur
+    // 3D-Schienenpunkte je Abtastpunkt (links/rechts), projiziert
     const n = samples.count;
+    const L = new Float64Array(n * 2);
+    const R = new Float64Array(n * 2);
+    const C = new Float64Array(n * 2);
+    for (let i = 0; i < n; i++) {
+      const st = stateAt(samples, samples.s[i]);
+      const fr = carFrame(st, designSpeed(samples, i, maxY));
+      const lx = samples.x[i] - fr.S.x * GAUGE;
+      const ly = samples.y[i] - fr.S.y * GAUGE;
+      const lz = samples.z[i] - (fr.S.z * GAUGE) / LANE_DEPTH;
+      const rx = samples.x[i] + fr.S.x * GAUGE;
+      const ry = samples.y[i] + fr.S.y * GAUGE;
+      const rz = samples.z[i] + (fr.S.z * GAUGE) / LANE_DEPTH;
+      const pl = toStage(lx, ly, lz);
+      const pr = toStage(rx, ry, rz);
+      const pc = toStage(samples.x[i], samples.y[i], samples.z[i]);
+      L[i * 2] = pl.X; L[i * 2 + 1] = pl.Y;
+      R[i * 2] = pr.X; R[i * 2 + 1] = pr.Y;
+      C[i * 2] = pc.X; C[i * 2 + 1] = pc.Y;
+    }
+
+    if (!preview) this.drawSupports(samples, style, terrain, sky, maxY);
+
     let chunkStart = 0;
     let chunkLane = Math.round(samples.z[0]);
     const flush = (a: number, b: number, lane: number) => {
       const g = this.layers.rails.get(lane);
       if (!g) return;
-      this.drawRailChunk(g, samples, a, b, lane, style, sky, preview);
+      this.drawRailChunk(g, samples, L, R, C, a, b, lane, style, sky, preview);
     };
     for (let i = 1; i < n; i++) {
       const lane = Math.round(samples.z[i]);
@@ -98,35 +127,29 @@ export class TrackRenderer {
     }
     flush(chunkStart, n - 1, chunkLane);
 
-    // Elemente
-    if (!preview) this.drawElements(path, samples, style);
-
-    // Tunnelportale
+    if (!preview) this.drawElements(path, samples, C);
     let wasInside = terrain.insideMountain(samples.x[0], samples.y[0], samples.z[0]);
     for (let i = 1; i < n; i++) {
       const inside = terrain.insideMountain(samples.x[i], samples.y[i], samples.z[i]);
       if (inside !== wasInside && allowTunnels) portals.push({ x: samples.x[i], y: samples.y[i], z: samples.z[i], dir: inside ? 1 : -1 });
       wasInside = inside;
     }
-    // Station
     if (!preview) this.drawStation(samples, style, sky);
     return portals;
   }
 
-  private drawSupports(samples: TrackSamples, style: SkinStyle, terrain: Terrain, sky: string): void {
+  private drawSupports(samples: TrackSamples, style: SkinStyle, terrain: Terrain, sky: string, maxY: number): void {
     let nextS = 0;
-    const spacing = style.postSpacing;
     for (let i = 0; i < samples.count; i++) {
       const s = samples.s[i];
       if (s < nextS) continue;
-      nextS = s + spacing;
+      nextS = s + style.postSpacing;
       const x = samples.x[i];
       const y = samples.y[i];
       const z = samples.z[i];
       const lane = Math.round(z);
       const g = this.layers.supports.get(lane);
       if (!g) continue;
-      // keine Stützen kopfüber, im Berg, auf der Bremsstrecke-Kehre oder dicht am Boden
       if (samples.upy[i] < 0.35) continue;
       if (terrain.insideMountain(x, y, z)) continue;
       const ground = terrain.groundHeight(x, z) + terrain.mountainHeight(x, z);
@@ -140,12 +163,9 @@ export class TrackRenderer {
       const ink = shade(post, -0.45);
       const w = (style.support === 'steel' || style.support === 'neon' ? 0.32 : 0.26) * k;
       const wob = (seed: number) => noise1(seed * 0.37 + i, 3) * 0.12 * k;
+      void maxY;
       switch (style.support) {
-        case 'wood':
-        case 'hybrid':
-        case 'mine':
-        case 'ghost': {
-          // zwei Pfosten + Querriegel + Kreuzstreben
+        case 'wood': case 'hybrid': case 'mine': case 'ghost': {
           const dx = 0.7 * k;
           const lean = style.support === 'ghost' ? wob(i) * 3 : 0;
           for (const sx of [-dx, dx]) {
@@ -165,34 +185,23 @@ export class TrackRenderer {
               g.moveTo(top.X + sxr, yy).lineTo(top.X + sxl, yy2).stroke({ width: w * 0.45, color: hexNum(brace), alpha: 0.9, cap: 'round' });
             }
           }
-          if (style.support === 'hybrid' || style.support === 'ghost') {
-            // Lichterkette / Laterne
-            const col = style.glow ?? '#ffd23f';
-            g.circle(top.X, top.Y - 0.9 * k, 0.22 * k).fill({ color: hexNum(col), alpha: 0.9 });
-          }
+          if (style.support === 'hybrid' || style.support === 'ghost') g.circle(top.X, top.Y - 0.9 * k, 0.22 * k).fill({ color: hexNum(style.glow ?? '#ffd23f'), alpha: 0.9 });
           break;
         }
-        case 'steel':
-        case 'gold':
-        case 'neon':
-        case 'lava': {
+        case 'steel': case 'gold': case 'neon': case 'lava': {
           const lean = 0.25 * k * (i % 2 === 0 ? 1 : -1);
           g.moveTo(top.X, top.Y).lineTo(bot.X + lean, bot.Y).stroke({ width: w, color: hexNum(post), cap: 'round' });
           g.moveTo(top.X - w * 0.3, top.Y).lineTo(bot.X + lean - w * 0.3, bot.Y).stroke({ width: w * 0.3, color: hexNum(shade(post, 0.3)), alpha: 0.7, cap: 'round' });
-          // Fuß
           g.ellipse(bot.X + lean, bot.Y, 0.7 * k, 0.22 * k).fill(hexNum(shade(post, -0.2)));
           if (style.glow) g.moveTo(top.X, top.Y).lineTo(bot.X + lean, bot.Y).stroke({ width: w * 0.2, color: hexNum(style.glow), alpha: 0.8 });
           if (style.support === 'gold') g.circle(top.X, top.Y - 0.5 * k, 0.3 * k).fill(hexNum('#fff1b8'));
           break;
         }
         case 'ice': {
-          // Eiskristall: zwei schräge Stäbe
           g.moveTo(top.X, top.Y).lineTo(bot.X - 0.5 * k, bot.Y).lineTo(bot.X + 0.5 * k, bot.Y).closePath().fill({ color: hexNum(post), alpha: 0.85 }).stroke({ width: 0.12 * k, color: 0xffffff, alpha: 0.9 });
-          g.moveTo(top.X - 0.15 * k, top.Y).lineTo(bot.X - 0.2 * k, bot.Y).stroke({ width: 0.08 * k, color: 0xffffff, alpha: 0.7 });
           break;
         }
         case 'space': {
-          // schwebende Magnetplatte unter der Schiene
           g.roundRect(top.X - 0.8 * k, top.Y - 0.9 * k, 1.6 * k, 0.35 * k, 0.15 * k).fill(hexNum(post));
           g.moveTo(top.X, top.Y).lineTo(top.X, top.Y - 0.6 * k).stroke({ width: 0.15 * k, color: hexNum(style.glow ?? '#7fd3ff'), alpha: 0.8 });
           g.circle(top.X, top.Y - 1.3 * k, 0.25 * k).fill({ color: hexNum(style.glow ?? '#7fd3ff'), alpha: 0.5 });
@@ -202,65 +211,60 @@ export class TrackRenderer {
     }
   }
 
-  private drawRailChunk(g: Graphics, s: TrackSamples, a: number, b: number, lane: number, style: SkinStyle, sky: string, preview: boolean): void {
+  private drawRailChunk(g: Graphics, s: TrackSamples, L: Float64Array, R: Float64Array, C: Float64Array, a: number, b: number, lane: number, style: SkinStyle, sky: string, preview: boolean): void {
     const k = laneScale(lane);
     const rail = atmosphere(style.rail, lane, sky);
     const light = atmosphere(style.railLight, lane, sky);
     const tie = atmosphere(style.tie, lane, sky);
     const ink = shade(rail, -0.5);
-    const gauge = 0.22 * k;
     const left: number[] = [];
     const right: number[] = [];
     const center: number[] = [];
     for (let i = a; i <= b; i++) {
-      const p = toStage(s.x[i], s.y[i], s.z[i]);
-      const nx = -s.ty[i];
-      const ny = s.tx[i];
-      left.push(p.X + nx * gauge, p.Y + ny * gauge);
-      right.push(p.X - nx * gauge, p.Y - ny * gauge);
-      center.push(p.X, p.Y);
+      left.push(L[i * 2], L[i * 2 + 1]);
+      right.push(R[i * 2], R[i * 2 + 1]);
+      center.push(C[i * 2], C[i * 2 + 1]);
     }
     if (preview) {
       g.poly(center, false).stroke({ width: 0.5 * k, color: hexNum(light), alpha: 0.9, cap: 'round', join: 'round' });
       g.poly(center, false).stroke({ width: 0.2 * k, color: 0xffffff, alpha: 0.8, cap: 'round', join: 'round' });
       return;
     }
-    // Schwellen
+    // Schwellen zwischen den Schienen
     let nextS = s.s[a];
     const tieSpacing = style.support === 'steel' || style.support === 'space' || style.support === 'neon' ? 1.4 : 0.8;
+    const tieW = (style.support === 'wood' || style.support === 'mine' || style.support === 'hybrid' || style.support === 'ghost' ? 0.17 : 0.12) * k;
     for (let i = a; i <= b; i++) {
       if (s.s[i] < nextS) continue;
       nextS = s.s[i] + tieSpacing;
-      const p = toStage(s.x[i], s.y[i], s.z[i]);
-      const nx = -s.ty[i];
-      const ny = s.tx[i];
-      const len = (style.support === 'wood' || style.support === 'mine' || style.support === 'hybrid' || style.support === 'ghost' ? 0.46 : 0.34) * k;
-      const w = noise1(i * 0.5, 2) * 0.03 * k;
-      g.moveTo(p.X + nx * len + w, p.Y + ny * len).lineTo(p.X - nx * len, p.Y - ny * len - w).stroke({ width: 0.17 * k, color: hexNum(tie), cap: 'round' });
+      const lx = L[i * 2];
+      const ly = L[i * 2 + 1];
+      const rx = R[i * 2];
+      const ry = R[i * 2 + 1];
+      const dx = rx - lx;
+      const dy = ry - ly;
+      const ext = 0.18;
+      g.moveTo(lx - dx * ext, ly - dy * ext).lineTo(rx + dx * ext, ry + dy * ext).stroke({ width: tieW, color: hexNum(tie), cap: 'round' });
     }
-    // Schienen: Kontur, Körper, Glanz
-    g.poly(left, false).stroke({ width: 0.28 * k, color: hexNum(ink), alpha: 0.7, cap: 'round', join: 'round' });
-    g.poly(right, false).stroke({ width: 0.28 * k, color: hexNum(ink), alpha: 0.7, cap: 'round', join: 'round' });
-    g.poly(left, false).stroke({ width: 0.17 * k, color: hexNum(rail), cap: 'round', join: 'round' });
-    g.poly(right, false).stroke({ width: 0.17 * k, color: hexNum(rail), cap: 'round', join: 'round' });
+    g.poly(left, false).stroke({ width: 0.26 * k, color: hexNum(ink), alpha: 0.7, cap: 'round', join: 'round' });
+    g.poly(right, false).stroke({ width: 0.26 * k, color: hexNum(ink), alpha: 0.7, cap: 'round', join: 'round' });
+    g.poly(left, false).stroke({ width: 0.16 * k, color: hexNum(rail), cap: 'round', join: 'round' });
+    g.poly(right, false).stroke({ width: 0.16 * k, color: hexNum(rail), cap: 'round', join: 'round' });
     g.poly(left, false).stroke({ width: 0.06 * k, color: hexNum(light), alpha: 0.9, cap: 'round', join: 'round' });
     g.poly(right, false).stroke({ width: 0.06 * k, color: hexNum(light), alpha: 0.9, cap: 'round', join: 'round' });
-    if (style.glow) {
-      g.poly(center, false).stroke({ width: 0.05 * k, color: hexNum(style.glow), alpha: 0.6, cap: 'round', join: 'round' });
-    }
+    if (style.glow) g.poly(center, false).stroke({ width: 0.05 * k, color: hexNum(style.glow), alpha: 0.6, cap: 'round', join: 'round' });
   }
 
-  private drawElements(path: TrackPath, s: TrackSamples, style: SkinStyle): void {
-    const L = s.length;
+  private drawElements(path: TrackPath, s: TrackSamples, C: Float64Array): void {
+    const Ln = s.length;
     for (const e of path.elements) {
       const color = e.kind === 'booster' || e.kind === 'launchBlock' ? '#ff8a5c' : e.kind === 'brake' ? '#d64545' : e.kind === 'splash' ? '#3ec7c2' : '#9b6dff';
       const pts: number[] = [];
       let lane = 0;
       for (let d = 0; d <= e.length; d += 0.5) {
-        const sv = ((e.s + d) % L + L) % L;
+        const sv = ((e.s + d) % Ln + Ln) % Ln;
         const i = Math.min(s.count - 1, Math.round(sv / s.step));
-        const p = toStage(s.x[i], s.y[i], s.z[i]);
-        pts.push(p.X, p.Y);
+        pts.push(C[i * 2], C[i * 2 + 1]);
         lane = Math.round(s.z[i]);
       }
       const g = this.layers.rails.get(lane);
@@ -268,11 +272,7 @@ export class TrackRenderer {
       const k = laneScale(lane);
       g.poly(pts, false).stroke({ width: 0.7 * k, color: hexNum(shade(color, -0.4)), cap: 'round', join: 'round' });
       g.poly(pts, false).stroke({ width: 0.5 * k, color: hexNum(color), cap: 'round', join: 'round' });
-      // Pfeile/Streifen
-      for (let j = 0; j + 3 < pts.length; j += 4) {
-        g.circle(pts[j], pts[j + 1], 0.12 * k).fill({ color: 0xffffff, alpha: 0.9 });
-      }
-      void style;
+      for (let j = 0; j + 3 < pts.length; j += 4) g.circle(pts[j], pts[j + 1], 0.12 * k).fill({ color: 0xffffff, alpha: 0.9 });
     }
   }
 
@@ -283,16 +283,13 @@ export class TrackRenderer {
     const k = laneScale(lane);
     const p = toStage(s.x[0], s.y[0], s.z[0]);
     const col = atmosphere(style.post, lane, sky);
-    // Bahnsteig + Dach
     g.roundRect(p.X - 3.2 * k, p.Y - 0.9 * k, 6.4 * k, 0.6 * k, 0.2 * k).fill(hexNum(shade(col, -0.1))).stroke({ width: 0.1 * k, color: hexNum(shade(col, -0.5)) });
     for (const dx of [-2.6, 2.6]) g.moveTo(p.X + dx * k, p.Y - 0.3 * k).lineTo(p.X + dx * k, p.Y + 2.8 * k).stroke({ width: 0.2 * k, color: hexNum(col) });
     g.moveTo(p.X - 3.4 * k, p.Y + 2.8 * k).lineTo(p.X, p.Y + 3.6 * k).lineTo(p.X + 3.4 * k, p.Y + 2.8 * k).closePath().fill(hexNum(mix('#ff5c8a', col, 0.3))).stroke({ width: 0.12 * k, color: hexNum(shade(col, -0.5)) });
-    // Fähnchen
     g.moveTo(p.X, p.Y + 3.6 * k).lineTo(p.X, p.Y + 4.6 * k).stroke({ width: 0.08 * k, color: 0x2a1f3d });
     g.poly([p.X, p.Y + 4.6 * k, p.X + 1.1 * k, p.Y + 4.25 * k, p.X, p.Y + 3.9 * k]).fill(0xffd23f);
   }
 
-  /** Coins: pro Spur in einem Container; collected[] blendet eingesammelte aus */
   setCoins(coins: Array<{ x: number; y: number; lane?: number }>): void {
     for (const c of this.layers.coins.values()) c.removeChildren();
     this.coinSprites = [];
@@ -322,7 +319,6 @@ export class TrackRenderer {
         return;
       }
       g.visible = true;
-      g.rotation = 0;
       const k = g.scale.y;
       g.scale.x = k * (0.55 + 0.45 * Math.abs(Math.cos(time * 3 + i)));
     });

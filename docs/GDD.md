@@ -37,7 +37,7 @@ Trauma Coaster ist das Achterbahnspiel, bei dem du die Bahn mit einem Fingerstri
 
 ### Was das Spiel einzigartig macht
 1. **Ein Strich ist eine Bahn.** Keine Bausteine, keine Menüs, kein Raster. Zeichnen wie mit dem Bleistift in Illustrator, nachbessern wie mit dem Stift-Werkzeug.
-2. **Bühnen-Zeichnen.** Die Welt ist eine Bühne mit Tiefenspuren. Eine Kehrtwende im Strich wird zur Kurve nach hinten oder vorne. So entstehen echte Achterbahnen mit Tiefe, ohne dass die Ansicht je 3D wird.
+2. **Bühnen-Zeichnen.** Die Welt ist eine Bühne mit Tiefenspuren. Am Boden ist oben gleich hinten (flache Kurven), steil hoch ist Höhe (Hügel, Loopings, Steilkurven). So entstehen echte Achterbahnen mit Tiefe und echter 3D-Bewegung, ohne dass die Ansicht je eine 3D-Kamera braucht.
 3. **Echte Physik mit Konsequenzen.** Die Fahrgäste werden nur von der Physik im Wagen gehalten. Das Spiel heißt nicht umsonst Trauma Coaster.
 4. **Handillustrierter Look.** Jede Strebe, jede Wolke, jeder Felsen sieht gemalt aus. Bunter und glitzernder als Rayman.
 
@@ -86,51 +86,63 @@ Die Welt ist eine Theaterbühne, die man leicht von oben sieht. Der Boden ist ei
 
 ```
                         Himmel
-   ──────────────────────────────────────────   Spur +2 (ganz hinten, klein, hell)
+   ──────────────────────────────────────────   Spur +2 (ganz hinten, etwas kleiner, hell)
    ───────────────────────────────────────────  Spur +1
    ────────────────────────────────────────────  Spur  0 (Mitte, Standard)
    ─────────────────────────────────────────────  Spur −1
    ──────────────────────────────────────────────  Spur −2 (ganz vorne, groß, satt)
 ```
 
-- Jede Spur hat eine eigene **Bodenlinie**. Weiter hinten liegt die Bodenlinie höher im Bild, die Bahn dort ist etwas kleiner (Faktor 0,88 pro Spur) und leicht in den Himmel eingefärbt (Luftperspektive). Vorne ist alles größer, satter, mit kräftigeren Konturen.
+- Jede Spur hat eine eigene **Bodenlinie**. Weiter hinten liegt die Bodenlinie höher im Bild (4,2 Bühnen-Meter pro Spur), die Bahn dort ist etwas kleiner (Faktor 0,94 pro Spur, bewusst dezent) und leicht in den Himmel eingefärbt (Luftperspektive). Vorne ist alles größer, satter, mit kräftigeren Konturen.
+- In der Welt liegen die Spuren 7 m auseinander. Die Tiefe ist **kontinuierlich**: Die Bahn kann zwischen den Spuren liegen, die Spuren sind nur die sichtbaren Linien der Bühne.
 - Die Spuren sind als gemalte Terrain-Streifen sichtbar: Wiesenstreifen, Felsbänder, Wasserflächen. Man sieht die Bühne, ohne dass sie technisch wirkt.
-- Die Bahn liegt immer auf genau einer Spur, außer in Kurven, wo sie weich von einer Spur in die Nachbarspur wechselt.
 
-### 3.3 Die sieben Regeln beim Zeichnen
+### 3.3 Zwei Lesarten, die der Strich selbst wechselt
+Der Strich wird in genau zwei Lesarten gelesen. Es gibt keinen Schalter; die Form des Strichs entscheidet, und die Tinte zeigt es sofort (grün = Boden, pink = Höhe).
+
+| Lesart | Wann | Was die Bild-Höhe bedeutet | Was entsteht |
+|---|---|---|---|
+| **Boden** (grün) | Der Strich läuft über die Bühne: flach, sanft, Bögen, Ovale, S-Kurven | **Tiefe.** Höher im Bild = weiter hinten. | Flache Kurven, die der Wagen mit automatischer Schräglage durchfährt. Kreuzungen sind hier keine Loopings, sondern Überführungen (die Bahn bleibt am Boden). |
+| **Höhe** (pink) | Der Strich steigt steil an (im Mittel über 40° auf 4 m) oder verlässt die Bühne oben | **Höhe.** Die Tiefe bleibt eingefroren, wo der Anstieg begann. | Hügel, Drops, Loopings (Selbstkreuzung), Steilkurven (Kehre ohne Kreuzung: Rückweg höher im Bild = nach hinten, tiefer = nach vorne, jeweils eine Spur). Zurück auf den Boden geht es, wenn die Bahn wieder bis auf die Bodenlinie herunterkommt. |
+
+Warum die Steilheit entscheidet: Eine Bodenkehre ist genau dort steil, wo der Strich in x umkehrt (der Scheitel eines Ovals). Ein Hügel ist steil, während der Strich weiter nach vorne läuft. Das System prüft deshalb, ob x in der Umgebung des steilen Stücks umkehrt. Sanfte Steigungen unter 40° sind Bewegungen in die Tiefe. Wer einen Hügel will, zeichnet ihn steil, so wie echte Lifthügel aussehen.
+
+### 3.4 Die Regeln beim Zeichnen
 
 | # | Regel | Was passiert |
 |---|---|---|
-| 1 | **Start auf dem Boden wählt die Spur.** | Der Finger setzt auf. Die nächste Bodenlinie wird zur Start-Spur, dort entsteht die Station. Die Spur bleibt „klebrig“ für den ganzen Strich. |
-| 2 | **Höhe ist der Abstand zur Bodenlinie der aktuellen Spur.** | Damit ist Höhe immer eindeutig. Ein Strich weit oben im Bild ist eine hohe Bahn, keine Bahn weit hinten. |
-| 3 | **Kehrtwende ohne Kreuzung = Kurve = Spurwechsel.** | Dreht der Strich seine Richtung in x um (nach rechts, dann nach links), ohne sich zu kreuzen, entsteht eine Kurve in die Nachbarspur. Liegt der Rückweg **höher** im Bild als der Hinweg, geht die Kurve nach **hinten** (+1). Liegt er **tiefer**, geht sie nach **vorne** (−1). Das ist genau die Lesart „Boden als Tiefenfläche“: Nach oben auf der Bühne heißt nach hinten. |
-| 4 | **Selbstkreuzung = Looping.** | Kreuzt der Strich sich selbst, wird die Schleife zum vertikalen Looping in derselben Spur. Die Form wird zur Klothoide geglättet (oben enger, unten weiter), damit die Physik stimmt. |
-| 5 | **Automatisches Schließen.** | Beim Loslassen verbindet sich das Ende weich mit dem Start. Liegt das Ende auf einer anderen Spur, enthält das Schlussstück eine Kurve zurück. |
-| 6 | **Korrigieren ohne Modus.** | An jeder Kurve sitzt ein **Spur-Chip** (↑/↓). Tippen schaltet die Richtung um, vertikales Ziehen wechselt mehrere Spuren. Knoten antippen zeigt Bezier-Handles. Ziehen auf der Bahn verschiebt den Abschnitt. Doppeltipp auf einen Knoten löscht ihn. |
-| 7 | **Überzeichnen wie der Illustrator-Stift.** | Beginnt und endet ein neuer Strich auf der Bahn, ersetzt er nur den Abschnitt dazwischen. Die Tangenten an den Nahtstellen werden geglättet. Spuren bleiben erhalten, außer der neue Strich enthält selbst Kehrtwenden oder Kreuzungen. |
+| 1 | **Start auf dem Boden wählt die Tiefe.** | Wo der Finger aufsetzt, liegt die Station: Bildhöhe über der vordersten Bodenlinie = Tiefe. |
+| 2 | **Am Boden ist oben gleich hinten.** | Ein Bogen über die Bühne ist eine flache Kurve. Ein Oval ist eine Runde mit zwei Kurven über drei Spuren. Die Tiefe wird über ±4 m geglättet, damit Handzittern keine Querkräfte erzeugt. |
+| 3 | **Steil hoch ist Höhe.** | Ab 40° Steigung über 4 m (ohne x-Umkehr) liest das System Höhe, rückwirkend ab dem Fuß des Anstiegs. Die Tiefe friert ein. |
+| 4 | **In der Höhe: Kreuzung = Looping.** | Kreuzt der Strich sich selbst, wird die Schleife zum vertikalen Looping in derselben Tiefe. Der Wagen fährt wirklich kopfüber (3D-Rahmen mit Paralleltransport). |
+| 5 | **In der Höhe: Kehre = Steilkurve.** | Dreht der Strich in x um, ohne sich zu kreuzen (Hin- und Rückweg je ≥ 10 m), entsteht eine überhöhte Kurve in die Nachbarspur. Rückweg höher im Bild = nach hinten, tiefer = nach vorne. Der Rückweg landet dann auf der Bodenlinie der neuen Spur. |
+| 6 | **Zurück auf den Boden.** | Kommt die Bahn in der Höhen-Lesart bis auf die Bodenlinie herunter, liest das System wieder Tiefe. Der Übergang ist weich (6 m). |
+| 7 | **Automatisches Schließen.** | Endet der Strich nahe am Start, wird direkt verbunden. Sonst entsteht ein automatischer Rückweg mit zwei Halbkreis-Kehren über die Nachbarspur und einer Bremsstrecke. Der Rückweg zählt für keine Ziele. |
+| 8 | **3D-Handles.** | Knoten antippen zeigt die Bezier-Handles (in 3D: Tangente mit Tiefenanteil). Unter dem Knoten sitzt das **Tiefen-Handle** (Quadrat): vertikal ziehen schiebt den Knoten nach hinten oder vorne. Rechts sitzt das **Roll-Handle** (Ring): ziehen setzt die Schräglage von Hand, Doppeltipp schaltet zurück auf automatisch. Beide erscheinen, sobald die Kurve freigeschaltet ist. |
+| 9 | **Überzeichnen wie der Illustrator-Stift.** | Beginnt und endet ein neuer Strich auf der Bahn (30 px), ersetzt er nur den Abschnitt dazwischen, mit derselben Lesart (Boden/Höhe) und weichen Nahtstellen. Das Strichende blendet auf die Tiefe der Bahn zurück. |
+| 10 | **Wegräumen.** | Der rote Papierkorb oben rechts löscht die ganze Bahn (mit Undo). Ein neuer Strich auf freier Fläche ersetzt die Bahn ebenfalls. |
 
-### 3.4 Warum die Mischung funktioniert
-- „Boden als Tiefenfläche“ allein ist mehrdeutig: Ein Punkt hoch im Bild kann „hoch“ oder „hinten“ bedeuten. Die Bühne löst das, weil die Spur nur an zwei Stellen entschieden wird: am Start (wo der Finger auf dem Boden steht) und an Kurven (wo die Richtung der Kehrtwende sie festlegt).
-- „Gesten-Erkennung“ allein wäre unsichtbar: Der Spieler wüsste nicht, warum eine Kurve nach hinten ging. Die Bühne macht es sichtbar: Beim Zeichnen leuchtet die Zielspur auf, und die Kurve wird sofort als perspektivischer Bogen gezeichnet, der über die Bodenstreifen führt.
+### 3.5 Warum die Mischung funktioniert
+- „Boden als Tiefenfläche“ allein ist mehrdeutig: Ein Punkt hoch im Bild kann „hoch“ oder „hinten“ bedeuten. Die Steilheit löst das: Echte Achterbahn-Anstiege sind steil, echte Kurven am Boden sind flach.
+- „Gesten-Erkennung“ allein wäre unsichtbar. Die Tinte färbt sich beim Zeichnen (grün/pink), die Vorschau-Bahn klappt sofort perspektivisch in die Tiefe, und die Zielspur ist sichtbar.
 - Es gibt nie einen Modus, Regler oder Schalter. Egal wie viele Elemente freigeschaltet sind, der Strich bleibt derselbe.
 
-### 3.5 Live-Feedback beim Zeichnen
-1. Der rohe Strich erscheint sofort als leuchtende Linie (Tinte).
-2. Alle 60 ms wird der Strich vereinfacht und als Vorschau-Bahn gezeichnet (Schienen, noch ohne Streben).
-3. Erkennt das System eine Kehrtwende, pulsiert die Zielspur kurz hell und der Bogen „klappt“ perspektivisch in die Tiefe.
-4. Erkennt es eine Kreuzung, zieht sich der Looping mit einem kurzen „Snap“ zur sauberen Klothoide.
-5. Beim Loslassen morphen die Schienen in 150 ms zur finalen Bahn, Streben wachsen aus dem Boden (mit Sound), die Enden schließen sich.
+### 3.6 Live-Feedback beim Zeichnen
+1. Der rohe Strich erscheint sofort als leuchtende Linie (Tinte), grün für Boden, pink für Höhe, gelb beim Überzeichnen.
+2. Alle 80 ms wird der Strich interpretiert und als Vorschau-Bahn gezeichnet (Schienen, noch ohne Streben).
+3. Erkennt das System eine Steilkurve, zieht die Vorschau den Bogen in die Nachbarspur; ein Looping zeigt sich als Schleife mit Scheitelknoten.
+4. Beim Loslassen schließen sich die Enden, Streben wachsen aus dem Boden.
 
-### 3.6 Knoten, Handles, Roll-Handle
-- Die Bahn wird intern als geschlossener Pfad aus kubischen Bezier-Segmenten gespeichert. Knoten haben Position (x, Höhe), Spur (z), zwei Tangenten-Handles und ab Welt 5 einen Rollwinkel.
-- Handles sind nur am angetippten Knoten sichtbar. Sie sind 14 px groß, haben aber eine Trefferfläche von 48 px. Sie verhalten sich wie in Illustrator: symmetrisch, mit Alt-Taste (Desktop) oder Langdruck (Mobile) unabhängig.
-- Das **Roll-Handle** ist ein kleiner Ring um den Knoten. Ziehen am Ring dreht die Schiene um die Fahrtrichtung. Eine volle Drehung über zwei Knoten erzeugt eine **Schleife** (Heartline-Roll). Beim Zeichnen bleibt der Rollwinkel null; er wird nur über das Handle gesetzt.
+### 3.7 Knoten, Handles, Roll-Handle
+- Die Bahn wird intern als geschlossener Pfad aus kubischen Bezier-Segmenten in 3D gespeichert. Knoten haben Position (x, Höhe, Tiefe), zwei 3D-Tangenten-Handles und einen Rollwinkel (automatisch oder manuell).
+- Handles sind nur am angetippten Knoten sichtbar. Sie sind 14 px groß, haben aber eine Trefferfläche von 44 px.
+- Die Schräglage ist standardmäßig automatisch: Der Wagen neigt sich so, dass die gefühlte Kraft (Fliehkraft plus Schwerkraft) durch den Sitz geht, bis 72°. Das Roll-Handle überschreibt das; eine volle Drehung über zwei Knoten erzeugt eine **Schleife** (Heartline-Roll).
 
-### 3.7 Grenzen und Sonderfälle
-- Ein Strich, der die Bühne verlässt (oberhalb der Höhengrenze oder außerhalb der Breite), wird am Rand weich abgeschnitten.
-- Zwei Kehrtwenden direkt hintereinander (Zickzack) erzeugen zwei Kurven, also zum Beispiel +1 und dann −1 (Slalom) oder +1 und +2 (Helix-Ansatz).
-- Mehr als fünf Spuren gibt es nicht; eine Kehrtwende an der letzten Spur führt zurück in die andere Richtung, und der Chip zeigt das an.
-- Eine Kehrtwende, die kürzer als 12 m Hin- und Rückweg ist, gilt als Zittern und wird ignoriert.
+### 3.8 Grenzen und Sonderfälle
+- Ein Strich, der die Bühne oben verlässt, ist Höhe (Tiefe = hinterste Spur, falls kein Anstieg vorausging).
+- Eine Kehre an der hintersten Spur führt nach vorne (und umgekehrt).
+- Eine Kehre mit weniger als 10 m Hin- oder Rückweg gilt als Zittern und wird ignoriert.
+- Die Welt ist 7 m pro Spur tief, das Bild zeigt 4,2 m pro Spur: Eine auf dem Bildschirm runde Bodenkehre ist in der Welt ein Oval, das in die Tiefe gestreckt ist. Enge Kehren (unter 20 m Breite) sind bei über 50 km/h wie in echt zu eng: Der Zug entgleist. Breite Bögen und Tempo passen zusammen.
 
 ---
 
@@ -224,16 +236,17 @@ Der Zug ist ein Punktmassen-Modell entlang der Bogenlänge s der Bahn:
 
 - Geschwindigkeit: dv/dt = −g · sin(α) − μ · g · cos(α) − k · v², mit Steigungswinkel α, Rollreibung μ = 0,012 (Holz 0,015, Stahl 0,010, Eis 0,004) und Luftwiderstand k = 0,0008 pro Meter.
 - Mehrere Wagen: Jeder Wagen hat eigene Position s_i = s − i · Wagenlänge; die Gesamtkraft ist die Summe, so dass ein langer Zug über einen Hügel „gezogen“ wird (Zugmitte zählt).
-- Kettenzug: Auf dem ersten steigenden Abschnitt ab Station gilt v = max(v, 2,5 m/s) bis zum Scheitel.
+- Station: Der Zug bekommt nur einen kleinen Schubs (1,6 m/s). Auf ebener Strecke rollt er ein paar Meter aus und bleibt stehen (Fahrt nicht geschafft).
+- Kettenzug: Nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, gilt v = max(v, 4 m/s) bis zum ersten Scheitel. Ohne Anstieg gibt es keinen Kettenzug.
 - Launch: Auf dem ersten Abschnitt bis 25 m Länge gilt a = +12 m/s² (Hydro: +25 m/s², Pendel: dreimal durch die Station mit wachsender Kraft).
 - Booster: 10 m langes Element, a = +8 m/s². Bremse: 8 m, bremst auf maximal 4 m/s.
 - Stall: Wird v auf einem Anstieg null, rollt der Zug zurück (v wird negativ, Fahrt gilt als nicht geschafft, Kamera zeigt den Rückroller).
 
 ### 6.2 g-Kräfte aus 3D-Krümmung
-Die Bahn ist im Spiel eine 3D-Kurve (x, Höhe y, Tiefe z aus der Spur). Daraus werden berechnet:
-- Vertikale g: g_v = (v² · κ_vertikal) / 9,81 + cos(α) (positiv = in den Sitz gedrückt; negativ = Airtime).
-- Seitliche g: g_s = (v² · κ_horizontal) / 9,81, reduziert um die Überhöhung (Banking). Das Banking einer Kurve wird automatisch aus Tempo und Radius gesetzt (bis 60°), so dass der Spieler sich nicht darum kümmern muss. Erst sehr enge Kurven bei hohem Tempo überschreiten das Limit.
-- Die Spurwechsel-Kurve hat einen horizontalen Radius, der aus der Breite der Kehrtwende folgt: Eine enge Kehrtwende (10 m breit) ergibt einen Radius von 5 m, eine weite (40 m) 20 m.
+Die Bahn ist eine echte 3D-Kurve (x, Höhe y, Tiefe z). Aus den Bezier-Segmenten kommen Tangente und Krümmungsvektor analytisch. Der Wagen hat einen 3D-Rahmen (vorwärts, oben, seitlich): Der Oben-Vektor wird per Paralleltransport entlang der Bahn geführt und auf waagerechter Strecke zur Welt-Senkrechten zurückgezogen, so dass der Wagen nach Loopings und Kurven wieder aufrecht steht und im Looping wirklich kopfüber hängt.
+- Gefühlte Beschleunigung im Wagen: f = v² · κ⃗ + g (Fliehkraft zum Krümmungsmittelpunkt plus Schwerkraft), zerlegt in Sitzrichtung (g_v, negativ = Airtime), Fahrtrichtung und Seite (g_s).
+- Automatische Überhöhung: Der Wagen neigt sich so, dass f durch den Sitz geht (keine Querkraft), bis 72°. Erst sehr enge Kurven bei hohem Tempo lassen Querkraft übrig. Das Roll-Handle setzt die Neigung von Hand.
+- Der Mindestradius für die Kraftberechnung ist 2,5 m, damit Handzittern keine unendlichen Kräfte erzeugt. Über 7 g gibt es einen Blackout (kein dritter Stern).
 
 ### 6.3 Entgleisen und Scheitern
 | Ereignis | Bedingung | Folge |
@@ -513,7 +526,7 @@ Himmel (10 Welten × Tag/Nacht), Wolken (6 Formen × 3 Tiefen), Bodenstreifen (1
 ## 17. Selbstkritik, Risiken, offene Fragen
 
 ### 17.1 Was gut ist
-- Bühnen-Zeichnen löst das Tiefenproblem ohne Modus und ist erklärbar in einem Satz: „Nach oben auf der Bühne ist nach hinten.“
+- Bühnen-Zeichnen löst das Tiefenproblem ohne Modus und ist erklärbar in einem Satz: „Am Boden ist oben gleich hinten, steil hoch ist Höhe.“
 - Alle Pflichtelemente aus dem Prompt sind drin und haben ein Levelziel.
 - Die Level sind Daten, also erweiterbar und testbar.
 - Die Fahrgast-Physik ist echt, nicht gescriptet. Das ist der Humor des Spiels.
@@ -521,8 +534,8 @@ Himmel (10 Welten × Tag/Nacht), Wolken (6 Formen × 3 Tiefen), Bodenstreifen (1
 ### 17.2 Risiken
 | Risiko | Einschätzung | Gegenmaßnahme |
 |---|---|---|
-| Kehrtwende-Erkennung fühlt sich unvorhersehbar an | mittel | Schwellwerte (12 m Breite, 25° Winkel) testen; Chip zum Umschalten ist immer da; Vorschau leuchtet beim Zeichnen |
-| Seitliche Kräfte nur „gefaked“ | mittel | Für den Prototyp ausreichend; bei Bedarf Fahrgäste in 3D rechnen (Rapier3D) oder Godot-Wechsel (siehe TECH.md) |
+| Boden/Höhe-Lesart fühlt sich unvorhersehbar an (sanfter Hügel wird Tiefe) | mittel | Schwellwerte (40° über 4 m) mit Spielern testen; Tinte färbt sich live; Tiefen-Handle korrigiert jeden Knoten |
+| Fahrgäste nur in der Wagen-Ebene simuliert (seitliche Kraft als Lehnen/Kippen) | mittel | Für den Prototyp ausreichend; bei Bedarf Fahrgäste in 3D rechnen (Rapier3D) oder Godot-Wechsel (siehe TECH.md) |
 | Handgemalter Look nur prozedural | hoch im Prototyp | Drop-in-Pipeline für echte Texturen, Prompt-Vorlagen, klare Asset-Liste |
 | Performance auf alten Handys (Rapier + Pixi + viele Partikel) | mittel | Fahrgast-Zahl pro Level begrenzen (max. 16), Partikel-Budget, WebGL-Fallback |
 | 150 Level balancieren | hoch | Automatischer Lösbarkeits-Test: Für jedes Level eine Referenzbahn hinterlegen, die im Test gefahren wird |

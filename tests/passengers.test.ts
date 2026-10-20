@@ -6,7 +6,7 @@ import { G } from '@/physics/trainSim';
 
 const terrain = new Terrain({ width: 100, terrain: [{ kind: 'flat' }] });
 const car = (feltUp: number, feltFwd = 0, gLat = 0): CarState => ({
-  index: 0, s: 0, x: 10, y: 5, z: 0, tx: 1, ty: 0, upx: 0, upy: 1, upz: 0, roll: 0, angle: 0,
+  index: 0, s: 0, x: 10, y: 5, z: 0, tx: 1, ty: 0, tz: 0, upx: 0, upy: 1, upz: 0, sx: 0, sy: 0, sz: 1, bank: 0, angle: 0,
   gSeat: feltUp / G, gFwd: feltFwd / G, gLat, feltFwd, feltUp, feltSide: gLat * G, inTunnel: false, inverted: false,
 });
 
@@ -30,12 +30,11 @@ describe('Fahrgäste (Rapier)', () => {
     let ejected = 0;
     sim.onEject = () => ejected++;
     const normal = car(G);
-    const airtime = car(-1.5 * G); // −1,5 g: Fahrgäste werden aus dem Sitz gehoben
+    const airtime = car(-1.5 * G);
     for (let i = 0; i < 30; i++) sim.step([normal], 1 / 60, 10, false);
     for (let i = 0; i < 240; i++) sim.step([airtime], 1 / 60, 15, false);
     expect(ejected).toBeGreaterThan(0);
     expect(sim.allSeated).toBe(false);
-    // ausgeworfene Figur fällt in der Welt-Simulation und landet schließlich
     for (let i = 0; i < 600; i++) sim.step([normal], 1 / 60, 15, false);
     const v = sim.views.find((p) => p.ejected)!;
     expect(v.parts.torso.y).toBeLessThan(6);

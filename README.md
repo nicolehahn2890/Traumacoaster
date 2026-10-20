@@ -35,15 +35,20 @@ npm run build        # Typecheck + Build nach dist/
 npm run preview      # Build ansehen (Port 4173)
 npm run levels:doc   # docs/LEVELS.md aus den Level-Daten erzeugen
 npm run screenshots  # Playwright-Screenshots (Hoch-, Quer-, Desktop-Format) nach screenshots/
+npm run scenario     # Playwright-Szenario: Oval, Steilkurve, Looping, Löschen, Überzeichnen mit Fahrten
 ```
 
 `?scene=start` überspringt den Splash, `?fast=4` beschleunigt die Spielzeit (Tests), `VITE_UNLOCK_ALL=1 npm run dev` schaltet alle Welten und Elemente frei.
 
 ## Stand des Prototyps
 
-Umgesetzt: Splash, Startscreen mit drehbarer Halbkugel, Bühnen-Zeichnen (Kurven über Kehrtwenden, Loopings über Kreuzungen, automatischer Rückweg), Handles, Überzeichnen, Start-Chip (Kettenzug/Launch/Hydro/Pendel/Vertikallift), Spur-Chips, Element-Regal (Booster, Bremse, Splash, Launch-Block), Bergbauer, Zug-Physik mit g-Kräften, Entgleisen, Rückroller, Rapier-Ragdoll-Fahrgäste mit Rauswurf, Kamera-Fahrt, Ergebnis mit Sternen und Freischaltung, alle 150 Level als Daten mit Zielauswertung, Fortschritt lokal, Meine Bahnen (Speichern/Laden), Figuren-Editor.
+Umgesetzt: Splash, Startscreen mit drehbarer Halbkugel, Bühnen-Zeichnen v2 (am Boden ist oben gleich hinten: flache Kurven; steil hoch ist Höhe: Hügel, Loopings über Kreuzungen, Steilkurven über Kehren in der Höhe; automatischer Rückweg), 3D-Bahnmodell mit echter Bewegung in Kurven und Loopings, automatische Überhöhung, 3D-Handles (Tangente, Tiefe, Roll), Überzeichnen, Löschen-Knopf, Start-Chip (Kettenzug/Launch/Hydro/Pendel/Vertikallift), Element-Regal (Booster, Bremse, Splash, Launch-Block), Bergbauer, Zug-Physik mit g-Kräften, Entgleisen, Rückroller und Ausrollen auf ebener Strecke, Rapier-Ragdoll-Fahrgäste mit Rauswurf, Kamera-Fahrt, Ergebnis mit Sternen und Freischaltung, alle 150 Level als Daten mit Zielauswertung, Fortschritt lokal, Meine Bahnen (Speichern/Laden), Figuren-Editor.
 
-Noch nicht im Prototyp (im GDD spezifiziert): Vorlagen-Elemente (Helix, Top Hat, Immelmann, Korkenzieher, Cobra Roll), Roll-Handle für Schleifen, Weiche, Kippschiene, Rückwärts-Weiche, Fallschacht, Audio, echte gemalte Texturen (prozedural ersetzt, Drop-in-Pipeline siehe TECH.md), Capacitor-Builds. Level, die solche Elemente verlangen, sind definiert, aber erst mit diesen Elementen lösbar.
+## Zeichnen in einem Satz
+
+Am Boden ist oben gleich hinten (grüne Tinte, flache Kurven). Steil hoch ist Höhe (pinke Tinte): Kreuzung = Looping, Kehre = Steilkurve in die Nachbarspur. Zurück auf der Bodenlinie geht es wieder in die Tiefe. Knoten antippen zeigt die 3D-Handles: Quadrat darunter = Tiefe, Ring rechts = Schräglage (Doppeltipp: automatisch). Der rote Papierkorb räumt die Bahn weg.
+
+Noch nicht im Prototyp (im GDD spezifiziert): Vorlagen-Elemente (Helix, Top Hat, Immelmann, Korkenzieher, Cobra Roll), Weiche, Kippschiene, Rückwärts-Weiche, Fallschacht, Audio, echte gemalte Texturen (prozedural ersetzt, Drop-in-Pipeline siehe TECH.md), Capacitor-Builds. Level, die solche Elemente verlangen, sind definiert, aber erst mit diesen Elementen lösbar.
 
 ## Lizenzhinweis
 

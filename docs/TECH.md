@@ -36,34 +36,36 @@ public/art/            Optionale, echte gemalte Texturen (Drop-in, siehe Kapitel
 ```ts
 interface TrackNode {
   x: number;      // Meter entlang der Bühne
-  y: number;      // Höhe über der Bodenlinie der Spur (Meter)
-  lane: number;   // -2..2 (Spur). Zwischen zwei Knoten mit unterschiedlicher Spur liegt eine Kurve.
-  inX, inY, outX, outY: number; // Bezier-Handles relativ zum Knoten
-  roll: number;   // Rollwinkel in Grad (Schleife)
-  kind: 'normal' | 'loopApex' | 'turn' | 'station';
+  y: number;      // Höhe (Meter, absolut)
+  z: number;      // Tiefe in Spuren (−2..2, kontinuierlich); Welt-Tiefe = z · 7 m
+  inX, inY, inZ, outX, outY, outZ: number; // 3D-Bezier-Handles relativ zum Knoten (z in Spuren)
+  roll: number;   // manueller Rollwinkel (Radiant), NaN = automatische Überhöhung
+  kind: 'normal' | 'loopApex' | 'turn' | 'station' | 'closeTurn' | 'closeReturn';
 }
-interface TrackPath { nodes: TrackNode[]; closed: true; elements: TrackElement[]; startType: StartType; }
+interface TrackPath { nodes: TrackNode[]; elements: TrackElement[]; startType: StartType; templates: Record<string, number>; }
 ```
-- Die Bahn ist ein geschlossener Pfad kubischer Bezier-Segmente. Eine Bogenlängen-Tabelle (alle 0,25 m) liefert Position, Tangente, Krümmung und Spur für jedes s.
-- Die Tiefe z wird pro Segment linear zwischen den Spuren interpoliert, mit Smoothstep über die Kurve. Daraus ergibt sich die horizontale Krümmung für die seitlichen g.
-- Projektion auf den Bildschirm: `screenX = x * scale(lane)`, `screenY = groundLine(lane) - y * scale(lane)`, `scale(lane) = 0.88^lane`, `groundLine(lane) = horizon + laneOffset * (2 - lane)`.
+- Die Bahn ist ein geschlossener Pfad kubischer Bezier-Segmente in 3D (`src/track/model.ts`). `sampleTrack` liefert alle 0,25 m Position, 3D-Tangente, 3D-Krümmungsvektor (analytisch aus erster und zweiter Ableitung), Oben-Vektor (Paralleltransport mit Rückzug zur Welt-Senkrechten auf waagerechter Strecke) und Rollwinkel.
+- `carFrame(state, v)` gibt den Wagen-Rahmen (T, U, S) mit Schräglage: manuell (`roll`) oder automatisch (`bankAt`: Oben-Vektor zur gefühlten Kraft v²·κ⃗ + g gedreht, max. 72°, keine Neigung bei Airtime).
+- `closeTurn`/`closeReturn` sind automatische Knoten (Rückweg); `trackStats` und die Entgleis-Prüfung ignorieren sie.
+- Projektion auf die Bühne (`src/track/stage.ts`): `X = x · k(z)`, `Y = y · k(z) + 4,2 · z`, `k(z) = 0,94^z`. Die Kamera rechnet Bühnen-Meter in Pixel um.
 
-## 4. Strich → Bahn (Pipeline)
-1. **Aufnahme:** Pointer-Events (Touch und Maus vereinheitlicht), Punkte in Weltkoordinaten mit Zeitstempel.
-2. **Glätten:** Gleitender Mittelwert über 5 Punkte (Streamline), dann Ramer-Douglas-Peucker mit Toleranz 0,6 m.
-3. **Ereignisse erkennen:**
-   - Kehrtwende: Vorzeichenwechsel von dx über mindestens 12 m Hin- und Rückweg; Spur-Richtung aus der mittleren Höhe des Rückwegs vs. Hinweg.
-   - Kreuzung: Segment-Schnitt-Test (Sweep); die Schleife zwischen den Schnittpunkten wird zum Looping, Apex-Knoten markiert.
-4. **Bezier-Fit:** Schneider-Algorithmus (Graphics Gems) mit Fehlertoleranz 0,4 m; Ecken ab 60° werden Knoten mit gebrochenen Tangenten.
-5. **Spur zuweisen:** Start-Spur aus der nächsten Bodenlinie; jede Kehrtwende setzt die Spur um ±1 für alle folgenden Knoten.
-6. **Schließen:** Letzter Knoten wird mit dem ersten über ein Bezier-Segment verbunden, Tangenten aus den Nachbarn; bei Spurdifferenz wird ein Kurven-Knoten eingefügt.
-7. **Überzeichnen:** Startet ein Strich innerhalb von 3 m an der Bahn und endet innerhalb von 3 m, werden die Fußpunkte (Bogenlänge s1, s2) bestimmt; die Knoten dazwischen werden durch den neuen Fit ersetzt; Tangenten an s1/s2 werden gemittelt.
+## 4. Strich → Bahn (Pipeline, `src/track/strokeToTrack.ts`)
+1. **Aufnahme:** Pointer-Events (Touch und Maus vereinheitlicht), Punkte in Bühnen-Metern.
+2. **Glätten:** Dedupe (0,15 m), gleitender Mittelwert über 5 Punkte, Resampling auf 0,5 m.
+3. **Lesart (interpretStroke):** Der Strich wird in monotone Bild-Y-Abschnitte zerlegt (Hysterese 0,4 m). Ein steigender Abschnitt ist ein **Anstieg**, wenn er oberhalb der Bühne endet oder ein 4-m-Fenster enthält, das im Mittel steiler als 40° ist und in dessen Umgebung (±8 m) x nicht um mehr als 0,8 m umkehrt. Sonst ist er Boden.
+   - Boden-Modus: Tiefe z aus der Bild-Höhe über der Bodenlinie (Fixpunkt-Iteration über das Terrain), über ±4 m geglättet, weich (6 m) an die vorige Tiefe angeschlossen. Höhe = Boden + Mindesthöhe.
+   - Höhen-Modus: Tiefe eingefroren, Höhe = Bild-Höhe über der Bodenlinie dieser Tiefe. Zurück zum Boden, wenn die Höhe ≤ 0,35 m und der Strich nicht steigt (nicht innerhalb des auslösenden Anstiegs).
+4. **Ereignisse (nur im Höhen-Modus):** Looping = Segment-Schnitt-Test im Profil, Scheitel wird `loopApex`. Steilkurve = x-Umkehr mit Hin- und Rückweg ≥ 10 m außerhalb von Loopings; Richtung aus der mittleren Höhe von Rückweg vs. Hinweg (höher = nach hinten).
+5. **Zweiter Durchlauf:** Steilkurven liefern ein Tiefen-Profil (±1 Spur, Smoothstep über 16 m um den Scheitel, am Bühnenrand gespiegelt). `interpretStroke` läuft erneut mit diesem Profil, damit der Rückweg auf der Bodenlinie der neuen Spur landet.
+6. **Knoten:** Welt-Punkte (x, y, z·7), Ecken ab 35° abrunden, RDP 3D (0,04 m), wieder auf 1 m verdichten (damit der Fit Überschwinger auf Geraden erkennt), Schneider-Fit in 3D mit 0,45 m Toleranz, Ecken ab 60° werden Knoten mit gebrochenen Tangenten. Ereignis-Knoten werden markiert.
+7. **Schließen (closePath):** Ende auf dem Start → Handle übernehmen, direkt geschlossen. Ende nahe (≤ 10 m) → weiche Verbindung. Sonst zwei Halbkreis-Kehren (`closeTurn`) über die Nachbarspur und eine Rückweg-Gerade (`closeReturn`) mit Bremsstrecke.
+8. **Überzeichnen (`src/track/overdraw.ts`):** Beginnt und endet der Strich innerhalb von 30 px an der Bahn, werden die Fußpunkte (s1, s2) über alle Tiefen gesucht. Der Strich wird mit derselben Lesart interpretiert (Startzustand = Zustand der Bahn am Fußpunkt, Boden um die Mindesthöhe angehoben, Ende auf die Tiefe der Bahn geblendet). Die Knoten im Bereich werden ersetzt, die Naht geglättet, der Schluss neu gebildet.
 
 ## 5. Physik
-- Zug: fester Schritt 1/120 s, symplektischer Euler entlang s. Kräfte siehe GDD Kapitel 6.
-- g-Kräfte: κ_vertikal aus der Bezier-Krümmung in der x/y-Ebene, κ_horizontal aus der z-Interpolation (Kurvenradius = halbe Kehrtwenden-Breite).
-- Fahrgäste: Rapier-Welt mit Schwerkraft im Wagen-Bezugssystem? Nein: Weltkoordinaten. Die Wanne ist ein kinematischer Körper, dessen Position aus der Zug-Simulation gesetzt wird (`setNextKinematicTranslation/Rotation`). Rapier löst die Kontakte. Seitliche Scheinkraft wird als zusätzliche Kraft auf die Ragdoll-Körper addiert.
-- Rauswurf: Ein Fahrgast gilt als draußen, wenn sein Rumpf-Mittelpunkt die Wannen-Bounding-Box um mehr als 0,6 m verlässt.
+- Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand. Station schiebt mit 1,6 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (4 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s². Rückweg-Abschnitte bremsen auf 8 m/s (14 m Vorausschau).
+- g-Kräfte: f = v²·κ⃗ (Mindestradius 2,5 m) + Hangabtrieb·T + g·ŷ, zerlegt im Wagen-Rahmen (T, U, S) mit Schräglage. Entgleisen bei seitlichem g über dem Limit des Schienentyps (Holz 2,0, Hybrid 2,4, Mine 2,2, Stahl 3,0, Eis 2,6, Space 3,5 …), Herausfallen bei kopfüber mit g_v < −0,15 über 0,12 s, Blackout über 7 g.
+- Fahrgäste (`src/physics/passengers.ts`): Rapier2D in der Wagen-Ebene (vorwärts/oben). Die Wanne ist statisch, die Ragdolls bekommen die Scheinkraft −m·f (vorwärts, oben) als Kraft; seitliche g lassen sie lehnen und ab `sideEjectG` über die Bordwand kippen. Rauswurf = Rumpf verlässt die Wanne; danach Weltsimulation mit Terrain.
+- Rendering: Schienen als P ± 0,55·S (projiziert, mit Schräglage für die Entwurfsgeschwindigkeit), Wagen als projizierter 3D-Quader mit Sichtbarkeits-Sortierung, Fahrgäste als Billboards im projizierten Wagen-Rahmen.
 
 ## 6. Asset-Pipeline (Drop-in für gemalte Texturen)
 Jede Textur hat einen Namen im Manifest (`src/assets/manifest.ts`). Beim Laden prüft das Spiel, ob `public/art/<name>.png` existiert (HEAD-Request bzw. Asset-Liste). Wenn ja, wird sie genommen, sonst die prozedurale Version erzeugt.

@@ -1,14 +1,15 @@
 /**
- * Level-Szene: Bühnen-Zeichnen, Handles, Chips, Element-Regal, Fahrt mit Kamera, Ergebnis.
- * Wird auch für „Meine Bahnen“ (Sandbox) benutzt.
+ * Level-Szene: Bühnen-Zeichnen (Boden = Tiefe, steil = Höhe), 3D-Knoten mit Tangenten-, Tiefen- und
+ * Roll-Handle, Chips, Element-Regal, Fahrt mit Kamera, Ergebnis. Auch Sandbox („Meine Bahnen“).
  */
-import { Container, Graphics, Text } from 'pixi.js';
+import { Container, Graphics } from 'pixi.js';
 import type { Scene } from '../scene';
 import type { Game } from '../game';
 import type { InputHandlers, Pt } from '@/core/input';
 import { t } from '@/core/i18n';
 import { storage, type SavedTrack } from '@/core/storage';
-import { clamp, bezierPoint } from '@/core/math';
+import { clamp } from '@/core/math';
+import { bezier3, lerp3 } from '@/core/math3';
 import { LEVELS, getLevel, unlockedUpTo } from '@/levels/levels';
 import { WORLDS, worldOfLevel } from '@/levels/worlds';
 import type { ElementId, LevelDef, WorldDef } from '@/levels/types';
@@ -17,12 +18,15 @@ import { evaluate, type Evaluation } from '@/levels/evaluator';
 import { Terrain } from '@/physics/terrain';
 import { TrainSim, simOptionsForLevel, type FailReason } from '@/physics/trainSim';
 import { PassengerSim, initPhysics } from '@/physics/passengers';
-import { clonePath, closestSample, createNode, emptyPath, sampleTrack, trackStats, type ElementKind, type StartType, type TrackNode, type TrackPath, type TrackSamples, type TrackStats } from '@/track/model';
-import { strokeToTrack, closePath } from '@/track/strokeToTrack';
-import { applyOverdraw, overdrawAnchors } from '@/track/overdraw';
-import { laneRise, laneScale, nearestLane, toStage, toWorld, type StagePoint, LANE_MIN, LANE_MAX } from '@/track/stage';
+import {
+  clonePath, closestSample, createNode, emptyPath, isAutoNode, nodeIn, nodeOut, sampleTrack, segmentPoints, trackStats,
+  type ElementKind, type StartType, type TrackNode, type TrackPath, type TrackSamples, type TrackStats,
+} from '@/track/model';
+import { strokeToTrack, closePath, interpretStroke, type StrokeMode } from '@/track/strokeToTrack';
+import { applyOverdraw, nearestOnTrack } from '@/track/overdraw';
+import { laneRise, laneScale, toStage, toWorld, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
-import { Button, Toast, label, INK, PAPER, PINK, paintRect, goalIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave } from '@/ui/widgets';
+import { Button, Toast, label, INK, PAPER, PINK, paintRect, goalIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
 import { hexNum, shade } from '@/render/paint';
 import { StartScene } from './start';
 import { MyTracksScene } from './myTracks';
@@ -37,10 +41,12 @@ type Mode = 'draw' | 'ride' | 'result';
 type StrokeKind = 'new' | 'overdraw' | 'terrain';
 
 interface DragState {
-  kind: 'node' | 'handleIn' | 'handleOut' | 'shelf' | 'stroke' | 'none';
+  kind: 'node' | 'handleIn' | 'handleOut' | 'depth' | 'roll' | 'shelf' | 'stroke' | 'none';
   node?: number;
   element?: ElementKind;
   ghost?: Graphics;
+  startY?: number;
+  startVal?: number;
 }
 
 const START_ORDER: StartType[] = ['chainlift', 'launch', 'hydro', 'swing', 'verticalLift'];
@@ -51,6 +57,7 @@ const SHELF_ELEMENTS: Array<{ kind: ElementKind; unlock: ElementId; color: strin
   { kind: 'splash', unlock: 'splash', color: '#3ec7c2', length: 8 },
   { kind: 'launchBlock', unlock: 'doubleLaunch', color: '#ffd23f', length: 14 },
 ];
+const HIT_R = 26;
 
 export class LevelScene implements Scene {
   readonly container = new Container();
@@ -72,6 +79,7 @@ export class LevelScene implements Scene {
   private mode: Mode = 'draw';
   private stroke: StagePoint[] | null = null;
   private strokeKind: StrokeKind = 'new';
+  private strokeModes: StrokeMode[] = [];
   private previewTimer = 0;
   private drag: DragState = { kind: 'none' };
   private sim: TrainSim | null = null;
@@ -81,6 +89,7 @@ export class LevelScene implements Scene {
   private timeScale = 1;
   private slowMo = 0;
   private resultShown = false;
+  private finaleTimer = 0;
   private failName = '';
   private time = 0;
   private w = 800;
@@ -92,13 +101,16 @@ export class LevelScene implements Scene {
   private overlay = new Graphics();
   private ink = new Graphics();
   private chipLayer = new Container();
+  private gizmoLayer = new Container();
   private goalsBar = new Container();
   private hint = label('', 17, INK, false, { stroke: { color: '#ffffff', width: 4 }, wordWrap: true, wordWrapWidth: 360 });
   private levelTitle = label('', 16, '#ffffff', true, { stroke: { color: INK, width: 4 } });
   private speedText = label('', 18, '#ffffff', true, { stroke: { color: INK, width: 4 } });
+  private rollText = label('', 14, INK, true, { stroke: { color: '#ffffff', width: 3 } });
   private backBtn = new Button('', { width: 48, round: true, color: '#9b6dff', icon: iconBack });
   private undoBtn = new Button('', { width: 48, round: true, color: '#4f8dff', icon: iconUndo });
   private redoBtn = new Button('', { width: 48, round: true, color: '#4f8dff', icon: iconRedo });
+  private clearBtn = new Button('', { width: 48, round: true, color: '#d64545', icon: iconTrash });
   private playBtn = new Button('', { width: 78, round: true, color: PINK, icon: iconPlay });
   private shelfBtn = new Button('', { width: 54, round: true, color: '#ffd23f', icon: iconShelf });
   private saveBtn = new Button('', { width: 48, round: true, color: '#7ee081', icon: iconSave });
@@ -118,26 +130,27 @@ export class LevelScene implements Scene {
         cars: 3, passengers: 6,
       };
       this.unlocked = unlockedUpTo(storage.progress.highest);
-      if (import.meta.env.VITE_UNLOCK_ALL === '1') this.unlocked = unlockedUpTo(150);
     } else {
       this.level = getLevel(levelId);
       this.world = worldOfLevel(levelId);
       this.unlocked = unlockedUpTo(Math.max(storage.progress.highest, levelId - 1));
-      if (import.meta.env.VITE_UNLOCK_ALL === '1') this.unlocked = unlockedUpTo(150);
     }
+    if (import.meta.env.VITE_UNLOCK_ALL === '1') this.unlocked = unlockedUpTo(150);
     this.terrain = new Terrain(this.level);
     this.skin = this.pickSkin();
   }
 
   private pickSkin(): string {
-    // Standard-Skin der Welt, wenn freigeschaltet, sonst der zuletzt freigeschaltete
     if (this.unlocked.has(this.world.skin)) return this.world.skin;
     const order: ElementId[] = ['skinSpace', 'skinLava', 'skinGhost', 'skinIce', 'skinNeon', 'skinGold', 'skinSteel', 'skinMine', 'skinHybrid', 'skinWood'];
     return order.find((s) => this.unlocked.has(s)) ?? 'skinWood';
   }
-
   get allowTunnels(): boolean {
     return this.unlocked.has('tunnel');
+  }
+  /** Tiefen- und Roll-Handle ab der Kurven-Freischaltung */
+  get gizmo3D(): boolean {
+    return this.unlocked.has('turn');
   }
 
   async enter(game: Game): Promise<void> {
@@ -147,12 +160,13 @@ export class LevelScene implements Scene {
     this.view = new WorldView(this.world, this.terrain, this.skin, night);
     this.view.overlay.addChild(this.ink, this.overlay);
     this.container.addChild(this.view.root, this.ui);
-    this.ui.addChild(this.chipLayer, this.goalsBar, this.levelTitle, this.hint, this.speedText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.playBtn, this.shelfBtn, this.saveBtn, this.toast);
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.playBtn, this.shelfBtn, this.saveBtn];
+    this.ui.addChild(this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.saveBtn, this.toast);
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.saveBtn];
     this.saveBtn.visible = !!this.sandbox;
     this.backBtn.onTap = () => this.leave();
     this.undoBtn.onTap = () => this.undo();
     this.redoBtn.onTap = () => this.redo();
+    this.clearBtn.onTap = () => this.clearTrack();
     this.playBtn.onTap = () => (this.mode === 'draw' ? this.startRide() : this.stopRide());
     this.shelfBtn.onTap = () => this.toggleShelf();
     this.saveBtn.onTap = () => this.saveSandbox();
@@ -160,13 +174,13 @@ export class LevelScene implements Scene {
     this.view.trackR.setCoins(this.level.coins ?? []);
     this.buildShelf();
     this.setupInput();
-    // Entwurf oder gespeicherte Bahn laden
     const draft = this.sandbox?.saved?.path ?? (this.sandbox ? undefined : storage.draft(this.level.id));
-    if (draft && draft.nodes.length >= 2) this.setPath(clonePath(draft), false);
+    if (draft && draft.nodes.length >= 2 && 'inZ' in draft.nodes[0]) this.setPath(clonePath(draft), false);
     this.resize(game.width, game.height);
     this.fitCamera(true);
     this.updateGoals();
     this.updateHint();
+    this.updateUndoButtons();
   }
 
   exit(): void {
@@ -210,12 +224,12 @@ export class LevelScene implements Scene {
       }
       if (this.isOverUI(p)) return;
       const st = this.view.camera.toStage(p.x, p.y);
-      // Handles / Knoten?
       if (this.path && this.selected >= 0) {
-        const hit = this.hitHandle(p);
+        const hit = this.hitGizmo(p);
         if (hit) {
           this.pushHistory();
-          this.drag = { kind: hit, node: this.selected };
+          const n = this.path.nodes[this.selected];
+          this.drag = { kind: hit, node: this.selected, startY: st.Y, startVal: hit === 'depth' ? n.z : Number.isNaN(n.roll) ? 0 : n.roll };
           return;
         }
       }
@@ -224,23 +238,25 @@ export class LevelScene implements Scene {
         this.pushHistory();
         this.selected = nodeIdx;
         this.drag = { kind: 'node', node: nodeIdx };
+        this.drawOverlay();
         return;
       }
-      // Strich beginnen
       this.stroke = [{ X: st.X, Y: st.Y }];
+      this.strokeModes = [];
       this.drag = { kind: 'stroke' };
-      if (!this.path) {
-        this.strokeKind = 'new';
-      } else {
-        const nearTrack = this.samples ? this.nearTrack(st, 3.2) : false;
-        if (nearTrack) this.strokeKind = 'overdraw';
-        else if (this.nearGround(st, 2.2)) this.strokeKind = this.unlocked.has('mountain') && this.terrainEditable() && !this.nearStation(st) ? 'terrain' : 'new';
+      if (!this.path) this.strokeKind = 'new';
+      else {
+        const near = this.samples ? nearestOnTrack(this.samples, st) : null;
+        const nearPx = near ? near.d * this.view.camera.zoom : Infinity;
+        if (near && nearPx < 30) this.strokeKind = 'overdraw';
+        else if (this.onStage(st) && this.unlocked.has('mountain') && this.terrainEditable() && !this.nearStation(st)) this.strokeKind = 'terrain';
         else {
           this.strokeKind = 'new';
-          this.toast.show(t('overdrawHint'), 2);
+          this.toast.show(t('overdrawHint'), 2.2);
         }
       }
       this.selected = -1;
+      this.drawOverlay();
     };
     H.dragMove = (p) => {
       if (this.mode !== 'draw') return;
@@ -255,6 +271,8 @@ export class LevelScene implements Scene {
         case 'node': this.moveNode(this.drag.node!, st); break;
         case 'handleIn': this.moveHandle(this.drag.node!, st, true); break;
         case 'handleOut': this.moveHandle(this.drag.node!, st, false); break;
+        case 'depth': this.dragDepth(this.drag.node!, st.Y - (this.drag.startY ?? st.Y), this.drag.startVal ?? 0); break;
+        case 'roll': this.dragRoll(this.drag.node!, st.Y - (this.drag.startY ?? st.Y), this.drag.startVal ?? 0); break;
         case 'shelf': this.drag.ghost?.position.set(p.x, p.y); break;
         default: break;
       }
@@ -264,7 +282,7 @@ export class LevelScene implements Scene {
       const st = this.view.camera.toStage(p.x, p.y);
       switch (this.drag.kind) {
         case 'stroke': this.finishStroke(); break;
-        case 'node': case 'handleIn': case 'handleOut': this.afterEdit(); break;
+        case 'node': case 'handleIn': case 'handleOut': case 'depth': case 'roll': this.afterEdit(); break;
         case 'shelf': {
           this.drag.ghost?.destroy();
           if (this.path && this.samples && this.drag.element) this.placeElement(this.drag.element, st);
@@ -275,14 +293,12 @@ export class LevelScene implements Scene {
       this.drag = { kind: 'none' };
     };
     H.tap = (p) => {
-      // Buttons bekommen ihre Taps über Pixi; hier nur die Bühne
       if (this.isOverUI(p)) return;
       if (this.mode === 'ride') {
         this.stopRide();
         return;
       }
       if (this.mode !== 'draw') return;
-      // Chips
       const chip = this.hitChip(p);
       if (chip) {
         chip.action();
@@ -294,7 +310,6 @@ export class LevelScene implements Scene {
       }
       const st = this.view.camera.toStage(p.x, p.y);
       if (this.path && this.samples) {
-        // Element entfernen?
         const el = this.hitElement(st);
         if (el >= 0) {
           this.pushHistory();
@@ -316,13 +331,20 @@ export class LevelScene implements Scene {
       if (this.mode !== 'draw' || this.isOverUI(p)) return;
       const st = this.view.camera.toStage(p.x, p.y);
       if (this.path && this.samples && this.unlocked.has('handles')) {
+        if (this.selected >= 0 && this.hitGizmo(p) === 'roll') {
+          this.pushHistory();
+          this.path.nodes[this.selected].roll = NaN;
+          this.afterEdit();
+          return;
+        }
         const n = this.hitNode(p);
         if (n >= 0) {
           this.deleteNode(n);
           return;
         }
-        if (this.nearTrack(st, 2.5)) {
-          this.insertNode(st);
+        const near = nearestOnTrack(this.samples, st);
+        if (near.d * this.view.camera.zoom < 30) {
+          this.insertNode(near.s);
           return;
         }
       }
@@ -356,18 +378,17 @@ export class LevelScene implements Scene {
   }
 
   // ------------------------------------------------------------------ Treffer-Tests
-  private nodeScreen(i: number): Pt {
-    const n = this.path!.nodes[i];
+  private nodeScreen(n: TrackNode): Pt {
     const s = toStage(n.x, n.y, n.z);
     return this.view.toScreen(s.X, s.Y);
   }
   private hitNode(p: Pt): number {
     if (!this.path) return -1;
     let best = -1;
-    let bestD = 26;
+    let bestD = HIT_R;
     this.path.nodes.forEach((n, i) => {
-      if (n.kind === 'closeTurn' || n.kind === 'closeReturn') return;
-      const sp = this.nodeScreen(i);
+      if (isAutoNode(n)) return;
+      const sp = this.nodeScreen(n);
       const d = Math.hypot(sp.x - p.x, sp.y - p.y);
       if (d < bestD) {
         bestD = d;
@@ -376,32 +397,30 @@ export class LevelScene implements Scene {
     });
     return best;
   }
-  private hitHandle(p: Pt): 'handleIn' | 'handleOut' | null {
-    if (!this.path || this.selected < 0) return null;
+  /** Positionen der Gizmo-Teile des ausgewählten Knotens (Bildschirm) */
+  private gizmoPositions(): { in: Pt; out: Pt; depth: Pt; roll: Pt } | null {
+    if (!this.path || this.selected < 0 || this.selected >= this.path.nodes.length) return null;
     const n = this.path.nodes[this.selected];
-    const k = laneScale(n.z);
-    const inS = toStage(n.x + n.inX, n.y + n.inY, n.z);
-    const outS = toStage(n.x + n.outX, n.y + n.outY, n.z);
-    const a = this.view.toScreen(inS.X, inS.Y);
-    const b = this.view.toScreen(outS.X, outS.Y);
-    void k;
-    if (Math.hypot(a.x - p.x, a.y - p.y) < 26) return 'handleIn';
-    if (Math.hypot(b.x - p.x, b.y - p.y) < 26) return 'handleOut';
+    const a = nodeIn(n);
+    const b = nodeOut(n);
+    const sa = toStage(a.x, a.y, a.z / LANE_DEPTH);
+    const sb = toStage(b.x, b.y, b.z / LANE_DEPTH);
+    const c = this.nodeScreen(n);
+    return { in: this.view.toScreen(sa.X, sa.Y), out: this.view.toScreen(sb.X, sb.Y), depth: { x: c.x, y: c.y + 44 }, roll: { x: c.x + 44, y: c.y } };
+  }
+  private hitGizmo(p: Pt): 'handleIn' | 'handleOut' | 'depth' | 'roll' | null {
+    const g = this.gizmoPositions();
+    if (!g) return null;
+    const d = (q: Pt) => Math.hypot(q.x - p.x, q.y - p.y);
+    if (d(g.in) < HIT_R) return 'handleIn';
+    if (d(g.out) < HIT_R) return 'handleOut';
+    if (this.gizmo3D && d(g.depth) < HIT_R) return 'depth';
+    if (this.gizmo3D && d(g.roll) < HIT_R) return 'roll';
     return null;
   }
-  private nearTrack(st: StagePoint, tol: number): boolean {
-    if (!this.samples) return false;
-    for (let z = LANE_MIN; z <= LANE_MAX; z++) {
-      const w = toWorld(st.X, st.Y, z);
-      const c = closestSample(this.samples, w.x, w.y, z);
-      if (c.d < tol) return true;
-    }
-    return false;
-  }
-  private nearGround(st: StagePoint, tol: number): boolean {
-    const z = nearestLane(st.Y);
-    const w = toWorld(st.X, st.Y, z);
-    return Math.abs(w.y - this.terrain.groundHeight(w.x, z)) < tol;
+  private onStage(st: StagePoint): boolean {
+    const z = clamp(st.Y / LANE_RISE, LANE_MIN - 0.5, LANE_MAX + 0.5);
+    return z >= LANE_MIN - 0.4 && z <= LANE_MAX + 0.4 && Math.abs(st.Y - laneRise(clamp(Math.round(z), LANE_MIN, LANE_MAX))) < LANE_RISE;
   }
   private nearStation(st: StagePoint): boolean {
     if (!this.path) return false;
@@ -430,7 +449,7 @@ export class LevelScene implements Scene {
     const ground = (x: number, z: number) => (this.allowTunnels ? this.terrain.groundHeight(x, z) : this.terrain.surfaceHeight(x, z));
     return {
       groundHeight: ground,
-      groundClearance: 0.9,
+      groundClearance: 0.8,
       maxHeight: this.level.maxHeight ?? 0,
       allowTurns: this.unlocked.has('turn'),
       allowLoops: this.unlocked.has('loop'),
@@ -441,14 +460,26 @@ export class LevelScene implements Scene {
     const g = this.ink;
     g.clear();
     if (!this.stroke || this.stroke.length < 2) return;
-    const pts = this.stroke.flatMap((p) => [p.X, p.Y]);
-    const col = this.strokeKind === 'terrain' ? 0xc9a36b : this.strokeKind === 'overdraw' ? 0xffd23f : 0xff5c8a;
-    g.poly(pts, false).stroke({ width: 0.9, color: 0xffffff, alpha: 0.5, cap: 'round', join: 'round' });
-    g.poly(pts, false).stroke({ width: 0.45, color: col, alpha: 0.95, cap: 'round', join: 'round' });
-    // Zielspur beim Zeichnen hervorheben
-    if (this.strokeKind !== 'terrain') {
-      const z = nearestLane(this.stroke[0].Y);
-      g.moveTo(this.stroke[0].X - 30, laneRise(z)).lineTo(this.stroke[0].X + 30, laneRise(z)).stroke({ width: 0.3, color: 0xffffff, alpha: 0.35 });
+    if (this.strokeKind === 'terrain') {
+      g.poly(this.stroke.flatMap((p) => [p.X, p.Y]), false).stroke({ width: 0.6, color: 0xc9a36b, alpha: 0.95, cap: 'round', join: 'round' });
+      return;
+    }
+    // Tinte je Modus färben: Boden (Tiefe) grün, Höhe pink
+    const modes = this.strokeModes;
+    const n = this.stroke.length;
+    let runStart = 0;
+    const colorFor = (m: StrokeMode | undefined) => (m === 'height' ? 0xff5c8a : 0x7ee081);
+    for (let i = 1; i <= n; i++) {
+      const mi = modes[Math.min(modes.length - 1, Math.floor((i / n) * Math.max(1, modes.length)))];
+      const mPrev = modes[Math.min(modes.length - 1, Math.floor(((i - 1) / n) * Math.max(1, modes.length)))];
+      if (i === n || mi !== mPrev) {
+        const seg = this.stroke.slice(runStart, Math.min(n, i + 1)).flatMap((p) => [p.X, p.Y]);
+        if (seg.length >= 4) {
+          g.poly(seg, false).stroke({ width: 0.9, color: 0xffffff, alpha: 0.5, cap: 'round', join: 'round' });
+          g.poly(seg, false).stroke({ width: 0.45, color: this.strokeKind === 'overdraw' ? 0xffd23f : colorFor(mPrev), alpha: 0.95, cap: 'round', join: 'round' });
+        }
+        runStart = i;
+      }
     }
   }
 
@@ -456,17 +487,20 @@ export class LevelScene implements Scene {
     if (!this.stroke || this.stroke.length < 4) return;
     if (this.strokeKind === 'terrain') return;
     if (this.strokeKind === 'overdraw' && this.path && this.samples) {
-      const merged = applyOverdraw(this.path, this.stroke, { ...this.strokeOptions(), snapDistance: 3.2 });
+      const merged = applyOverdraw(this.path, this.stroke, { ...this.strokeOptions(), snapDistance: 30 / this.view.camera.zoom });
       if (merged) this.view.setTrack(merged, sampleTrack(merged, 0.5), this.skin, this.terrain, this.allowTunnels, true);
       return;
     }
     const r = strokeToTrack(this.stroke, this.strokeOptions());
+    this.strokeModes = r.points.map((p) => p.mode);
+    this.drawInk();
     if (r.path.nodes.length >= 2) this.view.setTrack(r.path, sampleTrack(r.path, 0.5), this.skin, this.terrain, this.allowTunnels, true);
   }
 
   private finishStroke(): void {
     const stroke = this.stroke;
     this.stroke = null;
+    this.strokeModes = [];
     this.ink.clear();
     if (!stroke || stroke.length < 3) {
       this.redrawTrack();
@@ -477,20 +511,16 @@ export class LevelScene implements Scene {
       return;
     }
     if (this.strokeKind === 'overdraw' && this.path && this.samples) {
-      const anchors = overdrawAnchors(this.path, this.samples, stroke, 3.2);
-      if (anchors) {
-        const merged = applyOverdraw(this.path, stroke, { ...this.strokeOptions(), snapDistance: 3.2 });
-        if (merged) {
-          this.pushHistory();
-          this.setPath(merged, true);
-          return;
-        }
+      const merged = applyOverdraw(this.path, stroke, { ...this.strokeOptions(), snapDistance: 30 / this.view.camera.zoom });
+      if (merged) {
+        this.pushHistory();
+        this.setPath(merged, true);
+        return;
       }
       this.toast.show(t('overdrawHint'), 2.5);
       this.redrawTrack();
       return;
     }
-    // neue Bahn
     const len = stroke.reduce((acc, p, i) => (i ? acc + Math.hypot(p.X - stroke[i - 1].X, p.Y - stroke[i - 1].Y) : 0), 0);
     if (len < 6) {
       this.redrawTrack();
@@ -504,11 +534,10 @@ export class LevelScene implements Scene {
     this.pushHistory();
     r.path.startType = this.path?.startType ?? 'chainlift';
     this.setPath(r.path, true);
-    if (r.events.some((e) => e.kind === 'turn')) this.view.effects.glitter(0, 0);
   }
 
   private sculptTerrain(stroke: StagePoint[]): void {
-    const z = nearestLane(stroke[0].Y);
+    const z = clamp(Math.round(stroke[0].Y / LANE_RISE), LANE_MIN, LANE_MAX);
     let maxH = 0;
     let minH = 0;
     let x0 = Infinity;
@@ -524,7 +553,7 @@ export class LevelScene implements Scene {
     const width = Math.max(8, x1 - x0);
     if (maxH > 2) {
       this.terrain.mountains.push({ x: (x0 + x1) / 2, width, height: Math.min(60, maxH), lane: z });
-      this.path && (this.path.templates.mountain = (this.path.templates.mountain ?? 0) + 1);
+      if (this.path) this.path.templates.mountain = (this.path.templates.mountain ?? 0) + 1;
     } else if (minH < -1.5 && this.unlocked.has('lake')) {
       this.terrain.water.push({ x: (x0 + x1) / 2, width, lane: z, kind: 'lake' });
     } else {
@@ -540,6 +569,7 @@ export class LevelScene implements Scene {
     this.path = path;
     this.selected = -1;
     this.redrawTrack();
+    this.updateUndoButtons();
     if (!path) {
       this.view.terrainR.setTunnelPortals([]);
       this.updateGoals();
@@ -548,7 +578,6 @@ export class LevelScene implements Scene {
       return;
     }
     if (animate && this.samples) {
-      // kleiner Glitzer an der Station
       const n = path.nodes[0];
       const s = toStage(n.x, n.y, n.z);
       for (let i = 0; i < 6; i++) this.view.effects.glitter(s.X, s.Y + 1);
@@ -580,7 +609,13 @@ export class LevelScene implements Scene {
     if (!this.sandbox) storage.saveDraft(this.level.id, this.path);
   }
 
-  /** Verlauf: leerer Pfad = „keine Bahn“, damit auch der erste Strich rückgängig geht */
+  private clearTrack(): void {
+    if (this.mode !== 'draw' || !this.path) return;
+    this.pushHistory();
+    this.setPath(null, false);
+    this.toast.show(t('clear'), 1.2);
+  }
+
   private pushHistory(): void {
     this.history.push(this.path ? clonePath(this.path) : emptyPath());
     if (this.history.length > 60) this.history.shift();
@@ -606,43 +641,63 @@ export class LevelScene implements Scene {
   private updateUndoButtons(): void {
     this.undoBtn.setEnabled(this.history.length > 0);
     this.redoBtn.setEnabled(this.future.length > 0);
+    this.clearBtn.setEnabled(!!this.path);
   }
 
-  // ------------------------------------------------------------------ Knoten-Editing
+  // ------------------------------------------------------------------ Knoten-Editing (3D)
+  private groundAt(x: number, z: number): number {
+    return this.allowTunnels ? this.terrain.groundHeight(x, z) : this.terrain.surfaceHeight(x, z);
+  }
   private moveNode(i: number, st: StagePoint): void {
     if (!this.path) return;
     const n = this.path.nodes[i];
     const w = toWorld(st.X, st.Y, n.z);
-    const ground = this.allowTunnels ? this.terrain.groundHeight(w.x, n.z) : this.terrain.surfaceHeight(w.x, n.z);
     n.x = w.x;
-    n.y = Math.max(ground + 0.9, w.y);
+    n.y = Math.max(this.groundAt(w.x, n.z) + 0.6, w.y);
     if (this.level.maxHeight) n.y = Math.min(n.y, this.level.maxHeight);
     this.redrawTrack();
   }
   private moveHandle(i: number, st: StagePoint, isIn: boolean): void {
     if (!this.path) return;
     const n = this.path.nodes[i];
-    const w = toWorld(st.X, st.Y, n.z);
+    const hz = isIn ? n.inZ : n.outZ;
+    const w = toWorld(st.X, st.Y, n.z + hz);
     const dx = w.x - n.x;
     const dy = w.y - n.y;
-    const len = Math.hypot(dx, dy) || 0.01;
+    const dz = hz * LANE_DEPTH;
+    const len = Math.hypot(dx, dy, dz) || 0.01;
     if (isIn) {
-      n.inX = dx;
-      n.inY = dy;
-      const ol = Math.hypot(n.outX, n.outY) || len;
-      n.outX = (-dx / len) * ol;
-      n.outY = (-dy / len) * ol;
+      n.inX = dx; n.inY = dy;
+      const ol = Math.hypot(n.outX, n.outY, n.outZ * LANE_DEPTH) || len;
+      n.outX = (-dx / len) * ol; n.outY = (-dy / len) * ol; n.outZ = ((-dz / len) * ol) / LANE_DEPTH;
     } else {
-      n.outX = dx;
-      n.outY = dy;
-      const il = Math.hypot(n.inX, n.inY) || len;
-      n.inX = (-dx / len) * il;
-      n.inY = (-dy / len) * il;
+      n.outX = dx; n.outY = dy;
+      const il = Math.hypot(n.inX, n.inY, n.inZ * LANE_DEPTH) || len;
+      n.inX = (-dx / len) * il; n.inY = (-dy / len) * il; n.inZ = ((-dz / len) * il) / LANE_DEPTH;
     }
     this.redrawTrack();
   }
+  /** Tiefen-Handle: vertikal ziehen verschiebt den Knoten in der Tiefe (eine Spur = LANE_RISE Bühnen-Meter) */
+  private dragDepth(i: number, dY: number, startZ: number): void {
+    if (!this.path) return;
+    const n = this.path.nodes[i];
+    n.z = clamp(startZ + dY / LANE_RISE, LANE_MIN, LANE_MAX);
+    n.y = Math.max(this.groundAt(n.x, n.z) + 0.6, n.y);
+    this.redrawTrack();
+    this.rollText.text = `${t('lane.back')}: ${n.z.toFixed(1)}`;
+  }
+  /** Roll-Handle: vertikal ziehen stellt die Schräglage ein (manuell); Doppeltipp = automatisch */
+  private dragRoll(i: number, dY: number, startRoll: number): void {
+    if (!this.path) return;
+    const n = this.path.nodes[i];
+    n.roll = clamp(startRoll + dY * 0.25, -Math.PI, Math.PI);
+    this.redrawTrack();
+    this.rollText.text = `${Math.round((n.roll * 180) / Math.PI)}°`;
+  }
   private deleteNode(i: number): void {
-    if (!this.path || this.path.nodes.length <= 4) return;
+    if (!this.path) return;
+    const real = this.path.nodes.filter((n) => !isAutoNode(n)).length;
+    if (real <= 3) return;
     const n = this.path.nodes[i];
     if (n.kind === 'station') return;
     this.pushHistory();
@@ -650,66 +705,54 @@ export class LevelScene implements Scene {
     this.selected = -1;
     this.afterEdit();
   }
-  private insertNode(st: StagePoint): void {
+  /** Knoten bei Bogenlänge s einfügen (de Casteljau in 3D) */
+  private insertNode(s: number): void {
     if (!this.path || !this.samples) return;
-    let best = { d: Infinity, s: 0, z: 0 };
-    for (let z = LANE_MIN; z <= LANE_MAX; z++) {
-      const w = toWorld(st.X, st.Y, z);
-      const c = closestSample(this.samples, w.x, w.y, z);
-      if (c.d < best.d) best = { d: c.d, s: c.s, z };
-    }
-    const idx = Math.min(this.samples.count - 1, Math.round(best.s / this.samples.step));
+    const idx = Math.min(this.samples.count - 1, Math.round(s / this.samples.step));
     const seg = this.samples.seg[idx];
     const tt = clamp(this.samples.t[idx], 0.05, 0.95);
     const nodes = this.path.nodes;
     const a = nodes[seg];
     const b = nodes[(seg + 1) % nodes.length];
-    // de Casteljau: Segment teilen
-    const p0 = { x: a.x, y: a.y };
-    const p1 = { x: a.x + a.outX, y: a.y + a.outY };
-    const p2 = { x: b.x + b.inX, y: b.y + b.inY };
-    const p3 = { x: b.x, y: b.y };
-    const l = (p: { x: number; y: number }, q: { x: number; y: number }, f: number) => ({ x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f });
-    const p01 = l(p0, p1, tt);
-    const p12 = l(p1, p2, tt);
-    const p23 = l(p2, p3, tt);
-    const p012 = l(p01, p12, tt);
-    const p123 = l(p12, p23, tt);
-    const mid = bezierPoint(p0, p1, p2, p3, tt);
+    if (isAutoNode(a) || isAutoNode(b)) return;
+    const [p0, p1, p2, p3] = segmentPoints(this.path, seg);
+    const p01 = lerp3(p0, p1, tt);
+    const p12 = lerp3(p1, p2, tt);
+    const p23 = lerp3(p2, p3, tt);
+    const p012 = lerp3(p01, p12, tt);
+    const p123 = lerp3(p12, p23, tt);
+    const mid = bezier3(p0, p1, p2, p3, tt);
     this.pushHistory();
-    const nn: TrackNode = createNode(mid.x, mid.y, a.z + (b.z - a.z) * tt);
-    nn.inX = p012.x - mid.x; nn.inY = p012.y - mid.y;
-    nn.outX = p123.x - mid.x; nn.outY = p123.y - mid.y;
-    a.outX = p01.x - a.x; a.outY = p01.y - a.y;
-    b.inX = p23.x - b.x; b.inY = p23.y - b.y;
+    const nn: TrackNode = createNode(mid.x, mid.y, mid.z / LANE_DEPTH);
+    nn.inX = p012.x - mid.x; nn.inY = p012.y - mid.y; nn.inZ = (p012.z - mid.z) / LANE_DEPTH;
+    nn.outX = p123.x - mid.x; nn.outY = p123.y - mid.y; nn.outZ = (p123.z - mid.z) / LANE_DEPTH;
+    a.outX = p01.x - p0.x; a.outY = p01.y - p0.y; a.outZ = (p01.z - p0.z) / LANE_DEPTH;
+    b.inX = p23.x - p3.x; b.inY = p23.y - p3.y; b.inZ = (p23.z - p3.z) / LANE_DEPTH;
     nodes.splice(seg + 1, 0, nn);
     this.selected = seg + 1;
     this.redrawTrack();
     this.updateGoals();
   }
-
-  /** Kurvenrichtung an einem Kurven-Knoten umschalten: Tiefe der folgenden Knoten spiegeln */
+  /** Kurvenrichtung umschalten: Tiefe der folgenden Knoten spiegeln */
   private toggleTurn(i: number): void {
     if (!this.path) return;
     const nodes = this.path.nodes;
-    // Spur vor der Kurve: letzter Knoten vor i mit ganzzahliger Spur
-    let zPrev = Math.round(nodes[Math.max(0, i - 1)].z);
-    for (let k = i - 1; k >= 0; k--) {
-      if (Math.abs(nodes[k].z - Math.round(nodes[k].z)) < 0.01) {
-        zPrev = nodes[k].z;
-        break;
-      }
-    }
-    const mirrored = nodes.map((n, k) => (k >= i && n.kind !== 'closeTurn' && n.kind !== 'closeReturn' ? 2 * zPrev - n.z : n.z));
+    const zPrev = nodes[Math.max(0, i - 1)].z;
+    const mirrored = nodes.map((n, k) => (k >= i && !isAutoNode(n) ? 2 * zPrev - n.z : n.z));
     if (mirrored.some((z) => z < LANE_MIN - 0.01 || z > LANE_MAX + 0.01)) {
       this.toast.show('Keine Spur mehr in dieser Richtung', 1.5);
       return;
     }
     this.pushHistory();
-    nodes.forEach((n, k) => (n.z = mirrored[k]));
+    nodes.forEach((n, k) => {
+      if (k >= i && !isAutoNode(n)) {
+        n.z = mirrored[k];
+        n.inZ = -n.inZ;
+        n.outZ = -n.outZ;
+      }
+    });
     this.afterEdit();
   }
-
   private cycleStart(): void {
     if (!this.path) return;
     const available = START_ORDER.filter((s) => this.unlocked.has(START_UNLOCK[s]));
@@ -720,48 +763,67 @@ export class LevelScene implements Scene {
     this.updateGoals();
     this.toast.show(`${t('startType')}: ${t('start.' + this.path.startType)}`, 1.5);
   }
-
   private placeElement(kind: ElementKind, st: StagePoint): void {
     if (!this.path || !this.samples) return;
-    let best = { d: Infinity, s: 0 };
-    for (let z = LANE_MIN; z <= LANE_MAX; z++) {
-      const w = toWorld(st.X, st.Y, z);
-      const c = closestSample(this.samples, w.x, w.y, z);
-      if (c.d < best.d) best = { d: c.d, s: c.s };
-    }
-    if (best.d > 4) return;
+    const near = nearestOnTrack(this.samples, st);
+    if (near.d > 4) return;
     const def = SHELF_ELEMENTS.find((e) => e.kind === kind)!;
     this.pushHistory();
-    this.path.elements.push({ kind, s: best.s - def.length / 2, length: def.length });
+    this.path.elements.push({ kind, s: near.s - def.length / 2, length: def.length });
     this.afterEdit();
   }
 
-  // ------------------------------------------------------------------ Overlay (Handles, Chips)
+  // ------------------------------------------------------------------ Overlay (Knoten, Handles, Gizmo)
   private drawOverlay(): void {
     const g = this.overlay;
     g.clear();
-    this.chipLayer.removeChildren();
+    this.gizmoLayer.removeChildren();
+    this.rollText.text = '';
     if (!this.path || this.mode !== 'draw') return;
     const nodes = this.path.nodes;
-    // Knotenpunkte (klein) für alle editierbaren Knoten
-    if (this.unlocked.has('handles')) {
-      nodes.forEach((n, i) => {
-        if (n.kind === 'closeTurn' || n.kind === 'closeReturn') return;
-        const s = toStage(n.x, n.y, n.z);
-        const k = laneScale(n.z);
-        const r = (i === this.selected ? 0.55 : 0.38) * k / Math.max(0.35, this.view.camera.zoom / 12);
-        g.circle(s.X, s.Y, r).fill(i === this.selected ? 0xffd23f : 0xffffff).stroke({ width: 0.12 * k, color: hexNum(INK) });
-      });
-      if (this.selected >= 0 && this.selected < nodes.length) {
-        const n = nodes[this.selected];
-        const k = laneScale(n.z);
-        const c = toStage(n.x, n.y, n.z);
-        const a = toStage(n.x + n.inX, n.y + n.inY, n.z);
-        const b = toStage(n.x + n.outX, n.y + n.outY, n.z);
-        const rr = 0.5 * k / Math.max(0.35, this.view.camera.zoom / 12);
-        g.moveTo(a.X, a.Y).lineTo(c.X, c.Y).lineTo(b.X, b.Y).stroke({ width: 0.12 * k, color: hexNum(INK), alpha: 0.8 });
-        g.circle(a.X, a.Y, rr).fill(0x3ec7c2).stroke({ width: 0.12 * k, color: hexNum(INK) });
-        g.circle(b.X, b.Y, rr).fill(0x3ec7c2).stroke({ width: 0.12 * k, color: hexNum(INK) });
+    if (!this.unlocked.has('handles')) return;
+    const zoomScale = 1 / Math.max(0.35, this.view.camera.zoom / 12);
+    nodes.forEach((n, i) => {
+      if (isAutoNode(n)) return;
+      const s = toStage(n.x, n.y, n.z);
+      const k = laneScale(n.z);
+      const r = (i === this.selected ? 0.55 : 0.38) * k * zoomScale;
+      const col = n.kind === 'turn' ? 0x3ec7c2 : n.kind === 'loopApex' ? 0x9b6dff : 0xffffff;
+      g.circle(s.X, s.Y, r).fill(i === this.selected ? 0xffd23f : col).stroke({ width: 0.12 * k, color: hexNum(INK) });
+      // Tiefen-Linie zum Boden (zeigt die Spur)
+      if (i === this.selected) {
+        const gnd = toStage(n.x, this.terrain.groundHeight(n.x, n.z), n.z);
+        g.moveTo(s.X, s.Y).lineTo(gnd.X, gnd.Y).stroke({ width: 0.08 * k, color: hexNum(INK), alpha: 0.5 });
+        g.ellipse(gnd.X, gnd.Y, 0.9 * k, 0.3 * k).stroke({ width: 0.1 * k, color: hexNum(INK), alpha: 0.6 });
+      }
+    });
+    if (this.selected >= 0 && this.selected < nodes.length) {
+      const n = nodes[this.selected];
+      const k = laneScale(n.z);
+      const c = toStage(n.x, n.y, n.z);
+      const a = nodeIn(n);
+      const b = nodeOut(n);
+      const sa = toStage(a.x, a.y, a.z / LANE_DEPTH);
+      const sb = toStage(b.x, b.y, b.z / LANE_DEPTH);
+      const rr = 0.5 * k * zoomScale;
+      g.moveTo(sa.X, sa.Y).lineTo(c.X, c.Y).lineTo(sb.X, sb.Y).stroke({ width: 0.12 * k, color: hexNum(INK), alpha: 0.8 });
+      g.circle(sa.X, sa.Y, rr).fill(0x3ec7c2).stroke({ width: 0.12 * k, color: hexNum(INK) });
+      g.circle(sb.X, sb.Y, rr).fill(0x3ec7c2).stroke({ width: 0.12 * k, color: hexNum(INK) });
+      // Gizmo in Bildschirm-Pixeln: Tiefen-Handle (Quadrat unten) und Roll-Handle (Ring rechts)
+      if (this.gizmo3D) {
+        const gp = this.gizmoPositions()!;
+        const gz = new Graphics();
+        gz.roundRect(gp.depth.x - 13, gp.depth.y - 13, 26, 26, 6).fill(0x9b6dff).stroke({ width: 3, color: hexNum(INK) });
+        gz.moveTo(gp.depth.x, gp.depth.y - 8).lineTo(gp.depth.x, gp.depth.y + 8).moveTo(gp.depth.x - 5, gp.depth.y - 3).lineTo(gp.depth.x, gp.depth.y - 8).lineTo(gp.depth.x + 5, gp.depth.y - 3)
+          .moveTo(gp.depth.x - 5, gp.depth.y + 3).lineTo(gp.depth.x, gp.depth.y + 8).lineTo(gp.depth.x + 5, gp.depth.y + 3).stroke({ width: 2.5, color: 0xffffff, cap: 'round', join: 'round' });
+        const auto = Number.isNaN(n.roll);
+        gz.circle(gp.roll.x, gp.roll.y, 14).fill(auto ? hexNum(PAPER) : 0xff8a5c).stroke({ width: 3, color: hexNum(INK) });
+        const ang = auto ? 0 : n.roll;
+        gz.moveTo(gp.roll.x - 9 * Math.cos(ang), gp.roll.y - 9 * Math.sin(ang)).lineTo(gp.roll.x + 9 * Math.cos(ang), gp.roll.y + 9 * Math.sin(ang)).stroke({ width: 3, color: hexNum(INK), cap: 'round' });
+        gz.circle(gp.roll.x, gp.roll.y, 2.5).fill(hexNum(INK));
+        this.gizmoLayer.addChild(gz);
+        if (!auto) this.rollText.text = `${Math.round((n.roll * 180) / Math.PI)}°`;
+        this.rollText.position.set(gp.roll.x + 36, gp.roll.y);
       }
     }
   }
@@ -770,28 +832,23 @@ export class LevelScene implements Scene {
     const out: Array<{ x: number; y: number; r: number; action: () => void; draw: (g: Graphics) => void }> = [];
     if (!this.path || this.mode !== 'draw') return out;
     const nodes = this.path.nodes;
-    // Start-Chip
-    const st = nodes[0];
-    const ss = toStage(st.x, st.y, st.z);
-    const sp = this.view.toScreen(ss.X, ss.Y);
+    const sp = this.nodeScreen(nodes[0]);
     const type = this.path.startType;
     out.push({
       x: sp.x, y: sp.y - 46, r: 22, action: () => this.cycleStart(),
       draw: (g) => {
         g.circle(0, 0, 20).fill(hexNum(PAPER)).stroke({ width: 3, color: hexNum(INK) });
         const ink = hexNum(INK);
-        if (type === 'chainlift') { for (let i = 0; i < 4; i++) g.circle(-9 + i * 6, 6 - i * 4, 2.6).fill(ink); }
+        if (type === 'chainlift') for (let i = 0; i < 4; i++) g.circle(-9 + i * 6, 6 - i * 4, 2.6).fill(ink);
         else if (type === 'launch' || type === 'hydro') g.poly([-3, -11, 6, -1, 1, -1, 3, 11, -6, 1, -1, 1]).fill(type === 'hydro' ? 0x3ec7c2 : 0xffb13b).stroke({ width: 1.5, color: ink });
         else if (type === 'swing') { g.moveTo(0, -10).lineTo(-6, 6).stroke({ width: 2.5, color: ink }); g.circle(-6, 7, 3.5).fill(0xffd23f).stroke({ width: 1.5, color: ink }); }
         else { g.moveTo(0, 9).lineTo(0, -9).stroke({ width: 3, color: ink, cap: 'round' }); g.moveTo(-6, -3).lineTo(0, -9).lineTo(6, -3).stroke({ width: 3, color: ink, cap: 'round', join: 'round' }); }
       },
     });
-    // Spur-Chips an Kurven
     if (this.unlocked.has('turn')) {
       nodes.forEach((n, i) => {
         if (n.kind !== 'turn') return;
-        const s = toStage(n.x, n.y, n.z);
-        const p = this.view.toScreen(s.X, s.Y);
+        const p = this.nodeScreen(n);
         const next = nodes[Math.min(nodes.length - 1, i + 2)];
         const dir = next.z > nodes[Math.max(0, i - 2)].z ? 1 : -1;
         out.push({
@@ -915,10 +972,8 @@ export class LevelScene implements Scene {
 
   private updateHint(): void {
     let msg = '';
-    if (!this.path) {
-      if (this.level.id === 1) msg = t('tutorial.l1');
-      else msg = t('drawHint');
-    } else if (this.level.id === 2 && this.history.length === 0) msg = t('tutorial.l2');
+    if (!this.path) msg = this.level.id === 1 ? t('tutorial.l1') : t('drawHint');
+    else if (this.level.id === 2 && this.history.length <= 1) msg = t('tutorial.l2');
     else if (this.level.id === 5 && (this.stats?.turns ?? 0) === 0) msg = t('tutorial.l5');
     else if (this.level.id === 8 && (this.stats?.loops ?? 0) === 0) msg = t('tutorial.l8');
     this.hint.text = msg;
@@ -939,7 +994,7 @@ export class LevelScene implements Scene {
         const s = toStage(this.samples.x[i], this.samples.y[i], this.samples.z[i]);
         minX = Math.min(minX, s.X); maxX = Math.max(maxX, s.X); minY = Math.min(minY, s.Y); maxY = Math.max(maxY, s.Y);
       }
-      cam.fitBounds({ minX: minX - 6, maxX: maxX + 6, minY: minY - 6, maxY: maxY + 8 }, 0.1, 30);
+      cam.fitBounds({ minX: minX - 6, maxX: maxX + 6, minY: Math.min(minY, laneRise(LANE_MIN)) - 6, maxY: maxY + 8 }, 0.1, 30);
     } else {
       const b = this.levelBounds();
       cam.fitBounds({ minX: b.minX, maxX: b.maxX, minY: -4, maxY: Math.min(b.maxY, this.level.width * 0.55) }, 0.08, 30);
@@ -963,7 +1018,7 @@ export class LevelScene implements Scene {
     this.sim = new TrainSim(this.samples, this.path, opts);
     const perCar = 2;
     const riders = storage.ridersFor(opts.cars * perCar);
-    this.passengers = new PassengerSim({ cars: opts.cars, perCar, gravityScale: opts.gravityScale, terrain: this.terrain, sideEjectG: 2.5 });
+    this.passengers = new PassengerSim({ cars: opts.cars, perCar, gravityScale: opts.gravityScale, terrain: this.terrain, sideEjectG: 2.2 });
     this.passengers.onEject = (pv, side) => {
       const name = riders[pv.index]?.name ?? 'Jemand';
       this.failName = name;
@@ -984,7 +1039,6 @@ export class LevelScene implements Scene {
     this.finaleTimer = 0;
     this.physicsAccum = 0;
     this.fitCamera(false);
-    this.playBtn.setColor('#d64545');
     this.swapPlayIcon(true);
     this.hint.visible = false;
     this.updateGoals();
@@ -1004,7 +1058,6 @@ export class LevelScene implements Scene {
       this.resultPanel.destroy({ children: true });
       this.resultPanel = null;
     }
-    this.playBtn.setColor(PINK);
     this.swapPlayIcon(false);
     this.timeScale = 1;
     this.speedText.text = '';
@@ -1015,7 +1068,6 @@ export class LevelScene implements Scene {
   }
 
   private swapPlayIcon(riding: boolean): void {
-    // Button neu zeichnen: einfacher als Icon-Tausch
     const old = this.playBtn;
     const btn = new Button('', { width: 78, round: true, color: riding ? '#d64545' : PINK, icon: riding ? iconStop : iconPlay });
     btn.position.copyFrom(old.position);
@@ -1024,7 +1076,7 @@ export class LevelScene implements Scene {
     this.ui.removeChild(old);
     old.destroy({ children: true });
     this.playBtn = btn;
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.playBtn, this.shelfBtn, this.saveBtn];
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.saveBtn];
     this.ui.addChild(this.toast);
   }
 
@@ -1049,16 +1101,8 @@ export class LevelScene implements Scene {
         case 'splash': this.view.effects.splash(s.X, s.Y - 0.5); break;
         case 'peak': this.slowMo = 0.35; break;
         case 'inversion': this.view.effects.glitter(s.X, s.Y); break;
-        case 'fail': {
-          this.view.effects.sparks(s.X, s.Y, 20);
-          this.slowMo = 1.4;
-          break;
-        }
-        case 'finish': {
-          this.cameraPhase = 'finale';
-          this.view.effects.confetti(s.X, s.Y + 3, 80);
-          break;
-        }
+        case 'fail': this.view.effects.sparks(s.X, s.Y, 20); this.slowMo = 1.4; break;
+        case 'finish': this.cameraPhase = 'finale'; this.view.effects.confetti(s.X, s.Y + 3, 80); break;
         default: break;
       }
     }
@@ -1072,13 +1116,11 @@ export class LevelScene implements Scene {
       this.timeScale = 0.45;
     } else this.timeScale = 1;
     const simDt = dt * this.timeScale;
-    if (this.cameraPhase === 'overview' && this.rideTime < 1.2) {
-      // Übersichtsflug, Zug wartet
-    } else {
+    if (!(this.cameraPhase === 'overview' && this.rideTime < 1.2)) {
       if (this.cameraPhase === 'overview') this.cameraPhase = 'follow';
       this.sim.step(simDt);
       this.physicsAccum += simDt;
-      const auto = this.sim.cars[0] ? this.samples!.auto[Math.min(this.samples!.count - 1, Math.round(this.sim.cars[0].s / this.samples!.step))] === 1 : false;
+      const auto = this.samples!.auto[Math.min(this.samples!.count - 1, Math.round(this.sim.cars[0].s / this.samples!.step))] === 1;
       while (this.physicsAccum >= 1 / 60) {
         this.physicsAccum -= 1 / 60;
         this.passengers.step(this.sim.cars, 1 / 60, this.sim.v, auto || this.sim.phase === 'failed');
@@ -1087,7 +1129,6 @@ export class LevelScene implements Scene {
     this.processEvents();
     this.view.updateTrain(this.sim.cars, this.passengers.views, simDt);
     this.view.trackR.updateCoins(this.sim.collected, this.time);
-    // Kamera
     const cam = this.view.camera;
     const front = this.sim.cars[0];
     const portrait = this.h > this.w;
@@ -1097,28 +1138,24 @@ export class LevelScene implements Scene {
       const look = 0.5 * v;
       const zoomBase = portrait ? 24 : 21;
       const zoom = clamp(zoomBase - v * 0.45, portrait ? 9 : 8, portrait ? 26 : 22) * (this.slowMo > 0 ? 1.2 : 1);
-      cam.setTarget(s.X + front.tx * look, s.Y + front.ty * look * 0.5 + (portrait ? 1.5 : 2.5), zoom);
+      cam.setTarget(s.X + Math.cos(front.angle) * look, s.Y + Math.sin(front.angle) * look * 0.5 + (portrait ? 1.5 : 2.5), zoom);
       cam.smoothing = this.cameraPhase === 'overview' ? 2 : 4;
-      if (this.sim.phase === 'failed') {
-        cam.setTarget(s.X, s.Y + 2, 14);
-      }
+      if (this.sim.phase === 'failed') cam.setTarget(s.X, s.Y + 2, 14);
     } else if (this.cameraPhase === 'finale') {
       this.fitCamera(false);
       cam.smoothing = 2;
     }
-    this.speedText.text = `${Math.round(this.sim.kmh)} km/h   ${front.gSeat.toFixed(1)} g`;
-    // Fahrt zu Ende?
+    this.speedText.text = `${Math.round(this.sim.kmh)} km/h   ${front.gSeat.toFixed(1)} g${Math.abs(front.bank) > 0.05 ? `   ${Math.round((front.bank * 180) / Math.PI)}°` : ''}`;
     if (this.sim.finished && !this.resultShown) {
       const wait = this.sim.phase === 'failed' ? 2.2 : 1.6;
-      const since = this.sim.phase === 'failed' ? this.sim.sinceFail : this.rideTime - (this.sim.events.length ? 0 : 0);
-      if (this.sim.phase === 'failed' ? since > wait : true) {
-        // nach dem Ziel kurz warten
+      if (this.sim.phase === 'failed') {
+        if (this.sim.sinceFail > wait) this.showResult();
+      } else {
         this.finaleTimer += dt;
-        if (this.sim.phase === 'failed' || this.finaleTimer > wait) this.showResult();
+        if (this.finaleTimer > wait) this.showResult();
       }
     }
   }
-  private finaleTimer = 0;
 
   private showResult(): void {
     if (!this.sim || !this.path || !this.stats || this.resultShown) return;
@@ -1169,7 +1206,6 @@ export class LevelScene implements Scene {
     msg.position.set(0, y + 6);
     c.addChild(msg);
     y += msg.text ? msg.height + 14 : 4;
-    // Ziele
     if (!this.sandbox) {
       ev.goals.forEach((r) => {
         const g = new Graphics();
@@ -1186,7 +1222,6 @@ export class LevelScene implements Scene {
         y += 26;
       });
     }
-    // Statistik
     const st = sim.stats;
     const statLine = label(`${t('stats.speed')} ${Math.round(st.maxSpeed * 3.6)} km/h · ${t('stats.maxG')} ${st.maxG.toFixed(1)} · ${t('stats.airtime')} ${st.airtime.toFixed(1)} s · ${t('stats.coins')} ${st.coins}/${this.level.coins?.length ?? 0} · ${t('stats.time')} ${st.time.toFixed(1)} s`, 13, '#7a6f8f', false, { wordWrap: true, wordWrapWidth: w - 50 });
     statLine.position.set(0, y + 10);
@@ -1196,9 +1231,7 @@ export class LevelScene implements Scene {
       const u = label(`${t('unlocked')}: ${unlockedNow.map((x) => ELEMENT_NAMES[x]).join(', ')}`, 15, '#2f7a4a', true, { wordWrap: true, wordWrapWidth: w - 50 });
       u.position.set(0, y + 8);
       c.addChild(u);
-      y += 40;
     }
-    // Buttons
     const by = h / 2 - 40;
     const retry = new Button(t('retry'), { width: 130, height: 48, size: 18, color: '#4f8dff' });
     retry.position.set(-w / 2 + 80, by);
@@ -1232,7 +1265,6 @@ export class LevelScene implements Scene {
     const fallback = this.sandbox?.saved?.name ?? `${this.world.name} ${new Date().toLocaleDateString()}`;
     let name = fallback;
     try {
-      // prompt() fehlt in manchen eingebetteten Ansichten: dann Standardname
       name = prompt(t('paint.name'), fallback) || fallback;
     } catch {
       name = fallback;
@@ -1257,7 +1289,8 @@ export class LevelScene implements Scene {
     this.backBtn.position.set(36, safeTop + 26);
     this.undoBtn.position.set(96, safeTop + 26);
     this.redoBtn.position.set(152, safeTop + 26);
-    this.saveBtn.position.set(w - 36, safeTop + 26);
+    this.clearBtn.position.set(w - 36, safeTop + 26);
+    this.saveBtn.position.set(w - 92, safeTop + 26);
     if (portrait) {
       this.levelTitle.position.set(w / 2, safeTop + 72);
       this.goalsBar.position.set(w / 2, safeTop + 112);
@@ -1288,16 +1321,15 @@ export class LevelScene implements Scene {
         }
       }
       this.renderChips();
+      if (this.selected >= 0 && this.drag.kind === 'none') this.drawOverlay();
       this.view.camera.clampTo({ minX: -40, maxX: this.level.width + 40, minY: -30, maxY: 160 });
     } else if (this.mode === 'ride') {
       this.updateRide(dt);
     } else if (this.mode === 'result') {
-      // Zug bleibt sichtbar, Kamera ruhig
       if (this.sim && this.passengers) this.view.updateTrain(this.sim.cars, this.passengers.views, dt);
     }
     this.view.update(dt);
     this.toast.update(dt);
-    if (this.time < 1 && !this.path) this.updateHint();
   }
 }
 
@@ -1320,4 +1352,4 @@ function fmtValue(type: string, v: number): string {
   }
 }
 
-export { Text };
+export { interpretStroke, closestSample };
