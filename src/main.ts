@@ -36,15 +36,17 @@ async function boot(): Promise<void> {
   } catch {
     /* ignore */
   }
-  const showSplash = levelParam <= 0 && params.get('scene') !== 'start' && !seen;
+  // ?scene=splash zeigt das Intro immer, ?scene=start überspringt es
+  const scene = params.get('scene');
+  const showSplash = scene === 'splash' || (levelParam <= 0 && scene !== 'start' && !seen);
   // Das illudiy-Logo nur laden, wenn der Splash auch gezeigt wird (parallel zu Schriften und Texturen)
   const [, , logo] = await Promise.all([loadArtOverrides(), loadFonts(), showSplash ? SplashScene.preload() : Promise.resolve(null)]);
   const game = new Game();
   await game.init();
   (window as BootWindow).tcBootDone?.();
-  if (levelParam > 0) game.goto(() => new LevelScene(levelParam), true);
-  else if (!showSplash) game.goto(() => new StartScene(), true);
-  else game.goto(() => new SplashScene(logo), true);
+  if (showSplash) game.goto(() => new SplashScene(logo), true);
+  else if (levelParam > 0) game.goto(() => new LevelScene(levelParam), true);
+  else game.goto(() => new StartScene(), true);
   try {
     sessionStorage.setItem('tc.splash', '1');
   } catch {

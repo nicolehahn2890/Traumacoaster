@@ -38,7 +38,7 @@ npm run screenshots  # Playwright-Screenshots (Hoch-, Quer-, Desktop-Format) nac
 npm run scenario     # Playwright-Szenario: Oval, Steilkurve, Looping, Löschen, Überzeichnen mit Fahrten
 ```
 
-`?scene=start` überspringt den Splash, `?fast=4` beschleunigt die Spielzeit (Tests), `VITE_UNLOCK_ALL=1 npm run dev` schaltet alle Welten und Elemente frei.
+`?scene=start` überspringt den Splash, `?scene=splash` zeigt ihn immer (im Spiel: Einstellungen → „Intro ansehen“), `?fast=4` beschleunigt die Spielzeit (Tests), `VITE_UNLOCK_ALL=1 npm run dev` schaltet alle Welten und Elemente frei.
 
 ## Stand des Prototyps
 

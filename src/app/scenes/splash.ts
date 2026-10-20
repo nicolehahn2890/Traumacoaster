@@ -3,6 +3,9 @@
  * Spieltitel in Lobster mit pinker Extrusion, weiche Brand-Blobs und Sterne, dazu ein
  * Sticker-Zug mit hartem Offset-Schatten auf einer handgezeichneten Schiene.
  * Bewegung kurz und springig (Overshoot wie --ease-bounce), keine langen Blenden.
+ * Der Zug fährt einmal komplett durch und zieht dabei die Schiene wie einen Ladebalken;
+ * danach geht es zum Startscreen. Tippen überspringt. Erneut abspielen: Einstellungen
+ * → „Intro ansehen“ oder ?scene=splash.
  */
 import { Assets, Container, Graphics, Sprite, Texture, type Text } from 'pixi.js';
 import type { Scene } from '../scene';
@@ -17,8 +20,10 @@ import { BRAND, BRAND_OUTLINE as OUTLINE } from '@/ui/brand';
 
 const LOGO_URL = `${import.meta.env.BASE_URL ?? './'}brand/illudiy-logo.webp`;
 const LOGO_ASPECT = 1024 / 1223; // Breite ÷ Höhe der Logodatei
-const DURATION = 2.8; // Sekunden bis zum automatischen Weiter
 const SHADOW = 4; // harter Offset-Schatten (--shadow-pop: 4/4)
+const TRAIN_START = 0.25; // Sekunden, bis der Zug losfährt
+const TRAIN_CROSS = 3.2; // Sekunden für die komplette Durchfahrt (Ladebalken); danach endet der Splash
+const TRAIN_OFFSCREEN = 160; // Startposition links außerhalb (der Zug ist 170 px lang)
 
 /** Overshoot-Easing, entspricht --ease-bounce cubic-bezier(.34,1.56,.64,1) */
 function easeOutBack(p: number): number {
@@ -188,7 +193,9 @@ export class SplashScene implements Scene {
     this.sub.alpha = 0;
     this.title.scale.set(0);
     this.logo.scale.set(0);
-    if (this.logoTexture) this.setLogo(this.logoTexture);
+    // Beim erneuten Abspielen liegt das Logo meist schon im Asset-Cache
+    const cached = this.logoTexture ?? Assets.get<Texture>(LOGO_URL) ?? null;
+    if (cached) this.setLogo(cached);
     else {
       this.showFallbackWordmark();
       // Zweiter Versuch im Hintergrund (Assets dedupliziert laufende Ladevorgänge)
@@ -241,14 +248,31 @@ export class SplashScene implements Scene {
     if (this.logoFallback) this.logoFallback.style.fontSize = Math.round(this.logoH * 0.3);
   }
 
-  private drawRail(): void {
+  /** Handgezeichnete Schiene von links bis `toX`: Sie entsteht hinter dem Zug und wirkt so wie ein Ladebalken */
+  private drawRail(toX: number): void {
     const g = this.rail;
     g.clear();
     const n = 48;
-    const span = this.w + 40;
-    g.moveTo(-20, noise1(0, 9) * 2);
-    for (let i = 1; i <= n; i++) g.lineTo(-20 + (span * i) / n, noise1(i * 0.6, 9) * 2.2);
+    const step = (this.w + 40) / n;
+    const end = Math.min(toX, this.w + 20);
+    if (end <= -20) return;
+    const wobble = (i: number) => noise1(i * 0.6, 9) * 2.2;
+    g.moveTo(-20, wobble(0));
+    for (let i = 1; i <= n; i++) {
+      const x = -20 + step * i;
+      if (x >= end) {
+        g.lineTo(end, wobble((end + 20) / step));
+        break;
+      }
+      g.lineTo(x, wobble(i));
+    }
     g.stroke({ width: 3.5, color: hexNum(OUTLINE), cap: 'round', join: 'round' });
+  }
+
+  /** Position des Zugs zur Zeit `time`: Start links außerhalb, komplette Durchfahrt in TRAIN_CROSS Sekunden */
+  private trainX(time: number): number {
+    const speed = (this.w + TRAIN_OFFSCREEN * 2) / TRAIN_CROSS;
+    return -TRAIN_OFFSCREEN + Math.max(0, time - TRAIN_START) * speed;
   }
 
   resize(w: number, h: number): void {
@@ -287,8 +311,8 @@ export class SplashScene implements Scene {
     for (const st of this.stars) {
       st.g.position.set(clamp(this.pos.logo.x + st.dx * this.logoH, 16, w - 16), clamp(this.pos.logo.y + st.dy * this.logoH, 16, h - 16));
     }
-    this.drawRail();
     this.rail.position.set(0, this.pos.railY);
+    this.drawRail(this.trainX(this.t) + 30);
   }
 
   update(dt: number): void {
@@ -314,11 +338,13 @@ export class SplashScene implements Scene {
       st.g.scale.set(p * twinkle);
       st.g.rotation = Math.sin(this.t * 1.2 + st.phase) * 0.2 * live;
     }
-    // Zug: fährt nach einem kurzen Moment los und läuft durch
-    const x = -160 + ((Math.max(0, this.t - 0.25) * 240) % (this.w + 340));
+    // Zug: fährt nach einem kurzen Moment los und zieht die Schiene hinter sich her (Ladebalken).
+    // Der Splash endet erst, wenn der Zug rechts komplett aus dem Bild ist.
+    const x = this.trainX(this.t);
     const bob = Math.sin(this.t * 14) * 1.5 * live;
     this.train.position.set(x, this.pos.railY - 19 + bob);
-    if (this.t > DURATION) this.finish();
+    this.drawRail(x + 30);
+    if (x - TRAIN_OFFSCREEN > this.w) this.finish();
   }
 
   private finish(): void {
