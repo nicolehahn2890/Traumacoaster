@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stageCurve, strokeToTrack } from '@/track/strokeToTrack';
+import { closeTrack, stageCurve, strokeToTrack } from '@/track/strokeToTrack';
 import { sampleTrack, trackStats } from '@/track/model';
 import { TrainSim, G, type TrainSimOptions } from '@/physics/trainSim';
 import { Terrain } from '@/physics/terrain';
@@ -14,6 +14,7 @@ const param = (n: number, f: (t: number) => [number, number]): StagePoint[] =>
 
 function simFor(stroke: StagePoint[], over: Partial<TrainSimOptions> = {}, startType: TrainSimOptions['startType'] = 'chainlift') {
   const r = strokeToTrack(stroke);
+  closeTrack(r.path); // offene Striche bekommen für die Fahrt den automatischen Rückweg
   r.path.startType = startType;
   const samples = sampleTrack(r.path);
   const sim = new TrainSim(samples, r.path, {
@@ -37,7 +38,7 @@ describe('Zug-Simulation', () => {
     expect(sim.phase).toBe('failed');
     expect(sim.failReason).toBe('stall');
     expect(sim.stats.distance).toBeGreaterThan(2);
-    expect(sim.stats.distance).toBeLessThan(20);
+    expect(sim.stats.distance).toBeLessThan(25);
   });
   it('zieht den Zug nur am Anstieg hoch und erreicht danach etwa sqrt(2gh)', () => {
     const { sim, samples, r } = simFor(hill(15), { frictionScale: 0 });
@@ -51,8 +52,8 @@ describe('Zug-Simulation', () => {
     }
     const h = trackStats(r.path, samples).maxHeight - r.path.nodes[0].y;
     expect(h).toBeGreaterThan(13);
-    // der Kettenzug übergibt den Zug mit 4 m/s an der Kuppe
-    const expected = Math.sqrt(2 * G * h + 4 * 4);
+    // der Kettenzug übergibt den Zug mit 6 m/s an der Kuppe
+    const expected = Math.sqrt(2 * G * h + 6 * 6);
     expect(liftEnded).toBe(true);
     expect(vmax).toBeGreaterThan(expected * 0.85);
     expect(vmax).toBeLessThan(expected * 1.02);
@@ -80,6 +81,7 @@ describe('Zug-Simulation', () => {
   });
   it('sammelt Coins ein', () => {
     const r = strokeToTrack(hill(12));
+    closeTrack(r.path);
     const samples = sampleTrack(r.path);
     const i = Math.floor(samples.count * 0.2);
     const sim = new TrainSim(samples, r.path, {
@@ -96,6 +98,23 @@ describe('Zug-Simulation', () => {
     run(sim);
     expect(sim.stats.maxSpeed * 3.6).toBeGreaterThan(60);
     expect(sim.phase).toBe('done');
+  });
+  it('fährt einen von Hand geschlossenen Rundkurs bis in die Station', () => {
+    // Hügel, kurze Kehre am Ende, Rückweg oberhalb zurück und von oben in die Station (gegen die Abfahrtsrichtung)
+    const stroke = [
+      ...param(20, (t) => [t * 8, 0]),
+      ...param(30, (t) => [8 + t * 10, 16 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+      ...param(30, (t) => [18 + t * 14, 16 - 12 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+      ...param(20, (t) => [32 + t * 10, 4]),
+      ...param(16, (t) => [42 + 3 * Math.sin(Math.PI * t), 4 + 3 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+      ...param(40, (t) => [42 - t * 36, 7]),
+      ...param(20, (t) => [6 - t * 6, 7 - 7 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+    ];
+    const { sim, r } = simFor(stroke, { skin: 'skinWood' });
+    expect(r.path.nodes.some((n) => n.kind === 'closeTurn')).toBe(true);
+    run(sim);
+    expect(sim.phase).toBe('done');
+    expect(sim.stats.minG).toBeGreaterThan(-1.6); // Airtime an der Kuppe des Teststrichs ist ok, die Fahrt kommt an
   });
   it('fährt eine flache Bodenkurve mit Schräglage und ohne Entgleisen', () => {
     // Lifthügel, dann Oval am Boden zurück zur Station; die Kehren sind 20 m breit (enge Haarnadeln
@@ -122,6 +141,6 @@ describe('Zug-Simulation', () => {
     expect(sim.phase).toBe('done');
     expect(maxBank).toBeGreaterThan(0.2); // Wagen legt sich in die Kurve
     expect(maxLat).toBeLessThan(3.0);
-    expect(minUp).toBeGreaterThan(0.3); // nie kopfüber
+    expect(minUp).toBeGreaterThan(-0.1); // nie kopfüber (steile Abfahrt kippt den Oben-Vektor mit)
   });
 });

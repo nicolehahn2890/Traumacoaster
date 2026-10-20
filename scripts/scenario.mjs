@@ -73,6 +73,19 @@ const state = () => page.evaluate(() => {
 
 /** Fahrt bis zum Ergebnis; sammelt min(upy) und max|bank| des ersten Wagens */
 async function ride(tag, shotAt = 6) {
+  // min(upy) und max|bank| im Seitenkontext pro Frame sammeln (die Fahrt läuft im Zeitraffer, Polling wäre zu grob)
+  await page.evaluate(() => {
+    window.__ride = { minUp: 1, maxBank: 0 };
+    const tick = () => {
+      const car = window.tcGame?.current?.sim?.cars?.[0];
+      if (car) {
+        window.__ride.minUp = Math.min(window.__ride.minUp, car.upy);
+        window.__ride.maxBank = Math.max(window.__ride.maxBank, Math.abs((car.bank * 180) / Math.PI));
+      }
+      if (window.tcGame?.current?.mode !== 'result') requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
   await page.mouse.click(640, 800 - 56);
   let minUp = 1;
   let maxBank = 0;
@@ -81,9 +94,10 @@ async function ride(tag, shotAt = 6) {
   for (let i = 0; i < 120; i++) {
     await sleep(500);
     st = await state();
-    if (st.car) {
-      minUp = Math.min(minUp, Number(st.car.upy));
-      maxBank = Math.max(maxBank, Math.abs(Number(st.car.bank)));
+    const acc = await page.evaluate(() => window.__ride);
+    if (acc) {
+      minUp = Math.min(minUp, acc.minUp);
+      maxBank = Math.max(maxBank, acc.maxBank);
     }
     if (!shot && st.sim && Number(st.sim.t) >= shotAt) {
       shot = true;
@@ -118,7 +132,7 @@ await sleep(800);
 st = await state();
 console.log('after oval', st);
 check(st.turns === 2, `Oval: 2 Kurven (ist ${st.turns})`);
-check(st.lanes === 3, `Oval: 3 Spuren (ist ${st.lanes})`);
+check(st.lanes === 2, `Oval: 2 Spuren (vorne und hinten, ist ${st.lanes})`);
 check(st.loops === 0, `Oval: kein Looping (ist ${st.loops})`);
 check(Number(st.height) < 3, `Oval: bleibt am Boden (Höhe ${st.height})`);
 await page.screenshot({ path: 'screenshots/scenario-1-oval.png' });
@@ -135,7 +149,7 @@ await strokeStage(hillOval, 10);
 await sleep(800);
 st = await state();
 console.log('after hill+oval', st);
-check(st.turns === 2 && st.lanes === 3 && st.loops === 0, `Hügel+Oval: 2 Kurven, 3 Spuren, 0 Loopings (ist ${st.turns}/${st.lanes}/${st.loops})`);
+check(st.turns === 2 && st.lanes === 2 && st.loops === 0, `Hügel+Oval: 2 Kurven, 2 Spuren (vorne und hinten), 0 Loopings (ist ${st.turns}/${st.lanes}/${st.loops})`);
 check(Number(st.height) > 11, `Hügel+Oval: Hügel ist Höhe (${st.height} m)`);
 await page.screenshot({ path: 'screenshots/scenario-2-hill-oval.png' });
 r = await ride('2-hill-oval', 9);
@@ -156,7 +170,7 @@ st = await state();
 console.log('after hairpin', st);
 check(st.loops === 0, `Steilkurve: kein Looping (ist ${st.loops})`);
 check(st.turns >= 1, `Steilkurve: mindestens 1 Kurve (ist ${st.turns})`);
-check(st.lanes === 2, `Steilkurve: 2 Spuren (ist ${st.lanes})`);
+check(st.lanes >= 2, `Steilkurve: mindestens 2 Spuren (ist ${st.lanes})`);
 await page.screenshot({ path: 'screenshots/scenario-3-hairpin.png' });
 r = await ride('3-hairpin', 7);
 console.log('ride result', r);
@@ -196,14 +210,34 @@ st = await state();
 check(st.nodes === 0, `Löschen-Knopf räumt die Bahn weg (Knoten: ${st.nodes})`);
 await strokeStage([[0, 0], [20, 0.1], [40, 0], [60, 0.1]], 10);
 await sleep(600);
+const lanesBefore = (await state()).lanes;
 // Überzeichnen: auf der Bahn beginnen (Mindesthöhe 0,8 m), steiler Hügel, auf der Bahn enden
 await strokeStage([[20, 0.8], [24, 2], [27, 8], [30, 11], [33, 8], [36, 2], [40, 0.8]], 10);
 await sleep(800);
 st = await state();
 console.log('after overdraw', st);
 check(Number(st.height) > 8, `Überzeichnen: Hügel eingebaut (Höhe ${st.height})`);
-check(st.lanes === 1, `Überzeichnen: Spur bleibt (ist ${st.lanes})`);
+check(st.lanes === lanesBefore, `Überzeichnen: Spuren bleiben wie vorher (${lanesBefore} → ${st.lanes})`);
+check(st.loops === 0, `Überzeichnen: kein Looping (ist ${st.loops})`);
 await page.screenshot({ path: 'screenshots/scenario-5-overdraw.png' });
+}
+
+// ---------------------------------------------------------------- 6. Kreis von Hand schließen
+if (want('6')) {
+await openLevel();
+// Hügel, kurze Kehre, Rückweg oberhalb zurück bis in die Station
+const circuit = [[0, 0], [6, 1], [10, 7], [14, 15], [18, 16], [24, 12], [30, 5], [40, 4], [46, 5], [48, 8], [44, 9], [30, 9], [14, 9], [6, 7], [1, 2], [0, 0]];
+await strokeStage(circuit, 10);
+await sleep(800);
+st = await state();
+console.log('after circuit', st);
+check(st.loops === 0, `Kreis von Hand: kein Looping (ist ${st.loops})`);
+check(st.turns >= 1, `Kreis von Hand: Kehre erkannt (ist ${st.turns})`);
+await page.screenshot({ path: 'screenshots/scenario-6-circuit.png' });
+r = await ride('6-circuit', 6);
+console.log('ride result', r);
+check(r.minUp > -0.1, `Kreis von Hand: Wagen steht nie Kopf (min upy ${r.minUp})`);
+check(r.st.sim?.phase === 'done', `Kreis von Hand: Fahrt kommt an (ist ${r.st.sim?.phase}/${r.st.sim?.fail})`);
 }
 
 await browser.close();

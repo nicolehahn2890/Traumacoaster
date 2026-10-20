@@ -4,13 +4,10 @@
  * Der Strich wird mit derselben Lesart interpretiert (Boden = Tiefe, steil = Höhe), startet aber
  * im Zustand der Bahn am Anfangspunkt und blendet am Ende auf die Tiefe der Bahn zurück.
  */
-import type { Vec2 } from '@/core/math';
-import { dist } from '@/core/math';
 import { add3, dist3, normalize3, scale3, sub3 } from '@/core/math3';
-import { dedupe, smoothStroke } from '@/core/rdp';
-import { closestSample, isAutoNode, nodeIn, nodeOut, nodePos, sampleTrack, type TrackNode, type TrackPath, type TrackSamples } from './model';
+import { closestSample, isAutoNode, isClosed, nodeIn, nodeOut, nodePos, sampleTrack, type TrackNode, type TrackPath, type TrackSamples } from './model';
 import { LANE_DEPTH, LANE_MAX, LANE_MIN, toWorld, type StagePoint } from './stage';
-import { closePath, interpretWithEvents, pointsToNodes, type StrokeOptions } from './strokeToTrack';
+import { closePath, interpretWithEvents, pointsToNodes, prepareStroke, type StrokeOptions } from './strokeToTrack';
 
 export interface Anchors {
   s1: number;
@@ -32,6 +29,8 @@ export function nodeArcLengths(path: TrackPath, samples: TrackSamples): number[]
       if (seg < out.length) out[seg] = samples.s[i];
     }
   }
+  // offene Bahn: der letzte Knoten beginnt kein Segment, er liegt am Ende
+  if (!isClosed(path) && out.length) out[out.length - 1] = samples.length;
   return out;
 }
 
@@ -46,7 +45,7 @@ export function nearestOnTrack(samples: TrackSamples, p: StagePoint): { s: numbe
   return best;
 }
 
-export function overdrawAnchors(samples: TrackSamples, stroke: StagePoint[], snapDistance = 3): Anchors | null {
+export function overdrawAnchors(samples: TrackSamples, stroke: StagePoint[], snapDistance = 3, cyclic = true): Anchors | null {
   if (stroke.length < 2 || samples.count === 0) return null;
   const a = nearestOnTrack(samples, stroke[0]);
   const b = nearestOnTrack(samples, stroke[stroke.length - 1]);
@@ -57,31 +56,23 @@ export function overdrawAnchors(samples: TrackSamples, stroke: StagePoint[], sna
   if (forward < 0) forward += L;
   let backward = a.s - b.s;
   if (backward < 0) backward += L;
-  const reversed = backward < forward;
+  // offene Bahn: kein Umlauf, der Strich darf nur rückwärts gezeichnet sein
+  const reversed = cyclic ? backward < forward : b.s < a.s;
   const A = reversed ? b : a;
   const B = reversed ? a : b;
   return { s1: A.s, s2: B.s, z1: samples.z[A.index], z2: samples.z[B.index], y1: samples.y[A.index], y2: samples.y[B.index], reversed };
 }
 
 export function applyOverdraw(path: TrackPath, stroke: StagePoint[], opts: StrokeOptions & { snapDistance?: number } = {}): TrackPath | null {
+  const cyclic = isClosed(path);
   const samples = sampleTrack(path, 0.25);
-  const anchors = overdrawAnchors(samples, stroke, opts.snapDistance ?? 3);
+  const anchors = overdrawAnchors(samples, stroke, opts.snapDistance ?? 3, cyclic);
   if (!anchors) return null;
   const { s1, s2, z1, z2, y1, reversed } = anchors;
 
-  let pts: Vec2[] = stroke.map((p) => ({ x: p.X, y: p.Y }));
-  if (reversed) pts.reverse();
-  pts = dedupe(pts, 0.15);
-  pts = smoothStroke(pts, 5);
-  // gleichmäßig verdichten
-  const dense: Vec2[] = [pts[0]];
-  for (let i = 1; i < pts.length; i++) {
-    const a = pts[i - 1];
-    const b = pts[i];
-    const d = dist(a, b);
-    const n = Math.max(1, Math.ceil(d / 0.5));
-    for (let k = 1; k <= n; k++) dense.push({ x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n });
-  }
+  const ordered = reversed ? [...stroke].reverse() : stroke;
+  const dense = prepareStroke(ordered);
+  if (dense.length < 2) return null;
   const ground = opts.groundHeight ?? (() => 0);
   const clearance = opts.groundClearance ?? 0.6;
   // Der Strich wird auf der sichtbaren Bahn gezeichnet, die um die Mindesthöhe über dem Boden liegt:
@@ -97,6 +88,24 @@ export function applyOverdraw(path: TrackPath, stroke: StagePoint[], opts: Strok
   // alte Knoten im Bereich (s1, s2) entfernen
   const sNodes = nodeArcLengths(path, samples);
   const gap = 1.0;
+  if (!cyclic) {
+    // offene Bahn: Knoten davor, neue Knoten, Knoten danach; Station bleibt Knoten 0
+    const before: TrackNode[] = [];
+    const after: TrackNode[] = [];
+    path.nodes.forEach((nd, i) => {
+      if (isAutoNode(nd)) return;
+      if (sNodes[i] <= s1 + gap) before.push({ ...nd });
+      else if (sNodes[i] >= s2 - gap) after.push({ ...nd });
+    });
+    if (!before.length) return null;
+    const result: TrackNode[] = [...before, ...newNodes, ...after];
+    smoothJoin(result[before.length - 1], result[before.length]);
+    if (after.length) smoothJoin(result[before.length + newNodes.length - 1], result[before.length + newNodes.length]);
+    result[0].kind = 'station';
+    const openPath: TrackPath = { nodes: result, elements: path.elements.map((e) => ({ ...e })), startType: path.startType, templates: { ...path.templates }, closed: false };
+    closePath(openPath);
+    return openPath;
+  }
   const inSpan = (s: number) => (s2 >= s1 ? s > s1 + gap && s < s2 - gap : s > s1 + gap || s < s2 - gap);
   const n = path.nodes.length;
   let startIdx = 0;
@@ -130,9 +139,9 @@ export function applyOverdraw(path: TrackPath, stroke: StagePoint[], opts: Strok
     if (nd.kind === 'station') nd.kind = 'normal';
   });
   rotated[0].kind = 'station';
-  const newPath: TrackPath = { nodes: rotated, elements: path.elements.map((e) => ({ ...e })), startType: path.startType, templates: { ...path.templates } };
-  // Schluss neu bilden: direkte Verbindung oder automatischer Rückweg wie bei einem neuen Strich
-  closePath(newPath);
+  // geschlossene Bahn bleibt geschlossen: letzten neuen Knoten weich an den Anfang anschließen
+  smoothJoin(rotated[rotated.length - 1], rotated[0]);
+  const newPath: TrackPath = { nodes: rotated, elements: path.elements.map((e) => ({ ...e })), startType: path.startType, templates: { ...path.templates }, closed: true };
   return newPath;
 }
 

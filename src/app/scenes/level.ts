@@ -19,10 +19,10 @@ import { Terrain } from '@/physics/terrain';
 import { TrainSim, simOptionsForLevel, type FailReason } from '@/physics/trainSim';
 import { PassengerSim, initPhysics } from '@/physics/passengers';
 import {
-  clonePath, closestSample, createNode, emptyPath, isAutoNode, nodeIn, nodeOut, sampleTrack, segmentPoints, trackStats,
+  clonePath, closestSample, createNode, emptyPath, isAutoNode, isClosed, nodeIn, nodeOut, sampleTrack, segmentPoints, trackStats,
   type ElementKind, type StartType, type TrackNode, type TrackPath, type TrackSamples, type TrackStats,
 } from '@/track/model';
-import { strokeToTrack, closePath, interpretStroke, type StrokeMode } from '@/track/strokeToTrack';
+import { strokeToTrack, closePath, closeTrack, extendTrack, interpretStroke, type StrokeMode } from '@/track/strokeToTrack';
 import { applyOverdraw, nearestOnTrack } from '@/track/overdraw';
 import { laneRise, laneScale, toStage, toWorld, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
@@ -38,7 +38,7 @@ export interface SandboxConfig {
 }
 
 type Mode = 'draw' | 'ride' | 'result';
-type StrokeKind = 'new' | 'overdraw' | 'terrain';
+type StrokeKind = 'new' | 'overdraw' | 'terrain' | 'extend';
 
 interface DragState {
   kind: 'node' | 'handleIn' | 'handleOut' | 'depth' | 'roll' | 'shelf' | 'stroke' | 'none';
@@ -100,6 +100,8 @@ export class LevelScene implements Scene {
   private ui = new Container();
   private overlay = new Graphics();
   private ink = new Graphics();
+  /** Markierung des offenen Endes (pulsiert) */
+  private endMarker = new Graphics();
   private chipLayer = new Container();
   private gizmoLayer = new Container();
   private goalsBar = new Container();
@@ -113,6 +115,8 @@ export class LevelScene implements Scene {
   private clearBtn = new Button('', { width: 48, round: true, color: '#d64545', icon: iconTrash });
   private playBtn = new Button('', { width: 78, round: true, color: PINK, icon: iconPlay });
   private shelfBtn = new Button('', { width: 54, round: true, color: '#ffd23f', icon: iconShelf });
+  /** Zeitraffer der Fahrt (1×, 2×, 3×), sitzt während der Fahrt an der Stelle des Regal-Knopfs */
+  private speedBtn = new Button(`${storage.settings.rideSpeed || 3}×`, { width: 54, round: true, color: '#4f8dff', size: 20 });
   private saveBtn = new Button('', { width: 48, round: true, color: '#7ee081', icon: iconSave });
   private shelf = new Container();
   private shelfOpen = false;
@@ -158,10 +162,11 @@ export class LevelScene implements Scene {
     await initPhysics();
     const night = this.world.id === 6 || this.world.id === 8 || this.world.id === 10 || (this.unlocked.has('nightMode') && this.level.id === 25);
     this.view = new WorldView(this.world, this.terrain, this.skin, night);
-    this.view.overlay.addChild(this.ink, this.overlay);
+    this.view.overlay.addChild(this.ink, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
-    this.ui.addChild(this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.saveBtn, this.toast);
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.saveBtn];
+    this.ui.addChild(this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.toast);
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn];
+    this.speedBtn.visible = false;
     this.saveBtn.visible = !!this.sandbox;
     this.backBtn.onTap = () => this.leave();
     this.undoBtn.onTap = () => this.undo();
@@ -169,6 +174,7 @@ export class LevelScene implements Scene {
     this.clearBtn.onTap = () => this.clearTrack();
     this.playBtn.onTap = () => (this.mode === 'draw' ? this.startRide() : this.stopRide());
     this.shelfBtn.onTap = () => this.toggleShelf();
+    this.speedBtn.onTap = () => this.cycleRideSpeed();
     this.saveBtn.onTap = () => this.saveSandbox();
     this.levelTitle.text = this.sandbox ? `${t('sandbox')} · ${this.world.name}` : `${t('level', { n: this.level.id })} · ${this.level.name}`;
     this.view.trackR.setCoins(this.level.coins ?? []);
@@ -248,11 +254,17 @@ export class LevelScene implements Scene {
       else {
         const near = this.samples ? nearestOnTrack(this.samples, st) : null;
         const nearPx = near ? near.d * this.view.camera.zoom : Infinity;
-        if (near && nearPx < 30) this.strokeKind = 'overdraw';
+        const endNode = this.path.nodes[this.path.nodes.length - 1];
+        const endS = toStage(endNode.x, endNode.y, endNode.z);
+        const endPx = Math.hypot(endS.X - st.X, endS.Y - st.Y) * this.view.camera.zoom;
+        if (!isClosed(this.path) && endPx < 40) {
+          this.strokeKind = 'extend';
+          this.toast.show(t('extendHint'), 1.2);
+        } else if (near && nearPx < 30) this.strokeKind = 'overdraw';
         else if (this.onStage(st) && this.unlocked.has('mountain') && this.terrainEditable() && !this.nearStation(st)) this.strokeKind = 'terrain';
         else {
           this.strokeKind = 'new';
-          this.toast.show(t('overdrawHint'), 2.2);
+          this.toast.show(t('newStrokeHint'), 2.2);
         }
       }
       this.selected = -1;
@@ -491,6 +503,15 @@ export class LevelScene implements Scene {
       if (merged) this.view.setTrack(merged, sampleTrack(merged, 0.5), this.skin, this.terrain, this.allowTunnels, true);
       return;
     }
+    if (this.strokeKind === 'extend' && this.path) {
+      const ext = extendTrack(this.path, this.stroke, this.strokeOptions());
+      if (ext) {
+        this.strokeModes = [];
+        this.drawInk();
+        this.view.setTrack(ext, sampleTrack(ext, 0.5), this.skin, this.terrain, this.allowTunnels, true);
+      }
+      return;
+    }
     const r = strokeToTrack(this.stroke, this.strokeOptions());
     this.strokeModes = r.points.map((p) => p.mode);
     this.drawInk();
@@ -518,6 +539,16 @@ export class LevelScene implements Scene {
         return;
       }
       this.toast.show(t('overdrawHint'), 2.5);
+      this.redrawTrack();
+      return;
+    }
+    if (this.strokeKind === 'extend' && this.path) {
+      const ext = extendTrack(this.path, stroke, this.strokeOptions());
+      if (ext) {
+        this.pushHistory();
+        this.setPath(ext, true);
+        return;
+      }
       this.redrawTrack();
       return;
     }
@@ -777,10 +808,19 @@ export class LevelScene implements Scene {
   private drawOverlay(): void {
     const g = this.overlay;
     g.clear();
+    this.endMarker.clear();
     this.gizmoLayer.removeChildren();
     this.rollText.text = '';
     if (!this.path || this.mode !== 'draw') return;
     const nodes = this.path.nodes;
+    if (!isClosed(this.path) && nodes.length >= 2) {
+      const e = nodes[nodes.length - 1];
+      const se = toStage(e.x, e.y, e.z);
+      const ke = laneScale(e.z);
+      const zs = 1 / Math.max(0.35, this.view.camera.zoom / 12);
+      this.endMarker.circle(se.X, se.Y, 1.1 * ke * zs).fill({ color: 0xffd23f, alpha: 0.25 }).stroke({ width: 0.18 * ke * zs, color: 0xffd23f });
+      this.endMarker.circle(se.X, se.Y, 0.45 * ke * zs).fill(0xffd23f).stroke({ width: 0.12 * ke, color: hexNum(INK) });
+    }
     if (!this.unlocked.has('handles')) return;
     const zoomScale = 1 / Math.max(0.35, this.view.camera.zoom / 12);
     nodes.forEach((n, i) => {
@@ -973,6 +1013,7 @@ export class LevelScene implements Scene {
   private updateHint(): void {
     let msg = '';
     if (!this.path) msg = this.level.id === 1 ? t('tutorial.l1') : t('drawHint');
+    else if (!isClosed(this.path)) msg = t('openHint');
     else if (this.level.id === 2 && this.history.length <= 1) msg = t('tutorial.l2');
     else if (this.level.id === 5 && (this.stats?.turns ?? 0) === 0) msg = t('tutorial.l5');
     else if (this.level.id === 8 && (this.stats?.loops ?? 0) === 0) msg = t('tutorial.l8');
@@ -1014,8 +1055,18 @@ export class LevelScene implements Scene {
     this.shelf.visible = false;
     this.drawOverlay();
     this.chipLayer.removeChildren();
-    const opts = simOptionsForLevel(this.level, this.path, this.terrain, this.skin, this.allowTunnels);
-    this.sim = new TrainSim(this.samples, this.path, opts);
+    // Offene Bahn: Rückweg nur für die Fahrt auf einer Kopie ergänzen; die Zeichnung bleibt, wie sie ist
+    let ridePath = this.path;
+    let rideSamples = this.samples;
+    if (!isClosed(this.path)) {
+      ridePath = clonePath(this.path);
+      closeTrack(ridePath);
+      rideSamples = sampleTrack(ridePath, 0.25);
+      this.view.setTrack(ridePath, rideSamples, this.skin, this.terrain, this.allowTunnels, false);
+      this.toast.show(t('autoReturn'), 2);
+    }
+    const opts = simOptionsForLevel(this.level, ridePath, this.terrain, this.skin, this.allowTunnels);
+    this.sim = new TrainSim(rideSamples, ridePath, opts);
     const perCar = 2;
     const riders = storage.ridersFor(opts.cars * perCar);
     this.passengers = new PassengerSim({ cars: opts.cars, perCar, gravityScale: opts.gravityScale, terrain: this.terrain, sideEjectG: 2.2 });
@@ -1041,7 +1092,18 @@ export class LevelScene implements Scene {
     this.fitCamera(false);
     this.swapPlayIcon(true);
     this.hint.visible = false;
+    this.shelfBtn.visible = false;
+    this.speedBtn.visible = true;
     this.updateGoals();
+  }
+
+  /** Fahrttempo 1× → 2× → 3× → 1× */
+  private cycleRideSpeed(): void {
+    const cur = storage.settings.rideSpeed || 3;
+    const next = cur >= 5 ? 1 : cur >= 3 ? 5 : cur + 1;
+    storage.updateSettings({ rideSpeed: next });
+    this.speedBtn.setText(`${next}×`);
+    this.toast.show(t('ride.speed', { n: String(next) }), 1.2);
   }
 
   private stopRide(): void {
@@ -1061,6 +1123,9 @@ export class LevelScene implements Scene {
     this.swapPlayIcon(false);
     this.timeScale = 1;
     this.speedText.text = '';
+    this.speedBtn.visible = false;
+    this.shelfBtn.visible = true;
+    this.redrawTrack();
     this.fitCamera(false);
     this.updateGoals();
     this.updateHint();
@@ -1076,7 +1141,7 @@ export class LevelScene implements Scene {
     this.ui.removeChild(old);
     old.destroy({ children: true });
     this.playBtn = btn;
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.saveBtn];
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn];
     this.ui.addChild(this.toast);
   }
 
@@ -1114,13 +1179,13 @@ export class LevelScene implements Scene {
     if (this.slowMo > 0) {
       this.slowMo -= dt;
       this.timeScale = 0.45;
-    } else this.timeScale = 1;
+    } else this.timeScale = storage.settings.rideSpeed || 3;
     const simDt = dt * this.timeScale;
     if (!(this.cameraPhase === 'overview' && this.rideTime < 1.2)) {
       if (this.cameraPhase === 'overview') this.cameraPhase = 'follow';
       this.sim.step(simDt);
       this.physicsAccum += simDt;
-      const auto = this.samples!.auto[Math.min(this.samples!.count - 1, Math.round(this.sim.cars[0].s / this.samples!.step))] === 1;
+      const auto = this.sim.samples.auto[Math.min(this.sim.samples.count - 1, Math.round(this.sim.cars[0].s / this.sim.samples.step))] === 1;
       while (this.physicsAccum >= 1 / 60) {
         this.physicsAccum -= 1 / 60;
         this.passengers.step(this.sim.cars, 1 / 60, this.sim.v, auto || this.sim.phase === 'failed');
@@ -1233,12 +1298,21 @@ export class LevelScene implements Scene {
       c.addChild(u);
     }
     const by = h / 2 - 40;
-    const retry = new Button(t('retry'), { width: 130, height: 48, size: 18, color: '#4f8dff' });
-    retry.position.set(-w / 2 + 80, by);
+    const bw = Math.min(108, (w - 40) / 3);
+    const retry = new Button(t('retry'), { width: bw, height: 48, size: 16, color: '#4f8dff' });
+    retry.position.set(-bw - 10, by);
     retry.onTap = () => this.stopRide();
     c.addChild(retry);
-    const menu = new Button(t('menu'), { width: 110, height: 48, size: 18, color: '#9b6dff' });
-    menu.position.set(0, by);
+    // Bahn wegräumen und neu anfangen, direkt aus dem Ergebnis heraus
+    const clear = new Button(t('clear'), { width: bw, height: 48, size: 15, color: '#d64545' });
+    clear.position.set(0, by);
+    clear.onTap = () => {
+      this.stopRide();
+      this.clearTrack();
+    };
+    c.addChild(clear);
+    const menu = new Button(t('menu'), { width: bw, height: 48, size: 16, color: '#9b6dff' });
+    menu.position.set(bw + 10, by);
     menu.onTap = () => this.leave();
     c.addChild(menu);
     if (success && this.level.id < LEVELS.length) {
@@ -1300,6 +1374,7 @@ export class LevelScene implements Scene {
     }
     this.playBtn.position.set(w / 2, h - (portrait ? 64 : 56));
     this.shelfBtn.position.set(w - 46, h - 50);
+    this.speedBtn.position.set(w - 46, h - 50);
     this.shelf.position.set(w - 10, h - 120);
     this.hint.position.set(w / 2, h - (portrait ? 130 : 112));
     this.hint.style.wordWrapWidth = Math.min(380, w - 40);
@@ -1321,6 +1396,7 @@ export class LevelScene implements Scene {
         }
       }
       this.renderChips();
+      this.endMarker.alpha = 0.55 + 0.45 * Math.sin(this.time * 5);
       if (this.selected >= 0 && this.drag.kind === 'none') this.drawOverlay();
       this.view.camera.clampTo({ minX: -40, maxX: this.level.width + 40, minY: -30, maxY: 160 });
     } else if (this.mode === 'ride') {

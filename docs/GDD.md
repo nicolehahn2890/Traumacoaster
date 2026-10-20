@@ -115,9 +115,9 @@ Warum die Steilheit entscheidet: Eine Bodenkehre ist genau dort steil, wo der St
 | 2 | **Am Boden ist oben gleich hinten.** | Ein Bogen über die Bühne ist eine flache Kurve. Ein Oval ist eine Runde mit zwei Kurven über drei Spuren. Die Tiefe wird über ±4 m geglättet, damit Handzittern keine Querkräfte erzeugt. |
 | 3 | **Steil hoch ist Höhe.** | Ab 40° Steigung über 4 m (ohne x-Umkehr) liest das System Höhe, rückwirkend ab dem Fuß des Anstiegs. Die Tiefe friert ein. |
 | 4 | **In der Höhe: Kreuzung = Looping.** | Kreuzt der Strich sich selbst, wird die Schleife zum vertikalen Looping in derselben Tiefe. Der Wagen fährt wirklich kopfüber (3D-Rahmen mit Paralleltransport). |
-| 5 | **In der Höhe: Kehre = Steilkurve.** | Dreht der Strich in x um, ohne sich zu kreuzen (Hin- und Rückweg je ≥ 10 m), entsteht eine überhöhte Kurve in die Nachbarspur. Rückweg höher im Bild = nach hinten, tiefer = nach vorne. Der Rückweg landet dann auf der Bodenlinie der neuen Spur. |
+| 5 | **In der Höhe: Kehre = Steilkurve.** | Dreht der Strich in x um, ohne sich zu kreuzen (Hin- und Rückweg je ≥ 5 m), entsteht eine überhöhte Kurve: ein Halbkreis in der Horizontalen, dessen Radius aus der gezeichneten Breite folgt (mindestens 1,5 Spuren, höchstens 3). Rückweg höher im Bild = nach hinten, tiefer = nach vorne. Die Kurve bleibt auf Einfahrtshöhe, der gezeichnete Höhenunterschied wird danach weich abgebaut. Kleinere Rückwärts-Haken (unter 3 m) sind Zittern und werden entfernt. |
 | 6 | **Zurück auf den Boden.** | Kommt die Bahn in der Höhen-Lesart bis auf die Bodenlinie herunter, liest das System wieder Tiefe. Der Übergang ist weich (6 m). |
-| 7 | **Automatisches Schließen.** | Endet der Strich nahe am Start, wird direkt verbunden. Sonst entsteht ein automatischer Rückweg mit zwei Halbkreis-Kehren über die Nachbarspur und einer Bremsstrecke. Der Rückweg zählt für keine Ziele. |
+| 7 | **Offen bleibt offen.** | Endet der Strich auf dem Start (oder bis 6 m davor), wird direkt verbunden. Sonst bleibt die Bahn offen: Das Ende leuchtet, ein neuer Strich ab dem Ende setzt die Bahn fort, bis sie die Station erreicht. Beim Zeichnen wird nie ein Rückweg vorgeschlagen. Erst Play ergänzt für die Fahrt einen automatischen Rückweg (zwei Halbkreis-Kehren über die Nachbarspur, Bremsstrecke) auf einer Kopie; die Zeichnung bleibt, wie sie ist. Der Rückweg zählt für keine Ziele. |
 | 8 | **3D-Handles.** | Knoten antippen zeigt die Bezier-Handles (in 3D: Tangente mit Tiefenanteil). Unter dem Knoten sitzt das **Tiefen-Handle** (Quadrat): vertikal ziehen schiebt den Knoten nach hinten oder vorne. Rechts sitzt das **Roll-Handle** (Ring): ziehen setzt die Schräglage von Hand, Doppeltipp schaltet zurück auf automatisch. Beide erscheinen, sobald die Kurve freigeschaltet ist. |
 | 9 | **Überzeichnen wie der Illustrator-Stift.** | Beginnt und endet ein neuer Strich auf der Bahn (30 px), ersetzt er nur den Abschnitt dazwischen, mit derselben Lesart (Boden/Höhe) und weichen Nahtstellen. Das Strichende blendet auf die Tiefe der Bahn zurück. |
 | 10 | **Wegräumen.** | Der rote Papierkorb oben rechts löscht die ganze Bahn (mit Undo). Ein neuer Strich auf freier Fläche ersetzt die Bahn ebenfalls. |
@@ -136,7 +136,7 @@ Warum die Steilheit entscheidet: Eine Bodenkehre ist genau dort steil, wo der St
 ### 3.7 Knoten, Handles, Roll-Handle
 - Die Bahn wird intern als geschlossener Pfad aus kubischen Bezier-Segmenten in 3D gespeichert. Knoten haben Position (x, Höhe, Tiefe), zwei 3D-Tangenten-Handles und einen Rollwinkel (automatisch oder manuell).
 - Handles sind nur am angetippten Knoten sichtbar. Sie sind 14 px groß, haben aber eine Trefferfläche von 44 px.
-- Die Schräglage ist standardmäßig automatisch: Der Wagen neigt sich so, dass die gefühlte Kraft (Fliehkraft plus Schwerkraft) durch den Sitz geht, bis 72°. Das Roll-Handle überschreibt das; eine volle Drehung über zwei Knoten erzeugt eine **Schleife** (Heartline-Roll).
+- Die Schräglage ist standardmäßig automatisch: Der Wagen neigt sich so, dass die gefühlte Kraft (Fliehkraft plus Schwerkraft) durch den Sitz geht, bis 80°. Das Roll-Handle überschreibt das; eine volle Drehung über zwei Knoten erzeugt eine **Schleife** (Heartline-Roll).
 
 ### 3.8 Grenzen und Sonderfälle
 - Ein Strich, der die Bühne oben verlässt, ist Höhe (Tiefe = hinterste Spur, falls kein Anstieg vorausging).
@@ -245,7 +245,7 @@ Der Zug ist ein Punktmassen-Modell entlang der Bogenlänge s der Bahn:
 ### 6.2 g-Kräfte aus 3D-Krümmung
 Die Bahn ist eine echte 3D-Kurve (x, Höhe y, Tiefe z). Aus den Bezier-Segmenten kommen Tangente und Krümmungsvektor analytisch. Der Wagen hat einen 3D-Rahmen (vorwärts, oben, seitlich): Der Oben-Vektor wird per Paralleltransport entlang der Bahn geführt und auf waagerechter Strecke zur Welt-Senkrechten zurückgezogen, so dass der Wagen nach Loopings und Kurven wieder aufrecht steht und im Looping wirklich kopfüber hängt.
 - Gefühlte Beschleunigung im Wagen: f = v² · κ⃗ + g (Fliehkraft zum Krümmungsmittelpunkt plus Schwerkraft), zerlegt in Sitzrichtung (g_v, negativ = Airtime), Fahrtrichtung und Seite (g_s).
-- Automatische Überhöhung: Der Wagen neigt sich so, dass f durch den Sitz geht (keine Querkraft), bis 72°. Erst sehr enge Kurven bei hohem Tempo lassen Querkraft übrig. Das Roll-Handle setzt die Neigung von Hand.
+- Automatische Überhöhung: Der Wagen neigt sich so, dass f durch den Sitz geht (keine Querkraft), bis 80°. Erst sehr enge Kurven bei hohem Tempo lassen Querkraft übrig. Das Roll-Handle setzt die Neigung von Hand.
 - Der Mindestradius für die Kraftberechnung ist 2,5 m, damit Handzittern keine unendlichen Kräfte erzeugt. Über 7 g gibt es einen Blackout (kein dritter Stern).
 
 ### 6.3 Entgleisen und Scheitern
