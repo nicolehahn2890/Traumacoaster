@@ -153,8 +153,13 @@ export class LevelScene implements Scene {
     return this.unlocked.has('tunnel');
   }
   /** Tiefen- und Roll-Handle ab der Kurven-Freischaltung */
+  /** Tiefen-Handle (Spur nachträglich ändern): sobald Handles freigeschaltet sind */
   get gizmo3D(): boolean {
-    return this.unlocked.has('turn');
+    return this.unlocked.has('handles');
+  }
+  /** Roll-Handle (Schraube/Heartline-Roll): eigene Freischaltung */
+  get gizmoRoll(): boolean {
+    return this.unlocked.has('roll');
   }
 
   async enter(game: Game): Promise<void> {
@@ -427,7 +432,7 @@ export class LevelScene implements Scene {
     if (d(g.in) < HIT_R) return 'handleIn';
     if (d(g.out) < HIT_R) return 'handleOut';
     if (this.gizmo3D && d(g.depth) < HIT_R) return 'depth';
-    if (this.gizmo3D && d(g.roll) < HIT_R) return 'roll';
+    if (this.gizmoRoll && d(g.roll) < HIT_R) return 'roll';
     return null;
   }
   private onStage(st: StagePoint): boolean {
@@ -857,13 +862,15 @@ export class LevelScene implements Scene {
         gz.moveTo(gp.depth.x, gp.depth.y - 8).lineTo(gp.depth.x, gp.depth.y + 8).moveTo(gp.depth.x - 5, gp.depth.y - 3).lineTo(gp.depth.x, gp.depth.y - 8).lineTo(gp.depth.x + 5, gp.depth.y - 3)
           .moveTo(gp.depth.x - 5, gp.depth.y + 3).lineTo(gp.depth.x, gp.depth.y + 8).lineTo(gp.depth.x + 5, gp.depth.y + 3).stroke({ width: 2.5, color: 0xffffff, cap: 'round', join: 'round' });
         const auto = Number.isNaN(n.roll);
-        gz.circle(gp.roll.x, gp.roll.y, 14).fill(auto ? hexNum(PAPER) : 0xff8a5c).stroke({ width: 3, color: hexNum(INK) });
-        const ang = auto ? 0 : n.roll;
-        gz.moveTo(gp.roll.x - 9 * Math.cos(ang), gp.roll.y - 9 * Math.sin(ang)).lineTo(gp.roll.x + 9 * Math.cos(ang), gp.roll.y + 9 * Math.sin(ang)).stroke({ width: 3, color: hexNum(INK), cap: 'round' });
-        gz.circle(gp.roll.x, gp.roll.y, 2.5).fill(hexNum(INK));
+        if (this.gizmoRoll) {
+          gz.circle(gp.roll.x, gp.roll.y, 14).fill(auto ? hexNum(PAPER) : 0xff8a5c).stroke({ width: 3, color: hexNum(INK) });
+          const ang = auto ? 0 : n.roll;
+          gz.moveTo(gp.roll.x - 9 * Math.cos(ang), gp.roll.y - 9 * Math.sin(ang)).lineTo(gp.roll.x + 9 * Math.cos(ang), gp.roll.y + 9 * Math.sin(ang)).stroke({ width: 3, color: hexNum(INK), cap: 'round' });
+          gz.circle(gp.roll.x, gp.roll.y, 2.5).fill(hexNum(INK));
+          if (!auto) this.rollText.text = `${Math.round((n.roll * 180) / Math.PI)}°`;
+          this.rollText.position.set(gp.roll.x + 36, gp.roll.y);
+        }
         this.gizmoLayer.addChild(gz);
-        if (!auto) this.rollText.text = `${Math.round((n.roll * 180) / Math.PI)}°`;
-        this.rollText.position.set(gp.roll.x + 36, gp.roll.y);
       }
     }
   }
@@ -1254,7 +1261,8 @@ export class LevelScene implements Scene {
     const portrait = this.h > this.w;
     const w = Math.min(this.w - 24, portrait ? 360 : 520);
     const goalsCount = this.sandbox ? 0 : this.level.goals.length;
-    const h = Math.min(this.h - 20, 300 + goalsCount * 26 + (unlockedNow.length ? 40 : 0));
+    const hasNext = success && !this.sandbox && this.level.id < LEVELS.length;
+    const h = Math.min(this.h - 20, 300 + goalsCount * 26 + (unlockedNow.length ? 40 : 0) + (hasNext ? 60 : 0));
     c.addChild(panelBg(w, h));
     let y = -h / 2 + 40;
     const title = label(this.sandbox ? t('ride') : success ? t('success') : t('failed'), 32, success ? '#2f7a4a' : '#d64545', true);
@@ -1297,7 +1305,8 @@ export class LevelScene implements Scene {
       u.position.set(0, y + 8);
       c.addChild(u);
     }
-    const by = h / 2 - 40;
+    // Knöpfe: Nochmal · Neu zeichnen · Menü in einer Reihe; „Weiter“ bekommt bei Erfolg eine eigene Reihe darunter
+    const by = h / 2 - 40 - (hasNext ? 60 : 0);
     const bw = Math.min(108, (w - 40) / 3);
     const retry = new Button(t('retry'), { width: bw, height: 48, size: 16, color: '#4f8dff' });
     retry.position.set(-bw - 10, by);
@@ -1315,9 +1324,9 @@ export class LevelScene implements Scene {
     menu.position.set(bw + 10, by);
     menu.onTap = () => this.leave();
     c.addChild(menu);
-    if (success && this.level.id < LEVELS.length) {
-      const next = new Button(t('next'), { width: 130, height: 48, size: 18, color: '#7ee081' });
-      next.position.set(w / 2 - 80, by);
+    if (hasNext) {
+      const next = new Button(t('next'), { width: Math.min(220, w - 60), height: 48, size: 18, color: '#7ee081' });
+      next.position.set(0, by + 60);
       next.onTap = () => {
         storage.setCurrent(this.level.id + 1);
         this.game.goto(() => new LevelScene(this.level.id + 1));
@@ -1376,7 +1385,7 @@ export class LevelScene implements Scene {
     this.shelfBtn.position.set(w - 46, h - 50);
     this.speedBtn.position.set(w - 46, h - 50);
     this.shelf.position.set(w - 10, h - 120);
-    this.hint.position.set(w / 2, h - (portrait ? 130 : 112));
+    this.hint.position.set(w / 2, h - 178);
     this.hint.style.wordWrapWidth = Math.min(380, w - 40);
     this.speedText.position.set(w / 2, h - (portrait ? 120 : 108));
     this.toast.position.set(w / 2, h * 0.42);

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { simplifyRDP, smoothStroke } from '@/core/rdp';
 import { fitCurve } from '@/core/bezierFit';
 import { bezierPoint } from '@/core/math';
-import { closeTrack, detectLoops, detectTurns, extendTrack, interpretStroke, interpretWithEvents, removeHooks, stageCurve, strokeToTrack } from '@/track/strokeToTrack';
+import { closeTrack, detectLoops, detectTurns, extendTrack, interpretStroke, interpretWithEvents, magnetLane, removeHooks, stageCurve, strokeToTrack } from '@/track/strokeToTrack';
 import { sampleTrack, stateAt, trackStats, type TrackSamples } from '@/track/model';
 import { applyOverdraw } from '@/track/overdraw';
 import { laneRise, laneScale, nearestLane, toStage, toWorld, type StagePoint } from '@/track/stage';
@@ -140,10 +140,10 @@ describe('Ereignisse in der Höhe', () => {
     expect(turns.length).toBe(1);
     expect(turns[0].dir).toBe(1);
     expect(r.events.filter((e) => e.kind === 'loop').length).toBe(0);
-    // nach der Kurve liegt der Strich 1,5 Spuren weiter hinten (Mindestradius) und landet am Boden
+    // schmale Kehre ohne Tempo (oben am Hügel): eine Spur weiter hinten, danach landet der Strich am Boden
     const maxZ = Math.max(...r.points.map((p) => p.z));
-    expect(maxZ).toBeGreaterThan(1.3);
-    expect(maxZ).toBeLessThan(1.7);
+    expect(maxZ).toBeGreaterThan(0.9);
+    expect(maxZ).toBeLessThan(1.1);
     expect(r.points[r.points.length - 1].mode).toBe('floor');
     const s = sampleTrack(r.path);
     const stats = trackStats(r.path, s);
@@ -175,6 +175,22 @@ describe('Ereignisse in der Höhe', () => {
     expect(stats.lanes).toBeGreaterThanOrEqual(2);
     // steile Abfahrt (Oben-Vektor kippt mit), aber nie kopfüber
     expect(minUpY(s)).toBeGreaterThan(-0.1);
+  });
+  it('macht aus einer kleinen Schleife keinen Looping', () => {
+    const stroke = [
+      ...climb(),
+      ...param(30, (t) => {
+        const a = -Math.PI / 2 + Math.PI * 2 * t;
+        return [50 + 2 * Math.cos(a) + t * 1.5, 22 + 2 * Math.sin(a)];
+      }),
+      ...param(40, (t) => [52 + t * 30, 20 - t * 20]),
+      ...param(20, (t) => [82 + t * 10, 0]),
+    ];
+    const r = strokeToTrack(stroke);
+    expect(r.events.filter((e) => e.kind === 'loop').length).toBe(0);
+    const s = sampleTrack(r.path);
+    expect(trackStats(r.path, s).loops).toBe(0);
+    expect(minUpY(s)).toBeGreaterThan(0.3);
   });
   it('erkennt eine Schleife in der Luft als Looping', () => {
     const stroke = [
@@ -218,7 +234,8 @@ describe('Kreis schließen', () => {
       ...param(40, (t) => [-9 * Math.sin(Math.PI * t), (H / 2) * (1 + Math.cos(Math.PI * t))]),
     ];
     const r = strokeToTrack(stroke);
-    expect(r.events.length).toBe(0);
+    // die Kehre am Boden wird als Boden-Kehre geformt, kein Looping, kein Anstieg
+    expect(r.events.every((e) => e.kind === 'turn' && e.floor)).toBe(true);
     const s = sampleTrack(r.path);
     const stats = trackStats(r.path, s);
     expect(stats.loops).toBe(0);
@@ -288,6 +305,10 @@ describe('Strich → Bahn', () => {
     ];
     const r = strokeToTrack(stroke);
     expect(r.path.nodes.some((n) => n.kind === 'closeReturn')).toBe(false);
+    expect(r.path.closed).toBe(true);
+    // die Einfahrt in die Station kommt geradeaus (Halbkreis um die Station), ohne Schlenker
+    expect(r.path.nodes[0].inX).toBeLessThan(0);
+    expect(Math.abs(r.path.nodes[0].inZ)).toBeLessThan(0.05);
     const s = sampleTrack(r.path);
     const stats = trackStats(r.path, s);
     expect(stats.turns).toBe(2);
@@ -296,6 +317,20 @@ describe('Strich → Bahn', () => {
     expect(stats.lanes).toBe(2);
     expect(stats.maxHeight).toBeLessThan(1.5);
     expect(minUpY(s)).toBeGreaterThan(0.9);
+  });
+  it('rastet Tiefen nahe einer Spur magnetisch ein und bleibt dazwischen stetig', () => {
+    expect(magnetLane(0.1)).toBe(0);
+    expect(magnetLane(1.85)).toBe(2);
+    expect(magnetLane(-0.15)).toBe(-0);
+    expect(magnetLane(0.5)).toBeCloseTo(0.5, 6);
+    expect(magnetLane(0.35)).toBeCloseTo(0.25, 6);
+    let prev = magnetLane(-2);
+    for (let z = -2; z <= 2; z += 0.01) {
+      const v = magnetLane(z);
+      expect(v).toBeGreaterThanOrEqual(prev - 1e-9);
+      expect(Math.abs(v - prev)).toBeLessThan(0.03);
+      prev = v;
+    }
   });
   it('entfernt kleine Rückwärts-Haken aus dem Strich, behält echte Kehren', () => {
     const line = Array.from({ length: 40 }, (_, i) => ({ x: i, y: 0 }));

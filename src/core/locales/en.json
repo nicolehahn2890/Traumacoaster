@@ -14,7 +14,7 @@
   "world": "World {n}",
   "requirements": "Goals",
   "ride.speed": "Ride speed: {n}×",
-  "openHint": "Track is open: keep drawing from the glowing end back to the station. Play adds the return on its own.",
+  "openHint": "Track is open: keep drawing from the glowing end to the station, or just press Play.",
   "autoReturn": "Return to the station is added for this ride",
   "extendHint": "Continuing from the end",
   "drawHint": "Draw your coaster with one stroke and lead it back to the station. Or press play: the return is added for you.",

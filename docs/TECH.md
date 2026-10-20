@@ -37,7 +37,7 @@ public/art/            Optionale, echte gemalte Texturen (Drop-in, siehe Kapitel
 interface TrackNode {
   x: number;      // Meter entlang der Bühne
   y: number;      // Höhe (Meter, absolut)
-  z: number;      // Tiefe in Spuren (−2..2, kontinuierlich); Welt-Tiefe = z · 7 m
+  z: number;      // Tiefe in Spuren (−2..2, kontinuierlich); Welt-Tiefe = z · 8,4 m (LANE_DEPTH)
   inX, inY, inZ, outX, outY, outZ: number; // 3D-Bezier-Handles relativ zum Knoten (z in Spuren)
   roll: number;   // manueller Rollwinkel (Radiant), NaN = automatische Überhöhung
   kind: 'normal' | 'loopApex' | 'turn' | 'station' | 'closeTurn' | 'closeReturn';
@@ -53,12 +53,12 @@ interface TrackPath { nodes: TrackNode[]; elements: TrackElement[]; startType: S
 1. **Aufnahme:** Pointer-Events (Touch und Maus vereinheitlicht), Punkte in Bühnen-Metern.
 2. **Glätten:** Dedupe (0,15 m), gleitender Mittelwert über 5 Punkte, Resampling auf 0,5 m.
 3. **Lesart (interpretStroke):** Der Strich wird in monotone Bild-Y-Abschnitte zerlegt (Hysterese 0,4 m). Ein steigender Abschnitt ist ein **Anstieg**, wenn er oberhalb der Bühne endet oder ein 4-m-Fenster enthält, das im Mittel steiler als 40° ist und in dessen Umgebung (±8 m) x nicht um mehr als 0,8 m umkehrt. Sonst ist er Boden.
-   - Boden-Modus: Tiefe z aus der Bild-Höhe über der Bodenlinie (Fixpunkt-Iteration über das Terrain), über ±4 m geglättet, weich (6 m) an die vorige Tiefe angeschlossen. Höhe = Boden + Mindesthöhe.
+   - Boden-Modus: Tiefe z aus der Bild-Höhe über der Bodenlinie (Fixpunkt-Iteration über das Terrain), über ±4 m geglättet, weich (28 m) an die vorige Tiefe angeschlossen, magnetisch auf Spurlinien (±0,2) eingerastet (`magnetLane`). Höhe = Boden + Mindesthöhe.
    - Höhen-Modus: Tiefe eingefroren, Höhe = Bild-Höhe über der Bodenlinie dieser Tiefe. Zurück zum Boden, wenn die Höhe ≤ 0,35 m und der Strich nicht steigt (nicht innerhalb des auslösenden Anstiegs).
-4. **Ereignisse (nur im Höhen-Modus):** Looping = Segment-Schnitt-Test im Profil, Scheitel wird `loopApex`. Steilkurve = x-Umkehr mit Hin- und Rückweg ≥ 10 m außerhalb von Loopings; Richtung aus der mittleren Höhe von Rückweg vs. Hinweg (höher = nach hinten).
-5. **Zweiter Durchlauf:** Steilkurven liefern ein Tiefen-Profil (±1 Spur, Smoothstep über 16 m um den Scheitel, am Bühnenrand gespiegelt). `interpretStroke` läuft erneut mit diesem Profil, damit der Rückweg auf der Bodenlinie der neuen Spur landet.
-6. **Knoten:** Welt-Punkte (x, y, z·7), Ecken ab 35° abrunden, RDP 3D (0,04 m), wieder auf 1 m verdichten (damit der Fit Überschwinger auf Geraden erkennt), Schneider-Fit in 3D mit 0,45 m Toleranz, Ecken ab 60° werden Knoten mit gebrochenen Tangenten. Ereignis-Knoten werden markiert.
-7. **Schließen (closePath):** Ende auf dem Start → Handle übernehmen, direkt geschlossen. Ende nahe (≤ 10 m) → weiche Verbindung. Sonst zwei Halbkreis-Kehren (`closeTurn`) über die Nachbarspur und eine Rückweg-Gerade (`closeReturn`) mit Bremsstrecke.
+4. **Ereignisse:** Looping (Höhen-Modus) = Segment-Schnitt-Test im Profil in gleicher x-Richtung, angenommen nur bei klarer Schleife (Scheitel ≥ 4,5 m von der Kreuzung, Umfang ≥ 12 m, Rundheit 4π·A/U² ≥ 0,4); Scheitel wird `loopApex`. Steilkurve (Höhen-Modus) = x-Umkehr mit Hin- und Rückweg ≥ 5 m außerhalb von Loopings; Richtung aus der mittleren Höhe von Rückweg vs. Hinweg (höher = nach hinten), Radius aus der gezeichneten Breite, mindestens zwei Spuren (8,4 m), höchstens vier, tempo-bewusst (R ≥ 2·Fallhöhe/2,5 für ≤ 2,5 g). Boden-Kehre (Boden-Modus, `floor: true`) = dieselbe x-Umkehr, Richtung und Spuren aus der gelesenen Tiefe, Radius = Spuren·8,4/2 (mindestens zwei Spuren), ohne zusätzliche Verschiebung.
+5. **Zweiter Durchlauf:** Steilkurven liefern ein Tiefen-Profil (2·R/8,4 Spuren, Smoothstep über π·R um den Scheitel, am Bühnenrand gespiegelt). `interpretStroke` läuft erneut mit diesem Profil (solange die Verschiebung läuft, bleibt der Strich in der Höhe), dann formt `shapeTurns` alle Kehren als Halbkreise in der x/z-Ebene: Höhe in der Kurve gehalten (absolut, geländebewusst), danach x über 10 m, Tiefe über 28 m und Höhe über max(16 m, √(6·ΔY·1,5·Fallhöhe)) weich an den gezeichneten Verlauf angeschlossen. Rundenschluss (`snapEndToStart`): Ende nahe der Station → Einfahrt über 14 m auf die Abfahrtsgerade gelegt oder Schluss-Kehre durch einen Halbkreis um die Station ersetzt.
+6. **Knoten:** Welt-Punkte (x, Höhe über Boden, z·8,4), als 3D-Linie mit Gauß (σ = 1,5 m, Enden gespiegelt) geglättet (`smoothPolyline3`), dann Bodenhöhe addiert, Ecken ab 35° abrunden, RDP 3D (0,04 m), wieder auf 1 m verdichten (damit der Fit Überschwinger auf Geraden erkennt), Schneider-Fit in 3D mit 0,3 m Toleranz ohne gebrochene Tangenten. Ereignis-Knoten werden markiert.
+7. **Schließen (closePath):** Ende auf dem Start → Endknoten verwerfen, Station übernimmt die Ankunft. Ankunft gegen die Abfahrtsrichtung → Halbkreis (`closeTurn`, Mitte auf der Station, zwei Spuren) in die Station. Ende nahe (≤ 6 m) → weiche Verbindung. Sonst bleibt die Bahn offen; erst `closeTrack` (nur für die Fahrt) ergänzt zwei Halbkreis-Kehren über eine zwei Spuren entfernte Rückweg-Spur und eine Rückweg-Gerade (`closeReturn`) mit Bremsstrecke.
 8. **Überzeichnen (`src/track/overdraw.ts`):** Beginnt und endet der Strich innerhalb von 30 px an der Bahn, werden die Fußpunkte (s1, s2) über alle Tiefen gesucht. Der Strich wird mit derselben Lesart interpretiert (Startzustand = Zustand der Bahn am Fußpunkt, Boden um die Mindesthöhe angehoben, Ende auf die Tiefe der Bahn geblendet). Die Knoten im Bereich werden ersetzt, die Naht geglättet, der Schluss neu gebildet.
 
 ## 5. Physik
@@ -108,11 +108,11 @@ GitHub Pages über `.github/workflows/deploy.yml`: Bei Push auf den Hauptbranch 
 ## 11. Umsetzungsstand und bekannte Eigenheiten
 - Alle Zeichnungen in Metern: Formen mit kleinen Radien (Augen, Räder, Coins) werden über `MGraphics` (src/render/mgraphics.ts) intern in Zentimetern tesselliert, sonst entstehen Vielecke.
 - Die Bahn wird nach Spuren (gerundetes z) in Stücke geteilt und in die passende Tiefenebene gelegt; Berge/Wasser liegen über Bahn und Zug (Tunnel-Effekt).
-- Der automatische Rückweg (offener Strich) läuft als Halbkreis-Kehre über die Nachbarspur und ist eine Bremsstrecke (max. 8 m/s), zählt nicht für Ziele.
+- Der automatische Rückweg (offener Strich) läuft als Halbkreis-Kehre (8,4 m Radius) über eine zwei Spuren entfernte Spur und ist eine Bremsstrecke (max. 8 m/s), zählt nicht für Ziele.
 - Der Oben-Vektor wird per Parallel-Transport berechnet und bei waagerechter Bahn stetig zur Welt-Senkrechten zurückgezogen; so bleiben Kurven Kurven und Loopings Loopings.
 - Fahrgäste werden im Wagen-System simuliert (Rapier, Kraft = −m·gefühlte Beschleunigung); beim Verlassen der Wanne werden sie in eine Welt-Simulation mit Boden übergeben.
 - Zeitschritt: `Game` begrenzt dt auf 50 ms; auf sehr langsamen Renderern läuft das Spiel dann in Zeitlupe. `?fast=N` beschleunigt für Tests.
-- Nicht umgesetzt (siehe README): Vorlagen-Elemente, Roll-Handle, Weiche/Kippschiene/Rückwärts-Weiche/Fallschacht, Audio, Capacitor-Builds.
+- Nicht umgesetzt (siehe README): Vorlagen-Elemente, Weiche/Kippschiene/Rückwärts-Weiche/Fallschacht, Audio, Capacitor-Builds.
 
 ## 12. Entwicklungsbefehle
 ```

@@ -91,7 +91,18 @@ async function zoomAt(X, Y, zoom) {
   await page.evaluate(([X, Y, zoom]) => { const c = window.tcGame.current.view.camera; c.set(X, Y, zoom); }, [X, Y, zoom]);
   await sleep(300);
 }
-const openLevel = async (lvl) => { await page.goto(`${BASE}?scene=start&fast=6&level=${lvl}`, { waitUntil: 'networkidle' }); await sleep(1000); };
+page.setDefaultTimeout(20000);
+/** Level öffnen: frische Seite (about:blank dazwischen), auf die Szene warten statt auf „networkidle“ */
+const openLevel = async (lvl) => {
+  await page.goto('about:blank');
+  await page.goto(`${BASE}?scene=start&fast=6&level=${lvl}`, { waitUntil: 'load' });
+  for (let i = 0; i < 60; i++) {
+    const ready = await page.evaluate(() => !!(window.tcGame?.current?.view?.camera && window.tcGame.current.mode === 'draw')).catch(() => false);
+    if (ready) break;
+    await sleep(250);
+  }
+  await sleep(600);
+};
 const play = async (tag, shots = [4, 8, 12]) => {
   await page.mouse.click(640, 800 - 56);
   let n = 0;
@@ -192,6 +203,18 @@ if (want('cars')) {
       }
     }
   }
+}
+
+// 6) Level 4 („Hoch hinaus“): Lifthügel durch die Coins am Hang, 18 m, Fahrt bis ins Ziel
+if (want('level4')) {
+  await openLevel(4);
+  await handStroke([[0, 0], [6, 0.6], [11, 3.5], [16, 7.5], [21, 11.5], [26, 15.5], [30, 19], [34, 19.5], [39, 15], [45, 7], [52, 3], [60, 0.6], [68, 0]]);
+  await sleep(700);
+  console.log('level4', await state());
+  await page.screenshot({ path: 'screenshots/playtest-level4-full.png' });
+  await play('level4', [3, 6, 9]);
+  const res = await page.evaluate(() => { const s = window.tcGame.current; return { height: s?.stats?.maxHeight?.toFixed(1), coins: s?.sim?.stats?.coins, phase: s?.sim?.phase, fail: s?.sim?.failReason }; });
+  console.log('level4 result', res, res.coins >= 3 && Number(res.height) >= 18 && res.phase === 'done' ? 'GESCHAFFT' : 'NICHT GESCHAFFT');
 }
 
 await browser.close();

@@ -14,7 +14,7 @@
   "world": "Welt {n}",
   "requirements": "Anforderung",
   "ride.speed": "Tempo der Fahrt: {n}×",
-  "openHint": "Bahn ist offen: Zeichne vom leuchtenden Ende weiter bis zur Station. Play ergänzt den Rückweg selbst.",
+  "openHint": "Bahn offen: Zeichne ab dem leuchtenden Ende weiter bis zur Station, oder drück Play.",
   "autoReturn": "Rückweg zur Station wird für die Fahrt ergänzt",
   "extendHint": "Weiter ab dem Ende",
   "drawHint": "Zeichne deine Bahn mit einem Strich und führe sie zurück zur Station. Oder drück Play: Dann wird der Rückweg ergänzt.",

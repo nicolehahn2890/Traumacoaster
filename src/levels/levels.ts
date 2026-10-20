@@ -68,10 +68,11 @@ const W1: LevelDef[] = [
     goals: [g('height', 12), bonus('maxLength', 90)], unlocks: ['coins'], width: 60, passengers: 2, cars: 1,
   }),
   L('Goldregen', 'Coins liegen in der Luft. Führe die Bahn hindurch.', {
-    goals: [g('coins', 5), bonus('coins', 6)], width: 70, coins: arc(35, 4, 14, 6),
+    goals: [g('coins', 4), bonus('coins', 6)], width: 70, coins: arc(35, 4, 14, 6),
   }),
-  L('Hoch hinaus', 'Höher bauen heißt schneller fahren. Sammle dabei die Coins.', {
-    goals: [g('height', 18), g('coins', 4)], unlocks: ['turn'], width: 70, terrain: [hill(50, 20, 4)], coins: col(20, 6, 16, 4),
+  L('Hoch hinaus', 'Höher bauen heißt schneller fahren. Die Coins liegen am Lifthügel.', {
+    goals: [g('height', 18), g('coins', 3), bonus('coins', 4)], unlocks: ['turn'], width: 70, terrain: [hill(50, 20, 4)],
+    coins: [{ x: 12, y: 4, lane: 0 }, { x: 17, y: 8, lane: 0 }, { x: 22, y: 12, lane: 0 }, { x: 27, y: 16, lane: 0 }],
   }),
   L('Die erste Kurve', 'Am Boden ist oben gleich hinten: Zeichne einen flachen Bogen über die Bühne. In der Höhe wird eine Kehre zur Steilkurve.', {
     goals: [g('turns', 1), g('height', 12), bonus('coins', 5)], width: 70, coins: row(20, 50, 5, 5, 1),
