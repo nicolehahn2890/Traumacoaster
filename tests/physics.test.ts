@@ -97,6 +97,23 @@ describe('Zug-Simulation', () => {
     expect(sim.stats.maxSpeed * 3.6).toBeGreaterThan(60);
     expect(sim.phase).toBe('done');
   });
+  it('fährt einen von Hand geschlossenen Rundkurs bis in die Station', () => {
+    // Hügel, kurze Kehre am Ende, Rückweg oberhalb zurück und von oben in die Station (gegen die Abfahrtsrichtung)
+    const stroke = [
+      ...param(20, (t) => [t * 8, 0]),
+      ...param(30, (t) => [8 + t * 10, 16 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+      ...param(30, (t) => [18 + t * 14, 16 - 12 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+      ...param(20, (t) => [32 + t * 10, 4]),
+      ...param(16, (t) => [42 + 3 * Math.sin(Math.PI * t), 4 + 3 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+      ...param(40, (t) => [42 - t * 36, 7]),
+      ...param(20, (t) => [6 - t * 6, 7 - 7 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+    ];
+    const { sim, r } = simFor(stroke, { skin: 'skinWood' });
+    expect(r.path.nodes.some((n) => n.kind === 'closeTurn')).toBe(true);
+    run(sim);
+    expect(sim.phase).toBe('done');
+    expect(sim.stats.minG).toBeGreaterThan(-1.0); // Airtime an der Kuppe ist ok, nur kein Rauswurf
+  });
   it('fährt eine flache Bodenkurve mit Schräglage und ohne Entgleisen', () => {
     // Lifthügel, dann Oval am Boden zurück zur Station; die Kehren sind 20 m breit (enge Haarnadeln
     // wären bei 60 km/h wie in echt zu eng)

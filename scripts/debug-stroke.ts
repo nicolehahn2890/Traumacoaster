@@ -78,3 +78,14 @@ if (which === 'hairpin') {
   }
   report('hairpin', stroke, 'chainlift', 'skinWood');
 }
+if (which === 'circuit') {
+  report('circuit', [
+    ...param(20, (t) => [t * 8, 0]),
+    ...param(30, (t) => [8 + t * 10, 16 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+    ...param(30, (t) => [18 + t * 14, 16 - 12 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+    ...param(20, (t) => [32 + t * 10, 4]),
+    ...param(16, (t) => [42 + 3 * Math.sin(Math.PI * t), 4 + 3 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+    ...param(40, (t) => [42 - t * 36, 7]),
+    ...param(20, (t) => [6 - t * 6, 7 - 7 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+  ], 'chainlift', 'skinWood');
+}

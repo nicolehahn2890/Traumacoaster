@@ -45,6 +45,8 @@ export interface StrokeEvent {
   dir?: number;
   from?: number;
   to?: number;
+  /** Steilkurve: Radius des Halbkreises in Metern (aus der gezeichneten Breite) */
+  radius?: number;
 }
 
 export interface InterpretedPoint {
@@ -66,15 +68,17 @@ const REVERSAL_LOOK = 8; // Umgebung eines steilen Fensters: kehrt x darin deutl
 const REVERSAL_MIN = 0.8;
 const RUN_HYSTERESIS = 0.4;
 const Z_SMOOTH = 4; // Bühnen-Meter: Tiefe am Boden wird über ±4 m geglättet (Handzittern → keine Querbeschleunigung)
-const Z_BLEND = 6; // Bühnen-Meter: weicher Anschluss der Boden-Tiefe an die vorige Tiefe
+const Z_BLEND = 12; // Bühnen-Meter: weicher Anschluss der Boden-Tiefe an die vorige Tiefe (S-Kurve bleibt fahrbar)
 /** Kehre in der Höhe: Hin- und Rückweg mindestens so lang (kürzer ist Zittern). Eine Umkehr ohne Kreuzung
  *  ist immer eine Steilkurve, nie ein vertikaler Halb-Looping, der den Wagen dauerhaft auf den Kopf stellt. */
 const TURN_MIN_WIDTH = 5;
 /** Kreuzungen in den ersten/letzten Metern des Strichs sind das Schließen des Kreises, kein Looping */
 const CLOSE_ZONE = 8;
-/** Steilkurve: Halbkreis in der Horizontalen mit dem halben Spurabstand als Radius */
-const TURN_RADIUS = LANE_DEPTH / 2;
-const TURN_HALF_LENGTH = (Math.PI * TURN_RADIUS) / 2;
+/** Steilkurve: Halbkreis in der Horizontalen. Radius aus der gezeichneten Breite, mindestens 1,5 Spuren
+ *  (so bleibt eine Kehre nach einem normalen Hügel mit 55 km/h fahrbar), höchstens 3 Spuren. */
+const TURN_RADIUS_MIN = LANE_DEPTH * 0.75;
+const TURN_RADIUS_MAX = LANE_DEPTH * 1.5;
+const turnHalfLength = (radius: number): number => (Math.PI * radius) / 2;
 const TURN_BLEND = 10; // Bühnen-Meter: Anschluss des gezeichneten Rückwegs an den Halbkreis
 const RESAMPLE = 0.5;
 
@@ -378,6 +382,29 @@ export function detectLoops(points: InterpretedPoint[]): StrokeEvent[] {
   return events;
 }
 
+/**
+ * Radius der gezeichneten Kehre: Strichlänge, über die die Richtung von „klar vorwärts“ (dx/ds ≥ 0,7)
+ * nach „klar rückwärts“ (dx/ds ≤ −0,7) dreht. Bei einem Kreis sind das 90°, also π/2 · r.
+ */
+function drawnTurnRadius(points: InterpretedPoint[], apex: number): number {
+  const n = points.length;
+  const dirAt = (i: number): number => {
+    const a = points[Math.max(0, i - 1)];
+    const b = points[Math.min(n - 1, i + 1)];
+    const dx = b.x - a.x;
+    const l = Math.hypot(dx, b.y - a.y) || 1e-9;
+    return dx / l;
+  };
+  const sign = dirAt(Math.max(0, apex - 3)) >= 0 ? 1 : -1;
+  let i0 = apex;
+  while (i0 > 0 && dirAt(i0) * sign < 0.7 && points[i0].mode === 'height') i0--;
+  let i1 = apex;
+  while (i1 < n - 1 && dirAt(i1) * sign > -0.7 && points[i1].mode === 'height') i1++;
+  let len = 0;
+  for (let i = i0 + 1; i <= i1; i++) len += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  return Math.max(TURN_RADIUS_MIN, Math.min(TURN_RADIUS_MAX, (2 * len) / Math.PI));
+}
+
 /** Kehrtwenden in Höhen-Abschnitten (x-Richtung dreht um, ohne Kreuzung) */
 export function detectTurns(points: InterpretedPoint[], loops: StrokeEvent[]): StrokeEvent[] {
   const events: StrokeEvent[] = [];
@@ -427,7 +454,7 @@ export function detectTurns(points: InterpretedPoint[], loops: StrokeEvent[]): S
         }
         const b = nb ? before / nb : points[extremeIdx].y;
         const a = na ? after / na : points[Math.min(points.length - 1, extremeIdx + 1)].y;
-        events.push({ kind: 'turn', index: extremeIdx, dir: a >= b ? 1 : -1 });
+        events.push({ kind: 'turn', index: extremeIdx, dir: a >= b ? 1 : -1, radius: drawnTurnRadius(points, extremeIdx) });
       }
       dir = -dir;
       legStartX = extremeX;
@@ -455,24 +482,30 @@ export function turnShiftProfile(stroke: Vec2[], points: InterpretedPoint[], tur
     for (let i = segStart; i < t.index; i++) if (points[i].mode === 'floor') { acc = 0; segStart = i; }
     const zAt = points[t.index].z + acc;
     let d = t.dir ?? 1;
-    if (zAt + d > LANE_MAX + 1e-6 || zAt + d < LANE_MIN - 1e-6) {
-      d = -d;
-      t.dir = d;
-    }
+    // Tiefenversatz = Durchmesser des Halbkreises; passt er nicht mehr auf die Bühne, Richtung drehen,
+    // sonst den Radius so weit verkleinern, dass er passt (mindestens TURN_RADIUS_MIN)
+    let radius = t.radius ?? TURN_RADIUS_MIN;
+    const room = (dir: number) => (dir > 0 ? LANE_MAX - zAt : zAt - LANE_MIN) * LANE_DEPTH;
+    if (room(d) < 2 * radius && room(-d) > room(d)) d = -d;
+    radius = Math.max(TURN_RADIUS_MIN, Math.min(radius, room(d) / 2));
+    t.dir = d;
+    t.radius = radius;
+    const lanes = (2 * radius) / LANE_DEPTH;
+    const half = turnHalfLength(radius);
     const sApex = cum[t.index];
     for (let i = 0; i < n; i++) {
       const s = cum[i];
-      if (s <= sApex - TURN_HALF_LENGTH) continue;
-      shift[i] += d * smoothstep((s - (sApex - TURN_HALF_LENGTH)) / (2 * TURN_HALF_LENGTH));
+      if (s <= sApex - half) continue;
+      shift[i] += d * lanes * smoothstep((s - (sApex - half)) / (2 * half));
     }
-    acc += d;
+    acc += d * lanes;
   }
   return shift;
 }
 
 /**
  * Steilkurven in der Horizontalen rund machen: Im Kurvenbereich (π·R um den Scheitel) werden x und Tiefe
- * durch einen Halbkreis mit Radius R = halber Spurabstand ersetzt (die Höhe bleibt wie gezeichnet).
+ * durch einen Halbkreis mit Radius R (aus der gezeichneten Breite) ersetzt, die Höhe wird weich geführt.
  * Die gezeichnete x-Umkehr ist im Seitenriss meist spitz; ohne diesen Schritt entstünde eine Haarnadel
  * mit winzigem Radius. Danach wird der gezeichnete Rückweg über TURN_BLEND Meter angeschlossen.
  */
@@ -481,12 +514,13 @@ export function shapeTurns(points: InterpretedPoint[], stroke: Vec2[], turns: St
   if (n < 3) return;
   const cum = new Float64Array(n);
   for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + dist(stroke[i], stroke[i - 1]);
-  const R = TURN_RADIUS;
   let lastEnd = -Infinity;
   for (const t of [...turns].sort((a, b) => a.index - b.index)) {
+    const R = t.radius ?? TURN_RADIUS_MIN;
+    const half = turnHalfLength(R);
     const sA = cum[t.index];
-    const s0 = sA - TURN_HALF_LENGTH;
-    const s1 = sA + TURN_HALF_LENGTH;
+    const s0 = sA - half;
+    const s1 = sA + half;
     if (s0 < lastEnd) continue;
     let i0 = t.index;
     while (i0 > 0 && cum[i0 - 1] >= s0) i0--;
@@ -713,18 +747,46 @@ export function closePath(path: TrackPath, returnHeight = 0.7): void {
   if (nodes.length < 2) return;
   const first = nodes[0];
   const last = nodes[nodes.length - 1];
-  if (dist3(nodePos(first), nodePos(last)) < 1.5 && nodes.length > 2) {
+  const pf = nodePos(first);
+  const pl = nodePos(last);
+  const gap = dist3(pf, pl);
+  const endDir = normalize3(sub3(pl, nodeIn(last)));
+  const startDir = normalize3(sub3(nodeOut(first), pf));
+
+  // Ende am Start, aber Ankunft gegen die Abfahrtsrichtung der Station (Rundkurs von Hand geschlossen,
+  // Rückweg hinter der Station): ohne Kehre gäbe es eine Spitzkehre an der Station. Die letzten Knoten,
+  // die schon im Bereich der Kehre liegen, werden durch einen Halbkreis in die Station ersetzt.
+  if (gap <= 10 && endDir.x * startDir.x < -0.2) {
+    const l2Z = nodes[nodes.length - 1].z;
+    const R = Math.max(TURN_RADIUS_MIN, (Math.abs(l2Z - first.z) * LANE_DEPTH) / 2);
+    while (nodes.length > 3 && Math.abs(nodes[nodes.length - 1].x - first.x) < 2 * R) nodes.pop();
+    const l2 = nodes[nodes.length - 1];
+    const zTo = first.z;
+    let zFrom = l2.z;
+    if (Math.abs(zFrom - zTo) * LANE_DEPTH < 2 * TURN_RADIUS_MIN) {
+      const up = zTo + (2 * TURN_RADIUS_MIN) / LANE_DEPTH;
+      zFrom = up <= LANE_MAX ? up : zTo - (2 * TURN_RADIUS_MIN) / LANE_DEPTH;
+    }
+    const d = startDir.x >= 0 ? -1 : 1;
+    const arc = buildTurnArc(first.x, d, l2.y, first.y, zFrom, zTo);
+    nodes.push(...arc);
+    const dirL = normalize3(sub3(nodePos(l2), nodeIn(l2)));
+    const lo = Math.max(1, dist3(nodePos(arc[0]), nodePos(l2)) / 3);
+    l2.outX = dirL.x * lo; l2.outY = dirL.y * lo; l2.outZ = (dirL.z * lo) / LANE_DEPTH;
+    const aN = arc[arc.length - 1];
+    const li = Math.max(1, dist3(pf, nodePos(aN)) / 3);
+    first.inX = -startDir.x * li; first.inY = -startDir.y * li; first.inZ = (-startDir.z * li) / LANE_DEPTH;
+    nodes[0].kind = 'station';
+    return;
+  }
+
+  if (gap < 1.5 && nodes.length > 2) {
     // Strichende liegt auf dem Start: Eingangs-Handle übernehmen, Endknoten verwerfen → geschlossen
     first.inX = last.inX; first.inY = last.inY; first.inZ = last.inZ;
     nodes.pop();
     first.kind = 'station';
     return;
   }
-  const pf = nodePos(first);
-  const pl = nodePos(last);
-  const gap = dist3(pf, pl);
-  const endDir = normalize3(sub3(pl, nodeIn(last)));
-  const startDir = normalize3(sub3(nodeOut(first), pf));
 
   if (gap <= 10) {
     const h = Math.max(1.5, gap / 3);

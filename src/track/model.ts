@@ -288,9 +288,11 @@ export function bankAt(st: TrackState, v: number, gravity = 9.81): { angle: numb
   const fz = v * v * st.k3z;
   const fu = fx * st.upx + fy * st.upy + fz * st.upz; // Anteil in Sitzrichtung
   const fs = fx * side.x + fy * side.y + fz * side.z; // Anteil zur Seite
-  // Kraft zieht aus dem Sitz (Airtime, zu langsam im Looping) oder ist kaum vorhanden: nicht neigen
-  if (fu <= 0.5 || Math.abs(fs) < 1e-4) return { angle: 0, nx: side.x, ny: side.y, nz: side.z };
-  const angle = Math.max(-MAX_BANK, Math.min(MAX_BANK, Math.atan2(fs, fu)));
+  // Kraft zieht aus dem Sitz (Airtime, zu langsam im Looping) und drückt nicht stärker zur Seite: nicht neigen.
+  // (Nur fu allein reicht nicht: In einer flachen Kurve kann ein leicht geneigter Oben-Vektor fu fast null
+  // machen, obwohl die Fliehkraft seitlich wirkt – dann muss die Überhöhung erst recht greifen.)
+  if (Math.abs(fs) < 1e-4 || (fu <= 0.5 && Math.abs(fs) <= Math.abs(fu))) return { angle: 0, nx: side.x, ny: side.y, nz: side.z };
+  const angle = Math.max(-MAX_BANK, Math.min(MAX_BANK, Math.atan2(fs, Math.max(fu, 0.5))));
   return { angle, nx: side.x, ny: side.y, nz: side.z };
 }
 
@@ -340,7 +342,8 @@ export function trackStats(path: TrackPath, samples: TrackSamples): TrackStats {
       continue;
     }
     maxHeight = Math.max(maxHeight, samples.y[i]);
-    laneSet.add(Math.round(samples.z[i]));
+    // Spuren nur dort zählen, wo die Bahn längs der Bühne läuft (nicht mitten im Spurwechsel)
+    if (Math.abs(samples.t3z[i]) < 0.3) laneSet.add(Math.round(samples.z[i]));
     const y = samples.y[i];
     if (y > peak) peak = y;
     maxDrop = Math.max(maxDrop, peak - y);
