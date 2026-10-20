@@ -22,7 +22,8 @@ const LOGO_URL = `${import.meta.env.BASE_URL ?? './'}brand/illudiy-logo.webp`;
 const LOGO_ASPECT = 1024 / 1223; // Breite ÷ Höhe der Logodatei
 const SHADOW = 4; // harter Offset-Schatten (--shadow-pop: 4/4)
 const TRAIN_START = 0.25; // Sekunden, bis der Zug losfährt
-const TRAIN_CROSS = 3.2; // Sekunden für die komplette Durchfahrt (Ladebalken); danach endet der Splash
+const TRAIN_SPEED = 170; // Grundtempo in Pixel pro Sekunde (gemütlich, wie ein Ladebalken)
+const TRAIN_MAX_CROSS = 6; // Sekunden: auf sehr breiten Bildschirmen fährt der Zug schneller, damit die Durchfahrt nicht länger dauert
 const TRAIN_OFFSCREEN = 160; // Startposition links außerhalb (der Zug ist 170 px lang)
 
 /** Overshoot-Easing, entspricht --ease-bounce cubic-bezier(.34,1.56,.64,1) */
@@ -269,9 +270,10 @@ export class SplashScene implements Scene {
     g.stroke({ width: 3.5, color: hexNum(OUTLINE), cap: 'round', join: 'round' });
   }
 
-  /** Position des Zugs zur Zeit `time`: Start links außerhalb, komplette Durchfahrt in TRAIN_CROSS Sekunden */
+  /** Position des Zugs zur Zeit `time`: Start links außerhalb, Grundtempo TRAIN_SPEED, Durchfahrt höchstens TRAIN_MAX_CROSS Sekunden */
   private trainX(time: number): number {
-    const speed = (this.w + TRAIN_OFFSCREEN * 2) / TRAIN_CROSS;
+    const distance = this.w + TRAIN_OFFSCREEN * 2;
+    const speed = Math.max(TRAIN_SPEED, distance / TRAIN_MAX_CROSS);
     return -TRAIN_OFFSCREEN + Math.max(0, time - TRAIN_START) * speed;
   }
 
@@ -341,7 +343,7 @@ export class SplashScene implements Scene {
     // Zug: fährt nach einem kurzen Moment los und zieht die Schiene hinter sich her (Ladebalken).
     // Der Splash endet erst, wenn der Zug rechts komplett aus dem Bild ist.
     const x = this.trainX(this.t);
-    const bob = Math.sin(this.t * 14) * 1.5 * live;
+    const bob = Math.sin(this.t * 9) * 1.5 * live;
     this.train.position.set(x, this.pos.railY - 19 + bob);
     this.drawRail(x + 30);
     if (x - TRAIN_OFFSCREEN > this.w) this.finish();
