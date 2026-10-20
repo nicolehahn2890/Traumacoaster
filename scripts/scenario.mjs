@@ -210,13 +210,15 @@ st = await state();
 check(st.nodes === 0, `Löschen-Knopf räumt die Bahn weg (Knoten: ${st.nodes})`);
 await strokeStage([[0, 0], [20, 0.1], [40, 0], [60, 0.1]], 10);
 await sleep(600);
+const lanesBefore = (await state()).lanes;
 // Überzeichnen: auf der Bahn beginnen (Mindesthöhe 0,8 m), steiler Hügel, auf der Bahn enden
 await strokeStage([[20, 0.8], [24, 2], [27, 8], [30, 11], [33, 8], [36, 2], [40, 0.8]], 10);
 await sleep(800);
 st = await state();
 console.log('after overdraw', st);
 check(Number(st.height) > 8, `Überzeichnen: Hügel eingebaut (Höhe ${st.height})`);
-check(st.lanes === 1, `Überzeichnen: Spur bleibt (ist ${st.lanes})`);
+check(st.lanes === lanesBefore, `Überzeichnen: Spuren bleiben wie vorher (${lanesBefore} → ${st.lanes})`);
+check(st.loops === 0, `Überzeichnen: kein Looping (ist ${st.loops})`);
 await page.screenshot({ path: 'screenshots/scenario-5-overdraw.png' });
 }
 

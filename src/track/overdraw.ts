@@ -29,6 +29,8 @@ export function nodeArcLengths(path: TrackPath, samples: TrackSamples): number[]
       if (seg < out.length) out[seg] = samples.s[i];
     }
   }
+  // offene Bahn: der letzte Knoten beginnt kein Segment, er liegt am Ende
+  if (!isClosed(path) && out.length) out[out.length - 1] = samples.length;
   return out;
 }
 

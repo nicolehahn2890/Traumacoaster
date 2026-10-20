@@ -372,6 +372,10 @@ describe('Überzeichnen', () => {
     expect(maxOutside).toBeLessThan(3);
     expect(maxZ).toBeLessThan(0.3);
     expect(after.length).toBeGreaterThan(before.length);
+    // offene Bahn: Knoten bleiben in Fahrtrichtung geordnet (Ende bleibt Ende), keine Schleifen
+    expect(merged!.closed).toBe(false);
+    expect(merged!.nodes.every((n, i) => i === 0 || n.x >= merged!.nodes[i - 1].x - 0.5)).toBe(true);
+    expect(stats.loops).toBe(0);
   });
   it('lehnt einen Strich fern der Bahn ab', () => {
     const base = flat();
