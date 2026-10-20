@@ -1,8 +1,10 @@
 name: Deploy to GitHub Pages
 
+# Nur main deployt: Branch-Läufe teilen sich die Gruppe „pages“ mit main und haben den
+# main-Deploy abgebrochen (cancel-in-progress), während sie selbst an den Umgebungsregeln scheiterten.
 on:
   push:
-    branches: [main, master, 'claude/**']
+    branches: [main]
   workflow_dispatch:
 
 permissions:
