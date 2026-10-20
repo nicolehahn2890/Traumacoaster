@@ -206,6 +206,49 @@ describe('Ereignisse in der Höhe', () => {
   });
 });
 
+describe('Kreis schließen', () => {
+  it('liest ein großes Oval, dessen Rückseite über die Bühne hinausragt, als Bodenkurve ohne Looping', () => {
+    // Oval über 12 Bühnen-Meter Höhe (Bühne ist 8,4 m hoch): oben bleibt es hinterste Spur, kein Anstieg
+    const H = 12;
+    const stroke = [
+      ...param(40, (t) => [t * 40, 0]),
+      ...param(40, (t) => [40 + 9 * Math.sin(Math.PI * t), (H / 2) * (1 - Math.cos(Math.PI * t))]),
+      ...param(40, (t) => [40 - t * 40, H]),
+      ...param(40, (t) => [-9 * Math.sin(Math.PI * t), (H / 2) * (1 + Math.cos(Math.PI * t))]),
+    ];
+    const r = strokeToTrack(stroke);
+    expect(r.events.length).toBe(0);
+    const s = sampleTrack(r.path);
+    const stats = trackStats(r.path, s);
+    expect(stats.loops).toBe(0);
+    expect(stats.turns).toBe(2);
+    expect(stats.maxHeight).toBeLessThan(2);
+    expect(r.path.nodes.some((n) => n.kind === 'closeReturn')).toBe(false);
+    expect(minUpY(s)).toBeGreaterThan(0.9);
+  });
+  it('liest einen von Hand geschlossenen Hügel-Rundkurs nicht als Looping', () => {
+    // Hügel nach rechts, kurze Kehre am Ende, Rückweg oberhalb zurück und von oben in die Station
+    const stroke = [
+      ...param(20, (t) => [t * 8, 0]),
+      ...param(30, (t) => [8 + t * 10, 16 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+      ...param(30, (t) => [18 + t * 14, 16 - 12 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+      ...param(20, (t) => [32 + t * 10, 4]),
+      ...param(16, (t) => [42 + 3 * Math.sin(Math.PI * t), 4 + 3 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+      ...param(40, (t) => [42 - t * 36, 7]),
+      ...param(20, (t) => [6 - t * 6, 7 - 7 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+    ];
+    const r = strokeToTrack(stroke);
+    expect(r.events.filter((e) => e.kind === 'loop').length).toBe(0);
+    expect(r.events.filter((e) => e.kind === 'turn').length).toBe(1);
+    const s = sampleTrack(r.path);
+    const stats = trackStats(r.path, s);
+    expect(stats.loops).toBe(0);
+    expect(stats.lanes).toBe(2);
+    expect(r.path.nodes.some((n) => n.kind === 'closeReturn')).toBe(false);
+    expect(minUpY(s)).toBeGreaterThan(-0.1);
+  });
+});
+
 describe('Strich → Bahn', () => {
   it('erzeugt eine geschlossene Bahn mit Höhe', () => {
     const stroke = stageCurve(0, 60, 120, (x) => 15 * Math.exp(-((x - 30) ** 2) / 120));

@@ -13,7 +13,8 @@
   "level": "Level {n}",
   "world": "Welt {n}",
   "requirements": "Anforderung",
-  "drawHint": "Zeichne deine Bahn mit einem Strich",
+  "ride.speed": "Tempo der Fahrt: {n}×",
+  "drawHint": "Zeichne deine Bahn mit einem Strich. Den Rückweg zur Station baut das Spiel von selbst.",
   "drawHintTurn": "Am Boden: Bogen nach hinten = flache Kurve. In der Höhe: umdrehen = Steilkurve",
   "drawHintLoop": "In der Höhe kreuzen: Looping",
   "overdrawHint": "Zeichne über die Bahn, um sie zu verbessern",
@@ -80,7 +81,7 @@
   "ride.overview": "Übersicht",
   "whoRides": "Wer fährt mit?",
   "worldLocked": "Schließe Welt {n} ab, um weiterzureisen",
-  "tutorial.l1": "Setze den Finger auf den Boden und zeichne einen Hügel",
+  "tutorial.l1": "Setze den Finger auf den Boden und zeichne einen Hügel. Zurück zur Station geht es automatisch.",
   "tutorial.l2": "Tippe die Bahn an und zieh an den Handles",
   "tutorial.l5": "Zeichne am Boden einen Bogen nach hinten (höher im Bild = weiter hinten)",
   "tutorial.l8": "Steil hoch und in der Luft eine Schleife zeichnen, die sich kreuzt"

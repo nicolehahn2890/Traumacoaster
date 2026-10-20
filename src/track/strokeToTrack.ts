@@ -67,7 +67,11 @@ const REVERSAL_MIN = 0.8;
 const RUN_HYSTERESIS = 0.4;
 const Z_SMOOTH = 4; // Bühnen-Meter: Tiefe am Boden wird über ±4 m geglättet (Handzittern → keine Querbeschleunigung)
 const Z_BLEND = 6; // Bühnen-Meter: weicher Anschluss der Boden-Tiefe an die vorige Tiefe
-const TURN_MIN_WIDTH = 10;
+/** Kehre in der Höhe: Hin- und Rückweg mindestens so lang (kürzer ist Zittern). Eine Umkehr ohne Kreuzung
+ *  ist immer eine Steilkurve, nie ein vertikaler Halb-Looping, der den Wagen dauerhaft auf den Kopf stellt. */
+const TURN_MIN_WIDTH = 5;
+/** Kreuzungen in den ersten/letzten Metern des Strichs sind das Schließen des Kreises, kein Looping */
+const CLOSE_ZONE = 8;
 /** Steilkurve: Halbkreis in der Horizontalen mit dem halben Spurabstand als Radius */
 const TURN_RADIUS = LANE_DEPTH / 2;
 const TURN_HALF_LENGTH = (Math.PI * TURN_RADIUS) / 2;
@@ -205,7 +209,10 @@ function xRetreats(pts: Vec2[], a: number, b: number, dir: number): boolean {
 function isClimb(pts: Vec2[], run: StrokeRun, ground: (x: number, z: number) => number): boolean {
   if (!run.rising || run.end <= run.start) return false;
   const e = pts[run.end];
-  if (e.y > groundY(ground, e.x, LANE_MAX) + 0.6) return true;
+  // über die Bühne hinaus, ohne dass x umkehrt: ein (auch sanfter) Anstieg in den Himmel.
+  // Mit Umkehr ist es das hintere Ende eines großen Ovals, das bleibt am Boden (hinterste Spur).
+  const dir0 = Math.sign(e.x - pts[run.start].x) || 1;
+  if (e.y > groundY(ground, e.x, LANE_MAX) + 0.6 && !xRetreats(pts, run.start, run.end, dir0)) return true;
   // kumulierte Strichlänge (über den ganzen Strich, für die Umgebung der Fenster)
   const cum = new Float64Array(pts.length);
   for (let i = 1; i < pts.length; i++) cum[i] = cum[i - 1] + dist(pts[i - 1], pts[i]);
@@ -255,7 +262,9 @@ export function interpretStroke(pts: Vec2[], opts: StrokeOptions): InterpretedPo
   const cum = new Float64Array(n);
   for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + dist(pts[i - 1], pts[i]);
   const aboveStage = (i: number) => pts[i].y > groundY(ground, pts[i].x, LANE_MAX) + 0.6;
-  const startsHeight = (i: number) => aboveStage(i) || (climb[runOf[i]] && i >= runs[runOf[i]].start);
+  // Nur der Strichanfang darf „in der Luft“ beginnen; später zählt allein der Anstieg (sonst wäre das
+  // hintere Ende eines großen Ovals plötzlich Höhe und der Schluss ein Looping)
+  const startsHeight = (i: number) => (i === 0 && aboveStage(i)) || (climb[runOf[i]] && i >= runs[runOf[i]].start);
 
   let mode: StrokeMode = opts.startMode ?? 'floor';
   let zFrozen = opts.startZ ?? depthFromY(ground, pts[0].x, pts[0].y);
@@ -335,13 +344,17 @@ export function detectLoops(points: InterpretedPoint[]): StrokeEvent[] {
   const n = points.length;
   const P = (i: number): Vec2 => ({ x: points[i].x, y: points[i].y });
   const xDir = (i: number): number => Math.sign(points[i + 1].x - points[i].x);
+  const cum = new Float64Array(n);
+  for (let k = 1; k < n; k++) cum[k] = cum[k - 1] + Math.hypot(points[k].x - points[k - 1].x, points[k].y - points[k - 1].y);
+  const total = cum[n - 1] ?? 0;
+  const closing = (k: number) => cum[k] < CLOSE_ZONE || total - cum[k] < CLOSE_ZONE;
   let i = 0;
   while (i < n - 3) {
     let found = false;
-    if (points[i].mode === 'height') {
+    if (points[i].mode === 'height' && !closing(i)) {
       for (let j = i + 2; j < n - 1; j++) {
         if (points[j].mode !== 'height' || Math.abs(points[j].z - points[i].z) > 0.3) continue;
-        if (xDir(i) * xDir(j) < 0) continue;
+        if (xDir(i) * xDir(j) < 0 || closing(j + 1)) continue;
         const hit = segmentIntersection(P(i), P(i + 1), P(j), P(j + 1));
         if (hit) {
           let apex = i + 1;

@@ -113,6 +113,8 @@ export class LevelScene implements Scene {
   private clearBtn = new Button('', { width: 48, round: true, color: '#d64545', icon: iconTrash });
   private playBtn = new Button('', { width: 78, round: true, color: PINK, icon: iconPlay });
   private shelfBtn = new Button('', { width: 54, round: true, color: '#ffd23f', icon: iconShelf });
+  /** Zeitraffer der Fahrt (1×, 2×, 3×), sitzt während der Fahrt an der Stelle des Regal-Knopfs */
+  private speedBtn = new Button(`${storage.settings.rideSpeed || 2}×`, { width: 54, round: true, color: '#4f8dff', size: 20 });
   private saveBtn = new Button('', { width: 48, round: true, color: '#7ee081', icon: iconSave });
   private shelf = new Container();
   private shelfOpen = false;
@@ -160,8 +162,9 @@ export class LevelScene implements Scene {
     this.view = new WorldView(this.world, this.terrain, this.skin, night);
     this.view.overlay.addChild(this.ink, this.overlay);
     this.container.addChild(this.view.root, this.ui);
-    this.ui.addChild(this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.saveBtn, this.toast);
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.saveBtn];
+    this.ui.addChild(this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.toast);
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn];
+    this.speedBtn.visible = false;
     this.saveBtn.visible = !!this.sandbox;
     this.backBtn.onTap = () => this.leave();
     this.undoBtn.onTap = () => this.undo();
@@ -169,6 +172,7 @@ export class LevelScene implements Scene {
     this.clearBtn.onTap = () => this.clearTrack();
     this.playBtn.onTap = () => (this.mode === 'draw' ? this.startRide() : this.stopRide());
     this.shelfBtn.onTap = () => this.toggleShelf();
+    this.speedBtn.onTap = () => this.cycleRideSpeed();
     this.saveBtn.onTap = () => this.saveSandbox();
     this.levelTitle.text = this.sandbox ? `${t('sandbox')} · ${this.world.name}` : `${t('level', { n: this.level.id })} · ${this.level.name}`;
     this.view.trackR.setCoins(this.level.coins ?? []);
@@ -1041,7 +1045,18 @@ export class LevelScene implements Scene {
     this.fitCamera(false);
     this.swapPlayIcon(true);
     this.hint.visible = false;
+    this.shelfBtn.visible = false;
+    this.speedBtn.visible = true;
     this.updateGoals();
+  }
+
+  /** Fahrttempo 1× → 2× → 3× → 1× */
+  private cycleRideSpeed(): void {
+    const cur = storage.settings.rideSpeed || 2;
+    const next = cur >= 3 ? 1 : cur + 1;
+    storage.updateSettings({ rideSpeed: next });
+    this.speedBtn.setText(`${next}×`);
+    this.toast.show(t('ride.speed', { n: String(next) }), 1.2);
   }
 
   private stopRide(): void {
@@ -1061,6 +1076,8 @@ export class LevelScene implements Scene {
     this.swapPlayIcon(false);
     this.timeScale = 1;
     this.speedText.text = '';
+    this.speedBtn.visible = false;
+    this.shelfBtn.visible = true;
     this.fitCamera(false);
     this.updateGoals();
     this.updateHint();
@@ -1076,7 +1093,7 @@ export class LevelScene implements Scene {
     this.ui.removeChild(old);
     old.destroy({ children: true });
     this.playBtn = btn;
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.saveBtn];
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn];
     this.ui.addChild(this.toast);
   }
 
@@ -1114,7 +1131,7 @@ export class LevelScene implements Scene {
     if (this.slowMo > 0) {
       this.slowMo -= dt;
       this.timeScale = 0.45;
-    } else this.timeScale = 1;
+    } else this.timeScale = storage.settings.rideSpeed || 2;
     const simDt = dt * this.timeScale;
     if (!(this.cameraPhase === 'overview' && this.rideTime < 1.2)) {
       if (this.cameraPhase === 'overview') this.cameraPhase = 'follow';
@@ -1300,6 +1317,7 @@ export class LevelScene implements Scene {
     }
     this.playBtn.position.set(w / 2, h - (portrait ? 64 : 56));
     this.shelfBtn.position.set(w - 46, h - 50);
+    this.speedBtn.position.set(w - 46, h - 50);
     this.shelf.position.set(w - 10, h - 120);
     this.hint.position.set(w / 2, h - (portrait ? 130 : 112));
     this.hint.style.wordWrapWidth = Math.min(380, w - 40);

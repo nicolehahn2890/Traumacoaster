@@ -206,6 +206,24 @@ check(st.lanes === 1, `Überzeichnen: Spur bleibt (ist ${st.lanes})`);
 await page.screenshot({ path: 'screenshots/scenario-5-overdraw.png' });
 }
 
+// ---------------------------------------------------------------- 6. Kreis von Hand schließen
+if (want('6')) {
+await openLevel();
+// Hügel, kurze Kehre, Rückweg oberhalb zurück bis in die Station
+const circuit = [[0, 0], [6, 1], [10, 7], [14, 15], [18, 16], [24, 12], [30, 5], [40, 4], [46, 5], [48, 8], [44, 9], [30, 9], [14, 9], [6, 7], [1, 2], [0, 0]];
+await strokeStage(circuit, 10);
+await sleep(800);
+st = await state();
+console.log('after circuit', st);
+check(st.loops === 0, `Kreis von Hand: kein Looping (ist ${st.loops})`);
+check(st.turns >= 1, `Kreis von Hand: Kehre erkannt (ist ${st.turns})`);
+await page.screenshot({ path: 'screenshots/scenario-6-circuit.png' });
+r = await ride('6-circuit', 6);
+console.log('ride result', r);
+check(r.minUp > -0.1, `Kreis von Hand: Wagen steht nie Kopf (min upy ${r.minUp})`);
+check(r.st.sim?.phase === 'done', `Kreis von Hand: Fahrt kommt an (ist ${r.st.sim?.phase}/${r.st.sim?.fail})`);
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));
