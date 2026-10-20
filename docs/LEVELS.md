@@ -157,8 +157,8 @@ Automatisch erzeugt aus `src/levels/levels.ts` (`npm run levels:doc`). Jedes Lev
 | 91 | Glatteis | Auf Eis rollt der Zug fast ohne Reibung. 120 km/h bei 50 Metern Höhe, höchstens 4 g. | Tempo ≥ 120 km/h, Höhe ≥ 50 m, max. 4 g | eben (Reibung ×0.4) | 180 m | Eis-Deko |
 | 92 | Eiszapfen | Die Coins hängen wie Eiszapfen. Drei Kurven. | 15 Coins, 3 Kurven | eben (Reibung ×0.4) | 180 m | – |
 | 93 | Gletscherspalte | 60 Meter Drop in die Spalte, Tunnel durch die Eishöhle. | Drop ≥ 60 m, 1 Tunnel | Klippe 36 m, Berg 20 m (Reibung ×0.4) | 190 m | Eisbahn |
-| 94 | Schneesturm | Drei Loopings, zwei Schleifen, 130 km/h. Im Schneesturm. | 3 Loopings, 2 Schleifen, Tempo ≥ 130 km/h | eben (Reibung ×0.4) | 200 m | – |
-| 95 | Cobra Roll | Die Cobra-Roll-Vorlage: zwei halbe Loopings, zwei halbe Schleifen, Rückkehr in Gegenrichtung. | Cobra-Roll-Vorlage, Tempo ≥ 110 km/h | eben (Reibung ×0.4) | 200 m | Cobra-Roll-Vorlage |
+| 94 | Schneesturm | Drei Loopings, zwei Schleifen, 130 km/h. Im Schneesturm. | 3 Loopings, 2 Schleifen, Tempo ≥ 130 km/h | eben (Reibung ×0.4) | 200 m | Cobra-Roll-Vorlage |
+| 95 | Cobra Roll | Die Cobra-Roll-Vorlage: zwei halbe Loopings, zwei halbe Schleifen, Rückkehr in Gegenrichtung. | Cobra-Roll-Vorlage, Tempo ≥ 110 km/h | eben (Reibung ×0.4) | 200 m | – |
 | 96 | Polarlicht | Unter dem Polarlicht: fünf Sekunden Airtime bei 60 Metern Höhe. | Airtime ≥ 5 s, Höhe ≥ 60 m | Hügel 6 m, Hügel 6 m, Hügel 6 m (Reibung ×0.4) | 210 m | – |
 | 97 | Lawine | Schneller als die Lawine: 280 Meter in 30 Sekunden bei 140 km/h. | Fahrzeit ≤ 30 s, Strecke ≥ 280 m, Tempo ≥ 140 km/h | eben (Reibung ×0.4) | 210 m | Weiche |
 | 98 | Weichenstellung | Die Weiche schickt den Zug mal links, mal rechts. Fünf Spuren, sieben Kurven. | 5 Spuren, 7 Kurven, Weiche | eben (Reibung ×0.4) | 210 m | – |
@@ -282,7 +282,7 @@ Automatisch erzeugt aus `src/levels/levels.ts` (`npm run levels:doc`). Jedes Lev
 | 79 | Korkenzieher-Vorlage |
 | 91 | Eis-Deko |
 | 93 | Eisbahn |
-| 95 | Cobra-Roll-Vorlage |
+| 94 | Cobra-Roll-Vorlage |
 | 97 | Weiche |
 | 100 | Kippschiene |
 | 106 | Geisterhaus |

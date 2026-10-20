@@ -37,7 +37,7 @@ const waterfall = (x: number, height: number, lane?: number): TerrainFeature => 
 const cliff = (x: number, height: number): TerrainFeature => ({ kind: 'cliff', x, height });
 const prop = (x: number, id: ElementId | string, lane?: number): TerrainFeature => ({ kind: 'prop', x, id, lane });
 
-interface LevelInput extends Omit<LevelDef, 'id' | 'world' | 'terrain' | 'width'> {
+interface LevelInput extends Omit<LevelDef, 'id' | 'world' | 'terrain' | 'width' | 'name' | 'hook'> {
   terrain?: TerrainFeature[];
   width?: number;
 }
@@ -425,11 +425,11 @@ const W7: LevelDef[] = [
     terrain: [cliff(70, 36), mountain(140, 34, 20)], coins: col(80, 4, 34, 6),
   }),
   L('Schneesturm', 'Drei Loopings, zwei Schleifen, 130 km/h. Im Schneesturm.', {
-    goals: [g('loops', 3), g('rolls', 2), g('speed', 130)], width: 200, physics: ice,
+    goals: [g('loops', 3), g('rolls', 2), g('speed', 130)], unlocks: ['cobraRoll'], width: 200, physics: ice,
     coins: [...ring(50, 12, 7, 5), ...ring(110, 12, 7, 5), ...ring(170, 12, 7, 5)],
   }),
   L('Cobra Roll', 'Die Cobra-Roll-Vorlage: zwei halbe Loopings, zwei halbe Schleifen, Rückkehr in Gegenrichtung.', {
-    goals: [el('cobraRoll', 1), g('speed', 110)], unlocks: ['cobraRoll'], width: 200, physics: ice, coins: arc(100, 12, 24, 8),
+    goals: [el('cobraRoll', 1), g('speed', 110)], width: 200, physics: ice, coins: arc(100, 12, 24, 8),
   }),
   L('Polarlicht', 'Unter dem Polarlicht: fünf Sekunden Airtime bei 60 Metern Höhe.', {
     goals: [g('airtime', 5), g('height', 60)], width: 210, physics: ice,
@@ -530,7 +530,7 @@ const W8: LevelDef[] = [
   L('Geisterhaus-Finale', 'Finale: 85 Meter, vier Loopings, drei Schleifen, drei Tunnel, Rückwärts-Weiche, 30 Coins.', {
     goals: [g('height', 85), g('loops', 4), g('rolls', 3), g('tunnels', 3), el('reverse', 1), g('coins', 30)],
     width: 270, terrain: [mountain(60, 40, 24), mountain(135, 40, 24), mountain(210, 40, 24), prop(135, 'ghostHouse', 1)], passengers: 12, cars: 6,
-    coins: [...col(100, 20, 80, 7), ...ring(40, 12, 7, 6), ...ring(240, 12, 7, 6), ...row(20, 250, 8, 10, 1)],
+    coins: [...col(100, 20, 80, 7), ...ring(40, 12, 7, 6), ...ring(240, 12, 7, 6), ...row(20, 250, 8, 11, 1)],
   }),
 ];
 
