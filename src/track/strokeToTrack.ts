@@ -68,7 +68,7 @@ const REVERSAL_LOOK = 8; // Umgebung eines steilen Fensters: kehrt x darin deutl
 const REVERSAL_MIN = 0.8;
 const RUN_HYSTERESIS = 0.4;
 const Z_SMOOTH = 4; // Bühnen-Meter: Tiefe am Boden wird über ±4 m geglättet (Handzittern → keine Querbeschleunigung)
-const Z_BLEND = 12; // Bühnen-Meter: weicher Anschluss der Boden-Tiefe an die vorige Tiefe (S-Kurve bleibt fahrbar)
+const Z_BLEND = 20; // Bühnen-Meter: weicher Anschluss der Boden-Tiefe an die vorige Tiefe (Spurwechsel bleibt auch bei 60 km/h fahrbar)
 /** Kehre in der Höhe: Hin- und Rückweg mindestens so lang (kürzer ist Zittern). Eine Umkehr ohne Kreuzung
  *  ist immer eine Steilkurve, nie ein vertikaler Halb-Looping, der den Wagen dauerhaft auf den Kopf stellt. */
 const TURN_MIN_WIDTH = 5;
@@ -509,9 +509,11 @@ export function turnShiftProfile(stroke: Vec2[], points: InterpretedPoint[], tur
  * Die gezeichnete x-Umkehr ist im Seitenriss meist spitz; ohne diesen Schritt entstünde eine Haarnadel
  * mit winzigem Radius. Danach wird der gezeichnete Rückweg über TURN_BLEND Meter angeschlossen.
  */
-export function shapeTurns(points: InterpretedPoint[], stroke: Vec2[], turns: StrokeEvent[]): void {
+export function shapeTurns(points: InterpretedPoint[], stroke: Vec2[], turns: StrokeEvent[], ground: (x: number, z: number) => number = () => 0): void {
   const n = points.length;
   if (n < 3) return;
+  // Höhen sind relativ zum Boden; beim Verschieben von x/Tiefe muss die absolute Höhe erhalten bleiben
+  const absY = (i: number) => points[i].y + ground(points[i].x, points[i].z);
   const cum = new Float64Array(n);
   for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + dist(stroke[i], stroke[i - 1]);
   let lastEnd = -Infinity;
@@ -531,8 +533,8 @@ export function shapeTurns(points: InterpretedPoint[], stroke: Vec2[], turns: St
     if (!ok || i1 <= i0) continue;
     const xA = points[i0].x;
     const zA = points[i0].z;
-    const yA = points[i0].y;
-    const yB = points[i1].y;
+    const yA = absY(i0);
+    const yB = absY(i1);
     const dirX = Math.sign(points[t.index].x - xA) || 1;
     const sgn = t.dir ?? 1;
     const drawnEnd = points[i1].x;
@@ -540,15 +542,18 @@ export function shapeTurns(points: InterpretedPoint[], stroke: Vec2[], turns: St
       const th = Math.min(Math.PI, Math.max(0, (cum[i] - s0) / R));
       points[i].x = xA + dirX * R * Math.sin(th);
       points[i].z = Math.max(LANE_MIN, Math.min(LANE_MAX, zA + (sgn * R * (1 - Math.cos(th))) / LANE_DEPTH));
-      // Höhe weich durch die Kurve: Die gezeichnete Bild-Höhe enthält den Anstieg der Bodenlinie der neuen
-      // Spur; was davon übrig bleibt, wäre ein Buckel genau im Scheitel (Airtime in der Steilkurve).
-      points[i].y = yA + (yB - yA) * smoothstep((cum[i] - cum[i0]) / Math.max(1e-6, cum[i1] - cum[i0]));
+      // Höhe weich durch die Kurve (absolut): Die gezeichnete Bild-Höhe enthält den Anstieg der Bodenlinie der
+      // neuen Spur; was davon übrig bleibt, wäre ein Buckel genau im Scheitel (Airtime in der Steilkurve).
+      const yAbs = yA + (yB - yA) * smoothstep((cum[i] - cum[i0]) / Math.max(1e-6, cum[i1] - cum[i0]));
+      points[i].y = Math.max(0, yAbs - ground(points[i].x, points[i].z));
     }
     const delta = points[i1].x - drawnEnd;
     for (let i = i1 + 1; i < n && points[i].mode === 'height'; i++) {
       const f = 1 - (cum[i] - cum[i1]) / TURN_BLEND;
       if (f <= 0) break;
+      const yAbs = absY(i);
       points[i].x += delta * f;
+      points[i].y = Math.max(0, yAbs - ground(points[i].x, points[i].z));
     }
     lastEnd = s1;
   }
@@ -563,7 +568,7 @@ export function interpretWithEvents(pts: Vec2[], opts: StrokeOptions): { points:
   if (turns.length) {
     const shift = turnShiftProfile(pts, points, turns);
     points = interpretStroke(pts, { ...opts, zShift: (i) => shift[Math.max(0, Math.min(shift.length - 1, i))] });
-    shapeTurns(points, pts, turns);
+    shapeTurns(points, pts, turns, opts.groundHeight ?? (() => 0));
   }
   return { points, events: [...loops, ...turns].sort((a, b) => a.index - b.index) };
 }

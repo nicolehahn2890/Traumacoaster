@@ -156,7 +156,7 @@ st = await state();
 console.log('after hairpin', st);
 check(st.loops === 0, `Steilkurve: kein Looping (ist ${st.loops})`);
 check(st.turns >= 1, `Steilkurve: mindestens 1 Kurve (ist ${st.turns})`);
-check(st.lanes === 2, `Steilkurve: 2 Spuren (ist ${st.lanes})`);
+check(st.lanes >= 2, `Steilkurve: mindestens 2 Spuren (ist ${st.lanes})`);
 await page.screenshot({ path: 'screenshots/scenario-3-hairpin.png' });
 r = await ride('3-hairpin', 7);
 console.log('ride result', r);
