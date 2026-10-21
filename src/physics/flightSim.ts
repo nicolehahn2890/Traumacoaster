@@ -77,6 +77,7 @@ const ALIGN_C = 6;
 export class FlightSim {
   readonly bodies: FlightBody[] = [];
   readonly impacts: ImpactEvent[] = [];
+  readonly kind: FlightKind;
   time = 0;
   settled = false;
   private calm = 0;
@@ -84,6 +85,7 @@ export class FlightSim {
 
   constructor(cars: CarState[], opts: FlightOptions) {
     this.opts = opts;
+    this.kind = opts.kind;
     for (const c of cars) {
       const angle = Math.atan2(c.ty, c.tx);
       const b: FlightBody = {

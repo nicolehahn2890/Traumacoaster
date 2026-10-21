@@ -24,7 +24,7 @@ import {
   clonePath, closestSample, createNode, emptyPath, isAutoNode, isClosed, nodeIn, nodeOut, sampleTrack, segmentPoints, trackStats,
   type ElementKind, type StartType, type TrackNode, type TrackPath, type TrackSamples, type TrackStats,
 } from '@/track/model';
-import { strokeToTrack, closePath, closeTrack, extendTrack, interpretStroke, type StrokeMode } from '@/track/strokeToTrack';
+import { strokeToTrack, closePath, extendTrack, interpretStroke, type StrokeMode } from '@/track/strokeToTrack';
 import { bendSegment } from '@/track/edit';
 import { MeasureOverlay } from '@/render/measureOverlay';
 import { applyOverdraw, nearestOnTrack } from '@/track/overdraw';
@@ -1428,16 +1428,9 @@ export class LevelScene implements Scene {
     this.shelf.visible = false;
     this.drawOverlay();
     this.chipLayer.removeChildren();
-    // Offene Bahn: Rückweg nur für die Fahrt auf einer Kopie ergänzen; die Zeichnung bleibt, wie sie ist
-    let ridePath = this.path;
-    let rideSamples = this.samples;
-    if (!isClosed(this.path)) {
-      ridePath = clonePath(this.path);
-      closeTrack(ridePath);
-      rideSamples = sampleTrack(ridePath, 0.25);
-      this.view.setTrack(ridePath, rideSamples, this.skin, this.terrain, this.allowTunnels, false);
-      this.toast.show(t('autoReturn'), 2);
-    }
+    // Offene Bahn: kein automatischer Rückweg mehr; die Fahrt endet am Absperrband (Abflug oder Kippen)
+    const ridePath = this.path;
+    const rideSamples = this.samples;
     const opts = simOptionsForLevel(this.level, ridePath, this.terrain, this.skin, this.allowTunnels);
     this.sim = new TrainSim(rideSamples, ridePath, opts);
     const perCar = 2;
@@ -1540,6 +1533,7 @@ export class LevelScene implements Scene {
           break;
         }
         case 'booster': this.view.effects.sparks(s.X, s.Y, 12); break;
+        case 'wheelLock': this.view.effects.sparks(s.X, s.Y - 0.3, 16); break;
         case 'splash': this.view.effects.splash(s.X, s.Y - 0.5); break;
         case 'peak': this.setSlow(0.6, 0.5, { kind: 'car', index: 0 }); break;
         case 'inversion': this.view.effects.glitter(s.X, s.Y); break;
@@ -1626,6 +1620,12 @@ export class LevelScene implements Scene {
     this.interpolateRender(clamp(this.physicsAccum / h, 0, 1));
     this.view.updateTrain(this.renderCars, this.renderViews, simDt);
     this.view.trackR.updateCoins(this.sim.collected, this.time);
+    if (this.sim.wheelLock > 0) {
+      // blockierte Räder vor dem Absperrband: Funkenspur unter dem ersten Wagen
+      const fc = this.renderCars[0];
+      const fs = toStage(fc.x, fc.y, fc.z);
+      this.view.effects.sparks(fs.X, fs.Y - 0.2, 2);
+    }
     const cam = this.view.camera;
     const front = this.renderCars[0];
     const portrait = this.h > this.w;

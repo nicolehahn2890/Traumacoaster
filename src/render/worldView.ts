@@ -32,6 +32,7 @@ export class WorldView {
   readonly effects: Effects;
   private paper: TilingSprite;
   private laneContainers = new Map<number, Container>();
+  private time = 0;
   private worldDef: WorldDef;
   private night: boolean;
 
@@ -54,6 +55,7 @@ export class WorldView {
         this.terrainR.layers.strip.get(z)!,
         this.trackR.layers.supports.get(z)!,
         this.trackR.layers.rails.get(z)!,
+        this.trackR.layers.barriers.get(z)!,
         this.trackR.layers.coins.get(z)!,
         this.trainR.layers.get(z)!,
         this.terrainR.layers.cover.get(z)!,
@@ -103,6 +105,8 @@ export class WorldView {
   }
 
   update(dt: number): void {
+    this.time += dt;
+    this.trackR.updateBarriers(this.time);
     this.camera.update(dt);
     const c = this.camera;
     this.world.scale.set(c.zoom, -c.zoom);

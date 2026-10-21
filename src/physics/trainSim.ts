@@ -85,7 +85,7 @@ export interface RideStats {
 }
 
 export interface RideEvent {
-  kind: 'coin' | 'tunnelEnter' | 'tunnelExit' | 'booster' | 'brake' | 'splash' | 'liftStart' | 'liftEnd' | 'launchEnd' | 'peak' | 'fail' | 'finish' | 'inversion';
+  kind: 'coin' | 'tunnelEnter' | 'tunnelExit' | 'booster' | 'brake' | 'splash' | 'liftStart' | 'liftEnd' | 'launchEnd' | 'peak' | 'fail' | 'finish' | 'inversion' | 'wheelLock';
   time: number;
   car?: number;
   index?: number;
@@ -114,6 +114,12 @@ const LIFT_SEARCH = 30; // m: so weit nach der Station darf der Anstieg beginnen
 const LIFT_MIN_SLOPE = 0.06;
 const LAUNCH_LENGTH = 26;
 const LAUNCH_ACCEL = 12;
+/** Offenes Ende (Absperrband): ab diesem Tempo blockieren die Räder auf den letzten Metern und der Zug fliegt ab, darunter kippt er */
+const OPEN_END_FLY_SPEED = 6;
+const WHEEL_LOCK_SECONDS = 0.3;
+const WHEEL_LOCK_DECEL = 25;
+/** unter dieses Tempo bremst die Blockade nicht (der Zug soll über die Kante, nicht davor stehen bleiben) */
+const WHEEL_LOCK_FLOOR = 2;
 const HYDRO_ACCEL = 24;
 const SWING_ACCEL = 16;
 const BOOSTER_ACCEL = 8;
@@ -140,6 +146,9 @@ export class TrainSim {
   failReason: FailReason | null = null;
   /** Freiflug nach Entgleisen, Fall oder offenem Ende (Phase 'flying') */
   flight: FlightSim | null = null;
+  /** Restzeit der Radblockade vor dem offenen Ende (Funken), 0 = keine */
+  wheelLock = 0;
+  private lockArmed = false;
   s = 0;
   v = 0;
   t = 0;
@@ -307,6 +316,23 @@ export class TrainSim {
       }
       const ahead = stateAt(this.samples, this.s + RETURN_LOOKAHEAD);
       if ((anyAuto || ahead.auto) && this.v > RETURN_SPEED_LIMIT) a -= 7;
+      // Offenes Ende (Absperrband): kommt der Zug mit Tempo an, blockieren die Räder auf den letzten Metern
+      // (Funken), so dass die Blockade genau an der Kante endet; danach fliegt er ab (fail 'openEnd' in checkEvents)
+      if (!this.samples.closed) {
+        if (!this.lockArmed && this.v > OPEN_END_FLY_SPEED) {
+          const vEnd = Math.max(WHEEL_LOCK_FLOOR, this.v - WHEEL_LOCK_DECEL * WHEEL_LOCK_SECONDS);
+          const lockDist = (WHEEL_LOCK_SECONDS * (this.v + vEnd)) / 2;
+          if (this.s >= L - lockDist) {
+            this.lockArmed = true;
+            this.wheelLock = WHEEL_LOCK_SECONDS;
+            this.events.push({ kind: 'wheelLock', time: this.t, car: 0 });
+          }
+        }
+        if (this.wheelLock > 0) {
+          this.wheelLock = Math.max(0, this.wheelLock - h);
+          if (this.v > WHEEL_LOCK_FLOOR) a -= WHEEL_LOCK_DECEL;
+        }
+      }
     }
 
     // Die Fahrgäste spüren die echte Beschleunigung des Zugs: am Kettenzug (a ≥ 0 trotz Hang) drückt der Hang
@@ -314,6 +340,7 @@ export class TrainSim {
     // Geschwindigkeit beim Einklinken der Kette sind nicht enthalten (die Kette greift weich).
     this.aTangential = a;
     this.v += a * h;
+    if (this.wheelLock > 0 && this.v < WHEEL_LOCK_FLOOR) this.v = WHEEL_LOCK_FLOOR;
     // Stillstand: auf ebener Strecke oder am Berg → nicht geschafft
     if (!afterFail && this.phase === 'coast' && this.v <= 0.03) {
       this.stallTimer += h;
@@ -324,7 +351,7 @@ export class TrainSim {
     } else this.stallTimer = 0;
     this.s += this.v * h;
     this.stats.distance += Math.abs(this.v) * h;
-    if (!afterFail && this.s >= L && this.phase === 'coast') this.lapDone = true;
+    if (!afterFail && this.samples.closed && this.s >= L && this.phase === 'coast') this.lapDone = true;
     this.stats.maxSpeed = Math.max(this.stats.maxSpeed, Math.abs(this.v));
   }
 
@@ -411,6 +438,11 @@ export class TrainSim {
       this.wasInTunnel[car.index] = car.inTunnel;
     }
     const st = stateAt(this.samples, this.s);
+    // Offenes Ende erreicht: Absperrband, der Zug fliegt ab (Räder waren blockiert) oder kippt über die Kante
+    if (!this.samples.closed && this.v > 0 && this.s >= L - 0.05) {
+      this.fail('openEnd', 0);
+      return;
+    }
     if (!st.auto) {
       for (const car of this.cars) {
         if (car.gLat > this.skinPhysics.lateralLimit) {
@@ -449,6 +481,10 @@ export class TrainSim {
       const c = this.cars[car] ?? this.cars[0];
       const side = c.feltSide > 0 ? 1 : c.feltSide < 0 ? -1 : 1;
       this.startFlight(reason === 'derail' ? 'derail' : 'fall', side);
+    } else if (reason === 'openEnd') {
+      // mit Tempo (Räder waren blockiert) fliegt der Zug ab, sonst kippt er langsam über die Kante
+      this.wheelLock = 0;
+      this.startFlight(this.lockArmed ? 'launch' : 'tip', 1);
     }
   }
 

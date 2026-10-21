@@ -43,7 +43,19 @@ export const GAUGE = 0.55;
 export interface TrackLayers {
   supports: Map<number, Graphics>;
   rails: Map<number, Graphics>;
+  /** Absperrbänder an offenen Enden (flattern, jeden Frame neu) */
+  barriers: Map<number, Graphics>;
   coins: Map<number, Container>;
+}
+
+/** Absperrband: Fußpunkt, Rahmen (Seite, oben) und Spur */
+interface Barrier {
+  x: number;
+  y: number;
+  z: number;
+  sx: number;
+  sy: number;
+  sz: number;
 }
 
 export interface TunnelPortal {
@@ -59,8 +71,9 @@ function designSpeed(samples: TrackSamples, i: number, maxY: number): number {
 }
 
 export class TrackRenderer {
-  readonly layers: TrackLayers = { supports: new Map(), rails: new Map(), coins: new Map() };
+  readonly layers: TrackLayers = { supports: new Map(), rails: new Map(), barriers: new Map(), coins: new Map() };
   private coinSprites: Graphics[] = [];
+  private barriers: Barrier[] = [];
   private world: WorldDef;
   /** Kontext des letzten draw(), damit die Streben beim Wachsen neu gezeichnet werden können */
   private last: { samples: TrackSamples; style: SkinStyle; terrain: Terrain; sky: string; maxY: number } | null = null;
@@ -70,6 +83,7 @@ export class TrackRenderer {
     for (let z = LANE_MAX; z >= LANE_MIN; z--) {
       this.layers.supports.set(z, new Graphics());
       this.layers.rails.set(z, new Graphics());
+      this.layers.barriers.set(z, new Graphics());
       this.layers.coins.set(z, new Container());
     }
   }
@@ -77,6 +91,8 @@ export class TrackRenderer {
   clear(): void {
     for (const g of this.layers.supports.values()) g.clear();
     for (const g of this.layers.rails.values()) g.clear();
+    for (const g of this.layers.barriers.values()) g.clear();
+    this.barriers = [];
   }
 
   draw(path: TrackPath, samples: TrackSamples, skin: string, terrain: Terrain, allowTunnels: boolean, preview = false): TunnelPortal[] {
@@ -141,7 +157,50 @@ export class TrackRenderer {
       wasInside = inside;
     }
     this.drawStation(samples, style, sky);
+    // Offene Bahn: Absperrband am Ende und 3 m hinter der Station (die Fahrt endet hier, kein Rückweg)
+    if (!samples.closed && !preview) {
+      const end = stateAt(samples, samples.length);
+      const fe = frameWithBank(end, 0);
+      this.barriers.push({ x: end.x, y: end.y, z: end.z, sx: fe.S.x, sy: fe.S.y, sz: fe.S.z });
+      const st0 = stateAt(samples, 0);
+      const f0 = frameWithBank(st0, 0);
+      this.barriers.push({ x: st0.x - st0.t3x * 3, y: st0.y - st0.t3y * 3, z: st0.z - (st0.t3z * 3) / LANE_DEPTH, sx: f0.S.x, sy: f0.S.y, sz: f0.S.z });
+      this.updateBarriers(0);
+    }
     return portals;
+  }
+
+  /** Absperrbänder zeichnen: zwei Pfosten (1,1 m), drei gelb-schwarze Bänder, die im Wind flattern */
+  updateBarriers(time: number): void {
+    if (!this.barriers.length) return;
+    for (const g of this.layers.barriers.values()) g.clear();
+    const ink = 0x2a1f3d;
+    for (const b of this.barriers) {
+      const lane = Math.round(b.z);
+      const g = this.layers.barriers.get(lane);
+      if (!g) continue;
+      const k = laneScale(lane);
+      const half = 0.95;
+      const l = toStage(b.x - b.sx * half, b.y - b.sy * half, b.z - (b.sz * half) / LANE_DEPTH);
+      const r = toStage(b.x + b.sx * half, b.y + b.sy * half, b.z + (b.sz * half) / LANE_DEPTH);
+      for (const p of [l, r]) {
+        g.moveTo(p.X, p.Y - 0.1 * k).lineTo(p.X, p.Y + 1.1 * k).stroke({ width: 0.14 * k, color: ink, cap: 'round' });
+        g.circle(p.X, p.Y + 1.1 * k, 0.1 * k).fill(0xffd23f);
+      }
+      const segs = 8;
+      for (const h of [0.35, 0.65, 0.95]) {
+        for (let j = 0; j < segs; j++) {
+          const t0 = j / segs;
+          const t1 = (j + 1) / segs;
+          const flutter = (t: number) => 0.08 * Math.sin(6 * time + b.x + t * 7 + h * 9) * Math.sin(Math.PI * t);
+          const x0 = l.X + (r.X - l.X) * t0;
+          const y0 = l.Y + (r.Y - l.Y) * t0 + (h + flutter(t0)) * k;
+          const x1 = l.X + (r.X - l.X) * t1;
+          const y1 = l.Y + (r.Y - l.Y) * t1 + (h + flutter(t1)) * k;
+          g.moveTo(x0, y0).lineTo(x1, y1).stroke({ width: 0.16 * k, color: j % 2 === 0 ? 0xffd23f : ink, cap: 'butt' });
+        }
+      }
+    }
   }
 
   /** Streben neu zeichnen, mit Wachstum 0 … 1 (vom Boden bis zur Bahn) */

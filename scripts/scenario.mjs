@@ -68,7 +68,7 @@ const state = () => page.evaluate(() => {
   return {
     scene: s?.constructor?.name, mode: s?.mode, nodes: s?.path?.nodes?.length ?? 0,
     loops: s?.stats?.loops, turns: s?.stats?.turns, lanes: s?.stats?.lanes, height: s?.stats?.maxHeight?.toFixed(1),
-    sim: s?.sim ? { phase: s.sim.phase, fail: s.sim.failReason, t: s.sim.t.toFixed(1), coins: s.sim.stats.coins, maxG: s.sim.stats.maxG.toFixed(1), maxLat: s.sim.stats.maxLatG.toFixed(2), maxSpeed: (s.sim.stats.maxSpeed * 3.6).toFixed(0), inversions: s.sim.stats.inversions } : null,
+    sim: s?.sim ? { phase: s.sim.phase, fail: s.sim.failReason, flight: s.sim.flight?.kind ?? null, t: s.sim.t.toFixed(1), coins: s.sim.stats.coins, maxG: s.sim.stats.maxG.toFixed(1), maxLat: s.sim.stats.maxLatG.toFixed(2), maxSpeed: (s.sim.stats.maxSpeed * 3.6).toFixed(0), inversions: s.sim.stats.inversions } : null,
     car: car ? { z: car.z.toFixed(2), bank: ((car.bank * 180) / Math.PI).toFixed(0), upy: car.upy.toFixed(2), y: car.y.toFixed(1) } : null,
   };
 });
@@ -166,8 +166,9 @@ check(r.maxBank > 15, `Hügel+Oval: Wagen legt sich in die Kurve (max Schräglag
 // ---------------------------------------------------------------- 3. Steilkurve in der Höhe
 if (want('3')) {
 await openLevel();
-// Lifthügel, Drop auf 10 m, Kehre in der Höhe (Rückweg 2 m höher = nach hinten), Abfahrt auf die Bodenlinie der Spur 1
-const hairpin = [[0, 0], [6, 1], [10, 7], [14, 16], [18, 18], [24, 14], [30, 10], [40, 10], [46, 10.2], [50, 12], [46, 13.8], [40, 14], [26, 14], [18, 13.2], [10, 10], [2, 6], [-4, R + 0.3], [-12, R]];
+// Lifthügel, Drop auf 10 m, Kehre in der Höhe (Rückweg 2 m höher = nach hinten), Abfahrt auf die Bodenlinie der Spur 1.
+// Der Rückweg kommt hinter der Station auf Spur 1 an und dreht dort in die Station (kein Auto-Rückweg mehr)
+const hairpin = [[0, 0], [6, 1], [10, 7], [14, 16], [18, 18], [24, 14], [30, 10], [40, 10], [46, 10.2], [50, 12], [46, 13.8], [40, 14], [26, 14], [18, 13.2], [10, 10], [2, 6], [-4, R + 0.3], [-7, R], [-8, 0.5 * R], [-6, 0.15 * R], [0, 0], [2, 0]];
 await strokeStage(hairpin, 10);
 await sleep(800);
 st = await state();
@@ -186,13 +187,14 @@ check(r.st.sim?.phase === 'done', `Steilkurve: Fahrt kommt an (ist ${r.st.sim?.p
 if (want('4')) {
 await openLevel();
 // Lifthügel 20 m, Looping mit Scheitel bei 13 m (genug Tempo oben), Auslauf auf den Boden
-const loop = [[0, 0], [6, 1], [10, 7], [14, 16], [18, 20], [26, 16], [34, 7], [40, 3], [46, 3.5], [50, 8], [48, 12.5], [43, 13], [38, 9], [40, 4], [46, 2], [60, 0.4], [74, 0.2]];
+// Der Auslauf dreht am Boden auf Spur 2 und führt zurück in die Station (kein Auto-Rückweg mehr)
+const loop = [[0, 0], [6, 1], [10, 7], [14, 16], [18, 20], [26, 16], [34, 7], [40, 3], [46, 3.5], [50, 8], [48, 12.5], [43, 13], [38, 9], [40, 4], [46, 2], [60, 0.4], [70, 0.2], [76, 0.3 * R], [78, R], [76, 1.7 * R], [70, 2 * R], [40, 2 * R], [10, 2 * R], [-6, 1.7 * R], [-8, R], [-6, 0.3 * R], [0, 0], [2, 0]];
 await strokeStage(loop, 10);
 await sleep(800);
 st = await state();
 console.log('after loop', st);
 check(st.loops === 1, `Looping: 1 Looping (ist ${st.loops})`);
-check(st.lanes === 1, `Looping: bleibt in der Spur (ist ${st.lanes})`);
+check(st.lanes === 2, `Looping: bleibt in der Spur, nur der Rückweg liegt auf Spur 2 (Spuren ${st.lanes})`);
 await page.screenshot({ path: 'screenshots/scenario-4-loop.png' });
 r = await ride('4-loop', 8);
 console.log('ride result', r);
@@ -230,6 +232,15 @@ console.log('after overdraw', st);
 check(Number(st.height) > 8, `Überzeichnen: Hügel eingebaut (Höhe ${st.height})`);
 check(st.lanes === lanesBefore, `Überzeichnen: Spuren bleiben wie vorher (${lanesBefore} → ${st.lanes})`);
 check(st.loops === 0, `Überzeichnen: kein Looping (ist ${st.loops})`);
+// Offenes Ende: Absperrband steht, die Fahrt endet dort (Räder blockieren, Abflug), kein Auto-Rückweg
+const barrierW = await page.evaluate(() => window.tcGame.current.view.trackR.layers.barriers.get(0).getLocalBounds().width);
+check(barrierW > 1, `Absperrband am offenen Ende gezeichnet (Breite ${barrierW.toFixed(1)} m)`);
+await page.screenshot({ path: 'screenshots/scenario-5-barrier.png' });
+r = await ride('5-openend', 5);
+console.log('ride result', r);
+check(r.st.sim?.fail === 'openEnd', `Offenes Ende: Fahrt endet mit openEnd (ist ${r.st.sim?.phase}/${r.st.sim?.fail})`);
+check(r.st.sim?.phase === 'flying', `Offenes Ende: der Zug fliegt ab (Phase ${r.st.sim?.phase})`);
+check(r.st.sim?.flight === 'launch', `Offenes Ende: mit Tempo → Abflug (Flugart ${r.st.sim?.flight})`);
 await page.screenshot({ path: 'screenshots/scenario-5-overdraw.png' });
 }
 
@@ -262,6 +273,8 @@ await strokeStage([[0, 0], [8, 0.5], [16, 6], [24, 16], [32, 16.5], [40, 10], [5
   await page.screenshot({ path: 'screenshots/scenario-7-live.png' });
 });
 check(liveGoals[1] === true, `Live-Ziel: Höhe ≥ 15 m hakt schon während des Strichs (${JSON.stringify(liveGoals)})`);
+const barrier7 = await page.evaluate(() => window.tcGame.current.view.trackR.layers.barriers.get(0).getLocalBounds().width);
+check(barrier7 > 1, `Offener Hügel: Absperrband am Ende (Breite ${barrier7.toFixed(1)} m)`);
 await sleep(800);
 st = await state();
 const n0 = st.nodes;
