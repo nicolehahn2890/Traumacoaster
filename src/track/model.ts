@@ -206,6 +206,26 @@ export function sampleTrack(path: TrackPath, step = 0.25): TrackSamples {
     out.k3z[i] = (d2.z - dt * T.z) / (l * l);
   }
 
+  // 3b) Krümmung über die Wagenlänge mitteln (±1,2 m): Ein Wagen mit Radstand spürt keine Krümmungsspitzen,
+  // die kürzer sind als er selbst; die Bezier-Knoten (nur C1) hätten sonst Sprünge in den g-Kräften.
+  const win = Math.max(1, Math.round(1.2 / step));
+  const kx = Float64Array.from(out.k3x);
+  const ky = Float64Array.from(out.k3y);
+  const kz = Float64Array.from(out.k3z);
+  for (let i = 0; i < count; i++) {
+    let sx = 0;
+    let sy = 0;
+    let sz = 0;
+    let n = 0;
+    for (let k = -win; k <= win; k++) {
+      let j = i + k;
+      if (closed) j = ((j % count) + count) % count;
+      else if (j < 0 || j >= count) continue;
+      sx += kx[j]; sy += ky[j]; sz += kz[j]; n++;
+    }
+    out.k3x[i] = sx / n; out.k3y[i] = sy / n; out.k3z[i] = sz / n;
+  }
+
   // 4) Oben-Vektor: Parallel-Transport, bei waagerechter Bahn zur Welt-Senkrechten zurückgezogen
   let ux = 0;
   let uy = 1;

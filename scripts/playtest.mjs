@@ -24,7 +24,8 @@ const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, d
 await ctx.addInitScript(() => {
   const stars = {};
   for (let i = 1; i <= 14; i++) stars[i] = 1;
-  localStorage.setItem('traumacoaster.v1', JSON.stringify({ progress: { stars, highest: 14, current: 4, drafts: {} }, settings: { rideSpeed: 3 } }));
+  // auf about:blank gibt es keinen Speicher (Zwischenseite beim Levelwechsel)
+  try { localStorage.setItem('traumacoaster.v1', JSON.stringify({ progress: { stars, highest: 14, current: 4, drafts: {} }, settings: { rideSpeed: 3 } })); } catch { /* ignorieren */ }
 });
 const page = await ctx.newPage();
 page.on('pageerror', (e) => console.error('PAGEERROR', e.message));

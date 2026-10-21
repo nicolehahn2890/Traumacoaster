@@ -25,6 +25,8 @@ export type StrokeMode = 'floor' | 'height';
 export interface StrokeOptions {
   /** Bodenhöhe (Welt) an x, Spur z */
   groundHeight?: (x: number, z: number) => number;
+  /** Station auf der Bühne, auf die ein Rundenschluss zielt (Standard: Strichanfang) */
+  closeAt?: StagePoint;
   groundClearance?: number;
   maxHeight?: number;
   allowTurns?: boolean;
@@ -90,6 +92,7 @@ const radiusForDrop = (drop: number): number => (2 * Math.max(0, drop)) / TURN_G
 const turnHalfLength = (radius: number): number => (Math.PI * radius) / 2;
 const TURN_G = 2.0; // höchste Querbeschleunigung (in g), für die eine Kehre ausgelegt wird
 const TURN_BLEND = 10; // Bühnen-Meter: Anschluss des gezeichneten Rückwegs an den Halbkreis (x)
+const TURN_RUNOUT = 6; // Meter eben nach der Kurve, bevor die Höhe auf den gezeichneten Verlauf übergeht (Kuppe nicht in der Schräglage)
 const TURN_BLEND_Y = 16; // Bühnen-Meter: Höhe nach der Kurve weich auf die gezeichnete Höhe führen
 const RESAMPLE = 0.5;
 /** Gauß-Glättung des Strichs (σ in Bühnen-Metern): Zittern weg, Formen ab ~4 m bleiben */
@@ -717,7 +720,7 @@ export function turnShiftProfile(stroke: Vec2[], points: InterpretedPoint[], tur
  * Die gezeichnete x-Umkehr ist im Seitenriss meist spitz; ohne diesen Schritt entstünde eine Haarnadel
  * mit winzigem Radius. Danach wird der gezeichnete Rückweg über TURN_BLEND Meter angeschlossen.
  */
-export function shapeTurns(points: InterpretedPoint[], stroke: Vec2[], turns: StrokeEvent[], ground: (x: number, z: number) => number = () => 0): void {
+export function shapeTurns(points: InterpretedPoint[], stroke: Vec2[], turns: StrokeEvent[], ground: (x: number, z: number) => number = () => 0, clearance = 0.6): void {
   const n = points.length;
   if (n < 3) return;
   // Höhen sind relativ zum Boden; beim Verschieben von x/Tiefe muss die absolute Höhe erhalten bleiben
@@ -744,20 +747,37 @@ export function shapeTurns(points: InterpretedPoint[], stroke: Vec2[], turns: St
     if (!ok || i1 <= i0) continue;
     const xA = points[i0].x;
     const zA = points[i0].z;
-    const yA = absY(i0);
     const dirX = Math.sign(points[t.index].x - xA) || 1;
     const sgn = t.dir ?? 1;
     const drawnEnd = points[i1].x;
     const drawnEndZ = points[i1].z;
+    // Die Kurve selbst bleibt eben (absolut): auf der Einfahrtshöhe, mindestens aber über dem höchsten
+    // Gelände unter dem Halbkreis (eine Kurve über einen Hügel wird aufgeständert, statt ihn mitzufahren:
+    // Kuppe plus Querkraft wäre bei Tempo nicht fahrbar). Die gezeichnete Bild-Höhe des Rückwegs enthält
+    // den Anstieg der Bodenlinie der neuen Spur; der Höhenunterschied wird danach weich abgebaut.
+    let yA = t.floor ? ground(points[i0].x, points[i0].z) + clearance : absY(i0);
+    for (let i = i0; i <= i1; i++) {
+      const th = Math.min(Math.PI, Math.max(0, (cum[i] - s0) / R));
+      const x = xA + dirX * R * Math.sin(th);
+      const z = Math.max(LANE_MIN, Math.min(LANE_MAX, zA + (sgn * R * (1 - Math.cos(th))) / LANE_DEPTH));
+      yA = Math.max(yA, ground(x, z) + clearance);
+    }
     for (let i = i0; i <= i1; i++) {
       const th = Math.min(Math.PI, Math.max(0, (cum[i] - s0) / R));
       points[i].x = xA + dirX * R * Math.sin(th);
       points[i].z = Math.max(LANE_MIN, Math.min(LANE_MAX, zA + (sgn * R * (1 - Math.cos(th))) / LANE_DEPTH));
-      // Die Kurve selbst bleibt auf der Einfahrtshöhe (absolut). Die gezeichnete Bild-Höhe des Rückwegs
-      // enthält den Anstieg der Bodenlinie der neuen Spur; eine Kurve, die gleichzeitig fällt, wäre bei
-      // Tempo nicht fahrbar (keine Kraft in den Sitz, volle Querkraft). Der Höhenunterschied wird
-      // danach weich über TURN_BLEND_Y abgebaut. Am Boden bleibt die Höhe 0.
-      points[i].y = t.floor ? 0 : Math.max(0, yA - ground(points[i].x, points[i].z));
+      points[i].y = Math.max(0, yA - ground(points[i].x, points[i].z));
+    }
+    // Anfahrt: liegt die Kurve höher als der Strich davor (Gelände), die Bahn davor weich anheben; die
+    // Länge der Rampe wächst mit dem Tempo (Kuppe am Rampenende, siehe blendY unten)
+    for (; hIdx < i0; hIdx++) hMax = Math.max(hMax, absY(hIdx));
+    const dIn = Math.max(0, yA - absY(i0));
+    const blendIn = Math.max(TURN_BLEND_Y, Math.sqrt(6 * dIn * 1.5 * Math.max(0, hMax - yA)));
+    for (let i = i0 - 1; i >= 0; i--) {
+      const f = 1 - smoothstep((cum[i0] - cum[i] - TURN_RUNOUT) / blendIn);
+      if (f <= 0) break;
+      const want = absY(i) + (yA - absY(i)) * f;
+      if (want > absY(i)) points[i].y = Math.max(0, want - ground(points[i].x, points[i].z));
     }
     // Anschluss des Rückwegs: x und Tiefe weich auf den gezeichneten Verlauf, Höhe weich von der Kurvenhöhe
     // auf die gezeichnete Höhe (auch wenn der Rückweg am Boden der neuen Spur liegt: dann gleitet die Bahn hinunter)
@@ -774,14 +794,12 @@ export function shapeTurns(points: InterpretedPoint[], stroke: Vec2[], turns: St
     for (let i = i1 + 1; i < n; i++) {
       const fx = 1 - smoothstep((cum[i] - cum[i1]) / TURN_BLEND);
       const fz = 1 - smoothstep((cum[i] - cum[i1]) / Z_BLEND);
-      const fy = t.floor ? 1 : smoothstep((cum[i] - cum[i1]) / blendY);
+      const fy = smoothstep((cum[i] - cum[i1] - TURN_RUNOUT) / blendY);
       if (fx <= 0 && fy >= 1 && fz <= 0) break;
       if (fx > 0) points[i].x += delta * fx;
       if (fz > 0) points[i].z = Math.max(LANE_MIN, Math.min(LANE_MAX, points[i].z + deltaZ * fz));
-      if (!t.floor) {
-        const yAbs = yA + (absY(i) - yA) * fy;
-        points[i].y = Math.max(0, yAbs - ground(points[i].x, points[i].z));
-      }
+      const yAbs = yA + (absY(i) - yA) * fy;
+      points[i].y = Math.max(0, yAbs - ground(points[i].x, points[i].z));
     }
     lastEnd = s1;
   }
@@ -792,11 +810,26 @@ export function interpretWithEvents(pts: Vec2[], opts: StrokeOptions): { points:
   let points = interpretStroke(pts, opts);
   if (points.length < 2) return { points, events: [] };
   const loops = opts.allowLoops === false ? [] : detectLoops(points);
-  const turns = opts.allowTurns === false ? [] : [...detectTurns(points, loops, 'height'), ...detectTurns(points, loops, 'floor')];
+  let turns = opts.allowTurns === false ? [] : [...detectTurns(points, loops, 'height'), ...detectTurns(points, loops, 'floor')];
+  if (turns.some((t) => t.floor)) {
+    // Boden-Kehren brauchen nach dem Scheitel noch Strich für den Halbkreis; und endet der Strich nahe der
+    // Station, gehört die Schluss-Kehre dem Rundenschluss (snapEndToStart), nicht der Kehren-Formung
+    const n = pts.length;
+    const cum = new Float64Array(n);
+    for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + dist(pts[i - 1], pts[i]);
+    const closeAt = opts.closeAt ?? { X: pts[0].x, Y: pts[0].y };
+    const closing = Math.hypot(pts[n - 1].x - closeAt.X, pts[n - 1].y - closeAt.Y) <= CLOSE_SNAP;
+    turns = turns.filter((t) => {
+      if (!t.floor) return true;
+      const tail = cum[n - 1] - cum[t.index];
+      if (tail < turnHalfLength(TURN_RADIUS_MIN)) return false;
+      return !(closing && tail <= CLOSE_U_REACH);
+    });
+  }
   if (turns.length) {
     const shift = turnShiftProfile(pts, points, turns, opts.groundHeight ?? (() => 0));
     if (turns.some((t) => !t.floor)) points = interpretStroke(pts, { ...opts, zShift: (i) => shift[Math.max(0, Math.min(shift.length - 1, i))] });
-    shapeTurns(points, pts, turns, opts.groundHeight ?? (() => 0));
+    shapeTurns(points, pts, turns, opts.groundHeight ?? (() => 0), opts.groundClearance ?? 0.6);
   }
   return { points, events: [...loops, ...turns].sort((a, b) => a.index - b.index) };
 }
@@ -866,6 +899,111 @@ export function simplify3(points: Vec3[], tolerance: number): number[] {
   return out;
 }
 
+const CREST_G = 2.0; // Kuppen: höchstens 2 g nach oben (mit Sicherheitsfaktor 1,4: g im Sitz etwa −0,4, Floater-Airtime)
+const VALLEY_G = 3.0; // Täler: höchstens 3 g zusätzlich in den Sitz
+const LIFT_V2 = 36; // kleinstes Tempo-Quadrat (Kettenzug 6 m/s)
+const CURVE_R_MIN = 3;
+
+/** 3D-Linie gleichmäßig abtasten (lineare Interpolation entlang der Bogenlänge), Anfang und Ende bleiben */
+export function resample3(pts: Vec3[], step: number): Vec3[] {
+  const n = pts.length;
+  if (n < 2) return pts.slice();
+  const out: Vec3[] = [pts[0]];
+  let carry = 0;
+  for (let i = 1; i < n; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    const len = dist3(a, b);
+    if (len < 1e-9) continue;
+    let t = step - carry;
+    while (t <= len) {
+      out.push(add3(a, scale3(sub3(b, a), t / len)));
+      t += step;
+    }
+    carry = len - (t - step);
+  }
+  const last = pts[n - 1];
+  if (dist3(out[out.length - 1], last) < step * 0.25 && out.length > 1) out[out.length - 1] = last;
+  else out.push(last);
+  return out;
+}
+
+/**
+ * Kuppen und Täler auf tempo-gerechte Radien bringen, wie es ein Bahnplaner tut: Das Tempo wird aus der
+ * Fallhöhe seit dem höchsten Punkt davor geschätzt (v² ≈ 2·g·Δh, mindestens Liftgeschwindigkeit). Eine
+ * Kuppe braucht R ≥ v²/(CREST_G·g), sonst hebt es die Fahrgäste aus dem Sitz; ein Tal R ≥ v²/(VALLEY_G·g).
+ * Die Bahn wird dabei nur angehoben (Schultern an Kuppen, Talsohlen), nie abgesenkt: Hügel behalten ihre
+ * Höhe, das Gelände wird überbrückt statt nachgefahren.
+ *
+ * Rechnung: örtliche Bedingung an die zweite Differenz je Punkt (mit dem Radius dieses Punkts), gelöst
+ * durch Durchläufe vor und zurück: Eine zu scharfe Kuppe setzt den nächsten Punkt in Laufrichtung auf die
+ * Fortsetzung der erlaubten Parabel (das pflanzt sich wie eine Parabel fort, bis sie die Bahn wieder
+ * trifft), eine zu scharfe Senke hebt den Punkt selbst. Beides nur anheben. Die Enden bleiben während der
+ * Rechnung frei (ein festgehaltenes Ende neben einer Stufe würde die Parabel endlos rückwärts treiben) und
+ * werden danach gesetzt: Anfang immer, Ende bei geschlossener Runde; dort ist die Bahn ohnehin eben
+ * (Einfahrt), es entsteht keine Stufe. Loopings bleiben unangetastet (dort ist der Wagen kopfüber, die
+ * Kuppe ist gewollt). Erwartet gleichmäßig abgetastete Punkte (resample3).
+ */
+export function limitVerticalCurvature(world: Vec3[], keep: (i: number) => boolean = () => false, pinEnd = false, maxSweeps = 400): void {
+  const n = world.length;
+  if (n < 3) return;
+  const s = new Float64Array(n);
+  for (let i = 1; i < n; i++) s[i] = s[i - 1] + dist3(world[i - 1], world[i]);
+  const y0 = Float64Array.from(world, (p) => p.y);
+  const g = 9.81;
+  const rCrest = new Float64Array(n);
+  const rValley = new Float64Array(n);
+  let hMax = y0[0];
+  for (let i = 0; i < n; i++) {
+    hMax = Math.max(hMax, y0[i]);
+    const v2 = Math.max(LIFT_V2, 2 * g * (hMax - y0[i]));
+    // Sicherheitsfaktor: Der Bezier-Fit (Toleranz 0,2 m) überzeichnet Krümmungen örtlich etwas
+    rCrest[i] = Math.max(CURVE_R_MIN, (1.4 * v2) / (CREST_G * g));
+    rValley[i] = Math.max(CURVE_R_MIN, v2 / (VALLEY_G * g));
+  }
+  const kept = new Uint8Array(n);
+  for (let i = 0; i < n; i++) kept[i] = keep(i) ? 1 : 0;
+  const y = Float64Array.from(y0);
+  for (let k = 0; k < maxSweeps; k++) {
+    let changed = false;
+    const step = (i: number, forward: boolean) => {
+      const d1 = s[i] - s[i - 1];
+      const d2 = s[i + 1] - s[i];
+      if (d1 < 1e-6 || d2 < 1e-6) return;
+      // Senke: der Punkt darf nicht tiefer liegen als die Parabel durch die Nachbarn
+      if (!kept[i]) {
+        const mid = y[i - 1] + ((y[i + 1] - y[i - 1]) * d1) / (d1 + d2);
+        const lim = mid - (d1 * d2) / (2 * rValley[i]);
+        if (y[i] < lim - 1e-6) {
+          y[i] = lim;
+          changed = true;
+        }
+      }
+      // Kuppe: der nächste Punkt in Laufrichtung darf nicht tiefer liegen als die Fortsetzung der Parabel
+      // (Steigung aus dem vorigen Nachbarn, Krümmung −1/R; exakt für Parabeln, auch bei ungleichen Schritten)
+      if (forward && !kept[i + 1]) {
+        const slope = (y[i] - y[i - 1]) / d1;
+        const lim = y[i] + slope * d2 - (d2 * (d1 + d2)) / (2 * rCrest[i]);
+        if (y[i + 1] < lim - 1e-6) {
+          y[i + 1] = lim;
+          changed = true;
+        }
+      } else if (!forward && !kept[i - 1]) {
+        const slope = (y[i + 1] - y[i]) / d2;
+        const lim = y[i] - slope * d1 - (d1 * (d1 + d2)) / (2 * rCrest[i]);
+        if (y[i - 1] < lim - 1e-6) {
+          y[i - 1] = lim;
+          changed = true;
+        }
+      }
+    };
+    for (let i = 1; i < n - 1; i++) step(i, true);
+    for (let i = n - 2; i >= 1; i--) step(i, false);
+    if (!changed) break;
+  }
+  for (let i = 0; i < n; i++) world[i].y = i === 0 || (pinEnd && i === n - 1) || kept[i] ? y0[i] : Math.max(y0[i], y[i]);
+}
+
 /** Interpretierte Punkte → Knoten (Anheben über Terrain, Ecken runden, 3D-Fit) */
 export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, events: StrokeEvent[]): TrackNode[] {
   const ground = opts.groundHeight ?? (() => 0);
@@ -875,11 +1013,19 @@ export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, e
   const rel: Vec3[] = points.map((p) => ({ x: p.x, y: Math.max(clearance, p.y), z: p.z * LANE_DEPTH }));
   // Der Strich ist schon geglättet; hier verschwinden die Knicke, die erst beim Lesen entstehen
   // (Anheben auf die Mindesthöhe am Fuß eines Hügels, Anschluss der Steilkurven, Spurwechsel)
-  const world: Vec3[] = smoothPolyline3(rel, SMOOTH_SIGMA).map((p) => {
-    let y = p.y + ground(p.x, p.z / LANE_DEPTH);
-    if (opts.maxHeight && opts.maxHeight > 0) y = Math.min(y, opts.maxHeight);
-    return { x: p.x, y, z: p.z };
-  });
+  const read: Vec3[] = smoothPolyline3(rel, SMOOTH_SIGMA).map((p) => ({ x: p.x, y: p.y + ground(p.x, p.z / LANE_DEPTH), z: p.z }));
+  // Scheitelpunkte der Ereignisse und Bogenlängen der Loopings merken (die Punktfolge wird gleich neu abgetastet)
+  const cumRead = new Float64Array(read.length);
+  for (let i = 1; i < read.length; i++) cumRead[i] = cumRead[i - 1] + dist3(read[i - 1], read[i]);
+  const apexOf = (e: StrokeEvent): Vec3 => read[Math.max(0, Math.min(read.length - 1, e.index))];
+  const loopRanges = events.filter((e) => e.kind === 'loop').map((e) => [cumRead[Math.max(0, e.from ?? e.index)], cumRead[Math.min(read.length - 1, e.to ?? e.index)]] as const);
+  // Kuppen und Täler (auch die des Geländes) auf fahrbare Radien bringen; Loopings bleiben, wie gezeichnet
+  const world = resample3(read, RESAMPLE);
+  const cumW = new Float64Array(world.length);
+  for (let i = 1; i < world.length; i++) cumW[i] = cumW[i - 1] + dist3(world[i - 1], world[i]);
+  const inLoop = (i: number) => loopRanges.some(([a, b]) => cumW[i] >= a - 1 && cumW[i] <= b + 1);
+  limitVerticalCurvature(world, inLoop, dist3(world[0], world[world.length - 1]) < 1);
+  if (opts.maxHeight && opts.maxHeight > 0) for (const p of world) p.y = Math.min(p.y, opts.maxHeight);
   let pts = roundCorners3(world);
   const keep = simplify3(pts, 0.04);
   pts = keep.map((i) => pts[i]);
@@ -893,7 +1039,7 @@ export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, e
   }
   pts = dense;
   // keine gebrochenen Tangenten aus Strichen (Achterbahnen haben keine Ecken); engere Toleranz, da der Strich geglättet ist
-  const segments = fitWithCorners3(pts, opts.fitError ?? 0.3, 179);
+  const segments = fitWithCorners3(pts, opts.fitError ?? 0.1, 179);
   const nodes: TrackNode[] = [];
   const mk = (p: Vec3): TrackNode => createNode(p.x, p.y, p.z / LANE_DEPTH);
   for (let i = 0; i < segments.length; i++) {
@@ -914,7 +1060,7 @@ export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, e
   }
   // Ereignis-Knoten markieren (nächster Knoten zum Scheitelpunkt)
   for (const e of events) {
-    const apex = world[Math.min(world.length - 1, e.index)];
+    const apex = apexOf(e);
     let best = -1;
     let bestD = Infinity;
     nodes.forEach((nd, i) => {
@@ -1067,7 +1213,8 @@ export function extendTrack(path: TrackPath, stroke: StagePoint[], opts: StrokeO
   const ground = opts.groundHeight ?? (() => 0);
   const end = path.nodes[path.nodes.length - 1];
   const startMode: StrokeMode = end.y - ground(end.x, end.z) > 1.2 ? 'height' : 'floor';
-  const { points, events } = interpretWithEvents(pts, { ...opts, startZ: end.z, startMode });
+  const stationStage = toStage(path.nodes[0].x, path.nodes[0].y, path.nodes[0].z);
+  const { points, events } = interpretWithEvents(pts, { ...opts, startZ: end.z, startMode, closeAt: stationStage });
   if (points.length < 2) return null;
   const station = path.nodes[0];
   const sp = nodePos(station);
