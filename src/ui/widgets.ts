@@ -188,8 +188,31 @@ export function goalIcon(g: Graphics, type: string, s: number): void {
     case 'lanes': for (let i = 0; i < 3; i++) g.moveTo(-half + i * 4, -half * 0.6 + i * half * 0.6).lineTo(half - i * 4, -half * 0.6 + i * half * 0.6).stroke({ width: 3, color: ink, cap: 'round' }); break;
     case 'noBrakes': g.circle(0, 0, half * 0.8).stroke({ width: 3, color: 0xd64545 }); g.moveTo(-half * 0.55, -half * 0.55).lineTo(half * 0.55, half * 0.55).stroke({ width: 3, color: 0xd64545, cap: 'round' }); break;
     case 'element': g.roundRect(-half * 0.8, -half * 0.8, half * 1.6, half * 1.6, 4).fill(0x9b6dff).stroke({ width: 2.5, color: ink }); g.moveTo(-half * 0.3, 0).lineTo(half * 0.3, 0).moveTo(0, -half * 0.3).lineTo(0, half * 0.3).stroke({ width: 3, color: 0xffffff, cap: 'round' }); break;
+    // negative Ziele: Figur fliegt aus der Wanne (eject), fällt in die Wanne (catch), Flugbogen mit Weite (flight)
+    case 'eject': g.moveTo(-half, half * 0.3).lineTo(-half, half * 0.9).lineTo(half * 0.2, half * 0.9).lineTo(half * 0.2, half * 0.3).stroke({ width: 3, color: ink, join: 'round' }); g.circle(half * 0.45, -half * 0.55, half * 0.28).fill(0xffd9b3).stroke({ width: 2, color: ink }); g.moveTo(-half * 0.4, 0).quadraticCurveTo(0, -half, half * 0.45, -half * 0.2).stroke({ width: 2.5, color: 0xff5c8a, cap: 'round' }); break;
+    case 'catch': g.moveTo(-half * 0.8, -half * 0.1).lineTo(-half * 0.8, half * 0.9).lineTo(half * 0.8, half * 0.9).lineTo(half * 0.8, -half * 0.1).stroke({ width: 3, color: ink, join: 'round' }); g.circle(0, -half * 0.55, half * 0.28).fill(0xffd9b3).stroke({ width: 2, color: ink }); g.moveTo(0, -half * 0.2).lineTo(0, half * 0.5).stroke({ width: 2.5, color: 0x7ee081, cap: 'round' }); g.moveTo(-half * 0.25, half * 0.2).lineTo(0, half * 0.5).lineTo(half * 0.25, half * 0.2).stroke({ width: 2.5, color: 0x7ee081, cap: 'round', join: 'round' }); break;
+    case 'flight': g.moveTo(-half, half * 0.6).quadraticCurveTo(0, -half * 1.2, half, half * 0.6).stroke({ width: 3, color: ink, cap: 'round' }); g.moveTo(-half, half * 0.9).lineTo(half, half * 0.9).stroke({ width: 2.5, color: 0xff5c8a, cap: 'round' }); g.moveTo(half * 0.6, half * 0.6).lineTo(half, half * 0.9).lineTo(half * 0.6, half * 1.2).stroke({ width: 2.5, color: 0xff5c8a, cap: 'round', join: 'round' }); break;
     default: g.circle(0, 0, half * 0.6).fill(0x7ee081).stroke({ width: 2.5, color: ink }); g.moveTo(-half * 0.35, 0).lineTo(-half * 0.05, half * 0.3).lineTo(half * 0.4, -half * 0.35).stroke({ width: 3, color: ink, cap: 'round', join: 'round' });
   }
+}
+
+/** Gurt-Abzeichen: Sitz mit Gurtstufe 0–4 (ohne, Beckengurt, Bügel, Schulterbügel, Rennsitz); broken = gerissen */
+export function beltIcon(g: Graphics, level: number, s: number, broken = false): void {
+  const ink = hexNum(INK);
+  const half = s / 2;
+  const strap = broken ? 0xd64545 : 0x4a4458;
+  // Sitz: Lehne links, Sitzfläche unten
+  g.roundRect(-half * 0.9, -half * 0.9, half * 0.35, half * 1.5, 3).fill(0x9b6dff).stroke({ width: 2, color: ink });
+  g.roundRect(-half * 0.9, half * 0.3, half * 1.7, half * 0.35, 3).fill(0x9b6dff).stroke({ width: 2, color: ink });
+  if (level === 1) {
+    g.moveTo(-half * 0.45, half * 0.1).lineTo(half * 0.55, half * 0.1).stroke({ width: 3, color: strap, cap: 'round' });
+  } else if (level === 2) {
+    g.roundRect(-half * 0.45, -half * 0.05, half * 1.1, half * 0.3, 3).fill(0xc9c4d6).stroke({ width: 1.5, color: ink });
+  } else if (level >= 3) {
+    g.moveTo(-half * 0.5, -half * 0.75).lineTo(half * 0.15, half * 0.15).moveTo(-half * 0.2, -half * 0.75).lineTo(half * 0.5, half * 0.15).stroke({ width: level === 4 ? 4 : 3, color: strap, cap: 'round' });
+    if (level === 4) g.roundRect(half * 0.55, -half * 0.9, half * 0.3, half * 1.2, 3).fill(0x2f2a3d).stroke({ width: 1.5, color: ink });
+  }
+  if (broken) g.moveTo(-half * 0.2, -half * 0.3).lineTo(half * 0.5, half * 0.4).moveTo(half * 0.5, -half * 0.3).lineTo(-half * 0.2, half * 0.4).stroke({ width: 3, color: 0xd64545, cap: 'round' });
 }
 
 /** Haken (grün) oder Kreuz (rot) */

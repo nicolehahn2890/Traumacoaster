@@ -27,7 +27,13 @@ export type GoalType =
   | 'lanes' // Anzahl verschiedener Spuren, die befahren werden
   | 'noBrakes' // keine Bremse eingesetzt
   | 'drop' // Höhe des größten Drops in Metern
-  | 'element'; // ein bestimmtes Element (Vorlage/Sonderteil) mindestens n-mal eingebaut
+  | 'element' // ein bestimmtes Element (Vorlage/Sonderteil) mindestens n-mal eingebaut
+  | 'eject' // negatives Ziel: mindestens n Fahrgäste fliegen raus
+  | 'catch' // negatives Ziel: mindestens n Fahrgäste werden von einem Wagen wieder eingefangen
+  | 'flight'; // negatives Ziel: ein Fahrgast fliegt mindestens x Meter weit
+
+/** Gurtstufe: 0 = ohne, 1 = Beckengurt, 2 = Bügel, 3 = Schulterbügel, 4 = Rennsitz (siehe src/physics/belts.ts) */
+export type BeltLevel = 0 | 1 | 2 | 3 | 4;
 
 export interface Goal {
   type: GoalType;
@@ -146,6 +152,8 @@ export interface LevelDef {
   trackBudget?: number;
   /** Physik-Abweichungen (Eis, Weltraum) */
   physics?: PhysicsTweaks;
+  /** Gurtstufe dieses Levels (Standard: die der Welt) */
+  restraint?: BeltLevel;
 }
 
 /**
@@ -181,5 +189,7 @@ export interface WorldDef {
   ground: [string, string];
   /** Alle Farb-Tokens der Welt */
   palette: WorldPalette;
+  /** Gurtstufe der Welt (Progression: Welt 1 ohne Gurt, bis Rennsitz in Welt 9/10) */
+  restraint: BeltLevel;
   levels: number[]; // Level-IDs
 }

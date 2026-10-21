@@ -26,6 +26,13 @@ export interface Evaluation {
 
 const STATIC: Set<Goal['type']> = new Set(['height', 'loops', 'turns', 'lanes', 'length', 'maxLength', 'rolls', 'launch', 'chainlift', 'boosters', 'noBrakes', 'drop', 'element']);
 
+/** Negative Ziele: Rausfliegen, Fangen, Flugweite. In Leveln mit solchen Zielen ist ein Rauswurf kein Fehlschlag. */
+export const NEGATIVE: Set<Goal['type']> = new Set(['eject', 'catch', 'flight']);
+
+export function hasNegativeGoals(level: Pick<LevelDef, 'goals'>): boolean {
+  return level.goals.some((g) => NEGATIVE.has(g.type));
+}
+
 /** Anzahl eingebauter Elemente eines Typs (Regal-Elemente und Vorlagen) */
 function countElement(path: TrackPath, id: string): number {
   const fromTemplates = path.templates[id] ?? 0;
@@ -65,15 +72,20 @@ export function evaluateGoal(goal: Goal, path: TrackPath, ts: TrackStats, ride: 
     case 'maxG': value = ride?.maxG ?? 0; done = !!ride && finished && value <= v; break;
     case 'minG': value = ride?.maxG ?? 0; done = !!ride && finished && value >= v; break;
     case 'splash': value = ride?.splashes ?? 0; done = !!ride && finished && value >= v; break;
+    case 'eject': value = ride?.ejected ?? 0; done = !!ride && finished && value >= v; break;
+    case 'catch': value = ride?.caught ?? 0; done = !!ride && finished && value >= v; break;
+    case 'flight': value = ride?.flightMax ?? 0; done = !!ride && finished && value >= v; break;
   }
   return { goal, done, value, static: isStatic };
 }
 
 export function evaluate(level: LevelDef, path: TrackPath, ts: TrackStats, ride: RideStats | null, finished: boolean, allSeated: boolean): Evaluation {
-  const goals = level.goals.map((g) => evaluateGoal(g, path, ts, ride, finished && allSeated));
+  // Niemand darf rausfliegen, außer das Level will es (negative Ziele); ankommen muss der Zug immer
+  const seatedOk = hasNegativeGoals(level) ? true : allSeated;
+  const goals = level.goals.map((g) => evaluateGoal(g, path, ts, ride, finished && seatedOk));
   const required = goals.filter((g) => !g.goal.bonus);
   const bonus = goals.filter((g) => g.goal.bonus);
-  const requiredDone = required.every((g) => g.done) && finished && allSeated;
+  const requiredDone = required.every((g) => g.done) && finished && seatedOk;
   const bonusDone = bonus.length ? bonus.every((g) => g.done) : !!ride && finished && (level.coins?.length ?? 0) > 0 ? ride!.coins >= (level.coins?.length ?? 0) : requiredDone;
   const cleanRide = !!ride && !ride.blackout && !ride.brakesUsed;
   let stars = 0;

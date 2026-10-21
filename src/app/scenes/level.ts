@@ -15,10 +15,12 @@ import { LEVELS, getLevel, unlockedUpTo } from '@/levels/levels';
 import { WORLDS, worldOfLevel } from '@/levels/worlds';
 import type { ElementId, LevelDef, WorldDef } from '@/levels/types';
 import { goalLabel, ELEMENT_NAMES } from '@/levels/goalLabels';
-import { evaluate, type Evaluation } from '@/levels/evaluator';
+import { evaluate, type Evaluation, hasNegativeGoals } from '@/levels/evaluator';
 import { Terrain } from '@/physics/terrain';
 import { TrainSim, simOptionsForLevel, type CarState, type FailReason } from '@/physics/trainSim';
 import { PassengerSim, initPhysics, emptyParts, type PassengerView } from '@/physics/passengers';
+import { restraintFor } from '@/physics/belts';
+import { audio } from '@/core/audio';
 import { lerpCar, lerpParts } from '@/physics/interpolate';
 import {
   clonePath, closestSample, createNode, emptyPath, isAutoNode, isClosed, nodeIn, nodeOut, sampleTrack, segmentPoints, trackStats,
@@ -30,7 +32,7 @@ import { MeasureOverlay } from '@/render/measureOverlay';
 import { applyOverdraw, nearestOnTrack } from '@/track/overdraw';
 import { laneRise, laneScale, toStage, toWorld, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
-import { Button, Toast, label, INK, PAPER, PINK, paintRect, goalIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
+import { Button, Toast, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
 import { hexNum, shade } from '@/render/paint';
 import { StartScene } from './start';
 import { MyTracksScene } from './myTracks';
@@ -160,6 +162,11 @@ export class LevelScene implements Scene {
   private liveGoalTimer = 0;
   private hint = label('', 17, INK, false, { stroke: { color: '#ffffff', width: 4 }, wordWrap: true, wordWrapWidth: 360 });
   private levelTitle = label('', 16, '#ffffff', true, { stroke: { color: INK, width: 4 } });
+  /** Gurt-Abzeichen (Stufe der Welt bzw. des Levels); beim Reißen roter Pop */
+  private beltBadge = new Container();
+  private beltIconG = new Graphics();
+  private beltText = label('', 12, '#ffffff', true, { stroke: { color: INK, width: 3 } });
+  private beltPop = 0;
   private speedText = label('', 18, '#ffffff', true, { stroke: { color: INK, width: 4 } });
   private rollText = label('', 14, INK, true, { stroke: { color: '#ffffff', width: 3 } });
   private backBtn = new Button('', { width: 48, round: true, color: '#9b6dff', icon: iconBack });
@@ -226,7 +233,7 @@ export class LevelScene implements Scene {
     this.view = new WorldView(this.world, this.terrain, this.skin, night);
     this.view.overlay.addChild(this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
-    this.ui.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.toast);
+    this.ui.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.toast);
     this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn];
     this.speedBtn.visible = false;
     this.skinBtn.visible = unlockAll();
@@ -242,6 +249,10 @@ export class LevelScene implements Scene {
     this.speedBtn.onTap = () => this.cycleRideSpeed();
     this.saveBtn.onTap = () => this.saveSandbox();
     this.levelTitle.text = this.sandbox ? `${t('sandbox')} · ${this.world.name}` : `${t('level', { n: this.level.id })} · ${this.level.name}`;
+    this.beltBadge.addChild(this.beltIconG, this.beltText);
+    this.beltText.anchor.set(0.5, 0);
+    this.beltText.position.set(0, 18);
+    this.refreshBeltBadge(false);
     this.view.trackR.setCoins(this.level.coins ?? []);
     this.buildShelf();
     this.setupInput();
@@ -1435,7 +1446,10 @@ export class LevelScene implements Scene {
     this.sim = new TrainSim(rideSamples, ridePath, opts);
     const perCar = 2;
     const riders = storage.ridersFor(opts.cars * perCar);
-    this.passengers = new PassengerSim({ cars: opts.cars, perCar, gravityScale: opts.gravityScale, terrain: this.terrain, sideEjectG: 2.2 });
+    const belt = restraintFor(this.level, this.world);
+    const negative = hasNegativeGoals(this.level);
+    this.passengers = new PassengerSim({ cars: opts.cars, perCar, gravityScale: opts.gravityScale, terrain: this.terrain, belt });
+    this.refreshBeltBadge(false);
     this.renderCars = this.sim.cars.map((c) => ({ ...c }));
     this.renderViews = this.passengers.views.map((v) => ({ ...v, parts: emptyParts(), prevParts: emptyParts() }));
     this.lastEjected = -1;
@@ -1443,12 +1457,33 @@ export class LevelScene implements Scene {
       const name = riders[pv.index]?.name ?? 'Jemand';
       this.failName = name;
       this.lastEjected = pv.index;
-      this.sim?.fail(side ? 'ejectSide' : 'eject', pv.car);
+      audio.play('eject');
+      // In Leveln mit negativen Zielen (Abflug, Fangen, Flugweite) ist der Rauswurf gewollt: Zeitlupe auf den Fliegenden
+      if (negative) this.setSlow(0.25, 1.2, { kind: 'passenger', index: pv.index });
+      else this.sim?.fail(side ? 'ejectSide' : 'eject', pv.car);
       const car = this.sim?.cars[pv.car];
       if (car) {
         const s = toStage(car.x, car.y, car.z);
         this.view.effects.sparks(s.X, s.Y, 6);
       }
+    };
+    this.passengers.onBeltSnap = (pv) => {
+      const name = riders[pv.index]?.name ?? 'Jemand';
+      this.beltPop = 1;
+      this.refreshBeltBadge(true);
+      this.toast.show(t('beltSnap', { name }), 1.6);
+      audio.play('beltSnap');
+    };
+    this.passengers.onCatch = (pv, car) => {
+      const name = riders[pv.index]?.name ?? 'Jemand';
+      const c = this.sim?.cars[car];
+      if (c) {
+        const s = toStage(c.x, c.y, c.z);
+        this.view.effects.confetti(s.X, s.Y + 2, 30);
+      }
+      this.setSlow(0.35, 1.0, { kind: 'car', index: car });
+      this.toast.show(t('caught', { name }), 1.6);
+      audio.play('catch');
     };
     this.view.buildTrain(opts.cars, riders, perCar);
     this.view.trackR.updateCoins(this.sim.collected, 0);
@@ -1676,6 +1711,8 @@ export class LevelScene implements Scene {
     this.mode = 'result';
     const finished = this.sim.phase === 'done';
     const allSeated = this.passengers?.allSeated ?? true;
+    // Rauswurf, Fang und Flugweite kommen aus der Fahrgast-Simulation
+    if (this.passengers) Object.assign(this.sim.stats, this.passengers.stats);
     const ev = evaluate(this.level, this.path, this.stats, this.sim.stats, finished, allSeated);
     this.updateGoals();
     const success = !this.sandbox && ev.requiredDone;
@@ -1716,7 +1753,8 @@ export class LevelScene implements Scene {
       c.addChild(sg);
       y += 40;
     }
-    const msg = label(finished && (this.passengers?.allSeated ?? true) ? (success || this.sandbox ? '' : t('goalsMissing')) : this.failMessage(sim.failReason), 16, INK, false, { wordWrap: true, wordWrapWidth: w - 50 });
+    const seatedOk = hasNegativeGoals(this.level) || (this.passengers?.allSeated ?? true);
+    const msg = label(finished && seatedOk ? (success || this.sandbox ? '' : t('goalsMissing')) : this.failMessage(sim.failReason), 16, INK, false, { wordWrap: true, wordWrapWidth: w - 50 });
     msg.position.set(0, y + 6);
     c.addChild(msg);
     y += msg.text ? msg.height + 14 : 4;
@@ -1737,7 +1775,8 @@ export class LevelScene implements Scene {
       });
     }
     const st = sim.stats;
-    const statLine = label(`${t('stats.speed')} ${Math.round(st.maxSpeed * 3.6)} km/h · ${t('stats.maxG')} ${st.maxG.toFixed(1)} · ${t('stats.airtime')} ${st.airtime.toFixed(1)} s · ${t('stats.coins')} ${st.coins}/${this.level.coins?.length ?? 0} · ${t('stats.time')} ${st.time.toFixed(1)} s`, 13, '#7a6f8f', false, { wordWrap: true, wordWrapWidth: w - 50 });
+    const extra = st.ejected > 0 ? ` · ${t('stats.ejected')} ${st.ejected}${st.caught > 0 ? ` · ${t('stats.caught')} ${st.caught}` : ''} · ${t('stats.flight')} ${st.flightMax.toFixed(1)} m` : '';
+    const statLine = label(`${t('stats.speed')} ${Math.round(st.maxSpeed * 3.6)} km/h · ${t('stats.maxG')} ${st.maxG.toFixed(1)} · ${t('stats.airtime')} ${st.airtime.toFixed(1)} s · ${t('stats.coins')} ${st.coins}/${this.level.coins?.length ?? 0} · ${t('stats.time')} ${st.time.toFixed(1)} s${extra}`, 13, '#7a6f8f', false, { wordWrap: true, wordWrapWidth: w - 50 });
     statLine.position.set(0, y + 10);
     c.addChild(statLine);
     y += statLine.height + 16;
@@ -1823,6 +1862,7 @@ export class LevelScene implements Scene {
       this.levelTitle.position.set(w / 2, safeTop + 12);
       this.goalsBar.position.set(w / 2, safeTop + 56);
     }
+    this.beltBadge.position.set(w - 64, safeTop + 78);
     this.playBtn.position.set(w / 2, h - (portrait ? 64 : 56));
     this.shelfBtn.position.set(w - 46, h - 50);
     this.speedBtn.position.set(w - 46, h - 50);
@@ -1868,8 +1908,21 @@ export class LevelScene implements Scene {
     } else if (this.mode === 'result') {
       if (this.sim && this.passengers && this.renderCars.length) this.view.updateTrain(this.renderCars, this.renderViews, dt);
     }
+    if (this.beltPop > 0) {
+      this.beltPop = Math.max(0, this.beltPop - dt * 4);
+      this.beltBadge.scale.set(1 + 0.6 * this.beltPop);
+    }
     this.view.update(dt);
     this.toast.update(dt);
+  }
+
+  /** Gurt-Abzeichen neu zeichnen: Stufe des Levels (oder der Welt), rot durchgestrichen, wenn ein Gurt gerissen ist */
+  private refreshBeltBadge(broken: boolean): void {
+    const level = restraintFor(this.level, this.world);
+    this.beltIconG.clear();
+    beltIcon(this.beltIconG, level, 30, broken);
+    this.beltText.text = t(`belt.${level}`);
+    this.beltBadge.visible = !this.sandbox || level > 0;
   }
 }
 

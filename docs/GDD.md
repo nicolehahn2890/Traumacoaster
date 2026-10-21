@@ -270,9 +270,11 @@ Die Bahn ist eine echte 3D-Kurve (x, Höhe y, Tiefe z). Aus den Bezier-Segmenten
 
 ### 6.4 Fahrgäste (echte Physik)
 - Jeder Fahrgast ist ein Ragdoll aus Rumpf (mit Unterkopf), Oberkopf, zwei Armen, zwei Beinen, verbunden über Gelenke mit Grenzen.
-- Der Wagen ist eine **offene Wanne**: Boden, Rückenlehne, Vorderwand, Sitzfläche. Keine Bügel, keine Gurte. Die Wanne wird kinematisch entlang der Bahn geführt; die Fahrgäste sind dynamische Körper in der Wanne.
+- Der Wagen ist eine **offene Wanne**: Boden, Rückenlehne, Vorderwand, Sitzfläche. Die Wanne wird kinematisch entlang der Bahn geführt; die Fahrgäste sind dynamische Körper in der Wanne.
+- **Gurte als Progression** (`src/physics/belts.ts`): Welt 1 fährt ohne Gurt (der Rauswurf ist der Humor), ab Welt 2 Beckengurt (hält 0,6 g), Welt 4 Bügel (1,5 g), Welt 6 Schulterbügel (3 g), Welt 9 Rennsitz (5 g). Der Gurt ist eine Feder am Rumpf, die nur Bewegungen aus dem Sitz heraus (nach oben, nach vorn) hält; zieht die Kraft länger als 0,2 s über die Haltekraft, reißt er sichtbar (hängt lose, Abzeichen im HUD rot, Text „Gurt gerissen!“), und der Fahrgast fliegt wie ohne Gurt. Seitlich kippt ein Fahrgast über die Bordwand ab 2,2 g (ohne/Beckengurt), 2,8 g (Bügel), 3,5 g (Schulterbügel), 4 g (Rennsitz). Einzelne Level setzen eine eigene Stufe (`restraint`): Level 12 mit Beckengurt, Level 13 und 19 ohne.
 - Vertikale Kräfte wirken real: Bei negativer g hebt der Körper ab, bei starker Airtime verlässt er die Wanne. Kopfüber im Looping werden sie vom Sitz- und Lehnenkontakt gehalten, solange die Zentripetalkraft reicht.
-- Seitliche Kräfte (Kurven) wirken als Neigung: Der Ragdoll bekommt eine seitliche Scheinkraft proportional zu g_s, die ihn Richtung Kamera oder von ihr weg drückt. Ab 2,5 g seitlich kippt er über die Wannenkante (als „Rauswurf nach vorne/hinten“ inszeniert mit Größenänderung).
+- Seitliche Kräfte (Kurven) wirken als Neigung: Der Ragdoll bekommt eine seitliche Scheinkraft proportional zu g_s, die ihn Richtung Kamera oder von ihr weg drückt. Über der seitlichen Grenze der Gurtstufe kippt er über die Wannenkante (als „Rauswurf nach vorne/hinten“ inszeniert mit Größenänderung).
+- **Wieder fangen:** Ein Fliegender, dessen Rumpf mit weniger als 9 m/s Relativgeschwindigkeit in die Wanne eines Wagens derselben Spur fällt (frühestens 0,4 s nach dem Abflug), sitzt wieder (Zeitlupe, Konfetti, „wieder eingefangen!“). Die Flugweite (Abflugpunkt bis Landung) wird gemessen.
 - Die Fahrgäste reagieren sichtbar: Pupillen gehen in Fahrtrichtung der Kraft, Blinzeln bei Schreck, Mund auf ab 3 g, Haare und Kleidung flattern mit dem Fahrtwind.
 
 ### 6.5 Welt-Abweichungen
@@ -310,6 +312,8 @@ Alle Zieltypen, die das Spiel auswertet (Quelle: `src/levels/types.ts`):
 | Ohne Bremse | ⊘ | Keine Bremse eingesetzt |
 | Drop | ⤓ | Größter zusammenhängender Höhenverlust |
 | Element | ▣ | Ein bestimmtes Element (Vorlage, Weiche, Fallschacht) n-mal eingebaut |
+
+**Negative Ziele** (nur in ausgewählten Leveln, mit eigener Regie: Zeitlupe und Kamera auf dem Fliegenden): „n fliegen raus“ (`eject`), „n wieder gefangen“ (`catch`: ein Wagen fängt den Fliegenden wieder ein), „Flug ≥ x m“ (`flight`: weitester Flug eines Fahrgasts). In Leveln mit solchen Zielen ist der Rauswurf kein Fehlschlag; der Zug muss trotzdem in der Station ankommen. Erste Level: 13 „Abflug“ (1 fliegt raus, Höhe ≥ 20 m, Bonus Flug ≥ 15 m), 19 „Rückfänger“ (1 wieder gefangen, vier Wagen), 23 „Feuerwerk“ (Bonus Flug ≥ 30 m).
 
 ### 7.2 Sterne
 - ★ Alle Pflichtziele erfüllt und Ankunft.

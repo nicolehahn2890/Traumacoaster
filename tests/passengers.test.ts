@@ -63,4 +63,75 @@ describe('Fahrgäste (Rapier)', () => {
     for (const v of sim.views.filter((p) => p.ejected)) expect(v.parts.torso.y).toBeGreaterThan(cars[1].y + 0.5);
     sim.dispose();
   });
+  it('Beckengurt hält bei −0,5 g, reißt bei −1,2 g (danach Rauswurf)', () => {
+    const hold = new PassengerSim({ cars: 1, perCar: 2, gravityScale: 1, terrain, belt: 1 });
+    let snapped = 0;
+    hold.onBeltSnap = () => snapped++;
+    for (let i = 0; i < 30; i++) hold.step([car(G)], 1 / 60, 10, false);
+    for (let i = 0; i < 240; i++) hold.step([car(-0.5 * G)], 1 / 60, 15, false);
+    expect(snapped).toBe(0);
+    expect(hold.allSeated).toBe(true);
+    for (const v of hold.views) expect(v.beltBroken).toBe(false);
+    hold.dispose();
+    const snap = new PassengerSim({ cars: 1, perCar: 2, gravityScale: 1, terrain, belt: 1 });
+    snap.onBeltSnap = () => snapped++;
+    let ejected = 0;
+    snap.onEject = () => ejected++;
+    for (let i = 0; i < 30; i++) snap.step([car(G)], 1 / 60, 10, false);
+    for (let i = 0; i < 240; i++) snap.step([car(-1.2 * G)], 1 / 60, 15, false);
+    expect(snapped).toBeGreaterThan(0);
+    expect(ejected).toBeGreaterThan(0);
+    expect(snap.stats.ejected).toBe(ejected);
+    snap.dispose();
+  });
+  it('Schulterbügel hält auch −2,5 g', () => {
+    const sim = new PassengerSim({ cars: 1, perCar: 2, gravityScale: 1, terrain, belt: 3 });
+    let snapped = 0;
+    sim.onBeltSnap = () => snapped++;
+    for (let i = 0; i < 30; i++) sim.step([car(G)], 1 / 60, 10, false);
+    for (let i = 0; i < 240; i++) sim.step([car(-2.5 * G)], 1 / 60, 15, false);
+    expect(snapped).toBe(0);
+    expect(sim.allSeated).toBe(true);
+    sim.dispose();
+  });
+  it('seitlich 2,6 g: mit Bügel (Grenze 2,8 g) bleibt man sitzen, mit Beckengurt (2,2 g) kippt man', () => {
+    const bar = new PassengerSim({ cars: 1, perCar: 1, gravityScale: 1, terrain, belt: 2 });
+    for (let i = 0; i < 60; i++) bar.step([car(G, 0, 2.6)], 1 / 60, 20, false);
+    expect(bar.allSeated).toBe(true);
+    bar.dispose();
+    const lap = new PassengerSim({ cars: 1, perCar: 1, gravityScale: 1, terrain, belt: 1 });
+    let side = false;
+    lap.onEject = (_p, s) => (side = s);
+    for (let i = 0; i < 60; i++) lap.step([car(G, 0, 2.6)], 1 / 60, 20, false);
+    expect(side).toBe(true);
+    lap.dispose();
+  });
+  it('fängt einen Fliegenden wieder ein, wenn ein Wagen unter ihm steht', () => {
+    const sim = new PassengerSim({ cars: 2, perCar: 1, gravityScale: 1, terrain, belt: 0 });
+    const cars: CarState[] = [car(G), { ...car(G), index: 1, x: 7.6 }];
+    for (let i = 0; i < 30; i++) sim.step(cars, 1 / 60, 10, false);
+    let caught = 0;
+    let caughtCar = -1;
+    sim.onCatch = (_p, c) => { caught++; caughtCar = c; };
+    const n = sim.ejectCar(0, cars, 6); // Schubs 3,9 m/s nach oben, Wagen fährt 10 m/s
+    expect(n).toBe(1);
+    const v = sim.views[0];
+    // der Wagen bleibt unter dem Fliegenden (gleiche Geschwindigkeit, keine Reibung): nach dem Scheitel fällt er zurück in die Wanne
+    const stopped: CarState[] = cars.map((c) => ({ ...c, vx: 10, vy: 0 }));
+    for (let i = 0; i < 180 && caught === 0; i++) {
+      for (const c of stopped) c.x += 10 / 60;
+      sim.step(stopped, 1 / 60, 10, false);
+    }
+    expect(caught).toBe(1);
+    expect(caughtCar).toBe(0);
+    expect(v.ejected).toBe(false);
+    expect(sim.allSeated).toBe(true);
+    expect(sim.stats.caught).toBe(1);
+    expect(sim.stats.ejected).toBe(1);
+    expect(sim.stats.flightMax).toBeGreaterThan(0);
+    // sitzt danach wieder stabil
+    for (let i = 0; i < 60; i++) sim.step(stopped, 1 / 60, 10, false);
+    expect(sim.allSeated).toBe(true);
+    sim.dispose();
+  });
 });

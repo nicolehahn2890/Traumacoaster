@@ -82,6 +82,12 @@ export interface RideStats {
   blackout: boolean;
   brakesUsed: boolean;
   distance: number;
+  /** Fahrgäste, die rausgeflogen sind (aus der Fahrgast-Simulation gemischt) */
+  ejected: number;
+  /** Fahrgäste, die ein Wagen wieder eingefangen hat */
+  caught: number;
+  /** weitester Flug eines Fahrgasts in Metern */
+  flightMax: number;
 }
 
 export interface RideEvent {
@@ -139,7 +145,7 @@ export class TrainSim {
   readonly prevCars: CarState[] = [];
   readonly events: RideEvent[] = [];
   readonly stats: RideStats = {
-    time: 0, maxSpeed: 0, maxG: 1, minG: 1, maxLatG: 0, airtime: 0, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0, blackout: false, brakesUsed: false, distance: 0,
+    time: 0, maxSpeed: 0, maxG: 1, minG: 1, maxLatG: 0, airtime: 0, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0, blackout: false, brakesUsed: false, distance: 0, ejected: 0, caught: 0, flightMax: 0,
   };
   readonly collected: boolean[];
   phase: RidePhase = 'coast';

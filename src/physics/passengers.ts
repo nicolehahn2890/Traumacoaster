@@ -9,6 +9,8 @@
 import RAPIER from '@dimforge/rapier2d-compat';
 import type { CarState } from './trainSim';
 import type { Terrain } from './terrain';
+import { BELTS, BELT_SNAP_SECONDS } from './belts';
+import type { BeltLevel } from '@/levels/types';
 
 let ready: Promise<void> | null = null;
 export function initPhysics(): Promise<void> {
@@ -62,6 +64,9 @@ export interface PassengerView {
   /** seitliche Neigung (Radiant) aus den Querkräften */
   lean: number;
   landed: boolean;
+  /** Gurtstufe und ob der Gurt gerissen ist (für die Darstellung) */
+  belt: BeltLevel;
+  beltBroken: boolean;
 }
 
 interface Ragdoll {
@@ -88,9 +93,23 @@ export interface PassengerSimOptions {
   perCar: number; // 1 oder 2 (Reihen)
   gravityScale: number;
   terrain: Terrain;
-  /** Seitliche g, ab der ein Fahrgast über die Bordwand kippt */
-  sideEjectG: number;
+  /** Gurtstufe (Standard 0 = ohne Gurt) */
+  belt?: BeltLevel;
+  /** Seitliche g, ab der ein Fahrgast über die Bordwand kippt (Standard: Wert der Gurtstufe) */
+  sideEjectG?: number;
 }
+
+/** Zähler für negative Ziele (Rausfliegen, Fangen, Flugweite) */
+export interface PassengerStats {
+  ejected: number;
+  caught: number;
+  flightMax: number;
+}
+
+/** Höchste Relativgeschwindigkeit (m/s), mit der ein Wagen einen Fliegenden noch einfängt */
+const CATCH_SPEED = 9;
+/** Frühestens so viele Sekunden nach dem Rauswurf kann ein Wagen fangen */
+const CATCH_DELAY = 0.4;
 
 export class PassengerSim {
   readonly local: RAPIER.World;
@@ -106,10 +125,22 @@ export class PassengerSim {
   private landTimer: number[] = [];
   /** Fahrgast ist in diesem Schritt in die Welt übergegangen: parts wechseln das Bezugssystem, nicht interpolieren */
   private justEjected: boolean[] = [];
+  /** Sitzanker des Rumpfs (lokal) für die Gurt-Feder, Sättigungszeit, gerissen */
+  private seatAnchor: Array<{ x: number; y: number }> = [];
+  private beltStrain: number[] = [];
+  private beltBroken: boolean[] = [];
+  /** Abflugpunkt und Flugzeit (für Flugweite und Fangen) */
+  private ejectX: number[] = [];
+  private flightTime: number[] = [];
+  readonly belt: BeltLevel;
+  readonly stats: PassengerStats = { ejected: 0, caught: 0, flightMax: 0 };
   onEject: ((p: PassengerView, side: boolean) => void) | null = null;
+  onBeltSnap: ((p: PassengerView) => void) | null = null;
+  onCatch: ((p: PassengerView, car: number) => void) | null = null;
 
   constructor(opts: PassengerSimOptions) {
     this.opts = opts;
+    this.belt = opts.belt ?? 0;
     this.local = new RAPIER.World({ x: 0, y: 0 });
     this.local.timestep = 1 / 60;
     this.world = new RAPIER.World({ x: 0, y: -9.81 * opts.gravityScale });
@@ -121,16 +152,23 @@ export class PassengerSim {
       for (let r = 0; r < opts.perCar; r++) {
         const idx = this.views.length;
         const view: PassengerView = {
-          index: idx, car: c, row: r, ejected: false, lane: 0, lean: 0, landed: false,
+          index: idx, car: c, row: r, ejected: false, lane: 0, lean: 0, landed: false, belt: this.belt, beltBroken: false,
           parts: emptyParts(),
           prevParts: emptyParts(),
         };
         this.views.push(view);
-        this.dolls.push(this.buildRagdoll(this.local, c * CAR.spacing + CAR.rows[r] - 0.05, CAR.floorY + RIG.seatY + RIG.torso.hy + 0.02, true));
+        const sx = c * CAR.spacing + CAR.rows[r] - 0.05;
+        const sy = CAR.floorY + RIG.seatY + RIG.torso.hy + 0.02;
+        this.dolls.push(this.buildRagdoll(this.local, sx, sy, true));
         this.worldDolls.push(null);
         this.sideAccum.push(0);
         this.landTimer.push(0);
         this.justEjected.push(false);
+        this.seatAnchor.push({ x: sx, y: sy });
+        this.beltStrain.push(0);
+        this.beltBroken.push(false);
+        this.ejectX.push(0);
+        this.flightTime.push(0);
       }
     }
     this.buildGround();
@@ -226,18 +264,21 @@ export class PassengerSim {
       const car = cars[v.car];
       if (!car) continue;
       // Kraft = −m·felt (Wagen-System: x vorwärts, y oben)
+      let mTotal = 0;
       for (const name of PART_NAMES) {
         const b = doll.bodies[name];
         b.resetForces(true);
         const m = b.mass();
+        mTotal += m;
         b.addForce({ x: -m * car.feltFwd, y: -m * car.feltUp }, true);
       }
+      this.applyBelt(i, doll, mTotal, car, dt);
       // seitliche Neigung aus Querkraft (gefiltert)
       const target = Math.max(-0.9, Math.min(0.9, car.feltSide / 9.81 * 0.5));
       v.lean += (target - v.lean) * Math.min(1, dt * 6);
       v.lane = car.z;
-      // seitlicher Rauswurf: Querkraft über Limit (nicht auf der Bremsstrecke)
-      if (!autoSegment && car.gLat > this.opts.sideEjectG) {
+      // seitlicher Rauswurf: Querkraft über der Grenze der Gurtstufe (nicht auf der Bremsstrecke)
+      if (!autoSegment && car.gLat > this.sideEjectG) {
         this.sideAccum[i] += dt;
         if (this.sideAccum[i] > 0.15) this.eject(i, cars, true);
       } else {
@@ -253,11 +294,15 @@ export class PassengerSim {
         const wd = this.worldDolls[i];
         if (wd) {
           this.readPose(v, wd);
-          const vel = wd.bodies.torso.linvel();
+          const torso = wd.bodies.torso;
+          const vel = torso.linvel();
+          this.flightTime[i] += dt;
+          this.stats.flightMax = Math.max(this.stats.flightMax, Math.abs(torso.translation().x - this.ejectX[i]));
           if (Math.hypot(vel.x, vel.y) < 0.4) {
             this.landTimer[i] += dt;
             if (this.landTimer[i] > 0.6) v.landed = true;
           } else this.landTimer[i] = 0;
+          if (!v.landed && this.flightTime[i] > CATCH_DELAY) this.tryCatch(i, cars);
         }
         continue;
       }
@@ -273,8 +318,8 @@ export class PassengerSim {
     for (let i = 0; i < this.views.length; i++) {
       if (!this.justEjected[i]) continue;
       this.justEjected[i] = false;
-      const wd = this.worldDolls[i];
-      if (wd) this.readPose(this.views[i], wd);
+      const d = this.worldDolls[i] ?? this.dolls[i];
+      if (d) this.readPose(this.views[i], d);
       copyParts(this.views[i].parts, this.views[i].prevParts);
     }
   }
@@ -327,9 +372,107 @@ export class PassengerSim {
     this.dolls[i] = null;
     this.worldDolls[i] = wd;
     v.ejected = true;
+    v.landed = false;
     v.lane = car.z;
     this.justEjected[i] = true;
+    this.landTimer[i] = 0;
+    this.flightTime[i] = 0;
+    this.ejectX[i] = wd.bodies.torso.translation().x;
+    this.stats.ejected++;
     this.onEject?.(v, side);
+  }
+
+  /** Seitliche g, ab der ein Fahrgast über die Bordwand kippt */
+  private get sideEjectG(): number {
+    return this.opts.sideEjectG ?? BELTS[this.belt].sideG;
+  }
+
+  /**
+   * Gurt als Feder-Dämpfer am Rumpf: hält nur Bewegungen aus dem Sitz heraus (nach oben, nach vorn). Ob er reißt,
+   * entscheidet die gefühlte Kraft aus dem Sitz (nach oben −feltUp, nach vorn −feltFwd, in g): liegt sie länger
+   * als BELT_SNAP_SECONDS über holdG, reißt der Gurt. Die Federkraft selbst ist auf das Doppelte der Haltekraft
+   * begrenzt, damit das Einsetzen der Feder keine Sprünge erzeugt.
+   */
+  private applyBelt(i: number, doll: Ragdoll, mTotal: number, car: CarState, dt: number): void {
+    const spec = BELTS[this.belt];
+    if (spec.holdG <= 0 || this.beltBroken[i]) return;
+    const g = 9.81 * this.opts.gravityScale;
+    const pullG = Math.hypot(Math.max(0, -car.feltUp), Math.max(0, -car.feltFwd)) / g;
+    if (pullG > spec.holdG) {
+      this.beltStrain[i] += dt;
+      if (this.beltStrain[i] > BELT_SNAP_SECONDS) {
+        this.beltBroken[i] = true;
+        this.views[i].beltBroken = true;
+        this.onBeltSnap?.(this.views[i]);
+        return;
+      }
+    } else this.beltStrain[i] = Math.max(0, this.beltStrain[i] - dt);
+    const torso = doll.bodies.torso;
+    const p = torso.translation();
+    const vel = torso.linvel();
+    const a = this.seatAnchor[i];
+    const m = torso.mass();
+    const k = 900 * m;
+    const c = 2 * Math.sqrt(k * m);
+    const dx = p.x - a.x;
+    const dy = p.y - a.y;
+    let fx = dx > 0 ? -k * dx - c * Math.max(0, vel.x) : 0;
+    let fy = dy > 0 ? -k * dy - c * Math.max(0, vel.y) : 0;
+    const fMax = 2 * mTotal * spec.holdG * g;
+    const fm = Math.hypot(fx, fy);
+    if (fm > fMax) {
+      fx *= fMax / fm;
+      fy *= fMax / fm;
+    }
+    if (fx !== 0 || fy !== 0) torso.addForce({ x: fx, y: fy }, true);
+  }
+
+  /** Fängt ein Wagen den Fliegenden? Rumpf in der Wanne, langsam relativ zum Wagen, gleiche Spur. */
+  private tryCatch(i: number, cars: CarState[]): void {
+    const v = this.views[i];
+    const wd = this.worldDolls[i];
+    if (!wd) return;
+    const torso = wd.bodies.torso;
+    const p = torso.translation();
+    const vel = torso.linvel();
+    for (const car of cars) {
+      if (Math.abs(v.lane - car.z) > 0.5) continue;
+      const cos = Math.cos(car.angle);
+      const sin = Math.sin(car.angle);
+      const wx = p.x - car.x;
+      const wy = p.y - car.y;
+      const lx = wx * cos + wy * sin;
+      const ly = -wx * sin + wy * cos - CAR.railOffset;
+      if (Math.abs(lx) > CAR.halfLength - 0.1 || ly < 0.1 || ly > CAR.rearWallH + 0.4) continue;
+      const cv = this.carVel[car.index] ?? { x: 0, y: 0 };
+      if (Math.hypot(vel.x - cv.x, vel.y - cv.y) > CATCH_SPEED) continue;
+      this.reseat(i, car.index, lx, ly);
+      return;
+    }
+  }
+
+  /** Fliegenden wieder in einen Wagen setzen (Welt-Puppe weg, neue Wannen-Puppe) */
+  private reseat(i: number, carIndex: number, lx: number, ly: number): void {
+    const v = this.views[i];
+    const wd = this.worldDolls[i];
+    if (!wd) return;
+    for (const j of wd.joints) this.world.removeImpulseJoint(j, true);
+    for (const name of PART_NAMES) this.world.removeRigidBody(wd.bodies[name]);
+    this.worldDolls[i] = null;
+    const row = lx < 0 ? 0 : 1;
+    const sx = carIndex * CAR.spacing + CAR.rows[row] - 0.05;
+    const sy = CAR.floorY + RIG.seatY + RIG.torso.hy + 0.02;
+    this.dolls[i] = this.buildRagdoll(this.local, sx, Math.max(sy, ly), true);
+    this.seatAnchor[i] = { x: sx, y: sy };
+    v.car = carIndex;
+    v.row = row;
+    v.ejected = false;
+    v.landed = false;
+    this.landTimer[i] = 0;
+    this.sideAccum[i] = 0;
+    this.justEjected[i] = true;
+    this.stats.caught++;
+    this.onCatch?.(v, carIndex);
   }
 
   /**

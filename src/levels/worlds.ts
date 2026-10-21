@@ -17,6 +17,7 @@ export const WORLDS: WorldDef[] = [
     sky: ['#8fd3ff', '#cdefff', '#fff3c4'],
     ground: ['#7cc242', '#4f9a2e'],
     palette: { sky: ['#8fd3ff', '#cdefff', '#fff3c4'], ground: ['#7cc242', '#4f9a2e'], accent: '#ff5c8a', ink: '#1f3a2a', glow: '#fff3a0', stipple: '#2d6a3e' },
+    restraint: 0,
     levels: range(1, 15),
   },
   {
@@ -28,6 +29,7 @@ export const WORLDS: WorldDef[] = [
     sky: ['#5b2a86', '#ff7eb3', '#ffb17a'],
     ground: ['#c9a36b', '#8d6b3f'],
     palette: { sky: ['#5b2a86', '#ff7eb3', '#ffb17a'], ground: ['#c9a36b', '#8d6b3f'], accent: '#ff5c8a', ink: '#3a1c4a', glow: '#ffd56b', stipple: '#8d4b6b' },
+    restraint: 1,
     levels: range(16, 30),
   },
   {
@@ -39,6 +41,7 @@ export const WORLDS: WorldDef[] = [
     sky: ['#5c6b8a', '#9aa9c4', '#e8d9b5'],
     ground: ['#a0765a', '#6b4a35'],
     palette: { sky: ['#5c6b8a', '#9aa9c4', '#e8d9b5'], ground: ['#a0765a', '#6b4a35'], accent: '#ffb13b', ink: '#3b2418', glow: '#ffd27a', stipple: '#c98a4b' },
+    restraint: 1,
     levels: range(31, 45),
   },
   {
@@ -50,6 +53,7 @@ export const WORLDS: WorldDef[] = [
     sky: ['#5fb6ff', '#a9e2ff', '#ffffff'],
     ground: ['#5fb86e', '#2f7a4a'],
     palette: { sky: ['#5fb6ff', '#a9e2ff', '#ffffff'], ground: ['#5fb86e', '#2f7a4a'], accent: '#3ec7c2', ink: '#1e3c3a', glow: '#bff4ff', stipple: '#2f7a4a' },
+    restraint: 2,
     levels: range(46, 60),
   },
   {
@@ -61,6 +65,7 @@ export const WORLDS: WorldDef[] = [
     sky: ['#a98bff', '#ffc9e6', '#fff1b8'],
     ground: ['#79b85a', '#4a7a3a'],
     palette: { sky: ['#a98bff', '#ffc9e6', '#fff1b8'], ground: ['#79b85a', '#4a7a3a'], accent: '#ffd23f', ink: '#3a2a4a', glow: '#fff1b8', stipple: '#b07ad6' },
+    restraint: 2,
     levels: range(61, 75),
   },
   {
@@ -72,6 +77,7 @@ export const WORLDS: WorldDef[] = [
     sky: ['#1a1f4b', '#3a2d7a', '#ff6fae'],
     ground: ['#55596b', '#33364a'],
     palette: { sky: ['#1a1f4b', '#3a2d7a', '#ff6fae'], ground: ['#55596b', '#33364a'], accent: '#3ec7c2', ink: '#101428', glow: '#ff6fae', stipple: '#4a4f6b' },
+    restraint: 3,
     levels: range(76, 90),
   },
   {
@@ -83,6 +89,7 @@ export const WORLDS: WorldDef[] = [
     sky: ['#bfe6ff', '#e9f7ff', '#ffd9ec'],
     ground: ['#dff3ff', '#9fc9e6'],
     palette: { sky: ['#bfe6ff', '#e9f7ff', '#ffd9ec'], ground: ['#dff3ff', '#9fc9e6'], accent: '#ff9ecf', ink: '#2b4a66', glow: '#ffffff', stipple: '#9fc9e6' },
+    restraint: 3,
     levels: range(91, 105),
   },
   {
@@ -94,6 +101,7 @@ export const WORLDS: WorldDef[] = [
     sky: ['#0d0b1f', '#2b1b4a', '#6b3fa0'],
     ground: ['#3a3350', '#221c33'],
     palette: { sky: ['#0d0b1f', '#2b1b4a', '#6b3fa0'], ground: ['#3a3350', '#221c33'], accent: '#9b6dff', ink: '#0d0b1f', glow: '#b7ff6b', stipple: '#5a4a7a' },
+    restraint: 3,
     levels: range(106, 120),
   },
   {
@@ -105,6 +113,7 @@ export const WORLDS: WorldDef[] = [
     sky: ['#3a0d0d', '#b3321f', '#ffb13b'],
     ground: ['#4a2b22', '#2a1612'],
     palette: { sky: ['#3a0d0d', '#b3321f', '#ffb13b'], ground: ['#4a2b22', '#2a1612'], accent: '#ff8a5c', ink: '#1a0b0b', glow: '#ffb13b', stipple: '#8a2f20' },
+    restraint: 4,
     levels: range(121, 135),
   },
   {
@@ -116,6 +125,7 @@ export const WORLDS: WorldDef[] = [
     sky: ['#05010f', '#1b0f3a', '#3d1b6b'],
     ground: ['#7d6fa8', '#4a3d6b'],
     palette: { sky: ['#05010f', '#1b0f3a', '#3d1b6b'], ground: ['#7d6fa8', '#4a3d6b'], accent: '#7ee081', ink: '#05010f', glow: '#8fd3ff', stipple: '#7d6fa8' },
+    restraint: 4,
     levels: range(136, 150),
   },
 ];

@@ -17,8 +17,6 @@ interface CarView {
   container: Container;
   back: Graphics;
   front: Graphics;
-  riders: CharacterSprite[];
-  riderDefs: CharacterDef[];
   lane: number;
   body: string;
 }
@@ -29,7 +27,10 @@ const VIEW = { x: 0, y: -0.45, z: 0.9 };
 export class TrainRenderer {
   readonly layers = new Map<number, Container>();
   private cars: CarView[] = [];
+  /** Sitzende Fahrgäste je Fahrgast-Index (ein Fahrgast kann nach dem Fangen in einem anderen Wagen sitzen) */
+  private seated = new Map<number, { sprite: CharacterSprite; car: number }>();
   private flying = new Map<number, { sprite: CharacterSprite; lane: number }>();
+  private riderDefs: CharacterDef[] = [];
   private skin: string;
 
   constructor(skin: string) {
@@ -44,24 +45,15 @@ export class TrainRenderer {
 
   build(carCount: number, riders: CharacterDef[], perCar: number): void {
     this.clear();
-    let r = 0;
+    this.riderDefs = riders.length ? riders : [];
+    void perCar;
     for (let c = 0; c < carCount; c++) {
       const container = new Container();
       const back = new Graphics();
       const front = new Graphics();
-      container.addChild(back);
-      const sprites: CharacterSprite[] = [];
-      const defs: CharacterDef[] = [];
-      for (let i = 0; i < perCar; i++) {
-        const def = riders[r++ % Math.max(1, riders.length)];
-        const sp = new CharacterSprite(def);
-        container.addChild(sp.container);
-        sprites.push(sp);
-        defs.push(def);
-      }
-      container.addChild(front);
+      container.addChild(back, front);
       const body = c === 0 ? '#ff5c8a' : ['#ffd23f', '#3ec7c2', '#9b6dff', '#7ee081', '#ff8a5c'][c % 5];
-      const view: CarView = { container, back, front, riders: sprites, riderDefs: defs, lane: 0, body };
+      const view: CarView = { container, back, front, lane: 0, body };
       this.cars.push(view);
       this.layers.get(0)!.addChild(container);
     }
@@ -70,8 +62,33 @@ export class TrainRenderer {
   clear(): void {
     for (const c of this.cars) c.container.destroy({ children: true });
     this.cars = [];
+    this.seated.clear();
     for (const f of this.flying.values()) f.sprite.container.destroy({ children: true });
     this.flying.clear();
+  }
+
+  private defFor(index: number): CharacterDef | null {
+    if (!this.riderDefs.length) return null;
+    return this.riderDefs[index % this.riderDefs.length];
+  }
+
+  /** Sitz-Sprite eines Fahrgasts holen (bei Bedarf anlegen) und in den Wagen hängen, in dem er gerade sitzt */
+  private ensureSeated(pv: PassengerView): CharacterSprite | null {
+    const view = this.cars[pv.car];
+    if (!view) return null;
+    let entry = this.seated.get(pv.index);
+    if (!entry) {
+      const def = this.defFor(pv.index);
+      if (!def) return null;
+      entry = { sprite: new CharacterSprite(def), car: -1 };
+      this.seated.set(pv.index, entry);
+    }
+    if (entry.car !== pv.car) {
+      entry.car = pv.car;
+      // zwischen Rückwand (back) und Vorderwand (front)
+      view.container.addChildAt(entry.sprite.container, view.container.getChildIndex(view.front));
+    }
+    return entry.sprite;
   }
 
   /** Wagenquader zeichnen: Ecken = P + a·T + b·U + c·S, projiziert */
@@ -170,26 +187,31 @@ export class TrainRenderer {
       const fy = toStage(st.x + st.upx, st.y + st.upy, st.z + st.upz / LANE_DEPTH);
       const ex = { x: fx.X - base.X, y: fx.Y - base.Y };
       const ey = { x: fy.X - base.X, y: fy.Y - base.Y };
-      const seated = passengers.filter((pv) => pv.car === c);
-      seated.forEach((pv, i) => {
-        const sp = view.riders[i];
-        if (!sp) return;
-        if (pv.ejected) {
-          sp.container.visible = false;
-          this.ensureFlying(pv, view.riderDefs[i]);
-          return;
-        }
+      for (const pv of passengers) {
+        if (pv.car !== c || pv.ejected) continue;
+        const sp = this.ensureSeated(pv);
+        if (!sp) continue;
         sp.container.visible = true;
         // Sitzreihe leicht zur sichtbaren Seite versetzen, damit Fahrgäste vor der Rückwand sitzen
         const sideShift = 0.15 * (st.sz > 0 ? -1 : 1);
         const seatBase = toStage(st.x + st.sx * sideShift, st.y + st.sy * sideShift, st.z + (st.sz * sideShift) / LANE_DEPTH);
         sp.container.setFromMatrix(new Matrix(ex.x, ex.y, ey.x, ey.y, seatBase.X, seatBase.Y));
         sp.setPose(pv.parts, CAR.railOffset);
+        sp.setBelt(pv.belt, pv.beltBroken);
         sp.update(dt, st.feltFwd, st.feltUp, st.gSeat);
-      });
+        // wieder eingefangen: der Flug-Sprite verschwindet
+        const f = this.flying.get(pv.index);
+        if (f) {
+          f.sprite.container.destroy({ children: true });
+          this.flying.delete(pv.index);
+        }
+      }
     }
     for (const pv of passengers) {
       if (!pv.ejected) continue;
+      const seatedEntry = this.seated.get(pv.index);
+      if (seatedEntry) seatedEntry.sprite.container.visible = false;
+      this.ensureFlying(pv);
       const f = this.flying.get(pv.index);
       if (!f) continue;
       const lane = Math.round(pv.lane);
@@ -205,9 +227,12 @@ export class TrainRenderer {
     }
   }
 
-  private ensureFlying(pv: PassengerView, def: CharacterDef): void {
+  private ensureFlying(pv: PassengerView): void {
     if (this.flying.has(pv.index)) return;
+    const def = this.defFor(pv.index);
+    if (!def) return;
     const sprite = new CharacterSprite(def);
+    sprite.setBelt(pv.belt, true);
     const lane = Math.round(pv.lane);
     this.layers.get(lane)?.addChild(sprite.container);
     this.flying.set(pv.index, { sprite, lane });

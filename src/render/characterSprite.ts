@@ -24,6 +24,9 @@ export class CharacterSprite {
   private blinkPhase = 0;
   private mouthOpen = 0;
   private eyeBase: Array<{ x: number; y: number; r: number }> = [];
+  private belt = new MGraphics();
+  private beltLevel = 0;
+  private beltBroken = false;
 
   constructor(def: CharacterDef) {
     this.def = def;
@@ -120,6 +123,9 @@ export class CharacterSprite {
       this.mouth.position.set(0, faceTop - 0.075);
       this.parts.torso.addChild(this.mouth);
       this.drawMouth(0);
+      // Gurt/Bügel über dem Rumpf (eigene Grafik, siehe setBelt)
+      this.parts.torso.addChild(this.belt);
+      this.drawBelt();
     }
     // --- Oberkopf ---
     {
@@ -297,6 +303,50 @@ export class CharacterSprite {
       const c = this.parts[name];
       c.position.set(p.x, p.y + offsetY);
       c.rotation = p.angle;
+    }
+  }
+
+  /** Gurtstufe setzen (0 = ohne); broken = gerissen (hängt lose) */
+  setBelt(level: number, broken: boolean): void {
+    if (level === this.beltLevel && broken === this.beltBroken) return;
+    this.beltLevel = level;
+    this.beltBroken = broken;
+    this.drawBelt();
+  }
+
+  private drawBelt(): void {
+    const g = this.belt;
+    g.clear();
+    const level = this.beltLevel;
+    if (level <= 0) return;
+    const hx = RIG.torso.hx;
+    const hy = RIG.torso.hy;
+    const strap = 0x4a4458;
+    const metal = 0xc9c4d6;
+    const broken = this.beltBroken;
+    if (level === 1) {
+      // Beckengurt: Band quer über den Schoß, Schnalle in der Mitte; gerissen: hängt links herab
+      if (broken) g.moveTo(-hx, -hy + 0.1).lineTo(-hx + 0.04, -hy - 0.1).stroke({ width: 0.05, color: strap, cap: 'round' });
+      else {
+        g.moveTo(-hx - 0.02, -hy + 0.1).lineTo(hx + 0.02, -hy + 0.1).stroke({ width: 0.05, color: strap, cap: 'round' });
+        g.roundRect(-0.035, -hy + 0.07, 0.07, 0.06, 0.01).fill(metal).stroke({ width: 0.012, color: INK });
+      }
+    } else if (level === 2) {
+      // Bügel: dicker Balken vor dem Bauch; gerissen: hochgeklappt
+      if (broken) g.roundRect(hx - 0.02, -hy - 0.02, 0.07, 0.34, 0.03).fill(metal).stroke({ width: 0.015, color: INK });
+      else g.roundRect(-hx - 0.05, -hy + 0.06, hx * 2 + 0.1, 0.08, 0.04).fill(metal).stroke({ width: 0.015, color: INK });
+    } else {
+      // Schulterbügel (3) und Rennsitz (4): zwei Gurte von den Schultern zum Schoß, beim Rennsitz breiter mit Seitenwangen
+      const w = level === 4 ? 0.07 : 0.05;
+      if (level === 4) g.roundRect(-hx - 0.09, -hy + 0.05, 0.06, hy * 1.6, 0.02).fill(0x2f2a3d).roundRect(hx + 0.03, -hy + 0.05, 0.06, hy * 1.6, 0.02).fill(0x2f2a3d);
+      if (broken) {
+        g.moveTo(-hx + 0.05, hy - 0.08).lineTo(-hx - 0.06, -hy + 0.02).stroke({ width: w, color: strap, cap: 'round' });
+        g.moveTo(hx - 0.05, hy - 0.08).lineTo(hx + 0.06, -hy + 0.02).stroke({ width: w, color: strap, cap: 'round' });
+      } else {
+        g.moveTo(-hx + 0.05, hy - 0.08).lineTo(-0.03, -hy + 0.1).stroke({ width: w, color: strap, cap: 'round' });
+        g.moveTo(hx - 0.05, hy - 0.08).lineTo(0.03, -hy + 0.1).stroke({ width: w, color: strap, cap: 'round' });
+        g.roundRect(-0.05, -hy + 0.06, 0.1, 0.07, 0.015).fill(metal).stroke({ width: 0.012, color: INK });
+      }
     }
   }
 

@@ -56,7 +56,7 @@ export const ELEMENT_NAMES: Record<ElementId, string> = {
 };
 
 const UNIT: Partial<Record<GoalType, string>> = {
-  height: 'm', drop: 'm', length: 'm', maxLength: 'm', speed: 'km/h', airtime: 's', time: 's', maxTime: 's', maxG: 'g', minG: 'g',
+  height: 'm', drop: 'm', length: 'm', maxLength: 'm', speed: 'km/h', airtime: 's', time: 's', maxTime: 's', maxG: 'g', minG: 'g', flight: 'm',
 };
 
 /** Kurzer deutscher Text für ein Ziel, z. B. „Höhe ≥ 15 m“. */
@@ -88,5 +88,8 @@ export function goalLabel(goal: Goal): string {
     case 'noBrakes': return 'Ohne Bremse';
     case 'drop': return `Drop ≥ ${fmt(v)}${u}`;
     case 'element': return `${ELEMENT_NAMES[goal.element!]}${v > 1 ? ` ×${v}` : ''}`;
+    case 'eject': return v === 1 ? '1 fliegt raus' : `${fmt(v)} fliegen raus`;
+    case 'catch': return v === 1 ? '1 wieder gefangen' : `${fmt(v)} wieder gefangen`;
+    case 'flight': return `Flug ≥ ${fmt(v)}${u}`;
   }
 }
