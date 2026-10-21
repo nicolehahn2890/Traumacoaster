@@ -302,19 +302,25 @@ const bent = await page.evaluate((g) => {
 }, grab);
 check(bent > 2, `Segment ziehen: Bahn am Anfasspunkt um ${bent.toFixed(1)} m verschoben`);
 await page.screenshot({ path: 'screenshots/scenario-7-bend.png' });
-// Langdruck auf einen Knoten zeigt die Profi-Handles
+// Langdruck auf einen Knoten zeigt die Profi-Handles; vorher die Kamera zur Ruhe kommen lassen (sie führt nach
+// einer Änderung weich nach, und die Knotenposition auf dem Bildschirm wandert mit)
+await sleep(1500);
 const nodeScreen = await page.evaluate(() => {
   const s = window.tcGame.current;
   const n = s.path.nodes[1];
   return s.view.camera.toScreen(n.x, n.y + n.z * 4.2);
 });
-await page.mouse.move(nodeScreen.x, nodeScreen.y);
-await page.mouse.down();
-// der Langdruck-Timer (480 ms) läuft erst, wenn der Hauptthread frei ist; mit Software-Rendering dauert das
-await sleep(1200);
-await page.mouse.up();
-await sleep(300);
-const pro = await page.evaluate(() => window.tcGame.current.proNode);
+let pro = -1;
+for (let attempt = 0; attempt < 2 && pro !== 1; attempt++) {
+  await page.mouse.move(nodeScreen.x, nodeScreen.y);
+  await page.mouse.down();
+  // der Langdruck-Timer (480 ms) läuft erst, wenn der Hauptthread frei ist; mit Software-Rendering dauert das,
+  // und unter Last fällt der Timer gelegentlich hinter das Loslassen: dann ein zweiter Versuch
+  await sleep(1200);
+  await page.mouse.up();
+  await sleep(300);
+  pro = await page.evaluate(() => window.tcGame.current.proNode);
+}
 check(pro === 1, `Langdruck zeigt Profi-Handles (proNode ${pro})`);
 await page.screenshot({ path: 'screenshots/scenario-7-pro.png' });
 // Tipp ins Leere beendet den Profi-Modus
