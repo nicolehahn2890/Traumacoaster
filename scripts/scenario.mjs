@@ -155,7 +155,9 @@ await page.screenshot({ path: 'screenshots/scenario-2-hill-oval.png' });
 r = await ride('2-hill-oval', 9);
 console.log('ride result', r);
 check(r.st.sim?.phase === 'done', `Hügel+Oval: Fahrt kommt an (ist ${r.st.sim?.phase}/${r.st.sim?.fail})`);
-check(r.minUp > 0.3, `Hügel+Oval: Wagen steht nie Kopf (min upy ${r.minUp})`);
+// nie kopfüber: die automatische Schräglage geht bis 80° (upy = cos 80° ≈ 0,17); der Rundkurs wird jetzt von Hand
+// geschlossen und mit vollem Tempo durch die Schlusskurve gefahren, statt über den gebremsten Auto-Rückweg
+check(r.minUp > 0.15, `Hügel+Oval: Wagen steht nie Kopf (min upy ${r.minUp})`);
 check(r.maxBank > 15, `Hügel+Oval: Wagen legt sich in die Kurve (max Schräglage ${r.maxBank}°)`);
 }
 
