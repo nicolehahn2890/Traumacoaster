@@ -1557,6 +1557,24 @@ export class LevelScene implements Scene {
     }
   }
 
+  /** Aufprall im Freiflug: die Fahrgäste des Wagens fliegen raus, Staub oder Platsch am Aufschlagpunkt */
+  private processImpacts(): void {
+    if (!this.sim || !this.passengers) return;
+    const flight = this.sim.flight;
+    if (!flight || !flight.impacts.length) return;
+    for (const imp of flight.impacts) {
+      const thrown = this.passengers.ejectCar(imp.car, this.sim.cars, imp.speed);
+      const s = toStage(imp.x, imp.y, imp.z);
+      if (imp.water) {
+        this.view.effects.splash(s.X, s.Y - 0.5);
+      } else {
+        this.view.effects.dust(s.X, s.Y, 10);
+        if (thrown > 0 || imp.speed > 6) this.view.effects.sparks(s.X, s.Y, 8);
+      }
+    }
+    flight.impacts.length = 0;
+  }
+
   /** Zeitlupe für secs Sekunden (Echtzeit) mit Kamera-Fokus; ein laufender Fokus auf einen Fliegenden bleibt */
   private setSlow(factor: number, secs: number, focus: CameraFocus): void {
     const keep = this.slow.focus?.kind === 'passenger' && focus.kind !== 'passenger';
@@ -1597,7 +1615,8 @@ export class LevelScene implements Scene {
         steps++;
         this.sim.step(h);
         const auto = this.sim.samples.auto[Math.min(this.sim.samples.count - 1, Math.round(this.sim.cars[0].s / this.sim.samples.step))] === 1;
-        this.passengers.step(this.sim.cars, h, this.sim.v, auto || this.sim.phase === 'failed');
+        this.passengers.step(this.sim.cars, h, this.sim.v, auto || this.sim.finished);
+        this.processImpacts();
       }
       if (steps >= 120) this.physicsAccum = 0;
     }
@@ -1625,7 +1644,8 @@ export class LevelScene implements Scene {
         const tp = flyer.parts.torso;
         const fs = toStage(tp.x, tp.y, flyer.lane);
         cam.setTarget(fs.X, fs.Y + 1, inSlow ? 18 : 14);
-      } else if (this.sim.phase === 'failed') {
+      } else if (this.sim.phase === 'failed' || this.sim.phase === 'flying') {
+        // Fehlschlag und Freiflug: Blick auf den betroffenen Wagen, bis das Ergebnis kommt
         const c = (focus?.kind === 'car' ? this.renderCars[focus.index] : null) ?? front;
         const cs = toStage(c.x, c.y, c.z);
         cam.setTarget(cs.X, cs.Y + 2, 14);
@@ -1637,7 +1657,11 @@ export class LevelScene implements Scene {
     this.speedText.text = `${Math.round(this.sim.kmh)} km/h   ${front.gSeat.toFixed(1)} g${Math.abs(front.bank) > 0.05 ? `   ${Math.round((front.bank * 180) / Math.PI)}°` : ''}`;
     if (this.sim.finished && !this.resultShown) {
       const wait = this.sim.phase === 'failed' ? 2.2 : 1.6;
-      if (this.sim.phase === 'failed') {
+      if (this.sim.phase === 'flying') {
+        // Freiflug: Ergebnis, sobald das Wrack liegt (frühestens nach 1,2 s), spätestens nach 5 s Simulationszeit
+        const settled = this.sim.flight?.settled ?? true;
+        if (this.sim.sinceFail > 1.2 && (settled || this.sim.sinceFail > 5)) this.showResult();
+      } else if (this.sim.phase === 'failed') {
         if (this.sim.sinceFail > wait) this.showResult();
       } else {
         this.finaleTimer += dt;

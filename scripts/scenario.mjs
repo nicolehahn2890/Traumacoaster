@@ -330,6 +330,53 @@ const proAfter = await page.evaluate(() => window.tcGame.current.proNode);
 check(proAfter === -1, `Tipp ins Leere beendet den Profi-Modus (proNode ${proAfter})`);
 }
 
+// ---------------------------------------------------------------- 8. Entgleisen auf Holz
+if (want('8')) {
+await openLevel();
+// 30-m-Lifthügel mit runder Kuppe (r 6 m lift-seitig, r 25 m bis 40° Gefälle, damit niemand an der Kuppe
+// rausfliegt), Abfahrt 40°, enge Kehre am Boden, Rückweg auf Spur 2 und Kehre in die Station: Dort liegt die
+// Querkraft auf der Holzbahn (Welt 1) bei rund 80 km/h trotz voller Schräglage über 2 g. Der Zug entgleist,
+// fliegt, kippt zur Seite und bleibt liegen; beim Aufschlag fliegen die Fahrgäste raus.
+const derail = [[0, 0], [4.6, 8], [9.8, 17], [15.6, 27], [17.8, 29.2], [20.8, 30], [25.1, 29.6], [29.3, 28.5], [33.3, 26.7], [36.9, 24.2], [50.7, 12.6], [64.5, 1], [68, 0], [72, 0], [75.5, 0.3 * R], [76, R], [75.5, 1.7 * R], [72, 2 * R], [36, 2 * R], [0, 2 * R], [-3.5, 1.7 * R], [-4, R], [-3.5, 0.3 * R], [0, 0]];
+const derailScreen = await toScreen(derail);
+check(derailScreen.every(([x, y]) => x > 0 && x < 1280 && y > 0 && y < 800), `Entgleisen: Strich liegt im Bild (${JSON.stringify(derailScreen[4])})`);
+await stroke(derailScreen, 10);
+await sleep(800);
+st = await state();
+console.log('after derail stroke', st);
+check(Number(st.height) > 25, `Entgleisen: Hügel über 25 m (ist ${st.height})`);
+check(st.turns >= 1, `Entgleisen: mindestens 1 Kurve (ist ${st.turns})`);
+await page.mouse.click(640, 800 - 56);
+let flightSt = null;
+let shots = 0;
+for (let i = 0; i < 900; i++) {
+  await sleep(100);
+  const s = await state();
+  if (s.sim?.phase === 'flying') {
+    if (!flightSt) flightSt = s;
+    // zwei Bilder aus dem Flug: direkt nach dem Entgleisen (Zeitlupe) und etwas später
+    if (shots < 2 && (shots === 0 || i % 3 === 0)) {
+      await page.screenshot({ path: `screenshots/scenario-8-flight-${shots}.png` });
+      shots++;
+    }
+  }
+  if (i % 20 === 0) console.log('ride 8', s.sim, s.car);
+  if (s.mode === 'result') break;
+}
+await sleep(800);
+await page.screenshot({ path: 'screenshots/scenario-8-result.png' });
+st = await state();
+const ejected = await page.evaluate(() => window.tcGame.current.passengers?.views.filter((v) => v.ejected).length ?? -1);
+console.log('after derail ride', st, 'ejected', ejected);
+check(flightSt !== null, 'Entgleisen: der Zug geht in den Freiflug');
+check(flightSt?.sim?.fail === 'derail', `Entgleisen: Grund ist derail (ist ${flightSt?.sim?.fail})`);
+check(Number(flightSt?.sim?.maxSpeed) > 70, `Entgleisen: über 70 km/h vor dem Entgleisen (ist ${flightSt?.sim?.maxSpeed})`);
+check(st.mode === 'result', `Entgleisen: Ergebnis erscheint (ist ${st.mode})`);
+check(st.sim?.phase === 'flying', `Entgleisen: Phase bleibt flying (ist ${st.sim?.phase})`);
+check(Math.abs(Number(st.car?.bank)) > 60, `Entgleisen: Wagen liegt auf der Seite (Schräglage ${st.car?.bank}°)`);
+check(ejected > 0, `Entgleisen: Fahrgäste fliegen beim Aufprall raus (${ejected})`);
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));

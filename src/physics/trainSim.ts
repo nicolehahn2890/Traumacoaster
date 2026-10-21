@@ -10,6 +10,7 @@ import type { TrackPath, TrackSamples, TrackState } from '@/track/model';
 import { carFrame, stateAt } from '@/track/model';
 import { LANE_DEPTH, toStage } from '@/track/stage';
 import type { Terrain } from './terrain';
+import { FlightSim, type FlightKind } from './flightSim';
 
 export const G = 9.81;
 
@@ -31,8 +32,8 @@ export const SKIN_PHYSICS: Record<string, SkinPhysics> = {
   skinSpace: { friction: 0.008, lateralLimit: 3.5 },
 };
 
-export type RidePhase = 'lift' | 'launch' | 'coast' | 'done' | 'failed';
-export type FailReason = 'derail' | 'fall' | 'stall' | 'eject' | 'water' | 'ejectSide';
+export type RidePhase = 'lift' | 'launch' | 'coast' | 'done' | 'failed' | 'flying';
+export type FailReason = 'derail' | 'fall' | 'stall' | 'eject' | 'water' | 'ejectSide' | 'openEnd';
 
 export interface CarState {
   index: number;
@@ -137,6 +138,8 @@ export class TrainSim {
   readonly collected: boolean[];
   phase: RidePhase = 'coast';
   failReason: FailReason | null = null;
+  /** Freiflug nach Entgleisen, Fall oder offenem Ende (Phase 'flying') */
+  flight: FlightSim | null = null;
   s = 0;
   v = 0;
   t = 0;
@@ -194,7 +197,7 @@ export class TrainSim {
     return SKIN_PHYSICS[this.opts.skin] ?? SKIN_PHYSICS.skinWood;
   }
   get finished(): boolean {
-    return this.phase === 'done' || this.phase === 'failed';
+    return this.phase === 'done' || this.phase === 'failed' || this.phase === 'flying';
   }
   get kmh(): number {
     return Math.abs(this.v) * 3.6;
@@ -208,6 +211,14 @@ export class TrainSim {
   }
 
   private substep(h: number): void {
+    if (this.phase === 'flying' && this.flight) {
+      this.sinceFail += h;
+      this.flight.step(h);
+      this.flight.writeTo(this.cars);
+      // Tempo des ersten Wagens für die Anzeige (vorzeichenlos, die Bahn spielt keine Rolle mehr)
+      this.v = Math.hypot(this.cars[0].vx, this.cars[0].vy);
+      return;
+    }
     if (this.phase === 'failed') {
       this.sinceFail += h;
       this.integrate(h, true);
@@ -429,10 +440,22 @@ export class TrainSim {
   }
 
   fail(reason: FailReason, car = 0): void {
-    if (this.phase === 'failed') return;
+    if (this.phase === 'failed' || this.phase === 'flying') return;
     this.phase = 'failed';
     this.failReason = reason;
     this.events.push({ kind: 'fail', time: this.t, reason, car });
+    // Entgleisen und Fall: der Zug verlässt die Schiene und fliegt (zur Kamera oder von ihr weg, je nach Querkraft)
+    if (reason === 'derail' || reason === 'fall') {
+      const c = this.cars[car] ?? this.cars[0];
+      const side = c.feltSide > 0 ? 1 : c.feltSide < 0 ? -1 : 1;
+      this.startFlight(reason === 'derail' ? 'derail' : 'fall', side);
+    }
+  }
+
+  /** Zug in den Freiflug übergeben (die Wagenzustände liefern Lage und Geschwindigkeit) */
+  startFlight(kind: FlightKind, side = 1): void {
+    this.flight = new FlightSim(this.cars, { terrain: this.opts.terrain, gravity: this.opts.gravityScale, carLength: this.opts.carLength, kind, side });
+    this.phase = 'flying';
   }
 }
 

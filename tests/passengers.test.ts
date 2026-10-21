@@ -48,4 +48,19 @@ describe('Fahrgäste (Rapier)', () => {
     expect(side).toBe(true);
     sim.dispose();
   });
+  it('wirft beim Aufprall alle Fahrgäste des Wagens raus, die anderen sitzen weiter', () => {
+    const sim = new PassengerSim({ cars: 2, perCar: 2, gravityScale: 1, terrain, sideEjectG: 2.5 });
+    const cars: CarState[] = [car(G), { ...car(G), index: 1, x: 7.6 }];
+    for (let i = 0; i < 30; i++) sim.step(cars, 1 / 60, 10, false);
+    const n = sim.ejectCar(1, cars, 8);
+    expect(n).toBe(2);
+    expect(sim.ejectCar(1, cars, 8)).toBe(0); // schon draußen
+    expect(sim.views.filter((v) => v.ejected).map((v) => v.car)).toEqual([1, 1]);
+    expect(sim.allSeated).toBe(false);
+    for (let i = 0; i < 30; i++) sim.step(cars, 1 / 60, 10, true);
+    expect(sim.views.filter((v) => v.car === 0).every((v) => !v.ejected)).toBe(true);
+    // der Schubs nach oben wächst mit der Aufprallgeschwindigkeit (hier 4,7 m/s): nach 0,5 s sind die Puppen über dem Wagen
+    for (const v of sim.views.filter((p) => p.ejected)) expect(v.parts.torso.y).toBeGreaterThan(cars[1].y + 0.5);
+    sim.dispose();
+  });
 });

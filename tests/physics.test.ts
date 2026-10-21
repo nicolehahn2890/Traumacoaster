@@ -199,4 +199,39 @@ describe('Zug-Simulation', () => {
     expect(maxLat).toBeLessThan(3.0);
     expect(minUp).toBeGreaterThan(-0.1); // nie kopfüber (steile Abfahrt kippt den Oben-Vektor mit)
   });
+  it('entgleist auf Holz in der engen Kehre bei fast 90 km/h und fliegt sichtbar davon', () => {
+    // 42-m-Lifthügel, dann eine 4 m enge Kehre am Boden: knapp 3 g quer trotz voller Schräglage
+    const R = laneRise(1);
+    const W = 4;
+    const stroke = [
+      ...stageCurve(0, 40, 80, (x) => 42 * Math.exp(-((x - 18) ** 2) / 50)),
+      ...param(40, (t) => [40 + W * Math.sin(Math.PI * t), R - R * Math.cos(Math.PI * t)]),
+      ...param(50, (t) => [40 - t * 40, 2 * R]),
+      ...param(40, (t) => [-W * Math.sin(Math.PI * t), R + R * Math.cos(Math.PI * t)]),
+    ];
+    const space = simFor(stroke, { skin: 'skinSpace', cars: 2 }).sim;
+    run(space);
+    expect(space.phase).toBe('done'); // die Weltraum-Bahn verträgt 3,5 g quer
+    const wood = simFor(stroke, { skin: 'skinWood', cars: 2 }).sim;
+    let maxV = 0;
+    for (let i = 0; i < 60 * 60 && wood.phase !== 'flying'; i++) {
+      wood.step(1 / 60);
+      maxV = Math.max(maxV, wood.v);
+    }
+    expect(wood.failReason).toBe('derail');
+    expect(wood.phase).toBe('flying');
+    expect(wood.finished).toBe(true);
+    expect(maxV * 3.6).toBeGreaterThan(80);
+    const z0 = wood.cars[0].z;
+    const railY = wood.cars[0].y;
+    // Flug: der Wagen kippt bis zum Anschlag zur Seite, driftet aus der Spur und bleibt am Boden liegen
+    for (let i = 0; i < 60 * 8 && !wood.flight!.settled; i++) wood.step(1 / 60);
+    expect(wood.flight!.settled).toBe(true);
+    expect(wood.flight!.impacts.length).toBeGreaterThan(0);
+    expect(Math.abs(wood.cars[0].bank)).toBeCloseTo(Math.PI / 2, 1);
+    expect(Math.abs(wood.cars[0].z - z0)).toBeGreaterThan(0.2);
+    expect(wood.cars[0].y).toBeLessThan(railY + 0.5);
+    expect(wood.cars[0].y).toBeGreaterThan(0.2); // nicht durch den Boden gefallen
+    expect(wood.sinceFail).toBeLessThan(8);
+  });
 });

@@ -291,7 +291,7 @@ export class PassengerSim {
   }
 
   /** Übergibt einen Fahrgast in die Welt-Simulation (Flug). */
-  private eject(i: number, cars: CarState[], side: boolean): void {
+  private eject(i: number, cars: CarState[], side: boolean, kick = side ? 3 : 1.5): void {
     const v = this.views[i];
     const doll = this.dolls[i];
     if (!doll || v.ejected) return;
@@ -316,7 +316,7 @@ export class PassengerSim {
       wb.setRotation(lb.rotation() + car.angle, true);
       // Welt-Geschwindigkeit = Wagen + lokale (gedreht) + beim seitlichen Rauswurf ein Schubs nach oben
       const vx = carVel.x + (lv.x * cos - lv.y * sin);
-      const vy = carVel.y + (lv.x * sin + lv.y * cos) + (side ? 3 : 1.5);
+      const vy = carVel.y + (lv.x * sin + lv.y * cos) + kick;
       wb.setLinvel({ x: vx, y: vy }, true);
       wb.setAngvel(lb.angvel() + (side ? 4 : 2), true);
     }
@@ -330,6 +330,22 @@ export class PassengerSim {
     v.lane = car.z;
     this.justEjected[i] = true;
     this.onEject?.(v, side);
+  }
+
+  /**
+   * Aufprall des Wagens: alle noch sitzenden Fahrgäste dieses Wagens fliegen raus. Der Schubs nach oben wächst
+   * mit der Aufprallgeschwindigkeit (1,5 … 6 m/s), damit die Figuren sichtbar aus dem Wrack geworfen werden.
+   */
+  ejectCar(carIndex: number, cars: CarState[], impactSpeed = 0): number {
+    const kick = Math.min(6, 1.5 + impactSpeed * 0.4);
+    let n = 0;
+    for (let i = 0; i < this.views.length; i++) {
+      const v = this.views[i];
+      if (v.car !== carIndex || v.ejected) continue;
+      this.eject(i, cars, false, kick);
+      n++;
+    }
+    return n;
   }
 
   /** Alle Fahrgäste sitzen (keiner draußen)? */

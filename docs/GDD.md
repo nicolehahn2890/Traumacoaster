@@ -260,8 +260,8 @@ Die Bahn ist eine echte 3D-Kurve (x, Höhe y, Tiefe z). Aus den Bezier-Segmenten
 ### 6.3 Entgleisen und Scheitern
 | Ereignis | Bedingung | Folge |
 |---|---|---|
-| Entgleisen in der Kurve | g_s > Limit (Holz 2,5 g, Hybrid 3 g, Stahl 3,5 g, Eis 3 g) | Zug fliegt tangential weg, Fahrgäste purzeln, Fahrt nicht geschafft |
-| Aus dem Looping fallen | Oben im Looping v² < 9,81 · r | Zug löst sich, Fahrgäste fallen, Fahrt nicht geschafft |
+| Entgleisen in der Kurve | g_s > Limit (Holz 2,0 g, Mine 2,2 g, Hybrid 2,4 g, Eis 2,6 g, Stahl/Gold/Lava 3,0 g, Neon 3,2 g, Weltraum 3,5 g) | Zug fliegt tangential weiter, kippt zur Seite der Querkraft und driftet aus der Spur; die Wagen hängen an der Kette, schlagen auf, beim Aufprall purzeln die Fahrgäste raus; das Wrack bleibt liegen (auch auf dem Dach). Fahrt nicht geschafft |
+| Aus dem Looping fallen | Oben im Looping v² < 9,81 · r (0,12 s lang aus dem Sitz gezogen) | Zug löst sich und überschlägt sich im Fall, Aufprall wie beim Entgleisen, Fahrt nicht geschafft |
 | Rückroller | v = 0 auf Anstieg | Zug rollt zurück zur Station, Fahrt nicht geschafft |
 | Rauswurf | Fahrgast verlässt die Wanne (echte Physik) | Fahrt nicht geschafft, Fahrgast landet mit Ragdoll |
 | Überlast | g_v > 6 g | Fahrgäste werden ohnmächtig (Augen zu, Zunge raus), Fahrt gilt, aber kein Stern 3 |
