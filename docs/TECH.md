@@ -30,6 +30,8 @@ tests/                 Vitest-Tests
 scripts/               gen-levels-doc.ts (LEVELS.md), screenshots.mjs (Playwright)
 docs/                  GDD.md, LEVELS.md, TECH.md, research/
 public/art/            Optionale, echte gemalte Texturen (Drop-in, siehe Kapitel 6)
+public/brand/          illudiy-Logo (Sticker, WebP 1024 px) für den Splash
+public/fonts/          Lobster (illudiy-Markenschrift, OFL) als woff2 + illudiy.css
 ```
 
 ## 3. Datenmodell der Bahn

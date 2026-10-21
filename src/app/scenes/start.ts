@@ -14,6 +14,7 @@ import { hexNum, shade, cloudTexture, skyTexture, mix } from '@/render/paint';
 import { LevelScene } from './level';
 import { MyTracksScene } from './myTracks';
 import { EditorScene } from './editor';
+import { SplashScene } from './splash';
 import { clamp, noise1 } from '@/core/math';
 import { drawProp } from '@/render/props';
 
@@ -81,7 +82,9 @@ export class StartScene implements Scene {
     };
     this.handlers.tap = (pt) => {
       if (this.settingsOpen) {
-        this.toggleSettings();
+        // Zahnrad und Panel-Knöpfe verarbeitet schon der Pixi-Button (er feuert vor diesem Handler);
+        // nur ein Tipp daneben schließt das Panel, sonst ginge es im selben Tipp wieder zu.
+        if (!this.hits(this.settingsOpen, pt) && !this.hits(this.gearBtn, pt)) this.toggleSettings();
         return;
       }
       // Fahne getroffen?
@@ -113,6 +116,12 @@ export class StartScene implements Scene {
   }
 
   exit(): void {}
+
+  /** Liegt der Punkt (Bildschirm-Pixel) in den Grenzen des Containers? */
+  private hits(c: Container, pt: { x: number; y: number }): boolean {
+    const b = c.getBounds();
+    return pt.x >= b.x && pt.x <= b.x + b.width && pt.y >= b.y && pt.y <= b.y + b.height;
+  }
 
   private nextLevelOfWorld(w: number): number {
     const p = storage.progress;
@@ -227,34 +236,41 @@ export class StartScene implements Scene {
     }
     const c = new Container();
     const g = new Graphics();
-    paintRect(g, -150, -120, 300, 240, PAPER, INK, 24, 4);
+    paintRect(g, -150, -150, 300, 300, PAPER, INK, 24, 4);
     c.addChild(g);
     const title = label(t('settings'), 26, INK, true);
-    title.position.set(0, -85);
+    title.position.set(0, -115);
     c.addChild(title);
     const s = storage.settings;
     const sound = new Button(`${t('sound')}: ${s.sound ? 'An' : 'Aus'}`, { width: 240, height: 46, size: 18, color: s.sound ? '#7ee081' : '#bfb7cc' });
-    sound.position.set(0, -30);
+    sound.position.set(0, -62);
     sound.onTap = () => {
       storage.updateSettings({ sound: !storage.settings.sound });
       this.toggleSettings();
       this.toggleSettings();
     };
     const lang = new Button(`${t('language')}: ${s.language.toUpperCase()}`, { width: 240, height: 46, size: 18, color: '#4f8dff' });
-    lang.position.set(0, 26);
+    lang.position.set(0, -6);
     lang.onTap = () => {
       storage.updateSettings({ language: storage.settings.language === 'de' ? 'en' : 'de' });
       location.reload();
     };
+    // Intro (illudiy-Splash) erneut abspielen; das Logo liegt nach dem ersten Mal im Cache
+    const intro = new Button(t('replayIntro'), { width: 240, height: 46, size: 18, color: '#3ec7c2' });
+    intro.position.set(0, 50);
+    intro.onTap = () => {
+      this.toggleSettings();
+      void SplashScene.preload().then((tex) => this.game.goto(() => new SplashScene(tex)));
+    };
     const reset = new Button('Spielstand löschen', { width: 240, height: 46, size: 18, color: '#d64545' });
-    reset.position.set(0, 82);
+    reset.position.set(0, 106);
     reset.onTap = () => {
       if (confirm('Spielstand wirklich löschen?')) {
         storage.reset();
         location.reload();
       }
     };
-    c.addChild(sound, lang, reset);
+    c.addChild(sound, lang, intro, reset);
     c.position.set(this.w / 2, this.h / 2);
     c.eventMode = 'static';
     this.container.addChild(c);

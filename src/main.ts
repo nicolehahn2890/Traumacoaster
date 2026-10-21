@@ -8,21 +8,45 @@ import { LevelScene } from './app/scenes/level';
 
 type BootWindow = Window & { tcBootDone?: () => void; tcBootError?: (msg: string) => void; tcGame?: Game };
 
+/**
+ * Schriften vor dem ersten Frame laden. Canvas-Text (Pixi) zeichnet sich nicht neu,
+ * wenn eine Webfont erst später eintrifft; darum hier explizit warten, höchstens 3 s.
+ */
+async function loadFonts(): Promise<void> {
+  const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+  if (!fonts) return;
+  const wanted = ['400 40px "Lobster"', '700 20px "Nunito"', '800 20px "Nunito"', '500 20px "Fredoka"', '700 20px "Fredoka"'];
+  const all = Promise.all(wanted.map((f) => fonts.load(f).catch(() => [])))
+    .then(() => fonts.ready)
+    .then(() => undefined);
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, 3000));
+  await Promise.race([all, timeout]);
+}
+
 async function boot(): Promise<void> {
   // Physik (WebAssembly) im Hintergrund vorbereiten; das Level wartet selbst darauf.
   // Splash und Startscreen sollen auch dann erscheinen, wenn WebAssembly hier nicht geladen werden kann.
   void initPhysics().catch((err) => console.error('Physik konnte nicht geladen werden', err));
-  await Promise.all([loadArtOverrides(), (document as Document & { fonts?: FontFaceSet }).fonts?.ready ?? Promise.resolve()]);
+  const params = new URLSearchParams(location.search);
+  const levelParam = Number(params.get('level') ?? '0');
+  // Splash nur beim ersten Start pro Sitzung
+  let seen = false;
+  try {
+    seen = sessionStorage.getItem('tc.splash') === '1';
+  } catch {
+    /* ignore */
+  }
+  // ?scene=splash zeigt das Intro immer, ?scene=start überspringt es
+  const scene = params.get('scene');
+  const showSplash = scene === 'splash' || (levelParam <= 0 && scene !== 'start' && !seen);
+  // Das illudiy-Logo nur laden, wenn der Splash auch gezeigt wird (parallel zu Schriften und Texturen)
+  const [, , logo] = await Promise.all([loadArtOverrides(), loadFonts(), showSplash ? SplashScene.preload() : Promise.resolve(null)]);
   const game = new Game();
   await game.init();
   (window as BootWindow).tcBootDone?.();
-  // Splash nur beim ersten Start pro Sitzung
-  const seen = sessionStorage.getItem('tc.splash') === '1';
-  const params = new URLSearchParams(location.search);
-  const levelParam = Number(params.get('level') ?? '0');
-  if (levelParam > 0) game.goto(() => new LevelScene(levelParam), true);
-  else if (params.get('scene') === 'start' || seen) game.goto(() => new StartScene(), true);
-  else game.goto(() => new SplashScene(), true);
+  if (showSplash) game.goto(() => new SplashScene(logo), true);
+  else if (levelParam > 0) game.goto(() => new LevelScene(levelParam), true);
+  else game.goto(() => new StartScene(), true);
   try {
     sessionStorage.setItem('tc.splash', '1');
   } catch {

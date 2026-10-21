@@ -7,6 +7,8 @@ import { noise1 } from '@/core/math';
 
 export const FONT_DISPLAY = '"Fredoka", "Baloo 2", "Nunito", "Segoe UI", sans-serif';
 export const FONT_TEXT = '"Nunito", "Fredoka", "Segoe UI", sans-serif';
+/** Offizielle illudiy-Markenschrift (nur Gewicht 400, nie in Großbuchstaben), lokal unter public/fonts */
+export const FONT_BRAND = '"Lobster", "Brush Script MT", cursive';
 export const INK = '#2a1f3d';
 export const PINK = '#ff5c8a';
 export const PAPER = '#fff8ec';
