@@ -1519,6 +1519,10 @@ export function closePath(path: TrackPath): void {
   const pf = nodePos(first);
   const pl = nodePos(last);
   const gap = dist3(pf, pl);
+  // Abstand in der Bühnenebene und in Spuren getrennt: Ein Rückweg, der hinter der Station eine Spur
+  // weiter hinten ankommt, ist von Hand geschlossen (die Hand trifft die Spur nicht genau)
+  const gapXY = Math.hypot(pf.x - pl.x, pf.y - pl.y);
+  const gapLanes = Math.abs(first.z - last.z);
   const endDir = normalize3(sub3(pl, nodeIn(last)));
   const startDir = normalize3(sub3(nodeOut(first), pf));
   const closure = startClosure(first);
@@ -1526,7 +1530,7 @@ export function closePath(path: TrackPath): void {
   // Ende am Start, aber Ankunft gegen die Abfahrtsrichtung der Station (Rundkurs von Hand geschlossen,
   // Rückweg hinter der Station): ohne Kehre gäbe es eine Spitzkehre an der Station. Die letzten Knoten,
   // die schon im Bereich der Kehre liegen, werden durch einen Halbkreis in die Station ersetzt.
-  if (gap <= 6 && endDir.x * startDir.x < -0.2) {
+  if (gapXY <= 6 && gapLanes <= 1.2 && endDir.x * startDir.x < -0.2) {
     const l2Z = nodes[nodes.length - 1].z;
     const R = Math.max((TURNAROUND_LANES * LANE_DEPTH) / 2, (Math.abs(l2Z - first.z) * LANE_DEPTH) / 2);
     while (nodes.length > 3 && Math.abs(nodes[nodes.length - 1].x - first.x) < 2 * R) closure.trimmed.unshift(nodes.pop()!);

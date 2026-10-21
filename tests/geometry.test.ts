@@ -384,6 +384,30 @@ describe('Rundenschluss ist wiederholbar', () => {
     closePath(copy);
     expect(snapshot(copy)).toBe(once);
   });
+  it('schließt einen Rundkurs, dessen Rückweg eine Spur hinter der Station ankommt', () => {
+    // Strich aus dem Playwright-Szenario 6 (Catmull-Rom durch die Stützpunkte): Hügel, Kehre, Rückweg oben
+    // zurück; der Rückweg landet eine Spur hinter der Station, weil die Hand die Spur nicht genau trifft
+    const pts: Array<[number, number]> = [[0, 0], [6, 1], [10, 7], [14, 15], [18, 16], [24, 12], [30, 5], [40, 4], [46, 5], [48, 8], [44, 9], [30, 9], [14, 9], [6, 7], [1, 2], [0, 0]];
+    const P = (i: number) => pts[Math.max(0, Math.min(pts.length - 1, i))];
+    const stroke: StagePoint[] = [{ X: 0, Y: 0 }];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [p0, p1, p2, p3] = [P(i - 1), P(i), P(i + 1), P(i + 2)];
+      for (let k = 1; k <= 8; k++) {
+        const t = k / 8;
+        const cr = (a: number, b: number, c: number, d: number) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (-a + 3 * b - 3 * c + d) * t * t * t);
+        stroke.push({ X: cr(p0[0], p1[0], p2[0], p3[0]), Y: cr(p0[1], p1[1], p2[1], p3[1]) });
+      }
+    }
+    const r = strokeToTrack(stroke, { groundClearance: 0.8 });
+    expect(r.path.closed).toBe(true);
+    expect(r.path.nodes.some((n) => n.kind === 'closeTurn')).toBe(true);
+    const s = sampleTrack(r.path);
+    expect(trackStats(r.path, s).loops).toBe(0);
+    expect(minUpY(s)).toBeGreaterThan(-0.1);
+    const a = stateAt(s, 0);
+    const b = stateAt(s, s.length - 0.01);
+    expect(Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)).toBeLessThan(0.5);
+  });
   it('öffnet einen von Hand geschlossenen Rundkurs beim Bearbeiten nicht wieder', () => {
     const r = strokeToTrack(circuitStroke());
     expect(r.path.closed).toBe(true);
