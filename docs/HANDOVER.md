@@ -7,7 +7,8 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
 ## 1. Wo wir stehen
 
 - **Branch:** `claude/serene-pascal-43m0gq` (alle Arbeit nach dem ersten Spieltest). `main` hat den Stand vor
-  dem Spieltest. Es gibt keinen Pull Request und keinen Merge; beides nur auf Nicoles Auftrag.
+  dem Spieltest. Nichts ist gemerged; PR #1 (von brownsugarwhite, 21.10. 17:42, Stand e00ec84) wurde fünf
+  Sekunden nach dem Öffnen wieder geschlossen, der CI-Lauf dazu war grün. Ein neuer PR nur auf Nicoles Auftrag.
 - **Plan:** `docs/PLAN.md` (18 Anpassungen aus dem Spieltest, Pakete A–F, Meilensteine M1–M6). Unten im Plan
   steht je Meilenstein der „Umsetzungsstand“ mit Dateien, Tests und Abweichungen.
 - **Fertig und gepusht:** M1 Fundament, M2 Zeichnen, M3 Fahrt und Scheitern, M4 Karte, D2 Textur-Kit,
