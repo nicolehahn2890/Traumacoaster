@@ -1,0 +1,38 @@
+name: CI
+
+# Prüft jeden Push auf Arbeitsbranches und jede Pull-Request: Tests, Typecheck/Build und das
+# Playwright-Szenario (Zeichnen, Fahrt, Ergebnis) im Browser. main baut und deployt über deploy.yml.
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Szenario im Browser (Oval, Steilkurve, Looping, Überzeichnen, Rundkurs)
+        run: node scripts/scenario.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: screenshots/
+          if-no-files-found: ignore
