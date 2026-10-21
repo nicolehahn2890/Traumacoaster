@@ -30,6 +30,7 @@ import { Button, Toast, label, INK, PAPER, PINK, paintRect, goalIcon, check, sta
 import { hexNum, shade } from '@/render/paint';
 import { StartScene } from './start';
 import { MyTracksScene } from './myTracks';
+import { captureLevel, type LevelLayers } from '../mapTransition';
 
 export interface SandboxConfig {
   world: number;
@@ -196,8 +197,18 @@ export class LevelScene implements Scene {
   }
 
   private leave(): void {
-    if (this.sandbox) this.game.goto(() => new MyTracksScene());
-    else this.game.goto(() => new StartScene());
+    if (this.sandbox) {
+      this.game.goto(() => new MyTracksScene());
+      return;
+    }
+    // Zurück zur Karte: Die Bühne krümmt sich wieder zur Drehscheibe (die Karte biegt das Foto der Ebenen)
+    const snap = captureLevel(this.game, this.level.id, this.transitionLayers());
+    this.game.goto(() => new StartScene(snap), true);
+  }
+
+  /** Ebenen und Kamera für den Übergang von der Karte und zu ihr */
+  transitionLayers(): LevelLayers {
+    return { sky: this.view.sky.container, world: this.view.world, ui: this.ui, camera: this.view.camera };
   }
 
   // ------------------------------------------------------------------ Eingabe

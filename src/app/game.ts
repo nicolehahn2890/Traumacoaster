@@ -1,7 +1,7 @@
 /**
  * Game: Pixi-Anwendung, Szenenwechsel mit Überblendung, Eingabe, Resize/Orientation.
  */
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container, Graphics, RenderTexture } from 'pixi.js';
 import { InputManager } from '@/core/input';
 import type { Scene } from './scene';
 import { storage } from '@/core/storage';
@@ -77,6 +77,33 @@ export class Game {
     }
     this.pending = make;
     this.fadeDir = 1;
+  }
+
+  /** Szene im Hintergrund vorbereiten (enter, ohne sie zu zeigen), für eigene Übergänge */
+  async prepare(scene: Scene): Promise<Scene> {
+    scene.resize(this.width, this.height);
+    await scene.enter(this);
+    return scene;
+  }
+
+  /** Vorbereitete Szene sofort zeigen (ihr enter lief schon in prepare) */
+  adopt(scene: Scene): void {
+    if (this.scene) {
+      this.scene.exit();
+      this.root.removeChild(this.scene.container);
+    }
+    this.pending = null;
+    this.scene = scene;
+    this.root.addChild(scene.container);
+    scene.resize(this.width, this.height);
+  }
+
+  /** Container bildschirmgroß in eine Textur rendern (durchsichtiger Hintergrund) */
+  snapshot(container: Container): RenderTexture {
+    const r = this.app.renderer;
+    const tex = RenderTexture.create({ width: this.width, height: this.height, resolution: r.resolution, antialias: true });
+    r.render({ container, target: tex, clear: true, clearColor: [0, 0, 0, 0] });
+    return tex;
   }
 
   private swap(next: Scene): void {

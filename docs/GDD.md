@@ -205,15 +205,18 @@ Es gibt keine Tutorial-Texte. Die ersten vier Level zeigen eine animierte Finger
 ### 5.1 Splash
 illudiy-Logo, zwei Sekunden, handgemalt, mit einem kleinen Zug, der durch das Logo fährt. Danach nie wieder, außer nach App-Neustart.
 
-### 5.2 Startscreen (Halbkugel)
-- Unten eine große **Halbkugel**, die gemalte Welt. Darauf stehen die zehn Welten als Inseln mit Flaggen für Level. Ziehen nach links oder rechts dreht die Kugel; sie läuft mit Trägheit aus und rastet bei der nächsten Welt ein.
-- Die aktuelle Welt steht oben auf der Kugel mit Name, Fortschritt (Sterne) und einem Mini-Diorama (Riesenrad, Schloss, Vulkan). Das nächste offene Level ist als leuchtende Fahne markiert.
-- Über dem Boden ziehen **Wolken** in drei Parallaxe-Ebenen mit, langsamer als die Kugel. Der Himmel wechselt mit der Welt (Sonne, Abend, Nacht, Weltraum).
-- Unten auf der Kugel der Button **Spielen** (öffnet das markierte Level), oben rechts **Meine Bahnen**. Sonst nichts. Einstellungen liegen hinter einem kleinen Zahnrad oben links (Ton, Sprache, Shake-Undo an/aus, Figuren-Editor).
-- Tippen auf eine Fahne öffnet das Level direkt. Lange drücken auf eine Welt zeigt alle 15 Level als Fahnenreihe.
+### 5.2 Startscreen (Karte als Drehscheibe)
+- Unten eine große **Drehscheibe**, die gemalte Welt. Jedes der 150 Level steht als **Miniatur seiner Bühne** auf der Scheibe: dieselben fünf Bodenstreifen, Berge, Seen, Deko und Coins wie im Level, darauf die Bahn, die dort gebaut wurde, mit dem Zug in der Station. Ein noch nicht gebautes Level zeigt seine Landschaft.
+- Die zehn Welten sind große **Zonen** auf der Scheibe (je 15 Level). Jede Zone beginnt mit einem Tor (Hügel mit dem Wahrzeichen der Welt, Nummer und Name); der Boden geht dort weich in die Farben der nächsten Welt über, der Himmel blendet mit.
+- Über jeder Miniatur ein Schild mit Levelnummer und Sternen (Schloss, wenn die Welt noch zu ist). Oben stehen Welt und Level der Miniatur in der Mitte.
+- Ziehen nach links oder rechts dreht die Scheibe; der Schwung läuft über eine gedämpfte Feder ins Einrasten auf dem nächsten Level aus. Pfeiltasten springen ein Level weiter.
+- Die Miniaturen haben je einen eigenen Maßstab, damit breite und hohe Bahnen genauso in den Blick passen wie kleine; die Bodenstreifen dazwischen wechseln die Breite weich.
+- Über dem Boden ziehen **Wolken** in drei Parallaxe-Ebenen mit, langsamer als die Scheibe.
+- Unten der Button **Spielen** (öffnet das Level in der Mitte; quer unten rechts), oben rechts **Meine Bahnen**. Einstellungen liegen hinter einem kleinen Zahnrad oben links, daneben der Figuren-Editor.
+- Tippen auf die Miniatur in der Mitte öffnet das Level, Tippen auf einen Nachbarn dreht ihn in die Mitte, Tippen auf ein Tor springt an den Anfang der Welt.
 
 ### 5.3 Level-Screen
-Beim Öffnen rollt die Kugel-Oberfläche flach aus: Die Halbkugel wird zum Bühnenboden des Levels (Morph-Animation, 600 ms). Berge, Seen und Deko wachsen aus dem Boden. Oben erscheinen die Anforderungen. Die Geisterhand zeigt bei Bedarf die Geste.
+Beim Öffnen biegt sich die gekrümmte Scheibe gerade und wird zum Bühnenboden des Levels: Die Miniatur wächst auf die Größe des Levels, die Krümmung geht auf null, Himmel und Knöpfe blenden über (1,5 s, ohne Schnitt). Zurück zur Karte krümmt sich der Boden wieder zur Drehscheibe, mit der gerade gebauten Bahn als Miniatur. Technisch ist beides derselbe Boden mit anderer Krümmung (siehe TECH.md). Oben erscheinen die Anforderungen. Die Geisterhand zeigt bei Bedarf die Geste.
 
 ### 5.4 Fahrt
 Play startet den Zug. UI blendet sich aus bis auf Stop und die Anforderungen (die während der Fahrt abgehakt werden). Kamera siehe Kapitel 14. Nach der Ankunft oder dem Unfall: 1,5 Sekunden Nachlauf (Fahrgäste jubeln oder liegen im Gras), dann Ergebnis.
@@ -305,7 +308,7 @@ Alle Zieltypen, die das Spiel auswertet (Quelle: `src/levels/types.ts`):
 - ★ Alle Pflichtziele erfüllt und Ankunft.
 - ★★ Zusätzlich alle Bonusziele (kursiv in der Leveltabelle) oder, wenn es keine gibt: alle Coins.
 - ★★★ Zusätzlich „saubere Fahrt“: niemand ohnmächtig (g_v ≤ 6), keine Bremse nötig, Fahrt unter dem Richtwert für die Zeit.
-Sterne schalten nichts Hartes frei, sie sind Prestige und Schmuck auf der Halbkugel (goldene Fahnen).
+Sterne schalten nichts Hartes frei, sie sind Prestige und Schmuck auf der Karte (goldene Sterne auf dem Schild über der Miniatur).
 
 ### 7.3 Freischalten
 Jedes dritte bis vierte Level schaltet ein Element frei (siehe LEVELS.md, „Freischalt-Reihenfolge“). Neue Elemente werden sofort im nächsten Level gebraucht, damit sie nicht im Regal verstauben. Es gibt 50 freischaltbare Elemente plus die Grundausstattung.

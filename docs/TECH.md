@@ -17,7 +17,7 @@
 ```
 src/
   main.ts              Einstieg: Pixi-App, SceneManager, Resize, Orientation
-  app/                 Szenen: Splash, Start (Halbkugel), Level, Ergebnis, MeineBahnen, Editor
+  app/                 Szenen: Splash, Start (Karte als Drehscheibe), Level, Ergebnis, MeineBahnen, Editor
   core/                math (Bezier, Spline, Bogenlänge, Krümmung), gestures, input, i18n, storage, rng
   track/               TrackPath-Modell, StrokeToTrack (RDP + Bezier-Fit), Stage (Spuren), Overdraw-Merge
   physics/             TrainSim (Zug), Forces (g-Kräfte), Passengers (Rapier-Ragdolls), Events
@@ -127,3 +127,8 @@ npm run levels:doc   # docs/LEVELS.md neu erzeugen
 npm run screenshots  # Playwright-Screenshots nach screenshots/
 npm run scenario     # Szenario-Test: Looping, Kurve, Fahrt bis zum Ergebnis
 ```
+
+## 13. Karte und Übergang ins Level
+- **Ein Boden, zwei Krümmungen** (`src/render/bend.ts`): Alles auf der Karte liegt in flachen Koordinaten (u = Bogenlänge ab der Bildmitte, v = Höhe über dem Boden, in Karten-Pixeln) und wird mit Krümmung k auf den Kreis der Drehscheibe gelegt; k = 0 ist der flache Boden des Levels. Der Übergang dreht nur an k, am Maßstab und am Fokus. Texturen (Miniaturen, das Level-Bild) liegen auf einem Gitter (`BentSheet`), dessen Punkte jedes Bild neu gebogen werden.
+- **Miniaturen** (`src/render/miniature.ts`): Pro Level wird die Bühne mit `WorldView` in eine Textur gerendert (Terrain, Coins, gespeicherte Bahn, Zug in der Station, Ränder weich ausgeblendet), in denselben Bühnen-Metern wie das Level. Die Oberfläche der Scheibe ist die Bodenlinie der hintersten Spur (`HORIZON_Y`); die fünf Spurstreifen der Scheibe haben die Farben und Breiten der Miniatur. Höchstens 28 Texturen bleiben im Speicher; neu gerendert wird, wenn sich die Bahn ändert, höchstens eine Miniatur pro Bild und nicht beim schnellen Drehen.
+- **Übergang** (`src/app/scenes/start.ts`, `src/app/mapTransition.ts`): Die Karte bereitet das Level unsichtbar vor (`Game.prepare`), fotografiert seine Ebenen (Himmel, Bühne, Knöpfe) und biegt die Bühne von der Scheibe gerade, bis sie deckungsgleich mit dem Level liegt; dann übernimmt das Level (`Game.adopt`). Zurück fotografiert das Level seine Ebenen (`LevelScene.transitionLayers`), und die Karte krümmt das Foto zur Scheibe, während die frische Miniatur darunter übernimmt. Der Zoom läuft im Logarithmus um einen festen Punkt, die Krümmung geht etwas früher auf null; Himmel, Wolken und Knöpfe blenden in festen Abschnitten über.
