@@ -28,6 +28,19 @@ export class Camera {
   smoothing = 6;
   /** während Pan/Pinch keine Glättung */
   direct = false;
+  /** Wackeln (Bühnen-Meter), klingt linear ab; die Weltansicht addiert ox/oy auf die Position */
+  ox = 0;
+  oy = 0;
+  private shakeAmp = 0;
+  private shakeLeft = 0;
+  private shakeDur = 0;
+  private shakeTime = 0;
+
+  shake(amp = 0.6, dur = 0.3): void {
+    this.shakeAmp = Math.max(this.shakeAmp * (this.shakeLeft / Math.max(1e-6, this.shakeDur)), amp);
+    this.shakeLeft = dur;
+    this.shakeDur = dur;
+  }
 
   resize(w: number, h: number): void {
     this.width = w;
@@ -92,6 +105,18 @@ export class Camera {
   }
 
   update(dt: number): void {
+    if (this.shakeLeft > 0) {
+      this.shakeLeft = Math.max(0, this.shakeLeft - dt);
+      this.shakeTime += dt;
+      const k = this.shakeAmp * (this.shakeLeft / Math.max(1e-6, this.shakeDur));
+      this.ox = k * Math.sin(this.shakeTime * 47);
+      this.oy = k * Math.cos(this.shakeTime * 53);
+      if (this.shakeLeft <= 0) {
+        this.ox = 0;
+        this.oy = 0;
+        this.shakeAmp = 0;
+      }
+    }
     if (this.direct) return;
     const k = 1 - Math.exp(-this.smoothing * dt);
     this.x = lerp(this.x, this.tx, k);

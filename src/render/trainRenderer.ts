@@ -10,6 +10,7 @@ import { CAR } from '@/physics/passengers';
 import type { CharacterDef } from '@/editor/characters';
 import { laneScale, toStage, LANE_MIN, LANE_MAX, LANE_DEPTH } from '@/track/stage';
 import { CharacterSprite } from './characterSprite';
+import { CutoutAnimator, type ClipName } from './cutoutAnimator';
 import { hexNum, shade } from './paint';
 import { SKIN_STYLES } from './trackRenderer';
 
@@ -32,6 +33,9 @@ export class TrainRenderer {
   private flying = new Map<number, { sprite: CharacterSprite; lane: number }>();
   private riderDefs: CharacterDef[] = [];
   private skin: string;
+  /** Stehender Zug (Zeichenmodus, Übersicht): Cut-out-Animatoren je Fahrgast */
+  private animators = new Map<number, CutoutAnimator>();
+  private standing = false;
 
   constructor(skin: string) {
     this.skin = skin;
@@ -63,8 +67,68 @@ export class TrainRenderer {
     for (const c of this.cars) c.container.destroy({ children: true });
     this.cars = [];
     this.seated.clear();
+    this.animators.clear();
     for (const f of this.flying.values()) f.sprite.container.destroy({ children: true });
     this.flying.clear();
+  }
+
+  /** Stehender Zug: Fahrgäste reden, blinzeln, hüpfen (Cut-out-Clips auf Zweiern); aus während der Fahrt */
+  setStanding(on: boolean): void {
+    this.standing = on;
+    if (!on) {
+      this.animators.clear();
+      for (const e of this.seated.values()) {
+        e.sprite.setHeadFlap(0);
+        e.sprite.setEyes('normal');
+        e.sprite.setMouth(null);
+        e.sprite.setHop(0);
+      }
+    }
+  }
+
+  /** Animatoren des stehenden Zugs fortschreiben (nach update(), damit die Pose schon gesetzt ist) */
+  idleUpdate(dt: number): void {
+    if (!this.standing) return;
+    for (const [index, e] of this.seated) {
+      let a = this.animators.get(index);
+      if (!a) {
+        a = new CutoutAnimator(e.sprite, Math.random() < 0.35 ? 'talk' : 'idle');
+        // zeitlich versetzt, damit nicht alle im Gleichschritt klappen
+        a.update(Math.random() * 2);
+        this.animators.set(index, a);
+      }
+      a.update(dt);
+      // ab und zu wechseln: Reden ↔ Idle, kleiner Hüpfer
+      if (Math.random() < dt * 0.15) a.play(a.current === 'talk' ? 'idle' : 'talk');
+      else if (Math.random() < dt * 0.08) a.play('hop', { once: true });
+    }
+  }
+
+  /** Clip auf einem Fahrgast (z. B. Erschrecken nach Tipp) oder auf allen (Winken beim Start) */
+  playOn(index: number, clip: ClipName): void {
+    const a = this.animators.get(index);
+    if (a) a.play(clip, { once: true });
+  }
+  playAll(clip: ClipName): void {
+    for (const a of this.animators.values()) a.play(clip, { once: true });
+  }
+
+  /** Fahrgast unter einem Bühnenpunkt (Sitzende des stehenden Zugs), −1 wenn keiner */
+  hitPassenger(X: number, Y: number): number {
+    let best = -1;
+    let bestD = Infinity;
+    for (const [index, e] of this.seated) {
+      if (!e.sprite.container.visible) continue;
+      const view = this.cars[e.car];
+      const k = view ? laneScale(view.lane) : 1;
+      const p = e.sprite.container.position;
+      const d = Math.hypot(X - p.x, Y - (p.y + 0.7 * k));
+      if (d < 1.1 * k && d < bestD) {
+        bestD = d;
+        best = index;
+      }
+    }
+    return best;
   }
 
   private defFor(index: number): CharacterDef | null {
@@ -198,6 +262,7 @@ export class TrainRenderer {
         sp.container.setFromMatrix(new Matrix(ex.x, ex.y, ey.x, ey.y, seatBase.X, seatBase.Y));
         sp.setPose(pv.parts, CAR.railOffset);
         sp.setBelt(pv.belt, pv.beltBroken);
+        sp.setFace(pv.face);
         sp.update(dt, st.feltFwd, st.feltUp, st.gSeat);
         // wieder eingefangen: der Flug-Sprite verschwindet
         const f = this.flying.get(pv.index);
@@ -223,6 +288,7 @@ export class TrainRenderer {
       const base = toStage(0, 0, pv.lane);
       f.sprite.container.setFromMatrix(new Matrix(k, 0, 0, k, base.X, base.Y));
       f.sprite.setPose(pv.parts, 0);
+      f.sprite.setFace(pv.face);
       f.sprite.update(dt, 0, 9.81, pv.landed ? 1 : -0.5);
     }
   }

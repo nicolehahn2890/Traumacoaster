@@ -97,6 +97,12 @@ export class WorldView {
     this.trainR.update(cars, passengers, dt);
   }
 
+  /** Stehender Zug (Zeichenmodus): Pose setzen und Cut-out-Clips fortschreiben */
+  updateStandingTrain(cars: CarState[], passengers: PassengerView[], dt: number): void {
+    this.trainR.update(cars, passengers, dt);
+    this.trainR.idleUpdate(dt);
+  }
+
   resize(w: number, h: number): void {
     this.camera.resize(w, h);
     this.sky.resize(w, h);
@@ -110,7 +116,7 @@ export class WorldView {
     this.camera.update(dt);
     const c = this.camera;
     this.world.scale.set(c.zoom, -c.zoom);
-    this.world.position.set(c.width / 2 - c.x * c.zoom, c.height / 2 + c.y * c.zoom);
+    this.world.position.set(c.width / 2 - (c.x + c.ox) * c.zoom, c.height / 2 + (c.y + c.oy) * c.zoom);
     this.sky.update(dt, c);
     this.effects.update(dt);
   }

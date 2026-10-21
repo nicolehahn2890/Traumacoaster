@@ -67,7 +67,11 @@ export interface PassengerView {
   /** Gurtstufe und ob der Gurt gerissen ist (für die Darstellung) */
   belt: BeltLevel;
   beltBroken: boolean;
+  /** Mimik: normal, ohnmächtig (über 7 g), benommen (nach der Landung) */
+  face: FaceKind;
 }
+
+export type FaceKind = 'normal' | 'faint' | 'dizzy';
 
 interface Ragdoll {
   bodies: Record<PartName, RAPIER.RigidBody>;
@@ -76,6 +80,20 @@ interface Ragdoll {
 
 export function emptyParts(): Record<PartName, PartPose> {
   return { torso: { x: 0, y: 0, angle: 0 }, head: { x: 0, y: 0, angle: 0 }, armL: { x: 0, y: 0, angle: 0 }, armR: { x: 0, y: 0, angle: 0 }, legL: { x: 0, y: 0, angle: 0 }, legR: { x: 0, y: 0, angle: 0 } };
+}
+
+/** Sitzpose eines Fahrgasts in Reihe row (Wagen-System), wie sie die Ragdolls zu Beginn einnehmen; ohne Physik */
+export function seatedPose(row: number): Record<PartName, PartPose> {
+  const x = CAR.rows[row] - 0.05;
+  const y = CAR.floorY + RIG.seatY + RIG.torso.hy + 0.02;
+  return {
+    torso: { x, y, angle: 0 },
+    head: { x, y: y + RIG.torso.hy + RIG.head.hy - 0.02, angle: 0 },
+    armL: { x: x - RIG.torso.hx - 0.02, y: y + 0.05, angle: -0.6 },
+    armR: { x: x + RIG.torso.hx + 0.02, y: y + 0.05, angle: -0.6 },
+    legL: { x: x + 0.12, y: y - RIG.torso.hy - 0.05, angle: -1.4 },
+    legR: { x: x + 0.2, y: y - RIG.torso.hy - 0.05, angle: -1.35 },
+  };
 }
 
 export function copyParts(src: Record<PartName, PartPose>, dst: Record<PartName, PartPose>): void {
@@ -152,7 +170,7 @@ export class PassengerSim {
       for (let r = 0; r < opts.perCar; r++) {
         const idx = this.views.length;
         const view: PassengerView = {
-          index: idx, car: c, row: r, ejected: false, lane: 0, lean: 0, landed: false, belt: this.belt, beltBroken: false,
+          index: idx, car: c, row: r, ejected: false, lane: 0, lean: 0, landed: false, belt: this.belt, beltBroken: false, face: 'normal',
           parts: emptyParts(),
           prevParts: emptyParts(),
         };
@@ -298,10 +316,17 @@ export class PassengerSim {
           const vel = torso.linvel();
           this.flightTime[i] += dt;
           this.stats.flightMax = Math.max(this.stats.flightMax, Math.abs(torso.translation().x - this.ejectX[i]));
-          if (Math.hypot(vel.x, vel.y) < 0.4) {
+          const speed = Math.hypot(vel.x, vel.y);
+          if (speed < 0.4) {
             this.landTimer[i] += dt;
             if (this.landTimer[i] > 0.6) v.landed = true;
           } else this.landTimer[i] = 0;
+          // im Flug rudern die Arme (starre Streifen, die an der Schulter schlagen)
+          if (!v.landed && speed > 2) {
+            const sgn = Math.sin(12 * this.flightTime[i]) >= 0 ? 1 : -1;
+            wd.bodies.armL.setAngvel(9 * sgn, true);
+            wd.bodies.armR.setAngvel(-9 * sgn, true);
+          }
           if (!v.landed && this.flightTime[i] > CATCH_DELAY) this.tryCatch(i, cars);
         }
         continue;

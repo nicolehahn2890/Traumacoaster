@@ -280,6 +280,52 @@ export function iconPerson(g: Graphics, s: number): void {
   g.roundRect(-r * 0.8, r * 0.1, r * 1.6, r * 0.9, r * 0.4).fill(0xffffff);
 }
 
+/**
+ * Sticker: zwei schräg liegende Papierkarten mit großem Text („Entgleist!“, „Gefangen!“), knallt rein
+ * (1,6 → 1 in 0,18 s), bleibt kurz stehen und blendet aus.
+ */
+export class Sticker extends Container {
+  private back = new Graphics();
+  private front = new Graphics();
+  private txt: Text;
+  private timer = 0;
+  private slam = 0;
+  constructor() {
+    super();
+    this.txt = label('', 34, INK, true);
+    this.addChild(this.back, this.front, this.txt);
+    this.visible = false;
+  }
+  show(text: string, color = '#ffd23f', seconds = 1.6): void {
+    this.txt.text = text;
+    const w = this.txt.width + 56;
+    const h = this.txt.height + 28;
+    this.back.clear();
+    this.front.clear();
+    paintRect(this.back, -w / 2, -h / 2, w, h, '#ffffff', INK, 14, 9);
+    this.back.rotation = 0.07;
+    paintRect(this.front, -w / 2, -h / 2, w, h, color, INK, 14, 4);
+    this.front.rotation = -0.07;
+    this.txt.rotation = -0.07;
+    this.visible = true;
+    this.alpha = 1;
+    this.timer = seconds;
+    this.slam = 0.18;
+    this.scale.set(1.6);
+  }
+  update(dt: number): void {
+    if (!this.visible) return;
+    if (this.slam > 0) {
+      this.slam = Math.max(0, this.slam - dt);
+      const k = 1 - this.slam / 0.18;
+      this.scale.set(1.6 - 0.6 * (1 - (1 - k) * (1 - k)));
+    }
+    this.timer -= dt;
+    if (this.timer < 0.4) this.alpha = Math.max(0, this.timer / 0.4);
+    if (this.timer <= 0) this.visible = false;
+  }
+}
+
 /** Toast-Hinweis unten */
 export class Toast extends Container {
   private bg = new Graphics();

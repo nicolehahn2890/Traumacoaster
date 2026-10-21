@@ -10,6 +10,7 @@ import { t } from '@/core/i18n';
 import { storage } from '@/core/storage';
 import { Button, label, INK, PAPER, paintRect, iconBack, iconPlus, iconTrash } from '@/ui/widgets';
 import { CharacterSprite } from '@/render/characterSprite';
+import { CutoutAnimator } from '@/render/cutoutAnimator';
 import {
   type CharacterDef, randomCharacter, HAIR_STYLES, HEAD_SHAPES, EYE_STYLES, BROW_STYLES, GLASSES_STYLES, BEARD_STYLES, MOUTH_STYLES, HAT_STYLES,
   TOP_STYLES, LOGO_STYLES, PANTS_STYLES, SHOE_STYLES, SKIN_TONES, HAIR_COLORS, PALETTE,
@@ -43,6 +44,7 @@ export class EditorScene implements Scene {
   private sky = new Sprite();
   private preview = new Container();
   private sprite: CharacterSprite | null = null;
+  private anim: CutoutAnimator | null = null;
   private def: CharacterDef;
   private tabs = new Container();
   private options = new Container();
@@ -96,6 +98,14 @@ export class EditorScene implements Scene {
       }
     };
     this.handlers.tap = (p) => {
+      // Tipp auf die Figur: Erschrecken (Cut-out-Clip)
+      if (this.sprite) {
+        const fb = this.sprite.container.getBounds();
+        if (p.x >= fb.x && p.x <= fb.x + fb.width && p.y >= fb.y && p.y <= fb.y + fb.height) {
+          this.anim?.play('scared', { once: true });
+          return;
+        }
+      }
       // Name ändern bei Tipp auf den Namen
       const b = this.nameLabel.getBounds();
       if (p.x >= b.x - 10 && p.x <= b.x + b.width + 10 && p.y >= b.y - 10 && p.y <= b.y + b.height + 10) {
@@ -111,6 +121,7 @@ export class EditorScene implements Scene {
   exit(): void {}
 
   private save(): void {
+    this.anim?.play('wave', { once: true });
     storage.saveCharacter({ ...this.def });
     const riders = storage.riders;
     if (!riders.includes(this.def.id)) storage.setRiders([...riders, this.def.id]);
@@ -131,6 +142,7 @@ export class EditorScene implements Scene {
     };
     this.sprite.setPose(pose, 0);
     this.preview.addChild(this.sprite.container);
+    this.anim = new CutoutAnimator(this.sprite, 'idle');
     this.nameLabel.text = this.def.name;
     this.buildTabs();
     this.buildOptions();
@@ -272,7 +284,7 @@ export class EditorScene implements Scene {
       // Figur schaut leicht umher und blinzelt
       const fwd = Math.sin(this.time * 0.7) * 3;
       this.sprite.update(dt, fwd, 9.81 + Math.sin(this.time * 1.3) * 1.5, 1);
-      this.sprite.container.rotation = Math.sin(this.time * 1.1) * 0.03;
+      this.anim?.update(dt);
     }
   }
 }

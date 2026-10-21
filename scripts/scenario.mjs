@@ -68,6 +68,7 @@ const state = () => page.evaluate(() => {
   return {
     scene: s?.constructor?.name, mode: s?.mode, nodes: s?.path?.nodes?.length ?? 0,
     loops: s?.stats?.loops, turns: s?.stats?.turns, lanes: s?.stats?.lanes, height: s?.stats?.maxHeight?.toFixed(1),
+    sticker: !!(s?.sticker?.visible && s.sticker.alpha > 0), particles: s?.view?.effects?.count ?? 0,
     sim: s?.sim ? { phase: s.sim.phase, fail: s.sim.failReason, flight: s.sim.flight?.kind ?? null, t: s.sim.t.toFixed(1), coins: s.sim.stats.coins, maxG: s.sim.stats.maxG.toFixed(1), maxLat: s.sim.stats.maxLatG.toFixed(2), maxSpeed: (s.sim.stats.maxSpeed * 3.6).toFixed(0), inversions: s.sim.stats.inversions } : null,
     car: car ? { z: car.z.toFixed(2), bank: ((car.bank * 180) / Math.PI).toFixed(0), upy: car.upy.toFixed(2), y: car.y.toFixed(1) } : null,
   };
@@ -133,6 +134,10 @@ await strokeStage(oval, 10);
 await sleep(800);
 st = await state();
 console.log('after oval', st);
+// Zeichenmodus: der Zug wartet in der Station, die Fahrgäste tuscheln (Cut-out-Animatoren)
+const standing = await page.evaluate(() => ({ cars: window.tcGame.current.view.trainR.cars.length, anims: window.tcGame.current.view.trainR.animators.size, standCars: window.tcGame.current.standCars.length }));
+check(standing.cars >= 1 && standing.cars === standing.standCars, `Stehender Zug in der Station (${standing.cars} Wagen)`);
+check(standing.anims >= 2, `Fahrgäste des stehenden Zugs sind animiert (${standing.anims} Animatoren)`);
 check(st.turns === 2, `Oval: 2 Kurven (ist ${st.turns})`);
 check(st.lanes === 2, `Oval: 2 Spuren (vorne und hinten, ist ${st.lanes})`);
 check(st.loops === 0, `Oval: kein Looping (ist ${st.loops})`);
@@ -318,23 +323,34 @@ await page.screenshot({ path: 'screenshots/scenario-7-bend.png' });
 // Langdruck auf einen Knoten zeigt die Profi-Handles; vorher die Kamera zur Ruhe kommen lassen (sie führt nach
 // einer Änderung weich nach, und die Knotenposition auf dem Bildschirm wandert mit)
 await sleep(1500);
+// Gedrückt wird auf die Trefferfläche des Knotens 1 (eng liegende Knoten werden für den Treffer auseinandergeschoben,
+// die Trefferfläche kann also neben dem gezeichneten Punkt liegen)
 const nodeScreen = await page.evaluate(() => {
   const s = window.tcGame.current;
+  const c = s.nodeHitCenters().find((h) => h.i === 1);
+  if (c) return { x: c.x, y: c.y, hit: s.hitNode({ x: c.x, y: c.y }) };
   const n = s.path.nodes[1];
-  return s.view.camera.toScreen(n.x, n.y + n.z * 4.2);
+  const p = s.view.camera.toScreen(n.x, n.y + n.z * 4.2);
+  return { x: p.x, y: p.y, hit: s.hitNode(p) };
 });
+console.log('long press at', nodeScreen);
 let pro = -1;
-for (let attempt = 0; attempt < 2 && pro !== 1; attempt++) {
+for (let attempt = 0; attempt < 3 && pro !== 1; attempt++) {
   await page.mouse.move(nodeScreen.x, nodeScreen.y);
   await page.mouse.down();
-  // der Langdruck-Timer (480 ms) läuft erst, wenn der Hauptthread frei ist; mit Software-Rendering dauert das,
-  // und unter Last fällt der Timer gelegentlich hinter das Loslassen: dann ein zweiter Versuch
-  await sleep(1200);
+  // der Langdruck-Timer (480 ms) läuft erst, wenn der Hauptthread frei ist; mit Software-Rendering dauert das:
+  // gedrückt halten, bis der Profi-Modus da ist (höchstens 2,5 s), dann loslassen
+  for (let i = 0; i < 25; i++) {
+    await sleep(100);
+    pro = await page.evaluate(() => window.tcGame.current.proNode);
+    if (pro === 1) break;
+  }
   await page.mouse.up();
   await sleep(300);
   pro = await page.evaluate(() => window.tcGame.current.proNode);
+  if (pro !== 1) console.log('long press attempt', attempt, 'proNode', pro);
 }
-check(pro === 1, `Langdruck zeigt Profi-Handles (proNode ${pro})`);
+check(pro === 1, `Langdruck zeigt Profi-Handles (proNode ${pro}, Treffer ${nodeScreen.hit})`);
 await page.screenshot({ path: 'screenshots/scenario-7-pro.png' });
 // Tipp ins Leere beendet den Profi-Modus
 await page.mouse.click(1100, 300);
@@ -362,10 +378,14 @@ check(st.turns >= 1, `Entgleisen: mindestens 1 Kurve (ist ${st.turns})`);
 await page.mouse.click(640, 800 - 56);
 let flightSt = null;
 let shots = 0;
+let stickerSeen = false;
+let dustSeen = false;
 for (let i = 0; i < 900; i++) {
   await sleep(100);
   const s = await state();
+  if (s.sticker) stickerSeen = true;
   if (s.sim?.phase === 'flying') {
+    if (s.particles > 0) dustSeen = true;
     if (!flightSt) flightSt = s;
     // zwei Bilder aus dem Flug: direkt nach dem Entgleisen (Zeitlupe) und etwas später
     if (shots < 2 && (shots === 0 || i % 3 === 0)) {
@@ -388,6 +408,8 @@ check(st.mode === 'result', `Entgleisen: Ergebnis erscheint (ist ${st.mode})`);
 check(st.sim?.phase === 'flying', `Entgleisen: Phase bleibt flying (ist ${st.sim?.phase})`);
 check(Math.abs(Number(st.car?.bank)) > 60, `Entgleisen: Wagen liegt auf der Seite (Schräglage ${st.car?.bank}°)`);
 check(ejected > 0, `Entgleisen: Fahrgäste fliegen beim Aufprall raus (${ejected})`);
+check(stickerSeen, 'Entgleisen: Sticker „Entgleist!“ erscheint');
+check(dustSeen, 'Entgleisen: Staub/Funken beim Aufprall (Partikel > 0)');
 }
 
 await browser.close();

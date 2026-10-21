@@ -18,7 +18,8 @@ import { goalLabel, ELEMENT_NAMES } from '@/levels/goalLabels';
 import { evaluate, type Evaluation, hasNegativeGoals } from '@/levels/evaluator';
 import { Terrain } from '@/physics/terrain';
 import { TrainSim, simOptionsForLevel, type CarState, type FailReason } from '@/physics/trainSim';
-import { PassengerSim, initPhysics, emptyParts, type PassengerView } from '@/physics/passengers';
+import { carFrame, stateAt } from '@/track/model';
+import { PassengerSim, initPhysics, emptyParts, seatedPose, type PassengerView } from '@/physics/passengers';
 import { restraintFor } from '@/physics/belts';
 import { audio } from '@/core/audio';
 import { lerpCar, lerpParts } from '@/physics/interpolate';
@@ -32,7 +33,7 @@ import { MeasureOverlay } from '@/render/measureOverlay';
 import { applyOverdraw, nearestOnTrack } from '@/track/overdraw';
 import { laneRise, laneScale, toStage, toWorld, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
-import { Button, Toast, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
+import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
 import { hexNum, shade } from '@/render/paint';
 import { StartScene } from './start';
 import { MyTracksScene } from './myTracks';
@@ -167,6 +168,14 @@ export class LevelScene implements Scene {
   private beltIconG = new Graphics();
   private beltText = label('', 12, '#ffffff', true, { stroke: { color: INK, width: 3 } });
   private beltPop = 0;
+  /** Sticker-Einblendung („Entgleist!“, „Gefangen!“) */
+  private sticker = new Sticker();
+  /** Stehender Zug in der Station (Zeichenmodus): Wagenzustände und Sitzposen */
+  private standCars: CarState[] = [];
+  private standViews: PassengerView[] = [];
+  /** Ohnmacht je Fahrgast (Fahrtzeit, bis zu der das Gesicht ohnmächtig bleibt) und schon gemeldete Landungen */
+  private faintUntil = new Map<number, number>();
+  private landedSeen = new Set<number>();
   private speedText = label('', 18, '#ffffff', true, { stroke: { color: INK, width: 4 } });
   private rollText = label('', 14, INK, true, { stroke: { color: '#ffffff', width: 3 } });
   private backBtn = new Button('', { width: 48, round: true, color: '#9b6dff', icon: iconBack });
@@ -233,7 +242,7 @@ export class LevelScene implements Scene {
     this.view = new WorldView(this.world, this.terrain, this.skin, night);
     this.view.overlay.addChild(this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
-    this.ui.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.toast);
+    this.ui.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.toast);
     this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn];
     this.speedBtn.visible = false;
     this.skinBtn.visible = unlockAll();
@@ -485,6 +494,13 @@ export class LevelScene implements Scene {
         return;
       }
       const st = this.view.camera.toStage(p.x, p.y);
+      if (this.standCars.length) {
+        const hitRider = this.view.trainR.hitPassenger(st.X, st.Y);
+        if (hitRider >= 0) {
+          this.view.trainR.playOn(hitRider, 'scared');
+          return;
+        }
+      }
       if (this.path && this.samples) {
         if (this.selected >= 0 && this.hitGizmo(p) === 'delete') {
           this.deleteNode(this.selected);
@@ -943,7 +959,52 @@ export class LevelScene implements Scene {
     this.stats = trackStats(this.path, this.samples);
     this.view.setTrack(this.path, this.samples, this.skin, this.terrain, this.allowTunnels, false);
     this.drawOverlay();
+    if (this.mode === 'draw') this.buildStandingTrain();
     if (this.drag.kind !== 'none' && this.drag.kind !== 'stroke') this.liveFeedback(this.path, this.samples, this.stats);
+  }
+
+  /**
+   * Zug wartet in der Station (Zeichenmodus): Wagen 0 am Start, die anderen dahinter (auf geschlossenen Bahnen am
+   * Ende der Runde, sonst entlang der Stationsgeraden nach hinten verlängert), Fahrgäste sitzen und tuscheln.
+   */
+  private buildStandingTrain(): void {
+    if (!this.path || !this.samples || this.samples.count < 2) {
+      this.standCars = [];
+      this.standViews = [];
+      this.view.trainR.clear();
+      return;
+    }
+    const opts = simOptionsForLevel(this.level, this.path, this.terrain, this.skin, this.allowTunnels);
+    const perCar = 2;
+    const belt = restraintFor(this.level, this.world);
+    if (this.standCars.length !== opts.cars) {
+      const riders = storage.ridersFor(opts.cars * perCar);
+      this.view.buildTrain(opts.cars, riders, perCar);
+      this.standViews = [];
+      for (let c = 0; c < opts.cars; c++) {
+        for (let r = 0; r < perCar; r++) {
+          const pose = seatedPose(r);
+          this.standViews.push({ index: this.standViews.length, car: c, row: r, parts: pose, prevParts: seatedPose(r), ejected: false, lane: 0, lean: 0, landed: false, belt, beltBroken: false, face: 'normal' });
+        }
+      }
+    }
+    const g = 9.81 * opts.gravityScale;
+    const s0 = stateAt(this.samples, 0);
+    this.standCars = [];
+    for (let c = 0; c < opts.cars; c++) {
+      const back = c * opts.carLength;
+      let st = s0;
+      if (this.samples.closed) st = stateAt(this.samples, -back);
+      else st = { ...s0, x: s0.x - s0.t3x * back, y: s0.y - s0.t3y * back, z: s0.z - (s0.t3z * back) / LANE_DEPTH };
+      const fr = carFrame(st, 0, g);
+      const p0 = toStage(st.x, st.y, st.z);
+      const p1 = toStage(st.x + st.t3x, st.y + st.t3y, st.z + st.t3z / LANE_DEPTH);
+      this.standCars.push({
+        index: c, s: 0, x: st.x, y: st.y, z: st.z, tx: fr.T.x, ty: fr.T.y, tz: fr.T.z, upx: fr.U.x, upy: fr.U.y, upz: fr.U.z, sx: fr.S.x, sy: fr.S.y, sz: fr.S.z,
+        bank: fr.bank, angle: Math.atan2(p1.Y - p0.Y, p1.X - p0.X), gSeat: 1, gFwd: 0, gLat: 0, feltFwd: 0, feltUp: g, feltSide: 0, inTunnel: false, inverted: false, vx: 0, vy: 0,
+      });
+    }
+    this.view.trainR.setStanding(true);
   }
 
   private afterEdit(): void {
@@ -1453,14 +1514,18 @@ export class LevelScene implements Scene {
     this.renderCars = this.sim.cars.map((c) => ({ ...c }));
     this.renderViews = this.passengers.views.map((v) => ({ ...v, parts: emptyParts(), prevParts: emptyParts() }));
     this.lastEjected = -1;
+    this.faintUntil.clear();
+    this.landedSeen.clear();
     this.passengers.onEject = (pv, side) => {
       const name = riders[pv.index]?.name ?? 'Jemand';
       this.failName = name;
       this.lastEjected = pv.index;
       audio.play('eject');
       // In Leveln mit negativen Zielen (Abflug, Fangen, Flugweite) ist der Rauswurf gewollt: Zeitlupe auf den Fliegenden
-      if (negative) this.setSlow(0.25, 1.2, { kind: 'passenger', index: pv.index });
-      else this.sim?.fail(side ? 'ejectSide' : 'eject', pv.car);
+      if (negative) {
+        this.setSlow(0.25, 1.2, { kind: 'passenger', index: pv.index });
+        this.sticker.show(t('sticker.eject', { name }), '#7ee081');
+      } else this.sim?.fail(side ? 'ejectSide' : 'eject', pv.car);
       const car = this.sim?.cars[pv.car];
       if (car) {
         const s = toStage(car.x, car.y, car.z);
@@ -1471,6 +1536,7 @@ export class LevelScene implements Scene {
       const name = riders[pv.index]?.name ?? 'Jemand';
       this.beltPop = 1;
       this.refreshBeltBadge(true);
+      this.sticker.show(t('sticker.beltSnap'), '#ff8a5c');
       this.toast.show(t('beltSnap', { name }), 1.6);
       audio.play('beltSnap');
     };
@@ -1482,10 +1548,14 @@ export class LevelScene implements Scene {
         this.view.effects.confetti(s.X, s.Y + 2, 30);
       }
       this.setSlow(0.35, 1.0, { kind: 'car', index: car });
+      this.sticker.show(t('sticker.catch'), '#7ee081');
       this.toast.show(t('caught', { name }), 1.6);
       audio.play('catch');
     };
     this.view.buildTrain(opts.cars, riders, perCar);
+    this.standCars = [];
+    this.standViews = [];
+    this.view.trainR.setStanding(false);
     this.view.trackR.updateCoins(this.sim.collected, 0);
     this.rideTime = 0;
     this.cameraPhase = 'overview';
@@ -1530,6 +1600,7 @@ export class LevelScene implements Scene {
     this.speedText.text = '';
     this.speedBtn.visible = false;
     this.shelfBtn.visible = true;
+    this.standCars = [];
     this.redrawTrack();
     this.fitCamera(false);
     this.updateGoals();
@@ -1568,12 +1639,16 @@ export class LevelScene implements Scene {
           break;
         }
         case 'booster': this.view.effects.sparks(s.X, s.Y, 12); break;
-        case 'wheelLock': this.view.effects.sparks(s.X, s.Y - 0.3, 16); break;
+        case 'wheelLock': this.view.effects.sparks(s.X, s.Y - 0.3, 16); this.view.camera.shake(0.25, 0.3); audio.play('wheelLock'); break;
         case 'splash': this.view.effects.splash(s.X, s.Y - 0.5); break;
         case 'peak': this.setSlow(0.6, 0.5, { kind: 'car', index: 0 }); break;
         case 'inversion': this.view.effects.glitter(s.X, s.Y); break;
         case 'fail': {
           this.view.effects.sparks(s.X, s.Y, 20);
+          this.view.camera.shake(0.6, 0.3);
+          if (e.reason === 'openEnd') this.view.effects.ribbons(s.X, s.Y + 0.5, 12);
+          if (e.reason) this.sticker.show(t('sticker.' + e.reason, { name: this.failName }), e.reason === 'water' ? '#bfefff' : '#ffd23f');
+          audio.play(e.reason === 'derail' ? 'derail' : 'impact');
           // Rauswurf: Zeitlupe mit Blick auf den Fliegenden; sonst auf den betroffenen Wagen
           const ejectReason = e.reason === 'eject' || e.reason === 'ejectSide';
           const focus: CameraFocus = ejectReason && this.lastEjected >= 0 ? { kind: 'passenger', index: this.lastEjected } : { kind: 'car', index: e.car ?? 0 };
@@ -1583,6 +1658,26 @@ export class LevelScene implements Scene {
         case 'finish': this.cameraPhase = 'finale'; this.view.effects.confetti(s.X, s.Y + 3, 80); break;
         default: break;
       }
+    }
+  }
+
+  /** Mimik aus der Fahrt: über 7 g ohnmächtig (2 s), nach der Landung benommen; Staub beim Aufsetzen */
+  private updateFaces(): void {
+    if (!this.sim || !this.passengers) return;
+    for (const v of this.passengers.views) {
+      if (v.ejected) {
+        if (v.landed && !this.landedSeen.has(v.index)) {
+          this.landedSeen.add(v.index);
+          const tp = v.parts.torso;
+          const ls = toStage(tp.x, tp.y, v.lane);
+          this.view.effects.dust(ls.X, ls.Y - 0.3, 6);
+        }
+        v.face = v.landed ? 'dizzy' : 'normal';
+        continue;
+      }
+      const car = this.sim.cars[v.car];
+      if (car && car.gSeat > 7) this.faintUntil.set(v.index, this.rideTime + 2);
+      v.face = (this.faintUntil.get(v.index) ?? -1) > this.rideTime ? 'faint' : 'normal';
     }
   }
 
@@ -1600,6 +1695,7 @@ export class LevelScene implements Scene {
         this.view.effects.dust(s.X, s.Y, 10);
         if (thrown > 0 || imp.speed > 6) this.view.effects.sparks(s.X, s.Y, 8);
       }
+      this.view.camera.shake(Math.min(0.8, 0.15 + imp.speed * 0.05), 0.25);
     }
     flight.impacts.length = 0;
   }
@@ -1621,6 +1717,10 @@ export class LevelScene implements Scene {
       r.landed = v.landed;
       r.lane = v.lane;
       r.lean = v.lean;
+      r.face = v.face;
+      r.car = v.car;
+      r.belt = v.belt;
+      r.beltBroken = v.beltBroken;
       lerpParts(v.prevParts, v.parts, alpha, r.parts);
     }
   }
@@ -1632,8 +1732,20 @@ export class LevelScene implements Scene {
     this.timeScale = inSlow ? this.slow.factor : storage.settings.rideSpeed || 3;
     const simDt = dt * this.timeScale;
     const h = 1 / 60;
+    if (this.cameraPhase === 'overview' && this.rideTime < 1.2) {
+      // Übersicht vor der Abfahrt: die Fahrgäste winken (Cut-out-Clip), die Physik übernimmt danach
+      if (this.rideTime - dt <= 0) {
+        this.view.trainR.setStanding(true);
+        this.view.updateStandingTrain(this.sim.cars, this.passengers.views, 0);
+        this.view.trainR.playAll('wave');
+      }
+      this.view.trainR.idleUpdate(dt);
+    }
     if (!(this.cameraPhase === 'overview' && this.rideTime < 1.2)) {
-      if (this.cameraPhase === 'overview') this.cameraPhase = 'follow';
+      if (this.cameraPhase === 'overview') {
+        this.cameraPhase = 'follow';
+        this.view.trainR.setStanding(false);
+      }
       // Zug und Fahrgäste im Gleichschritt (1/60 s): Die Fahrgäste müssen die Kräfte jedes Teilschritts
       // spüren. Würde der Zug erst um den ganzen Frame vorrücken, bekämen sie den Endzustand für den ganzen
       // Frame, bei Zeitraffer also eine kurze Spitze als lange Kraft (und würden grundlos herausfliegen).
@@ -1650,6 +1762,7 @@ export class LevelScene implements Scene {
       if (steps >= 120) this.physicsAccum = 0;
     }
     this.processEvents();
+    this.updateFaces();
     // Gezeichnet wird der Zwischenstand zwischen dem vorigen und dem aktuellen Physik-Schritt: In Zeitlupe
     // vergehen mehrere Bilder pro Schritt, ohne Interpolation würde der Zug stottern.
     this.interpolateRender(clamp(this.physicsAccum / h, 0, 1));
@@ -1692,15 +1805,17 @@ export class LevelScene implements Scene {
     this.speedText.text = `${Math.round(this.sim.kmh)} km/h   ${front.gSeat.toFixed(1)} g${Math.abs(front.bank) > 0.05 ? `   ${Math.round((front.bank * 180) / Math.PI)}°` : ''}`;
     if (this.sim.finished && !this.resultShown) {
       const wait = this.sim.phase === 'failed' ? 2.2 : 1.6;
+      // Fliegende Fahrgäste dürfen landen (höchstens 6 s), damit Flugweite und Landung im Ergebnis stimmen
+      const flying = this.passengers.views.some((v) => v.ejected && !v.landed);
       if (this.sim.phase === 'flying') {
-        // Freiflug: Ergebnis, sobald das Wrack liegt (frühestens nach 1,2 s), spätestens nach 5 s Simulationszeit
+        // Freiflug: Ergebnis, sobald das Wrack liegt (frühestens nach 1,2 s), spätestens nach 6 s Simulationszeit
         const settled = this.sim.flight?.settled ?? true;
-        if (this.sim.sinceFail > 1.2 && (settled || this.sim.sinceFail > 5)) this.showResult();
+        if (this.sim.sinceFail > 1.2 && ((settled && !flying) || this.sim.sinceFail > 6)) this.showResult();
       } else if (this.sim.phase === 'failed') {
-        if (this.sim.sinceFail > wait) this.showResult();
+        if (this.sim.sinceFail > wait && (!flying || this.sim.sinceFail > 6)) this.showResult();
       } else {
         this.finaleTimer += dt;
-        if (this.finaleTimer > wait) this.showResult();
+        if (this.finaleTimer > wait && (!flying || this.finaleTimer > 6)) this.showResult();
       }
     }
   }
@@ -1863,6 +1978,7 @@ export class LevelScene implements Scene {
       this.goalsBar.position.set(w / 2, safeTop + 56);
     }
     this.beltBadge.position.set(w - 64, safeTop + 78);
+    this.sticker.position.set(w / 2, h * 0.36);
     this.playBtn.position.set(w / 2, h - (portrait ? 64 : 56));
     this.shelfBtn.position.set(w - 46, h - 50);
     this.speedBtn.position.set(w - 46, h - 50);
@@ -1902,6 +2018,7 @@ export class LevelScene implements Scene {
       this.endMarker.alpha = 0.55 + 0.45 * Math.sin(this.time * 5);
       this.endMarker.scale.set(1 + 0.15 * Math.sin(this.time * 5));
       if (this.selected >= 0 && this.drag.kind === 'none') this.drawOverlay();
+      if (this.standCars.length) this.view.updateStandingTrain(this.standCars, this.standViews, dt);
       this.view.camera.clampTo({ minX: -40, maxX: this.level.width + 40, minY: -30, maxY: 160 });
     } else if (this.mode === 'ride') {
       this.updateRide(dt);
@@ -1912,6 +2029,7 @@ export class LevelScene implements Scene {
       this.beltPop = Math.max(0, this.beltPop - dt * 4);
       this.beltBadge.scale.set(1 + 0.6 * this.beltPop);
     }
+    this.sticker.update(dt);
     this.view.update(dt);
     this.toast.update(dt);
   }
