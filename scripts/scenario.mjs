@@ -129,6 +129,9 @@ await sleep(800);
 if (want('1')) {
 await openLevel();
 console.log('state', await state());
+// Gemeinsamer Himmel: das Level hat die Wolkenlage der Karte übernommen (gleiche Welt, Wolken vorhanden)
+const skyState = await page.evaluate(() => window.tcGame.current.view.sky.exportState());
+check(skyState.worldId === 1 && skyState.clouds.length > 3, `Himmel im Level übernommen (Welt ${skyState.worldId}, ${skyState.clouds.length} Wolken)`);
 const oval = [[2, 0], [20, 0], [40, 0], [48, 0.3 * R], [50, R], [48, 1.7 * R], [40, 2 * R], [20, 2 * R], [2, 2 * R], [-6, 1.7 * R], [-8, R], [-6, 0.3 * R], [0, 0], [2, 0]];
 await strokeStage(oval, 10);
 await sleep(800);
@@ -410,6 +413,58 @@ check(Math.abs(Number(st.car?.bank)) > 60, `Entgleisen: Wagen liegt auf der Seit
 check(ejected > 0, `Entgleisen: Fahrgäste fliegen beim Aufprall raus (${ejected})`);
 check(stickerSeen, 'Entgleisen: Sticker „Entgleist!“ erscheint');
 check(dustSeen, 'Entgleisen: Staub/Funken beim Aufprall (Partikel > 0)');
+}
+
+// ---------------------------------------------------------------- 9. Karte: Glücksrad und gemeinsamer Himmel
+if (want('9')) {
+await page.goto(`${BASE}?scene=start`, { waitUntil: 'networkidle' });
+await sleep(1500);
+const before = await page.evaluate(() => ({ cur: window.tcGame.current.cur, focus: window.tcGame.current.wheel.focus, sky: window.tcGame.current.skyR?.exportState().clouds.length ?? 0 }));
+check(before.sky > 3, `Karte zeigt denselben Himmel wie das Level (${before.sky} Wolken)`);
+// Wisch nach links: 600 px in rund 160 ms → die Scheibe dreht frei aus und rastet mindestens zwei Rastpunkte weiter ein
+await page.mouse.move(900, 500);
+await page.mouse.down();
+for (let i = 1; i <= 8; i++) {
+  await page.mouse.move(900 - i * 75, 500);
+  await sleep(20);
+}
+await page.mouse.up();
+let settled = false;
+let after = before;
+for (let i = 0; i < 60 && !settled; i++) {
+  await sleep(100);
+  after = await page.evaluate(() => ({ cur: window.tcGame.current.cur, focus: window.tcGame.current.wheel.focus, sky: 0 }));
+  settled = await page.evaluate(() => window.tcGame.current.wheel.velocity === 0 && window.tcGame.current.wheel.target !== null && Math.abs(window.tcGame.current.wheel.target - window.tcGame.current.wheel.focus) < 0.01);
+}
+const onSpot = await page.evaluate(() => window.tcGame.current.spots.some((sp) => Math.abs(sp.pos - window.tcGame.current.wheel.focus) < 0.01));
+console.log('wheel', before, after, settled, onSpot);
+check(settled && onSpot, `Glücksrad rollt aus und rastet auf einem Rastpunkt ein (Fokus ${after.focus.toFixed(1)})`);
+check(after.cur >= before.cur + 1, `Glücksrad: Wisch dreht mindestens einen Rastpunkt weiter (${before.cur} → ${after.cur})`);
+// Schneller Wisch mit festen Zeitstempeln (unter Software-Rendering kommen die Mausereignisse zu langsam an):
+// 600 px in 150 ms → freie Drehung, mindestens zwei Rastpunkte weiter, jeder überfahrene Rastpunkt klickt einmal
+const fast = await page.evaluate(() => {
+  const s = window.tcGame.current;
+  const w = s.wheel;
+  const t0 = performance.now();
+  w.dragStart(900, t0);
+  for (let i = 1; i <= 6; i++) w.dragMove(900 - i * 100, t0 + i * 25, 1);
+  w.dragEnd(t0 + 160);
+  return { v: w.velocity, cur: s.cur };
+});
+let after2 = after;
+for (let i = 0; i < 80; i++) {
+  await sleep(100);
+  const st2 = await page.evaluate(() => ({ cur: window.tcGame.current.cur, focus: window.tcGame.current.wheel.focus, v: window.tcGame.current.wheel.velocity, target: window.tcGame.current.wheel.target }));
+  after2 = { cur: st2.cur, focus: st2.focus, sky: 0 };
+  if (st2.v === 0 && st2.target !== null && Math.abs(st2.target - st2.focus) < 0.01) break;
+}
+console.log('fast flick', fast, after2);
+check(Math.abs(fast.v) > 1500, `Schneller Wisch gibt Schwung (${fast.v.toFixed(0)} px/s)`);
+check(after2.cur >= fast.cur + 2, `Glücksrad: schneller Wisch mindestens zwei Rastpunkte weiter (${fast.cur} → ${after2.cur})`);
+await page.screenshot({ path: 'screenshots/scenario-9-map.png' });
+// Play liegt mittig unter der Scheibe
+const playX = await page.evaluate(() => window.tcGame.current.playBtn.x);
+check(Math.abs(playX - 640) < 2, `Play-Knopf mittig (x ${playX})`);
 }
 
 await browser.close();

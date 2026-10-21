@@ -97,6 +97,21 @@ export class WorldView {
     this.trainR.update(cars, passengers, dt);
   }
 
+  /** Nur die Spur z sichtbar lassen (alles andere in der Welt aus), null = alles sichtbar; für Spurstreifen-Texturen */
+  showOnlyLane(z: number | null): void {
+    for (const child of this.world.children) {
+      let isLane = false;
+      let lane = 0;
+      for (const [lz, c] of this.laneContainers) {
+        if (c === child) {
+          isLane = true;
+          lane = lz;
+        }
+      }
+      child.visible = z === null ? true : isLane && lane === z;
+    }
+  }
+
   /** Stehender Zug (Zeichenmodus): Pose setzen und Cut-out-Clips fortschreiben */
   updateStandingTrain(cars: CarState[], passengers: PassengerView[], dt: number): void {
     this.trainR.update(cars, passengers, dt);

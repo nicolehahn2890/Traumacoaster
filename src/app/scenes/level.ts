@@ -38,6 +38,7 @@ import { hexNum, shade } from '@/render/paint';
 import { StartScene } from './start';
 import { MyTracksScene } from './myTracks';
 import { captureLevel, type LevelLayers } from '../mapTransition';
+import type { SkyState } from '@/render/sky';
 
 export interface SandboxConfig {
   world: number;
@@ -290,9 +291,14 @@ export class LevelScene implements Scene {
     this.game.goto(() => new StartScene(snap), true);
   }
 
+  /** Wolkenlage der Karte übernehmen, damit der erste Level-Frame nahtlos an den letzten Karten-Frame anschließt */
+  adoptSky(state: SkyState): void {
+    this.view.sky.importState(state);
+  }
+
   /** Ebenen und Kamera für den Übergang von der Karte und zu ihr */
   transitionLayers(): LevelLayers {
-    return { sky: this.view.sky.container, world: this.view.world, ui: this.ui, camera: this.view.camera };
+    return { sky: this.view.sky, world: this.view.world, ui: this.ui, camera: this.view.camera };
   }
 
   /** Dev-Modus: nächster Bahntyp (nach dem letzten wieder der der Welt); gilt für alle Level */
