@@ -17,8 +17,9 @@ import type { ElementId, LevelDef, WorldDef } from '@/levels/types';
 import { goalLabel, ELEMENT_NAMES } from '@/levels/goalLabels';
 import { evaluate, type Evaluation } from '@/levels/evaluator';
 import { Terrain } from '@/physics/terrain';
-import { TrainSim, simOptionsForLevel, type FailReason } from '@/physics/trainSim';
-import { PassengerSim, initPhysics } from '@/physics/passengers';
+import { TrainSim, simOptionsForLevel, type CarState, type FailReason } from '@/physics/trainSim';
+import { PassengerSim, initPhysics, emptyParts, type PassengerView } from '@/physics/passengers';
+import { lerpCar, lerpParts } from '@/physics/interpolate';
 import {
   clonePath, closestSample, createNode, emptyPath, isAutoNode, isClosed, nodeIn, nodeOut, sampleTrack, segmentPoints, trackStats,
   type ElementKind, type StartType, type TrackNode, type TrackPath, type TrackSamples, type TrackStats,
@@ -41,6 +42,12 @@ export interface SandboxConfig {
 
 type Mode = 'draw' | 'ride' | 'result';
 type StrokeKind = 'new' | 'overdraw' | 'terrain' | 'extend';
+
+/** Worauf die Kamera in der Zeitlupen-Regie schaut */
+interface CameraFocus {
+  kind: 'car' | 'passenger';
+  index: number;
+}
 
 interface DragState {
   kind: 'node' | 'handleIn' | 'handleOut' | 'depth' | 'roll' | 'shelf' | 'stroke' | 'none';
@@ -89,7 +96,12 @@ export class LevelScene implements Scene {
   private rideTime = 0;
   private cameraPhase: 'overview' | 'follow' | 'finale' = 'overview';
   private timeScale = 1;
-  private slowMo = 0;
+  /** Zeitlupen-Regie: Faktor, Ende (Fahrtzeit) und Kamera-Fokus */
+  private slow: { factor: number; until: number; focus: CameraFocus | null } = { factor: 1, until: 0, focus: null };
+  /** Render-Puffer: zwischen Vor- und Jetzt-Zustand der Physik interpoliert (glatt bei jedem Tempo) */
+  private renderCars: CarState[] = [];
+  private renderViews: PassengerView[] = [];
+  private lastEjected = -1;
   private resultShown = false;
   private finaleTimer = 0;
   private failName = '';
@@ -102,6 +114,8 @@ export class LevelScene implements Scene {
   private ui = new Container();
   private overlay = new Graphics();
   private ink = new Graphics();
+  /** Geister-Schiene (vorgeschlagene Schlussverbindung) und Looping-Marker während des Strichs */
+  private ghost = new Graphics();
   /** Markierung des offenen Endes (pulsiert) */
   private endMarker = new Graphics();
   private chipLayer = new Container();
@@ -173,7 +187,7 @@ export class LevelScene implements Scene {
     await initPhysics();
     const night = this.world.id === 6 || this.world.id === 8 || this.world.id === 10 || (this.unlocked.has('nightMode') && this.level.id === 25);
     this.view = new WorldView(this.world, this.terrain, this.skin, night);
-    this.view.overlay.addChild(this.ink, this.overlay, this.endMarker);
+    this.view.overlay.addChild(this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
     this.ui.addChild(this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.toast);
     this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn];
@@ -295,7 +309,7 @@ export class LevelScene implements Scene {
         const endNode = this.path.nodes[this.path.nodes.length - 1];
         const endS = toStage(endNode.x, endNode.y, endNode.z);
         const endPx = Math.hypot(endS.X - st.X, endS.Y - st.Y) * this.view.camera.zoom;
-        if (!isClosed(this.path) && endPx < 40) {
+        if (!isClosed(this.path) && endPx < 56) {
           this.strokeKind = 'extend';
           this.toast.show(t('extendHint'), 1.2);
         } else if (near && nearPx < 30) this.strokeKind = 'overdraw';
@@ -503,7 +517,58 @@ export class LevelScene implements Scene {
       maxHeight: this.level.maxHeight ?? 0,
       allowTurns: this.unlocked.has('turn'),
       allowLoops: this.unlocked.has('loop'),
+      // Rundenschluss ab 8 m Bühne oder 60 px, je nachdem, was weiter ist (weit herausgezoomt trifft der Finger gröber)
+      closeSnap: Math.max(8, 60 / this.view.camera.zoom),
     };
+  }
+
+  /**
+   * Vorschau während des Strichs: Looping-Scheitel als Ring und, sobald die Bahn sich schließen würde, die
+   * Schlussverbindung als gestrichelte, laufende Geister-Schiene (ab dem ersten automatischen Knoten,
+   * mindestens die letzten 14 m vor der Station).
+   */
+  private drawGhost(path: TrackPath, samples: TrackSamples): void {
+    const g = this.ghost;
+    g.clear();
+    const zs = 1 / Math.max(0.35, this.view.camera.zoom / 12);
+    for (const n of path.nodes) {
+      if (n.kind !== 'loopApex') continue;
+      const sp = toStage(n.x, n.y, n.z);
+      const k = laneScale(n.z);
+      g.circle(sp.X, sp.Y, 0.9 * k * zs).stroke({ width: 0.16 * k * zs, color: 0x9b6dff, alpha: 0.9 });
+    }
+    if (!isClosed(path) || !samples.closed || samples.count < 4) return;
+    let sFrom = samples.length - 14;
+    for (let i = 0; i < samples.count; i++) {
+      if (samples.auto[i]) {
+        sFrom = Math.min(sFrom, i * samples.step);
+        break;
+      }
+    }
+    sFrom = Math.max(0, sFrom);
+    const dash = 0.8;
+    const period = dash + 0.5;
+    const offset = (this.time * 3) % period;
+    const runs: number[][] = [];
+    let cur: number[] | null = null;
+    for (let i = 0; i < samples.count; i++) {
+      const sAt = i * samples.step;
+      if (sAt < sFrom) continue;
+      const on = (sAt + offset) % period < dash;
+      const p = toStage(samples.x[i], samples.y[i], samples.z[i]);
+      if (on) {
+        if (!cur) {
+          cur = [];
+          runs.push(cur);
+        }
+        cur.push(p.X, p.Y);
+      } else cur = null;
+    }
+    for (const r of runs) {
+      if (r.length < 4) continue;
+      g.poly(r, false).stroke({ width: 0.62 * zs, color: hexNum(INK), alpha: 0.55, cap: 'round', join: 'round' });
+      g.poly(r, false).stroke({ width: 0.36 * zs, color: 0xffffff, alpha: 0.95, cap: 'round', join: 'round' });
+    }
   }
 
   private drawInk(): void {
@@ -538,6 +603,7 @@ export class LevelScene implements Scene {
     if (this.strokeKind === 'terrain') return;
     if (this.strokeKind === 'overdraw' && this.path && this.samples) {
       const merged = applyOverdraw(this.path, this.stroke, { ...this.strokeOptions(), snapDistance: 30 / this.view.camera.zoom });
+      this.ghost.clear();
       if (merged) this.view.setTrack(merged, sampleTrack(merged, 0.5), this.skin, this.terrain, this.allowTunnels, true);
       return;
     }
@@ -546,14 +612,20 @@ export class LevelScene implements Scene {
       if (ext) {
         this.strokeModes = [];
         this.drawInk();
-        this.view.setTrack(ext, sampleTrack(ext, 0.5), this.skin, this.terrain, this.allowTunnels, true);
+        const sm = sampleTrack(ext, 0.5);
+        this.view.setTrack(ext, sm, this.skin, this.terrain, this.allowTunnels, true);
+        this.drawGhost(ext, sm);
       }
       return;
     }
     const r = strokeToTrack(this.stroke, this.strokeOptions());
     this.strokeModes = r.points.map((p) => p.mode);
     this.drawInk();
-    if (r.path.nodes.length >= 2) this.view.setTrack(r.path, sampleTrack(r.path, 0.5), this.skin, this.terrain, this.allowTunnels, true);
+    if (r.path.nodes.length >= 2) {
+      const sm = sampleTrack(r.path, 0.5);
+      this.view.setTrack(r.path, sm, this.skin, this.terrain, this.allowTunnels, true);
+      this.drawGhost(r.path, sm);
+    } else this.ghost.clear();
   }
 
   private finishStroke(): void {
@@ -561,6 +633,7 @@ export class LevelScene implements Scene {
     this.stroke = null;
     this.strokeModes = [];
     this.ink.clear();
+    this.ghost.clear();
     if (!stroke || stroke.length < 3) {
       this.redrawTrack();
       return;
@@ -856,11 +929,20 @@ export class LevelScene implements Scene {
       const se = toStage(e.x, e.y, e.z);
       const ke = laneScale(e.z);
       const zs = 1 / Math.max(0.35, this.view.camera.zoom / 12);
-      this.endMarker.circle(se.X, se.Y, 1.1 * ke * zs).fill({ color: 0xffd23f, alpha: 0.25 }).stroke({ width: 0.18 * ke * zs, color: 0xffd23f });
-      this.endMarker.circle(se.X, se.Y, 0.45 * ke * zs).fill(0xffd23f).stroke({ width: 0.12 * ke, color: hexNum(INK) });
+      // um den eigenen Ursprung gezeichnet, damit der Anschlusspunkt in update() atmen kann
+      this.endMarker.position.set(se.X, se.Y);
+      this.endMarker.circle(0, 0, 1.1 * ke * zs).fill({ color: 0xffd23f, alpha: 0.25 }).stroke({ width: 0.18 * ke * zs, color: 0xffd23f });
+      this.endMarker.circle(0, 0, 0.45 * ke * zs).fill(0xffd23f).stroke({ width: 0.12 * ke, color: hexNum(INK) });
+    }
+    const zoomScale = 1 / Math.max(0.35, this.view.camera.zoom / 12);
+    // Looping-Scheitel sind immer markiert (auch ohne Handles): So sieht man sofort, dass die Schleife erkannt wurde
+    for (const n of nodes) {
+      if (n.kind !== 'loopApex') continue;
+      const sp = toStage(n.x, n.y, n.z);
+      const k = laneScale(n.z);
+      g.circle(sp.X, sp.Y, 0.9 * k * zoomScale).stroke({ width: 0.16 * k * zoomScale, color: 0x9b6dff, alpha: 0.9 });
     }
     if (!this.unlocked.has('handles')) return;
-    const zoomScale = 1 / Math.max(0.35, this.view.camera.zoom / 12);
     nodes.forEach((n, i) => {
       if (isAutoNode(n)) return;
       const s = toStage(n.x, n.y, n.z);
@@ -1110,9 +1192,13 @@ export class LevelScene implements Scene {
     const perCar = 2;
     const riders = storage.ridersFor(opts.cars * perCar);
     this.passengers = new PassengerSim({ cars: opts.cars, perCar, gravityScale: opts.gravityScale, terrain: this.terrain, sideEjectG: 2.2 });
+    this.renderCars = this.sim.cars.map((c) => ({ ...c }));
+    this.renderViews = this.passengers.views.map((v) => ({ ...v, parts: emptyParts(), prevParts: emptyParts() }));
+    this.lastEjected = -1;
     this.passengers.onEject = (pv, side) => {
       const name = riders[pv.index]?.name ?? 'Jemand';
       this.failName = name;
+      this.lastEjected = pv.index;
       this.sim?.fail(side ? 'ejectSide' : 'eject', pv.car);
       const car = this.sim?.cars[pv.car];
       if (car) {
@@ -1125,7 +1211,7 @@ export class LevelScene implements Scene {
     this.rideTime = 0;
     this.cameraPhase = 'overview';
     this.timeScale = 1;
-    this.slowMo = 0;
+    this.slow = { factor: 1, until: 0, focus: null };
     this.resultShown = false;
     this.finaleTimer = 0;
     this.physicsAccum = 0;
@@ -1204,30 +1290,56 @@ export class LevelScene implements Scene {
         }
         case 'booster': this.view.effects.sparks(s.X, s.Y, 12); break;
         case 'splash': this.view.effects.splash(s.X, s.Y - 0.5); break;
-        case 'peak': this.slowMo = 0.35; break;
+        case 'peak': this.setSlow(0.6, 0.5, { kind: 'car', index: 0 }); break;
         case 'inversion': this.view.effects.glitter(s.X, s.Y); break;
-        case 'fail': this.view.effects.sparks(s.X, s.Y, 20); this.slowMo = 1.4; break;
+        case 'fail': {
+          this.view.effects.sparks(s.X, s.Y, 20);
+          // Rauswurf: Zeitlupe mit Blick auf den Fliegenden; sonst auf den betroffenen Wagen
+          const ejectReason = e.reason === 'eject' || e.reason === 'ejectSide';
+          const focus: CameraFocus = ejectReason && this.lastEjected >= 0 ? { kind: 'passenger', index: this.lastEjected } : { kind: 'car', index: e.car ?? 0 };
+          this.setSlow(ejectReason ? 0.25 : 0.35, 1.2, focus);
+          break;
+        }
         case 'finish': this.cameraPhase = 'finale'; this.view.effects.confetti(s.X, s.Y + 3, 80); break;
         default: break;
       }
     }
   }
 
+  /** Zeitlupe für secs Sekunden (Echtzeit) mit Kamera-Fokus; ein laufender Fokus auf einen Fliegenden bleibt */
+  private setSlow(factor: number, secs: number, focus: CameraFocus): void {
+    const keep = this.slow.focus?.kind === 'passenger' && focus.kind !== 'passenger';
+    this.slow = { factor, until: this.rideTime + secs, focus: keep ? this.slow.focus : focus };
+  }
+
+  /** Render-Puffer aus Vor- und Jetzt-Zustand füllen (alpha = Anteil des nächsten Schritts, der schon vergangen ist) */
+  private interpolateRender(alpha: number): void {
+    if (!this.sim || !this.passengers) return;
+    for (let c = 0; c < this.renderCars.length; c++) lerpCar(this.sim.prevCars[c], this.sim.cars[c], alpha, this.renderCars[c]);
+    for (let i = 0; i < this.renderViews.length; i++) {
+      const v = this.passengers.views[i];
+      const r = this.renderViews[i];
+      r.ejected = v.ejected;
+      r.landed = v.landed;
+      r.lane = v.lane;
+      r.lean = v.lean;
+      lerpParts(v.prevParts, v.parts, alpha, r.parts);
+    }
+  }
+
   private updateRide(dt: number): void {
     if (!this.sim || !this.passengers) return;
     this.rideTime += dt;
-    if (this.slowMo > 0) {
-      this.slowMo -= dt;
-      this.timeScale = 0.45;
-    } else this.timeScale = storage.settings.rideSpeed || 3;
+    const inSlow = this.rideTime < this.slow.until;
+    this.timeScale = inSlow ? this.slow.factor : storage.settings.rideSpeed || 3;
     const simDt = dt * this.timeScale;
+    const h = 1 / 60;
     if (!(this.cameraPhase === 'overview' && this.rideTime < 1.2)) {
       if (this.cameraPhase === 'overview') this.cameraPhase = 'follow';
       // Zug und Fahrgäste im Gleichschritt (1/60 s): Die Fahrgäste müssen die Kräfte jedes Teilschritts
       // spüren. Würde der Zug erst um den ganzen Frame vorrücken, bekämen sie den Endzustand für den ganzen
       // Frame, bei Zeitraffer also eine kurze Spitze als lange Kraft (und würden grundlos herausfliegen).
       this.physicsAccum += simDt;
-      const h = 1 / 60;
       let steps = 0;
       while (this.physicsAccum >= h && steps < 120) {
         this.physicsAccum -= h;
@@ -1239,20 +1351,34 @@ export class LevelScene implements Scene {
       if (steps >= 120) this.physicsAccum = 0;
     }
     this.processEvents();
-    this.view.updateTrain(this.sim.cars, this.passengers.views, simDt);
+    // Gezeichnet wird der Zwischenstand zwischen dem vorigen und dem aktuellen Physik-Schritt: In Zeitlupe
+    // vergehen mehrere Bilder pro Schritt, ohne Interpolation würde der Zug stottern.
+    this.interpolateRender(clamp(this.physicsAccum / h, 0, 1));
+    this.view.updateTrain(this.renderCars, this.renderViews, simDt);
     this.view.trackR.updateCoins(this.sim.collected, this.time);
     const cam = this.view.camera;
-    const front = this.sim.cars[0];
+    const front = this.renderCars[0];
     const portrait = this.h > this.w;
     if (this.cameraPhase === 'follow' || this.cameraPhase === 'overview') {
       const s = toStage(front.x, front.y, front.z);
       const v = Math.abs(this.sim.v);
       const look = 0.5 * v;
       const zoomBase = portrait ? 24 : 21;
-      const zoom = clamp(zoomBase - v * 0.45, portrait ? 9 : 8, portrait ? 26 : 22) * (this.slowMo > 0 ? 1.2 : 1);
+      const zoom = clamp(zoomBase - v * 0.45, portrait ? 9 : 8, portrait ? 26 : 22) * (inSlow ? 1.2 : 1);
       cam.setTarget(s.X + Math.cos(front.angle) * look, s.Y + Math.sin(front.angle) * look * 0.5 + (portrait ? 1.5 : 2.5), zoom);
       cam.smoothing = this.cameraPhase === 'overview' ? 2 : 4;
-      if (this.sim.phase === 'failed') cam.setTarget(s.X, s.Y + 2, 14);
+      const focus = this.slow.focus;
+      const flyer = focus?.kind === 'passenger' ? this.renderViews[focus.index] : null;
+      if (flyer?.ejected) {
+        // Regie: der Fliegende bleibt im Bild, bis er gelandet ist
+        const tp = flyer.parts.torso;
+        const fs = toStage(tp.x, tp.y, flyer.lane);
+        cam.setTarget(fs.X, fs.Y + 1, inSlow ? 18 : 14);
+      } else if (this.sim.phase === 'failed') {
+        const c = (focus?.kind === 'car' ? this.renderCars[focus.index] : null) ?? front;
+        const cs = toStage(c.x, c.y, c.z);
+        cam.setTarget(cs.X, cs.Y + 2, 14);
+      }
     } else if (this.cameraPhase === 'finale') {
       this.fitCamera(false);
       cam.smoothing = 2;
@@ -1446,13 +1572,15 @@ export class LevelScene implements Scene {
         }
       }
       this.renderChips();
+      // Anschlusspunkt atmet (Alpha und Größe), damit das offene Ende als Startpunkt für den nächsten Strich auffällt
       this.endMarker.alpha = 0.55 + 0.45 * Math.sin(this.time * 5);
+      this.endMarker.scale.set(1 + 0.15 * Math.sin(this.time * 5));
       if (this.selected >= 0 && this.drag.kind === 'none') this.drawOverlay();
       this.view.camera.clampTo({ minX: -40, maxX: this.level.width + 40, minY: -30, maxY: 160 });
     } else if (this.mode === 'ride') {
       this.updateRide(dt);
     } else if (this.mode === 'result') {
-      if (this.sim && this.passengers) this.view.updateTrain(this.sim.cars, this.passengers.views, dt);
+      if (this.sim && this.passengers && this.renderCars.length) this.view.updateTrain(this.renderCars, this.renderViews, dt);
     }
     this.view.update(dt);
     this.toast.update(dt);

@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { simplifyRDP, smoothStroke } from '@/core/rdp';
 import { fitCurve } from '@/core/bezierFit';
 import { bezierPoint } from '@/core/math';
-import { closeTrack, detectLoops, detectTurns, extendTrack, interpretStroke, interpretWithEvents, magnetLane, removeHooks, stageCurve, strokeToTrack } from '@/track/strokeToTrack';
-import { sampleTrack, stateAt, trackStats, type TrackSamples } from '@/track/model';
+import { closePath, closeTrack, detectLoops, detectTurns, extendTrack, findRoundLoops, interpretStroke, interpretWithEvents, magnetLane, removeHooks, stageCurve, strokeToTrack } from '@/track/strokeToTrack';
+import { segmentDistance } from '@/core/math';
+import { clonePath, sampleTrack, stateAt, trackStats, type TrackPath, type TrackSamples } from '@/track/model';
 import { applyOverdraw } from '@/track/overdraw';
 import { laneRise, laneScale, nearestLane, toStage, toWorld, type StagePoint } from '@/track/stage';
 
@@ -221,6 +222,84 @@ describe('Ereignisse in der Höhe', () => {
     const r = interpretStroke(pts, { startMode: 'height', startZ: 0 });
     expect(detectTurns(r, []).length).toBe(0);
   });
+  it('erkennt einen Looping auch, wenn der Strich kurz nach der Ausfahrt endet', () => {
+    const stroke = [
+      ...climb(),
+      ...param(50, (t) => {
+        const a = -Math.PI / 2 + Math.PI * 2 * t;
+        return [50 + 7 * Math.cos(a) + t * 2, 27 + 7 * Math.sin(a)];
+      }),
+      ...param(12, (t) => [52 + t * 6, 20 - t * 3]),
+    ];
+    const r = strokeToTrack(stroke);
+    expect(r.events.filter((e) => e.kind === 'loop').length).toBe(1);
+    expect(r.path.closed).toBe(false);
+    expect(trackStats(r.path, sampleTrack(r.path)).loops).toBe(1);
+  });
+});
+
+describe('Loopings vom Boden aus (runde Schleife im rohen Strich)', () => {
+  const groundLoop = (R: number, drift = 3): StagePoint[] => [
+    ...param(40, (t) => [t * 30, 0]),
+    ...param(60, (t) => {
+      const a = -Math.PI / 2 + Math.PI * 2 * t;
+      return [30 + R * Math.cos(a) + drift * t, R + R * Math.sin(a)];
+    }),
+    ...param(40, (t) => [30 + drift + t * 30, 0]),
+  ];
+  it.each([5, 7, 9])('liest einen Kreis mit Radius %i m, der am Boden beginnt, als Looping statt als zwei Kurven', (R) => {
+    const r = strokeToTrack(groundLoop(R));
+    expect(findRoundLoops(groundLoop(R).map((p) => ({ x: p.X, y: p.Y }))).length).toBe(1);
+    expect(r.events.filter((e) => e.kind === 'loop').length).toBe(1);
+    expect(r.events.filter((e) => e.kind === 'turn').length).toBe(0);
+    const s = sampleTrack(r.path);
+    const stats = trackStats(r.path, s);
+    expect(stats.loops).toBe(1);
+    expect(stats.turns).toBe(0);
+    expect(minUpY(s)).toBeLessThan(-0.8);
+    expect(stats.maxHeight).toBeGreaterThan(2 * R * 0.8);
+  });
+  it('liest eine Schleife, deren Ausfahrt die Einfahrt knapp verfehlt, als Looping', () => {
+    // Ausfahrt endet 1 m über dem Boden und steigt weiter, kreuzt den Einstieg nicht genau
+    const gap = 1.0;
+    const stroke = [
+      ...param(40, (t) => [t * 30, 0]),
+      ...param(60, (t) => {
+        const a = -Math.PI / 2 + Math.PI * 2 * t;
+        return [30 + 7 * Math.cos(a) + 3 * t, 7 + 7 * Math.sin(a) + gap * t];
+      }),
+      ...param(20, (t) => [33 + t * 8, gap + 2 * t]),
+      ...param(30, (t) => [41 + t * 20, gap + 2 - (gap + 2) * t]),
+      ...param(20, (t) => [61 + t * 10, 0]),
+    ];
+    const r = strokeToTrack(stroke);
+    expect(r.events.filter((e) => e.kind === 'loop').length).toBe(1);
+    expect(trackStats(r.path, sampleTrack(r.path)).loops).toBe(1);
+  });
+  it('lässt Ovale und liegende Achten am Boden in Ruhe', () => {
+    const R = laneRise(1);
+    const oval = [
+      ...param(40, (t) => [t * 30, 0]),
+      ...param(30, (t) => [30 + R * Math.sin(Math.PI * t), R - R * Math.cos(Math.PI * t)]),
+      ...param(40, (t) => [30 - t * 30, 2 * R]),
+      ...param(30, (t) => [-R * Math.sin(Math.PI * t), R + R * Math.cos(Math.PI * t)]),
+    ];
+    expect(findRoundLoops(oval.map((p) => ({ x: p.X, y: p.Y }))).length).toBe(0);
+    const eight = param(120, (t) => {
+      const a = t * Math.PI * 2;
+      return [20 * Math.sin(a), 4 * Math.sin(2 * a) + 4] as [number, number];
+    });
+    expect(findRoundLoops(eight.map((p) => ({ x: p.X, y: p.Y }))).length).toBe(0);
+    expect(strokeToTrack(eight).events.filter((e) => e.kind === 'loop').length).toBe(0);
+  });
+  it('misst den Abstand zweier Strecken', () => {
+    expect(segmentDistance({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 5, y: -2 }, { x: 5, y: 2 }).d).toBe(0);
+    const r = segmentDistance({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 2, y: 1 }, { x: 8, y: 1 });
+    expect(r.d).toBeCloseTo(1, 9);
+    expect(r.a.y).toBe(0);
+    expect(r.b.y).toBe(1);
+    expect(segmentDistance({ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 4, y: 0 }, { x: 5, y: 0 }).d).toBeCloseTo(3, 9);
+  });
 });
 
 describe('Kreis schließen', () => {
@@ -264,6 +343,67 @@ describe('Kreis schließen', () => {
     expect(stats.lanes).toBeGreaterThanOrEqual(2);
     expect(r.path.nodes.some((n) => n.kind === 'closeReturn')).toBe(false);
     expect(minUpY(s)).toBeGreaterThan(-0.1);
+  });
+});
+
+describe('Rundenschluss ist wiederholbar', () => {
+  /** Knoten ohne Protokoll vergleichen (Handles, Positionen, Arten) */
+  const snapshot = (p: TrackPath) => JSON.stringify({ closed: p.closed, nodes: p.nodes.map((n) => ({ ...n, roll: Number.isNaN(n.roll) ? 'auto' : n.roll })) });
+  const ovalStroke = () => {
+    const R = laneRise(1);
+    return [
+      ...param(40, (t) => [t * 30, 0]),
+      ...param(30, (t) => [30 + R * Math.sin(Math.PI * t), R - R * Math.cos(Math.PI * t)]),
+      ...param(40, (t) => [30 - t * 30, 2 * R]),
+      ...param(30, (t) => [-R * Math.sin(Math.PI * t), R + R * Math.cos(Math.PI * t)]),
+    ];
+  };
+  const circuitStroke = () => [
+    ...param(20, (t) => [t * 8, 0]),
+    ...param(30, (t) => [8 + t * 10, 16 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+    ...param(30, (t) => [18 + t * 14, 16 - 12 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+    ...param(20, (t) => [32 + t * 10, 4]),
+    ...param(16, (t) => [42 + 3 * Math.sin(Math.PI * t), 4 + 3 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+    ...param(40, (t) => [42 - t * 36, 7]),
+    ...param(20, (t) => [6 - t * 6, 7 - 7 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+  ];
+  it.each([
+    ['Oval am Boden', ovalStroke],
+    ['Hügel-Rundkurs von Hand', circuitStroke],
+    ['offener Hügel', () => stageCurve(0, 60, 120, (x) => 15 * Math.exp(-((x - 30) ** 2) / 120))],
+  ])('liefert bei %s nach jedem weiteren closePath denselben Zustand', (_name, make) => {
+    const r = strokeToTrack(make());
+    const once = snapshot(r.path);
+    closePath(r.path);
+    expect(snapshot(r.path)).toBe(once);
+    closePath(r.path);
+    closePath(r.path);
+    expect(snapshot(r.path)).toBe(once);
+    // auch über eine Kopie (Undo-Verlauf, Speicherstand)
+    const copy = clonePath(r.path);
+    closePath(copy);
+    expect(snapshot(copy)).toBe(once);
+  });
+  it('öffnet einen von Hand geschlossenen Rundkurs beim Bearbeiten nicht wieder', () => {
+    const r = strokeToTrack(circuitStroke());
+    expect(r.path.closed).toBe(true);
+    expect(r.path.nodes.some((n) => n.kind === 'closeTurn')).toBe(true);
+    // eine Bearbeitung mitten in der Bahn, dann der Rundenschluss wie in afterEdit
+    const mid = r.path.nodes[Math.floor(r.path.nodes.length / 3)];
+    mid.y += 1;
+    closePath(r.path);
+    expect(r.path.closed).toBe(true);
+    expect(r.path.nodes.some((n) => n.kind === 'closeTurn')).toBe(true);
+    const stats = trackStats(r.path, sampleTrack(r.path));
+    expect(stats.loops).toBe(0);
+  });
+  it('nimmt den automatischen Rückweg vor einer Neuberechnung zurück', () => {
+    const r = strokeToTrack(stageCurve(0, 60, 120, (x) => 15 * Math.exp(-((x - 30) ** 2) / 120)));
+    const drawn = snapshot(r.path);
+    closeTrack(r.path);
+    expect(r.path.nodes.some((n) => n.kind === 'closeReturn')).toBe(true);
+    closePath(r.path);
+    expect(snapshot(r.path)).toBe(drawn);
   });
 });
 

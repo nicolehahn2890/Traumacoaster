@@ -34,6 +34,20 @@ export interface TrackElement {
   length: number;
 }
 
+/**
+ * Protokoll des Rundenschlusses: Was closePath vom gezeichneten Ende entfernt oder überschrieben hat.
+ * Damit lässt sich der Schluss vor jeder Neuberechnung rückgängig machen; closePath ist so wiederholbar
+ * (jede Bearbeitung ruft es erneut auf) und öffnet eine von Hand geschlossene Bahn nie wieder.
+ */
+export interface PathClosure {
+  /** Knoten, die der Schluss vom Ende entfernt hat (in ursprünglicher Reihenfolge) */
+  trimmed: TrackNode[];
+  /** Eingangs-Handle der Station vor dem Schluss */
+  firstIn: [number, number, number];
+  /** Knoten (Index) und Ausgangs-Handle, die der Schluss überschrieben hat */
+  lastOut: { index: number; out: [number, number, number] } | null;
+}
+
 export interface TrackPath {
   nodes: TrackNode[];
   elements: TrackElement[];
@@ -41,6 +55,13 @@ export interface TrackPath {
   templates: Record<string, number>;
   /** false = offene Bahn (Ende noch nicht mit der Station verbunden); fehlt = geschlossen */
   closed?: boolean;
+  /** Protokoll des Rundenschlusses (nur bei geschlossener Bahn), siehe PathClosure */
+  closure?: PathClosure;
+}
+
+export function cloneClosure(c: PathClosure | undefined): PathClosure | undefined {
+  if (!c) return undefined;
+  return { trimmed: c.trimmed.map((n) => ({ ...n })), firstIn: [...c.firstIn], lastOut: c.lastOut ? { index: c.lastOut.index, out: [...c.lastOut.out] } : null };
 }
 
 export const isClosed = (p: TrackPath): boolean => p.closed !== false;
@@ -54,7 +75,10 @@ export function emptyPath(): TrackPath {
 }
 
 export function clonePath(p: TrackPath): TrackPath {
-  return { nodes: p.nodes.map((n) => ({ ...n })), elements: p.elements.map((e) => ({ ...e })), startType: p.startType, templates: { ...p.templates }, closed: p.closed !== false };
+  const out: TrackPath = { nodes: p.nodes.map((n) => ({ ...n })), elements: p.elements.map((e) => ({ ...e })), startType: p.startType, templates: { ...p.templates }, closed: p.closed !== false };
+  const closure = cloneClosure(p.closure);
+  if (closure) out.closure = closure;
+  return out;
 }
 
 export const isAutoNode = (n: TrackNode): boolean => n.kind === 'closeTurn' || n.kind === 'closeReturn';
