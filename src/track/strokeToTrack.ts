@@ -687,7 +687,9 @@ export function turnShiftProfile(stroke: Vec2[], points: InterpretedPoint[], tur
       const d0 = t.dir ?? 1;
       let i0 = t.index;
       while (i0 > 0 && cum[t.index] - cum[i0 - 1] <= turnHalfLength(t.radius ?? TURN_RADIUS_MIN)) i0--;
-      const want = Math.max(lanesForRadius(t.radius ?? TURN_RADIUS_MIN), lanesForRadius(radiusForDrop(drop)));
+      // mindestens zwei Spuren (8,4 m), wo die Bühne Platz hat: Mit einer Spur wird der Halbkreis im Bild zur
+      // spitzen Nase (die Tiefe ist im Bild nur halb so hoch wie breit); der Rückweg gleitet danach auf seine Spur
+      const want = Math.max(2, lanesForRadius(t.radius ?? TURN_RADIUS_MIN), lanesForRadius(radiusForDrop(drop)));
       const lanesF = Math.max(1, Math.min(want, roomLanes(points[i0].z, d0)));
       t.radius = (lanesF * LANE_DEPTH) / 2;
       continue;
@@ -957,7 +959,7 @@ export function limitVerticalCurvature(world: Vec3[], keep: (i: number) => boole
   for (let i = 0; i < n; i++) {
     hMax = Math.max(hMax, y0[i]);
     const v2 = Math.max(LIFT_V2, 2 * g * (hMax - y0[i]));
-    // Sicherheitsfaktor: Der Bezier-Fit (Toleranz 0,2 m) überzeichnet Krümmungen örtlich etwas
+    // Sicherheitsfaktor: Der Bezier-Fit (Toleranz 0,3 m) überzeichnet Krümmungen örtlich etwas
     rCrest[i] = Math.max(CURVE_R_MIN, (1.4 * v2) / (CREST_G * g));
     rValley[i] = Math.max(CURVE_R_MIN, v2 / (VALLEY_G * g));
   }
@@ -1038,8 +1040,9 @@ export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, e
     for (let k = 1; k <= n; k++) dense.push(add3(a, scale3(sub3(b, a), k / n)));
   }
   pts = dense;
-  // keine gebrochenen Tangenten aus Strichen (Achterbahnen haben keine Ecken); engere Toleranz, da der Strich geglättet ist
-  const segments = fitWithCorners3(pts, opts.fitError ?? 0.1, 179);
+  // keine gebrochenen Tangenten aus Strichen (Achterbahnen haben keine Ecken). 0,3 m: Die Linie ist schon geglättet,
+  // so entstehen nur die nötigen Knoten (ein Oval braucht rund zehn), Loopings und Halbkreise bleiben rund
+  const segments = fitWithCorners3(pts, opts.fitError ?? 0.3, 179);
   const nodes: TrackNode[] = [];
   const mk = (p: Vec3): TrackNode => createNode(p.x, p.y, p.z / LANE_DEPTH);
   for (let i = 0; i < segments.length; i++) {

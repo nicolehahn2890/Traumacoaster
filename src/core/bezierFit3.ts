@@ -60,8 +60,12 @@ function fitCubic(pts: Vec3[], first: number, last: number, tHat1: Vec3, tHat2: 
     out.push(bez);
     return;
   }
-  if (maxError < error * error) {
-    for (let i = 0; i < 4; i++) {
+  // Nahe dran: erst die Parameter nachziehen (Newton), statt gleich zu teilen. Im Original ist die Schwelle
+  // als Quadrat formuliert, weil dort quadrierte Abstände verglichen werden; hier sind es Abstände, und
+  // „error²“ läge bei Toleranzen unter 1 m unter der Toleranz selbst: Die Nachbesserung lief dann nie und
+  // jede Kurve wurde in viele kleine Stücke zerteilt.
+  if (maxError < error * 4) {
+    for (let i = 0; i < 6; i++) {
       const uPrime = reparameterize(pts, first, last, u, bez);
       bez = generateBezier(pts, first, last, uPrime, tHat1, tHat2);
       const r = computeMaxError(pts, first, last, bez, uPrime);
