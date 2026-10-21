@@ -100,7 +100,7 @@ npm run build && npx cap add ios && npx cap add android && npx cap sync
 Config-Hinweise: `webDir: 'dist'`, `server.androidScheme: 'https'`, Statusbar overlay, Orientation beide. iOS-Build braucht Xcode auf einem Mac; Android-Build Android Studio.
 
 ## 10. Deployment und CI
-GitHub Pages über `.github/workflows/deploy.yml`: Bei Push auf den Hauptbranch wird getestet, gebaut und `dist/` veröffentlicht. In den Repo-Einstellungen unter Pages muss „GitHub Actions“ als Quelle gewählt sein. `.github/workflows/ci.yml` prüft jeden Push auf andere Branches und jede Pull-Request: Vitest, Typecheck/Build und das Playwright-Szenario (`scripts/scenario.mjs`) im Chromium mit SwiftShader; die Screenshots hängen als Artefakt am Lauf.
+GitHub Pages über `.github/workflows/deploy.yml`: Bei Push auf den Hauptbranch wird getestet, gebaut und `dist/` veröffentlicht. In den Repo-Einstellungen unter Pages muss „GitHub Actions“ als Quelle gewählt sein. `.github/workflows/ci.yml` prüft jeden Push auf andere Branches und jede Pull-Request: ein Job mit Vitest und Typecheck/Build, dazu die sechs Playwright-Szenarien (`scripts/scenario.mjs <Schritt>`) als parallele Matrix im Chromium mit SwiftShader; die Screenshots hängen je Szenario als Artefakt am Lauf. Die Matrix ist nötig, weil jede Mausbewegung beim Zeichnen auf den Software-gerenderten Frame wartet: ein Strich dauert auf dem Runner mehrere Minuten, alle sechs nacheinander liefen ins Job-Timeout.
 
 ## 11. Umsetzungsstand und bekannte Eigenheiten
 - Alle Zeichnungen in Metern: Formen mit kleinen Radien (Augen, Räder, Coins) werden über `MGraphics` (src/render/mgraphics.ts) intern in Zentimetern tesselliert, sonst entstehen Vielecke.
