@@ -206,6 +206,9 @@ if (want('cars')) {
       }
     }
   }
+  // Fahrt beenden, damit die Seite beim Levelwechsel nicht mehr unter Volllast rechnet
+  await page.evaluate(() => window.tcGame.current.stopRide?.()).catch(() => {});
+  await sleep(300);
 }
 
 // 6) Level 4 („Hoch hinaus“): Lifthügel durch die Coins am Hang, 18 m, Fahrt bis ins Ziel
