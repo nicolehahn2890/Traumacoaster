@@ -7,6 +7,7 @@ import type { Game } from '../game';
 import type { InputHandlers } from '@/core/input';
 import { t } from '@/core/i18n';
 import { storage } from '@/core/storage';
+import { unlockAll } from '@/core/dev';
 import { Button, label, INK, PAPER, paintRect, iconBack, iconTrash } from '@/ui/widgets';
 import { WORLDS } from '@/levels/worlds';
 import { skyTexture, hexNum, shade } from '@/render/paint';
@@ -54,7 +55,7 @@ export class MyTracksScene implements Scene {
       const prevFirst = (w - 2) * 15 + 1;
       let done = 0;
       for (let id = prevFirst; id < prevFirst + 15; id++) if (p.stars[id] > 0) done++;
-      if (done >= 10 || import.meta.env.VITE_UNLOCK_ALL === '1') out.push(w);
+      if (done >= 10 || unlockAll()) out.push(w);
     }
     return out;
   }

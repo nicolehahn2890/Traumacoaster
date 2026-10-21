@@ -91,6 +91,10 @@ export interface TrackSamples {
   k3x: Float64Array;
   k3y: Float64Array;
   k3z: Float64Array;
+  /** Krümmung, weit geglättet: Grundlage der automatischen Überhöhung (siehe bankAt) */
+  kbx: Float64Array;
+  kby: Float64Array;
+  kbz: Float64Array;
   /** Oben-Vektor ohne Schräglage */
   upx: Float64Array;
   upy: Float64Array;
@@ -114,6 +118,9 @@ export interface TrackState {
   k3x: number;
   k3y: number;
   k3z: number;
+  kbx: number;
+  kby: number;
+  kbz: number;
   upx: number;
   upy: number;
   upz: number;
@@ -125,8 +132,12 @@ export interface TrackState {
 const EMPTY = (): TrackSamples => ({
   count: 0, length: 0, step: 0.25, closed: true, s: new Float64Array(0), x: new Float64Array(0), y: new Float64Array(0), z: new Float64Array(0),
   t3x: new Float64Array(0), t3y: new Float64Array(0), t3z: new Float64Array(0), k3x: new Float64Array(0), k3y: new Float64Array(0), k3z: new Float64Array(0),
+  kbx: new Float64Array(0), kby: new Float64Array(0), kbz: new Float64Array(0),
   upx: new Float64Array(0), upy: new Float64Array(0), upz: new Float64Array(0), roll: new Float64Array(0), seg: new Int32Array(0), t: new Float64Array(0), auto: new Uint8Array(0),
 });
+
+/** Halbe Breite (Meter) des Fensters, über das die Krümmung für die automatische Überhöhung geglättet wird */
+export const BANK_SMOOTH = 5;
 
 /** Tastet die 3D-Bahn mit festem Schritt ab (geschlossen zyklisch, offen bis zum letzten Knoten). */
 export function sampleTrack(path: TrackPath, step = 0.25): TrackSamples {
@@ -171,6 +182,7 @@ export function sampleTrack(path: TrackPath, step = 0.25): TrackSamples {
     ...EMPTY(), count, length, step, closed,
     s: new Float64Array(count), x: new Float64Array(count), y: new Float64Array(count), z: new Float64Array(count),
     t3x: new Float64Array(count), t3y: new Float64Array(count), t3z: new Float64Array(count), k3x: new Float64Array(count), k3y: new Float64Array(count), k3z: new Float64Array(count),
+    kbx: new Float64Array(count), kby: new Float64Array(count), kbz: new Float64Array(count),
     upx: new Float64Array(count), upy: new Float64Array(count), upz: new Float64Array(count), roll: new Float64Array(count), seg: new Int32Array(count), t: new Float64Array(count), auto: new Uint8Array(count),
   };
 
@@ -226,6 +238,29 @@ export function sampleTrack(path: TrackPath, step = 0.25): TrackSamples {
     out.k3x[i] = sx / n; out.k3y[i] = sy / n; out.k3z[i] = sz / n;
   }
 
+  // 3c) Für die Überhöhung die Krümmung weit glätten (Dreiecksfenster ±BANK_SMOOTH): Die Schräglage folgt so dem
+  // Bogen, nicht jedem kurzen Haken. Ein enger Spurwechsel (S in der Tiefe) mittelt sich fast weg, statt die
+  // Schienen in wenigen Metern hin und her zu verdrehen; Ein- und Ausfahrt einer Kurve rollen weich.
+  const bw = Math.max(1, Math.round(BANK_SMOOTH / step));
+  for (let i = 0; i < count; i++) {
+    let sx = 0;
+    let sy = 0;
+    let sz = 0;
+    let wsum = 0;
+    for (let k = -bw; k <= bw; k++) {
+      let j = i + k;
+      if (closed) j = ((j % count) + count) % count;
+      else if (j < 0 || j >= count) continue;
+      const w = bw + 1 - Math.abs(k);
+      sx += out.k3x[j] * w; sy += out.k3y[j] * w; sz += out.k3z[j] * w; wsum += w;
+    }
+    // wieder senkrecht zur Tangente: In einer Kehre dreht die Tangente im Fenster, der Mittelwert zeigt sonst
+    // teils nach hinten und täuscht eine Kraft aus dem Sitz vor
+    sx /= wsum; sy /= wsum; sz /= wsum;
+    const d = sx * out.t3x[i] + sy * out.t3y[i] + sz * out.t3z[i];
+    out.kbx[i] = sx - d * out.t3x[i]; out.kby[i] = sy - d * out.t3y[i]; out.kbz[i] = sz - d * out.t3z[i];
+  }
+
   // 4) Oben-Vektor: Parallel-Transport, bei waagerechter Bahn zur Welt-Senkrechten zurückgezogen
   let ux = 0;
   let uy = 1;
@@ -266,7 +301,7 @@ export function sampleTrack(path: TrackPath, step = 0.25): TrackSamples {
 export function stateAt(samples: TrackSamples, s: number): TrackState {
   const L = samples.length;
   if (samples.count === 0 || L <= 0) {
-    return { auto: false, s: 0, x: 0, y: 0, z: 0, t3x: 1, t3y: 0, t3z: 0, k3x: 0, k3y: 0, k3z: 0, upx: 0, upy: 1, upz: 0, roll: NaN, seg: 0, t: 0 };
+    return { auto: false, s: 0, x: 0, y: 0, z: 0, t3x: 1, t3y: 0, t3z: 0, k3x: 0, k3y: 0, k3z: 0, kbx: 0, kby: 0, kbz: 0, upx: 0, upy: 1, upz: 0, roll: NaN, seg: 0, t: 0 };
   }
   let sw = s % L;
   if (sw < 0) sw += L;
@@ -291,7 +326,8 @@ export function stateAt(samples: TrackSamples, s: number): TrackState {
   const roll = Number.isNaN(ra) && Number.isNaN(rb) ? NaN : Number.isNaN(ra) ? rb : Number.isNaN(rb) ? ra : ra + (rb - ra) * f;
   return {
     auto: samples.auto[i] === 1, s: sw, x: lerp(samples.x), y: lerp(samples.y), z: lerp(samples.z),
-    t3x, t3y, t3z, k3x: lerp(samples.k3x), k3y: lerp(samples.k3y), k3z: lerp(samples.k3z), upx, upy, upz, roll, seg: samples.seg[i], t: lerp(samples.t),
+    t3x, t3y, t3z, k3x: lerp(samples.k3x), k3y: lerp(samples.k3y), k3z: lerp(samples.k3z), kbx: lerp(samples.kbx), kby: lerp(samples.kby), kbz: lerp(samples.kbz),
+    upx, upy, upz, roll, seg: samples.seg[i], t: lerp(samples.t),
   };
 }
 
@@ -309,8 +345,11 @@ export function closestSample(samples: TrackSamples, x: number, y: number, z: nu
   return { index: best, s: best >= 0 ? samples.s[best] : 0, d: bestD };
 }
 
-/** Schräglage an einem Abtastpunkt für Geschwindigkeit v: manuell oder automatisch (bis 60°), in die Kurve hinein. */
-export function bankAt(st: TrackState, v: number, gravity = 9.81): { angle: number; nx: number; ny: number; nz: number } {
+/**
+ * Schräglage an einem Abtastpunkt für Geschwindigkeit v: manuell oder automatisch (bis MAX_BANK), in die Kurve
+ * hinein. smooth: weit geglättete Krümmung statt der Krümmung über die Wagenlänge (für die Darstellung der Schienen).
+ */
+export function bankAt(st: TrackState, v: number, gravity = 9.81, smooth = false): { angle: number; nx: number; ny: number; nz: number } {
   // seitliche Richtung (T × up ohne Schräglage); positive Schräglage neigt den Wagen zur +Seite
   const side = normalize3(cross3({ x: st.t3x, y: st.t3y, z: st.t3z }, { x: st.upx, y: st.upy, z: st.upz }));
   if (!Number.isNaN(st.roll)) {
@@ -318,34 +357,84 @@ export function bankAt(st: TrackState, v: number, gravity = 9.81): { angle: numb
   }
   // Automatische Überhöhung: die gefühlte Kraft (Fliehkraft v²·k + Schwerkraft) soll durch den Sitz gehen,
   // also keine Querkraft übrig lassen. Dazu wird der Oben-Vektor zur Kraftrichtung gedreht (max. 60°).
-  const fx = v * v * st.k3x;
-  const fy = v * v * st.k3y + gravity;
-  const fz = v * v * st.k3z;
+  const fx = v * v * (smooth ? st.kbx : st.k3x);
+  const fy = v * v * (smooth ? st.kby : st.k3y) + gravity;
+  const fz = v * v * (smooth ? st.kbz : st.k3z);
   const fu = fx * st.upx + fy * st.upy + fz * st.upz; // Anteil in Sitzrichtung
   const fs = fx * side.x + fy * side.y + fz * side.z; // Anteil zur Seite
-  // Kraft zieht aus dem Sitz (Airtime, zu langsam im Looping) und drückt nicht stärker zur Seite: nicht neigen.
-  // (Nur fu allein reicht nicht: In einer flachen Kurve kann ein leicht geneigter Oben-Vektor fu fast null
-  // machen, obwohl die Fliehkraft seitlich wirkt – dann muss die Überhöhung erst recht greifen.)
-  if (Math.abs(fs) < 1e-4 || (fu <= 0.5 && Math.abs(fs) <= Math.abs(fu))) return { angle: 0, nx: side.x, ny: side.y, nz: side.z };
-  const angle = Math.max(-MAX_BANK, Math.min(MAX_BANK, Math.atan2(fs, Math.max(fu, 0.5))));
+  // Die Schräglage folgt der Kraftrichtung (höchstens MAX_BANK), auch wenn die Kraft quer zum Sitz steht (in
+  // einer flachen Kurve kann ein leicht geneigter Oben-Vektor den Anteil in Sitzrichtung fast null machen).
+  // Zieht die Kraft deutlich aus dem Sitz (Airtime, zu langsam im Looping), wird nicht geneigt: zwischen 120° und
+  // 150° weich auf null, ebenso bei fast schwereloser Fahrt, wo die Kraftrichtung keine Aussage hat. Stetig, damit
+  // Schienen und Wagen nicht von einem Abtastpunkt zum nächsten zwischen 0° und 80° springen.
+  const phi = Math.atan2(fs, fu);
+  const a = Math.abs(phi);
+  let angle = Math.sign(phi) * Math.min(a, MAX_BANK);
+  if (a > (2 * Math.PI) / 3) angle *= ease01(((5 * Math.PI) / 6 - a) / (Math.PI / 6));
+  angle *= ease01(Math.hypot(fu, fs) / 2);
   return { angle, nx: side.x, ny: side.y, nz: side.z };
 }
+
+/** weicher Übergang 0 → 1 für t in [0, 1] */
+const ease01 = (t: number): number => {
+  const x = Math.min(1, Math.max(0, t));
+  return x * x * (3 - 2 * x);
+};
 
 /** Maximale automatische Überhöhung (echte Bahnen fahren enge, schnelle Kurven mit 70–90°) */
 export const MAX_BANK = (80 * Math.PI) / 180;
 
 /** Wagen-Rahmen (vorwärts, oben, seitlich) inkl. Schräglage */
 export function carFrame(st: TrackState, v: number, gravity = 9.81): { T: Vec3; U: Vec3; S: Vec3; bank: number } {
+  return frameWithBank(st, bankAt(st, v, gravity).angle);
+}
+
+/** Rahmen für eine gegebene Schräglage */
+export function frameWithBank(st: TrackState, angle: number): { T: Vec3; U: Vec3; S: Vec3; bank: number } {
   const T = { x: st.t3x, y: st.t3y, z: st.t3z };
   const up0 = { x: st.upx, y: st.upy, z: st.upz };
-  const bank = bankAt(st, v, gravity);
   const side0 = normalize3(cross3(T, up0));
-  const c = Math.cos(bank.angle);
-  const s = Math.sin(bank.angle);
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
   const U = normalize3({ x: up0.x * c + side0.x * s, y: up0.y * c + side0.y * s, z: up0.z * c + side0.z * s });
   const S = normalize3(cross3(T, U));
-  return { T, U, S, bank: bank.angle };
+  return { T, U, S, bank: angle };
 }
+
+/**
+ * Schräglage der Schienen je Abtastpunkt für die Darstellung: aus der weit geglätteten Krümmung und danach noch
+ * einmal entlang der Bahn gemittelt (Dreieck ±RAIL_ROLL_SMOOTH), damit die Schienen auch an harten Stellen
+ * (enge Kehre bei hohem Tempo) weich rollen statt sich zu verknoten. speed(i) liefert das Auslegungstempo.
+ */
+export function railBanks(samples: TrackSamples, speed: (i: number) => number): Float64Array {
+  const n = samples.count;
+  const raw = new Float64Array(n);
+  for (let i = 0; i < n; i++) raw[i] = bankAt(stateAt(samples, samples.s[i]), speed(i), 9.81, true).angle;
+  const out = new Float64Array(n);
+  const w = Math.max(1, Math.round(RAIL_ROLL_SMOOTH / samples.step));
+  for (let i = 0; i < n; i++) {
+    // manuelle Schräglage bleibt, wie sie eingestellt ist
+    if (!Number.isNaN(samples.roll[i])) {
+      out[i] = raw[i];
+      continue;
+    }
+    let sum = 0;
+    let wsum = 0;
+    for (let k = -w; k <= w; k++) {
+      let j = i + k;
+      if (samples.closed) j = ((j % n) + n) % n;
+      else if (j < 0 || j >= n) continue;
+      const wk = w + 1 - Math.abs(k);
+      sum += raw[j] * wk;
+      wsum += wk;
+    }
+    out[i] = sum / wsum;
+  }
+  return out;
+}
+
+/** Halbe Breite (Meter), über die die Schräglage der Schienen zusätzlich gemittelt wird */
+export const RAIL_ROLL_SMOOTH = 6;
 
 export interface TrackStats {
   length: number;

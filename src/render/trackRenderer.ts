@@ -5,7 +5,7 @@
  */
 import { Container, Graphics } from 'pixi.js';
 import type { TrackPath, TrackSamples } from '@/track/model';
-import { carFrame, stateAt } from '@/track/model';
+import { frameWithBank, railBanks, stateAt } from '@/track/model';
 import type { Terrain } from '@/physics/terrain';
 import type { WorldDef } from '@/levels/types';
 import { laneScale, toStage, LANE_MIN, LANE_MAX, LANE_DEPTH } from '@/track/stage';
@@ -91,9 +91,10 @@ export class TrackRenderer {
     const L = new Float64Array(n * 2);
     const R = new Float64Array(n * 2);
     const C = new Float64Array(n * 2);
+    const banks = railBanks(samples, (i) => designSpeed(samples, i, maxY));
     for (let i = 0; i < n; i++) {
       const st = stateAt(samples, samples.s[i]);
-      const fr = carFrame(st, designSpeed(samples, i, maxY));
+      const fr = frameWithBank(st, banks[i]);
       const lx = samples.x[i] - fr.S.x * GAUGE;
       const ly = samples.y[i] - fr.S.y * GAUGE;
       const lz = samples.z[i] - (fr.S.z * GAUGE) / LANE_DEPTH;

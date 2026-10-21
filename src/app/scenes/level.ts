@@ -8,6 +8,7 @@ import type { Game } from '../game';
 import type { InputHandlers, Pt } from '@/core/input';
 import { t } from '@/core/i18n';
 import { storage, type SavedTrack } from '@/core/storage';
+import { DEV_SKINS, devSkin, unlockAll } from '@/core/dev';
 import { clamp } from '@/core/math';
 import { bezier3, lerp3 } from '@/core/math3';
 import { LEVELS, getLevel, unlockedUpTo } from '@/levels/levels';
@@ -119,6 +120,8 @@ export class LevelScene implements Scene {
   /** Zeitraffer der Fahrt (1×, 2×, 3×), sitzt während der Fahrt an der Stelle des Regal-Knopfs */
   private speedBtn = new Button(`${storage.settings.rideSpeed || 3}×`, { width: 54, round: true, color: '#4f8dff', size: 20 });
   private saveBtn = new Button('', { width: 48, round: true, color: '#7ee081', icon: iconSave });
+  /** Dev-Modus: Bahntyp durchschalten */
+  private skinBtn = new Button('DEV', { width: 150, height: 40, size: 15, color: '#2a1f3d' });
   private shelf = new Container();
   private shelfOpen = false;
   private toast = new Toast();
@@ -140,12 +143,14 @@ export class LevelScene implements Scene {
       this.world = worldOfLevel(levelId);
       this.unlocked = unlockedUpTo(Math.max(storage.progress.highest, levelId - 1));
     }
-    if (import.meta.env.VITE_UNLOCK_ALL === '1') this.unlocked = unlockedUpTo(150);
+    if (unlockAll()) this.unlocked = unlockedUpTo(150);
     this.terrain = new Terrain(this.level);
     this.skin = this.pickSkin();
   }
 
   private pickSkin(): string {
+    const forced = devSkin();
+    if (forced) return forced;
     if (this.unlocked.has(this.world.skin)) return this.world.skin;
     const order: ElementId[] = ['skinSpace', 'skinLava', 'skinGhost', 'skinIce', 'skinNeon', 'skinGold', 'skinSteel', 'skinMine', 'skinHybrid', 'skinWood'];
     return order.find((s) => this.unlocked.has(s)) ?? 'skinWood';
@@ -170,9 +175,12 @@ export class LevelScene implements Scene {
     this.view = new WorldView(this.world, this.terrain, this.skin, night);
     this.view.overlay.addChild(this.ink, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
-    this.ui.addChild(this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.toast);
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn];
+    this.ui.addChild(this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.toast);
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn];
     this.speedBtn.visible = false;
+    this.skinBtn.visible = unlockAll();
+    this.skinBtn.setText(`DEV · ${ELEMENT_NAMES[this.skin as ElementId] ?? this.skin}`);
+    this.skinBtn.onTap = () => this.cycleDevSkin();
     this.saveBtn.visible = !!this.sandbox;
     this.backBtn.onTap = () => this.leave();
     this.undoBtn.onTap = () => this.undo();
@@ -214,6 +222,20 @@ export class LevelScene implements Scene {
   /** Ebenen und Kamera für den Übergang von der Karte und zu ihr */
   transitionLayers(): LevelLayers {
     return { sky: this.view.sky.container, world: this.view.world, ui: this.ui, camera: this.view.camera };
+  }
+
+  /** Dev-Modus: nächster Bahntyp (nach dem letzten wieder der der Welt); gilt für alle Level */
+  private cycleDevSkin(): void {
+    if (this.mode !== 'draw') return;
+    const order = ['', ...DEV_SKINS];
+    const next = order[(order.indexOf(storage.settings.devSkin) + 1) % order.length];
+    storage.updateSettings({ devSkin: next });
+    this.skin = this.pickSkin();
+    this.view.trainR.setSkin(this.skin);
+    this.redrawTrack();
+    const name = ELEMENT_NAMES[this.skin as ElementId] ?? this.skin;
+    this.skinBtn.setText(`DEV · ${name}`);
+    this.toast.show(next ? `Bahntyp: ${name}` : `Bahntyp der Welt: ${name}`, 1.4);
   }
 
   // ------------------------------------------------------------------ Eingabe
@@ -1159,7 +1181,7 @@ export class LevelScene implements Scene {
     this.ui.removeChild(old);
     old.destroy({ children: true });
     this.playBtn = btn;
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn];
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn];
     this.ui.addChild(this.toast);
   }
 
@@ -1392,6 +1414,7 @@ export class LevelScene implements Scene {
     this.redoBtn.position.set(152, safeTop + 26);
     this.clearBtn.position.set(w - 36, safeTop + 26);
     this.saveBtn.position.set(w - 92, safeTop + 26);
+    this.skinBtn.position.set(88, h - 50);
     if (portrait) {
       this.levelTitle.position.set(w / 2, safeTop + 72);
       this.goalsBar.position.set(w / 2, safeTop + 112);

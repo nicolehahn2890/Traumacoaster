@@ -13,6 +13,7 @@ import { TrainSim, simOptionsForLevel } from '@/physics/trainSim';
 import { sampleTrack, type TrackPath } from '@/track/model';
 import { laneRise, toStage, LANE_MIN, LANE_MAX } from '@/track/stage';
 import { storage } from '@/core/storage';
+import { devSkin, unlockAll } from '@/core/dev';
 import { WorldView } from './worldView';
 
 /** Bodenlinie der hintersten Spur: Sie liegt auf der Oberfläche der Drehscheibe (der Horizont des Levels) */
@@ -49,13 +50,15 @@ export function levelDraft(levelId: number): TrackPath | null {
 
 /** Skin wie im Level: Welt-Skin, sonst der beste freigeschaltete */
 function pickSkin(world: WorldDef, unlocked: Set<ElementId>): string {
+  const forced = devSkin();
+  if (forced) return forced;
   if (unlocked.has(world.skin)) return world.skin;
   const order: ElementId[] = ['skinSpace', 'skinLava', 'skinGhost', 'skinIce', 'skinNeon', 'skinGold', 'skinSteel', 'skinMine', 'skinHybrid', 'skinWood'];
   return order.find((s) => unlocked.has(s)) ?? 'skinWood';
 }
 
 function unlockedFor(levelId: number): Set<ElementId> {
-  if (import.meta.env.VITE_UNLOCK_ALL === '1') return unlockedUpTo(150);
+  if (unlockAll()) return unlockedUpTo(150);
   return unlockedUpTo(Math.max(storage.progress.highest, levelId - 1));
 }
 

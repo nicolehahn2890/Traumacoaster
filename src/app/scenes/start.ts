@@ -15,6 +15,7 @@ import { LEVELS } from '@/levels/levels';
 import type { LevelDef, WorldDef } from '@/levels/types';
 import { Terrain } from '@/physics/terrain';
 import { storage } from '@/core/storage';
+import { unlockAll } from '@/core/dev';
 import { t } from '@/core/i18n';
 import { hexNum, shade, mix, cloudTexture, skyTexture, paperTexture } from '@/render/paint';
 import { atmosphere } from '@/render/terrainRenderer';
@@ -128,6 +129,8 @@ export class StartScene implements Scene {
   private tracksBtn = new Button(t('myTracks'), { width: 190, height: 50, size: 20, color: '#3ec7c2' });
   private gearBtn = new Button('', { width: 54, round: true, color: '#9b6dff', icon: iconGear });
   private peopleBtn = new Button('', { width: 54, round: true, color: '#ffd23f', icon: iconPerson });
+  /** Dev-Modus an/aus: alle Welten, Level, Elemente und Bahntypen zum Testen */
+  private devBtn = new Button('DEV', { width: 50, round: true, color: '#bfb7cc', size: 14 });
   private hud: Container[] = [];
   private toast = new Toast();
   private settingsOpen: Container | null = null;
@@ -166,7 +169,7 @@ export class StartScene implements Scene {
 
   enter(game: Game): void {
     this.game = game;
-    this.hud = [this.title, this.worldName, this.worldInfo, this.playBtn, this.tracksBtn, this.gearBtn, this.peopleBtn];
+    this.hud = [this.title, this.worldName, this.worldInfo, this.playBtn, this.tracksBtn, this.gearBtn, this.peopleBtn, this.devBtn];
     this.container.addChild(this.sky, this.skyOld, this.levelSkyLayer, this.cloudLayer, this.globe, this.overLayer, ...this.hud, this.toast);
     this.globe.addChild(this.ground, this.sheets, this.levelWorldLayer, this.gates, this.badges);
     this.skyOld.alpha = 0;
@@ -180,6 +183,8 @@ export class StartScene implements Scene {
     this.tracksBtn.onTap = () => !this.busy && this.game.goto(() => new MyTracksScene());
     this.gearBtn.onTap = () => !this.busy && this.toggleSettings();
     this.peopleBtn.onTap = () => !this.busy && this.game.goto(() => new EditorScene());
+    this.devBtn.onTap = () => !this.busy && this.toggleDevMode();
+    this.devBtn.setColor(storage.settings.devMode ? '#7ee081' : '#bfb7cc');
     this.setupInput();
     this.updateTexts();
     if (this.from) {
@@ -250,7 +255,7 @@ export class StartScene implements Scene {
     const p = storage.progress;
     const stars = p.stars[sp.id] ?? 0;
     const locked = !this.worldUnlocked(sp.world);
-    const open = sp.id <= p.highest + 1 || import.meta.env.VITE_UNLOCK_ALL === '1';
+    const open = sp.id <= p.highest + 1 || unlockAll();
     // Papier für spielbare Level (goldene Sterne heben sich ab), blasser noch nicht erreichte, grau gesperrte
     const col = locked ? '#bfb7cc' : open ? PAPER : '#e6def0';
     g.poly([-7, 12, 7, 12, 0, 21]).fill(hexNum(col)).stroke({ width: 2.5, color: hexNum(INK), join: 'round' });
@@ -383,7 +388,7 @@ export class StartScene implements Scene {
         return;
       }
       if (this.busy) return;
-      if ([this.playBtn, this.tracksBtn, this.gearBtn, this.peopleBtn].some((b) => this.hits(b, pt))) return;
+      if ([this.playBtn, this.tracksBtn, this.gearBtn, this.peopleBtn, this.devBtn].some((b) => this.hits(b, pt))) return;
       const sp = this.spotAt(pt);
       if (sp) {
         // Mitte antippen öffnet, ein Nachbar dreht sich erst in die Mitte
@@ -457,7 +462,7 @@ export class StartScene implements Scene {
     const prevFirst = (w - 1) * 15 + 1;
     let done = 0;
     for (let id = prevFirst; id < prevFirst + 15; id++) if (p.stars[id] > 0) done++;
-    return done >= 10 || import.meta.env.VITE_UNLOCK_ALL === '1';
+    return done >= 10 || unlockAll();
   }
 
   // ------------------------------------------------------------------ Level öffnen
@@ -855,6 +860,21 @@ export class StartScene implements Scene {
     }
   }
 
+  /** Dev-Modus umschalten; Schilder und Miniaturen (Schloss, Bahntyp) bauen sich neu auf */
+  private toggleDevMode(): void {
+    const on = !storage.settings.devMode;
+    storage.updateSettings({ devMode: on });
+    this.devBtn.setColor(on ? '#7ee081' : '#bfb7cc');
+    this.toast.show(on ? 'Dev-Modus an: alle Welten, Level, Elemente und Bahntypen frei' : 'Dev-Modus aus', 2.2);
+    for (const sp of this.spots) {
+      sp.sheet?.destroy();
+      sp.sheet = null;
+      sp.badge?.destroy({ children: true });
+      sp.badge = null;
+    }
+    this.updateTexts();
+  }
+
   private toggleSettings(): void {
     if (this.settingsOpen) {
       this.container.removeChild(this.settingsOpen);
@@ -921,6 +941,7 @@ export class StartScene implements Scene {
     this.tracksBtn.position.set(w - (portrait ? 105 : 115), 44);
     this.gearBtn.position.set(44, 44);
     this.peopleBtn.position.set(110, 44);
+    this.devBtn.position.set(40, h - 40);
     this.toast.position.set(w / 2, h * 0.5);
     this.settingsOpen?.position.set(w / 2, h / 2);
     if (!this.spots.length) return;

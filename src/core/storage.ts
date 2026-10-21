@@ -25,6 +25,10 @@ export interface Settings {
   seenSplash: boolean;
   /** Zeitraffer der Fahrt (1, 2, 3 oder 5) */
   rideSpeed: number;
+  /** Dev-Modus: alles frei (siehe core/dev.ts) */
+  devMode: boolean;
+  /** im Dev-Modus gewählter Bahntyp ('' = der Welt) */
+  devSkin: string;
 }
 
 export interface SavedTrack {
@@ -49,7 +53,7 @@ interface Store {
 function defaults(): Store {
   return {
     progress: { stars: {}, highest: 0, current: 1, drafts: {} },
-    settings: { sound: true, music: true, language: 'de', shakeUndo: true, seenSplash: false, rideSpeed: 3 },
+    settings: { sound: true, music: true, language: 'de', shakeUndo: true, seenSplash: false, rideSpeed: 3, devMode: false, devSkin: '' },
     tracks: [],
     characters: DEFAULT_CHARACTERS.map((c) => ({ ...c })),
     riders: DEFAULT_CHARACTERS.map((c) => c.id),
@@ -58,6 +62,14 @@ function defaults(): Store {
 
 let cache: Store | null = null;
 
+/**
+ * JSON kennt kein NaN: Die automatische Schräglage (roll = NaN) käme nach dem Neuladen als null zurück und würde
+ * als manuelle Schräglage 0 gelesen, die Bahn läge dann überall flach. Beim Laden wieder auf NaN setzen.
+ */
+function restoreAutoRoll(path: TrackPath | undefined): void {
+  for (const n of path?.nodes ?? []) if (typeof n.roll !== 'number') n.roll = NaN;
+}
+
 function load(): Store {
   if (cache) return cache;
   try {
@@ -65,6 +77,8 @@ function load(): Store {
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<Store>;
       cache = { ...defaults(), ...parsed, progress: { ...defaults().progress, ...(parsed.progress ?? {}) }, settings: { ...defaults().settings, ...(parsed.settings ?? {}) } };
+      for (const d of Object.values(cache.progress.drafts)) restoreAutoRoll(d);
+      for (const t of cache.tracks) restoreAutoRoll(t.path);
       return cache;
     }
   } catch {

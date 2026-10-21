@@ -37,6 +37,11 @@ export class TrainRenderer {
     for (let z = LANE_MAX; z >= LANE_MIN; z--) this.layers.set(z, new Container());
   }
 
+  /** Bahntyp wechseln (Farben der Wagen beim nächsten Zeichnen) */
+  setSkin(skin: string): void {
+    this.skin = skin;
+  }
+
   build(carCount: number, riders: CharacterDef[], perCar: number): void {
     this.clear();
     let r = 0;
