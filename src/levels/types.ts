@@ -148,6 +148,25 @@ export interface LevelDef {
   physics?: PhysicsTweaks;
 }
 
+/**
+ * Farb-Tokens einer Welt (Stil-Bibel: docs/ART.md). Flächen bekommen drei harte Töne (hell, mittel, dunkel)
+ * aus `ground`, die Luftperspektive stuft nach hinten in Richtung `sky[1]`, Leuchten nur auf Interaktivem.
+ */
+export interface WorldPalette {
+  /** Himmel von oben nach unten: Zenit, Mitte, Horizont */
+  sky: [string, string, string];
+  /** Boden: Licht- und Schattenton (vorne satt, hinten entsättigt) */
+  ground: [string, string];
+  /** Akzent der Welt (Chips, Ziele, Sticker, Leuchtkanten) */
+  accent: string;
+  /** Kontur-Tinte: dunkler Ton der Welt, nie reines Schwarz, außer bei Earle-Stämmen */
+  ink: string;
+  /** Leuchtfarbe (Coins, Schienenkante bei Nacht, Laternen) */
+  glow: string;
+  /** Punktraster (Stippling) auf Schattenflächen */
+  stipple: string;
+}
+
 export interface WorldDef {
   id: number;
   name: string;
@@ -156,9 +175,11 @@ export interface WorldDef {
   look: string;
   /** Standard-Schienenstil dieser Welt */
   skin: ElementId;
-  /** Himmel-Palette (hand-painted Gradient) */
+  /** Himmel-Palette (hand-painted Gradient); identisch mit palette.sky, bleibt für bestehende Aufrufer */
   sky: [string, string, string];
-  /** Bodenfarben pro Spur (vorne → hinten) */
+  /** Bodenfarben pro Spur (vorne → hinten); identisch mit palette.ground */
   ground: [string, string];
+  /** Alle Farb-Tokens der Welt */
+  palette: WorldPalette;
   levels: number[]; // Level-IDs
 }
