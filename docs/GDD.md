@@ -128,14 +128,17 @@ Warum die Steilheit entscheidet: Eine Bodenkehre ist genau dort steil, wo der St
 - Es gibt nie einen Modus, Regler oder Schalter. Egal wie viele Elemente freigeschaltet sind, der Strich bleibt derselbe.
 
 ### 3.6 Live-Feedback beim Zeichnen
-1. Der rohe Strich erscheint sofort als leuchtende Linie (Tinte), grün für Boden, pink für Höhe, gelb beim Überzeichnen.
-2. Alle 80 ms wird der Strich interpretiert und als Vorschau-Bahn gezeichnet (Schienen, noch ohne Streben).
-3. Erkennt das System eine Steilkurve, zieht die Vorschau den Bogen in die Nachbarspur; ein Looping zeigt sich als Schleife mit Scheitelknoten.
-4. Beim Loslassen schließen sich die Enden, Streben wachsen aus dem Boden.
+1. Die Bahn selbst ist die Vorschau: Alle 80 ms (oder so oft, wie das Gerät schafft) wird der Strich interpretiert und als echte Bahn gezeichnet, mit Schienen, Schwellen und Station, nur noch ohne Streben. Hinter dem Finger bleibt ein kurzer Tintenschwanz (grün für Boden, pink für Höhe, gelb beim Überzeichnen), bis die Vorschau nachgezogen hat.
+2. Erkennt das System eine Steilkurve, zieht die Vorschau den Bogen in die Nachbarspur; ein Looping zeigt sich als Schleife mit violettem Ring am Scheitel; die Schlussverbindung zur Station erscheint als gestrichelte Geister-Schiene, sobald der Strich nah genug ist.
+3. Die Zielleiste hakt live: Erreicht die Bahn ein Ziel (Höhe, Looping, Kehre), ploppt der Haken schon während des Strichs oder Drags, nicht erst beim Loslassen.
+4. Das Maßband zeigt den höchsten Punkt mit Lotlinie und Höhe, die Gesamtlänge an der Station und Marken an Loopings (◎) und Kehren (↻); es blendet 1,2 s nach der letzten Änderung aus, im Sandkasten bleibt es.
+5. Beim Loslassen schließen sich die Enden (falls nah genug), die Streben wachsen in 0,3 s aus dem Boden.
 
-### 3.7 Knoten, Handles, Roll-Handle
-- Die Bahn wird intern als geschlossener Pfad aus kubischen Bezier-Segmenten in 3D gespeichert. Knoten haben Position (x, Höhe, Tiefe), zwei 3D-Tangenten-Handles und einen Rollwinkel (automatisch oder manuell).
-- Handles sind nur am angetippten Knoten sichtbar. Sie sind 14 px groß, haben aber eine Trefferfläche von 44 px.
+### 3.7 Knoten, Segmente, Profi-Handles, Roll-Handle
+- Die Bahn wird intern als geschlossener Pfad aus kubischen Bezier-Segmenten in 3D gespeichert. Knoten haben Position (x, Höhe, Tiefe), zwei 3D-Tangenten-Handles und einen Rollwinkel (automatisch oder manuell). Die Knoten liegen dort, wo der Fit sie braucht (ein Oval hat fünf bis sieben, ein Hügel fünf bis sechs); ein Doppeltipp auf die Bahn setzt einen weiteren Knoten genau dorthin.
+- **Bearbeiten ohne Handles:** Die Bahn wird direkt angefasst. Ein Finger auf der Schiene, quer zur Bahn gezogen, biegt das Segment: Die Bahn läuft am Griffpunkt genau durch den Finger, beide Knoten bleiben, die Tangenten passen sich an (G1). Längs der Bahn gezogen überzeichnet der Finger den Abschnitt. Knoten lassen sich ziehen (Trefferfläche 32 px; eng liegende Knoten werden für den Treffer unsichtbar auseinandergeschoben).
+- **Knotenmenü:** Ein angetippter Knoten zeigt ein Bogenmenü darüber: Tiefe (links, ziehen), Schräglage (oben, ziehen; Doppeltipp = automatisch), Löschen (rechts, tippen; die Station und die letzten drei Knoten nicht).
+- **Profi-Modus:** Langdruck auf einen Knoten (0,5 s, kurzes Vibrieren) zeigt seine Tangenten-Handles; sie bleiben, bis woanders getippt wird. Handles sind nur hier nötig, etwa für eine gezielt asymmetrische Kuppe.
 - Die Schräglage ist standardmäßig automatisch: Der Wagen neigt sich so, dass die gefühlte Kraft (Fliehkraft plus Schwerkraft) durch den Sitz geht, bis 80°. Das Roll-Handle überschreibt das; eine volle Drehung über zwei Knoten erzeugt eine **Schleife** (Heartline-Roll).
 
 ### 3.8 Grenzen und Sonderfälle
@@ -160,12 +163,12 @@ Warum die Steilheit entscheidet: Eine Bodenkehre ist genau dort steil, wo der St
 
 ### 4.2 Gesten-Tabelle
 
-| Geste | Auf leerer Fläche | Auf der Bahn | Auf Knoten/Handle | Auf Chip | Mit Maus |
+| Geste | Auf leerer Fläche | Auf der Bahn | Auf Knoten/Menü | Auf Chip | Mit Maus |
 |---|---|---|---|---|---|
-| Tippen | Knoten-Auswahl aufheben | Knoten auswählen (Handles einblenden) | Knoten auswählen | Chip umschalten | Linksklick |
-| Ziehen (1 Finger) | Neue Bahn zeichnen (wenn noch keine) oder Überzeichnen (wenn Start auf Bahn) | Abschnitt verschieben | Handle/Knoten ziehen | Spur um mehrere Ebenen ändern | Linke Maustaste ziehen |
-| Doppeltipp | Zoom-Reset (ganze Bahn) | Knoten einfügen | Knoten löschen | – | Doppelklick |
-| Langdruck | – | Element-Kontext (Booster/Bremse hierher) | Handle unabhängig machen | – | Rechtsklick |
+| Tippen | Knoten-Auswahl aufheben | Element entfernen (wenn getroffen) | Knoten auswählen (Bogenmenü: Tiefe, Schräglage, Löschen) | Chip umschalten | Linksklick |
+| Ziehen (1 Finger) | Neue Bahn zeichnen; am leuchtenden offenen Ende: fortsetzen | Quer zur Bahn: Segment biegen · längs der Bahn: überzeichnen | Knoten ziehen; Menü-Knopf Tiefe/Schräglage ziehen; Profi-Handle ziehen | Spur um mehrere Ebenen ändern | Linke Maustaste ziehen |
+| Doppeltipp | Zoom-Reset (ganze Bahn) | Knoten einfügen | Knoten löschen; auf Schräglage: automatisch | – | Doppelklick |
+| Langdruck | – | – | Profi-Handles des Knotens zeigen | – | Rechtsklick |
 | 2 Finger ziehen | Pan | Pan | Pan | Pan | Rechte Taste ziehen oder Leertaste + ziehen |
 | Pinch | Zoom | Zoom | Zoom | Zoom | Mausrad |
 | 2-Finger-Tipp | Undo | Undo | Undo | Undo | Strg+Z |

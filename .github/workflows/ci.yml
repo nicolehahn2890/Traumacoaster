@@ -36,8 +36,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 1 Oval, 2 Hügel+Oval mit Schräglage, 3 Steilkurve, 4 Looping, 5 Löschen/Überzeichnen, 6 Rundkurs von Hand
-        step: [1, 2, 3, 4, 5, 6]
+        # 1 Oval, 2 Hügel+Oval mit Schräglage, 3 Steilkurve, 4 Looping, 5 Löschen/Überzeichnen/Vorschau,
+        # 6 Rundkurs von Hand, 7 Bearbeiten (Segment ziehen, Langdruck)
+        step: [1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

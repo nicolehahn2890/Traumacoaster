@@ -25,6 +25,8 @@ import {
   type ElementKind, type StartType, type TrackNode, type TrackPath, type TrackSamples, type TrackStats,
 } from '@/track/model';
 import { strokeToTrack, closePath, closeTrack, extendTrack, interpretStroke, type StrokeMode } from '@/track/strokeToTrack';
+import { bendSegment } from '@/track/edit';
+import { MeasureOverlay } from '@/render/measureOverlay';
 import { applyOverdraw, nearestOnTrack } from '@/track/overdraw';
 import { laneRise, laneScale, toStage, toWorld, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
@@ -50,12 +52,21 @@ interface CameraFocus {
 }
 
 interface DragState {
-  kind: 'node' | 'handleIn' | 'handleOut' | 'depth' | 'roll' | 'shelf' | 'stroke' | 'none';
+  kind: 'node' | 'handleIn' | 'handleOut' | 'depth' | 'roll' | 'shelf' | 'stroke' | 'segment' | 'trackPending' | 'none';
   node?: number;
   element?: ElementKind;
   ghost?: Graphics;
   startY?: number;
   startVal?: number;
+  /** Segment-Ziehen: Segment, Parameter und feste Tiefe (Spuren) des angefassten Punkts */
+  seg?: number;
+  t?: number;
+  z?: number;
+  /** Anfasspunkt (Bildschirm und Bühne) und Bahnrichtung dort (Bildschirm, normiert), für die Entscheidung
+   *  quer (biegen) oder längs (überzeichnen) */
+  startPt?: Pt;
+  startSt?: StagePoint;
+  tangent?: Pt;
 }
 
 const START_ORDER: StartType[] = ['chainlift', 'launch', 'hydro', 'swing', 'verticalLift'];
@@ -71,7 +82,13 @@ const INK_TAIL = 1.5;
 /** Knotenwahl beim Zeichnen: Scheitel-Semantik (Standard) oder der alte Schneider-Fit zum Vergleich (?fit=legacy) */
 const FIT_MODE: 'apex' | 'legacy' = typeof location !== 'undefined' && new URLSearchParams(location.search).get('fit') === 'legacy' ? 'legacy' : 'apex';
 
-const HIT_R = 26;
+/** Trefferradius für Knoten und Handles (Bildschirm-Pixel); eng liegende Knoten werden für den Treffer auseinandergeschoben */
+const HIT_R = 32;
+/** so nah (Pixel) an der Bahn greift der Finger das Segment statt einen neuen Strich zu beginnen */
+const SEGMENT_HIT_PX = 24;
+/** Knoten-Menü: Bogen um den gewählten Knoten (Radius in Pixeln) mit Tiefe, Schräglage und Löschen */
+const MENU_R = 64;
+const MENU_HIT = 32;
 
 export class LevelScene implements Scene {
   readonly container = new Container();
@@ -90,6 +107,10 @@ export class LevelScene implements Scene {
   private history: TrackPath[] = [];
   private future: TrackPath[] = [];
   private selected = -1;
+  /** Knoten mit Profi-Handles (nach Langdruck); −1 = keiner */
+  private proNode = -1;
+  /** Langdruck hat gerade einen Knoten gewählt: der folgende dragStart darf keinen Strich beginnen */
+  private longPressArmed = false;
   private mode: Mode = 'draw';
   private stroke: StagePoint[] | null = null;
   private strokeKind: StrokeKind = 'new';
@@ -132,6 +153,11 @@ export class LevelScene implements Scene {
   private chipLayer = new Container();
   private gizmoLayer = new Container();
   private goalsBar = new Container();
+  /** Zellen der Zielleiste (einmal gebaut); refreshGoals setzt nur die Haken */
+  private goalCells: Array<{ check: Graphics; pop: Container; done: boolean; x: number; y: number }> = [];
+  private goalsBuiltFor = '';
+  private measure = new MeasureOverlay();
+  private liveGoalTimer = 0;
   private hint = label('', 17, INK, false, { stroke: { color: '#ffffff', width: 4 }, wordWrap: true, wordWrapWidth: 360 });
   private levelTitle = label('', 16, '#ffffff', true, { stroke: { color: INK, width: 4 } });
   private speedText = label('', 18, '#ffffff', true, { stroke: { color: INK, width: 4 } });
@@ -200,7 +226,7 @@ export class LevelScene implements Scene {
     this.view = new WorldView(this.world, this.terrain, this.skin, night);
     this.view.overlay.addChild(this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
-    this.ui.addChild(this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.toast);
+    this.ui.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.toast);
     this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn];
     this.speedBtn.visible = false;
     this.skinBtn.visible = unlockAll();
@@ -293,22 +319,62 @@ export class LevelScene implements Scene {
       }
       if (this.isOverUI(p)) return;
       const st = this.view.camera.toStage(p.x, p.y);
+      if (this.longPressArmed) {
+        // Langdruck hat den Knoten gewählt und die Profi-Handles gezeigt; der Finger liegt noch auf dem Knoten.
+        // Von hier aus beginnt kein Strich und kein Knoten-Zug: erst loslassen, dann Handle greifen.
+        this.longPressArmed = false;
+        return;
+      }
       if (this.path && this.selected >= 0) {
         const hit = this.hitGizmo(p);
-        if (hit) {
+        if (hit && hit !== 'delete') {
           this.pushHistory();
           const n = this.path.nodes[this.selected];
           this.drag = { kind: hit, node: this.selected, startY: st.Y, startVal: hit === 'depth' ? n.z : Number.isNaN(n.roll) ? 0 : n.roll };
           return;
         }
+        if (hit === 'delete') return;
       }
-      const nodeIdx = this.path ? this.hitNode(p) : -1;
+      // Offenes Ende: Fortsetzen hat Vorrang vor Knoten-Zug und Segment-Griff (der Anschlusspunkt leuchtet)
+      const extendHere = (): boolean => {
+        if (!this.path || isClosed(this.path)) return false;
+        const endNode = this.path.nodes[this.path.nodes.length - 1];
+        const endS = toStage(endNode.x, endNode.y, endNode.z);
+        return Math.hypot(endS.X - st.X, endS.Y - st.Y) * this.view.camera.zoom < 56;
+      };
+      const nodeIdx = this.path && !extendHere() ? this.hitNode(p) : -1;
       if (nodeIdx >= 0 && this.unlocked.has('handles')) {
         this.pushHistory();
         this.selected = nodeIdx;
+        this.proNode = -1;
         this.drag = { kind: 'node', node: nodeIdx };
         this.drawOverlay();
         return;
+      }
+      // Finger auf der Bahn: Segment anfassen. Ob gebogen (quer zur Bahn) oder überzeichnet wird (längs der
+      // Bahn), entscheidet die erste Bewegung (siehe dragMove, 'trackPending').
+      if (this.path && this.samples && this.unlocked.has('handles') && !extendHere()) {
+        const near = nearestOnTrack(this.samples, st);
+        if (near.index >= 0 && near.d * this.view.camera.zoom < SEGMENT_HIT_PX) {
+          const seg = this.samples.seg[near.index];
+          const nodes = this.path.nodes;
+          const a = nodes[seg % nodes.length];
+          const b = nodes[(seg + 1) % nodes.length];
+          if (!isAutoNode(a) && !isAutoNode(b)) {
+            const i0 = Math.max(0, near.index - 2);
+            const i1 = Math.min(this.samples.count - 1, near.index + 2);
+            const sa = toStage(this.samples.x[i0], this.samples.y[i0], this.samples.z[i0]);
+            const sb = toStage(this.samples.x[i1], this.samples.y[i1], this.samples.z[i1]);
+            const tl = Math.hypot(sb.X - sa.X, sb.Y - sa.Y) || 1;
+            // Bühne → Bildschirm: Y gespiegelt
+            const tangent = { x: (sb.X - sa.X) / tl, y: -(sb.Y - sa.Y) / tl };
+            this.drag = { kind: 'trackPending', seg, t: this.samples.t[near.index], z: this.samples.z[near.index], startPt: p, startSt: st, tangent };
+            this.selected = -1;
+            this.proNode = -1;
+            this.drawOverlay();
+            return;
+          }
+        }
       }
       this.stroke = [{ X: st.X, Y: st.Y }];
       this.strokeModes = [];
@@ -331,6 +397,7 @@ export class LevelScene implements Scene {
         }
       }
       this.selected = -1;
+      this.proNode = -1;
       this.drawOverlay();
     };
     H.dragMove = (p) => {
@@ -343,6 +410,29 @@ export class LevelScene implements Scene {
             this.drawInk();
           }
           break;
+        case 'trackPending': {
+          const d = this.drag;
+          const dx = p.x - d.startPt!.x;
+          const dy = p.y - d.startPt!.y;
+          const len = Math.hypot(dx, dy);
+          if (len < 12) break;
+          const along = Math.abs(dx * d.tangent!.x + dy * d.tangent!.y) / len;
+          if (along < 0.6) {
+            // quer zur Bahn: Segment biegen
+            this.pushHistory();
+            this.drag = { ...d, kind: 'segment' };
+            this.bendTo(st);
+          } else {
+            // längs der Bahn: überzeichnen, der Strich beginnt am Anfasspunkt
+            this.stroke = [d.startSt!, { X: st.X, Y: st.Y }];
+            this.strokeModes = [];
+            this.strokeKind = 'overdraw';
+            this.drag = { kind: 'stroke' };
+            this.drawInk();
+          }
+          break;
+        }
+        case 'segment': this.bendTo(st); break;
         case 'node': this.moveNode(this.drag.node!, st); break;
         case 'handleIn': this.moveHandle(this.drag.node!, st, true); break;
         case 'handleOut': this.moveHandle(this.drag.node!, st, false); break;
@@ -357,7 +447,7 @@ export class LevelScene implements Scene {
       const st = this.view.camera.toStage(p.x, p.y);
       switch (this.drag.kind) {
         case 'stroke': this.finishStroke(); break;
-        case 'node': case 'handleIn': case 'handleOut': case 'depth': case 'roll': this.afterEdit(); break;
+        case 'node': case 'handleIn': case 'handleOut': case 'depth': case 'roll': case 'segment': this.afterEdit(); break;
         case 'shelf': {
           this.drag.ghost?.destroy();
           if (this.path && this.samples && this.drag.element) this.placeElement(this.drag.element, st);
@@ -385,6 +475,10 @@ export class LevelScene implements Scene {
       }
       const st = this.view.camera.toStage(p.x, p.y);
       if (this.path && this.samples) {
+        if (this.selected >= 0 && this.hitGizmo(p) === 'delete') {
+          this.deleteNode(this.selected);
+          return;
+        }
         const el = this.hitElement(st);
         if (el >= 0) {
           this.pushHistory();
@@ -394,12 +488,25 @@ export class LevelScene implements Scene {
         }
         const n = this.hitNode(p);
         if (n >= 0 && this.unlocked.has('handles')) {
+          if (this.selected !== n) this.proNode = -1;
           this.selected = n;
           this.drawOverlay();
           return;
         }
       }
       this.selected = -1;
+      this.proNode = -1;
+      this.drawOverlay();
+    };
+    H.longPress = (p) => {
+      if (this.mode !== 'draw' || this.isOverUI(p) || !this.path || !this.unlocked.has('handles')) return;
+      const n = this.hitNode(p);
+      if (n < 0) return;
+      // Profi-Modus: Langdruck auf einen Knoten zeigt seine Tangenten-Handles
+      this.selected = n;
+      this.proNode = n;
+      this.longPressArmed = true;
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) navigator.vibrate?.(8);
       this.drawOverlay();
     };
     H.doubleTap = (p) => {
@@ -457,41 +564,93 @@ export class LevelScene implements Scene {
     const s = toStage(n.x, n.y, n.z);
     return this.view.toScreen(s.X, s.Y);
   }
-  private hitNode(p: Pt): number {
-    if (!this.path) return -1;
-    let best = -1;
-    let bestD = HIT_R;
+  /**
+   * Trefferflächen der Knoten (Bildschirm): eng liegende Knoten werden unsichtbar auseinandergeschoben, damit
+   * jeder mit dem Finger greifbar bleibt (drei Runden Verdrängung auf 2·HIT_R Abstand).
+   */
+  private nodeHitCenters(): Array<{ i: number; x: number; y: number }> {
+    const out: Array<{ i: number; x: number; y: number }> = [];
+    if (!this.path) return out;
     this.path.nodes.forEach((n, i) => {
       if (isAutoNode(n)) return;
       const sp = this.nodeScreen(n);
-      const d = Math.hypot(sp.x - p.x, sp.y - p.y);
+      out.push({ i, x: sp.x, y: sp.y });
+    });
+    for (let round = 0; round < 3; round++) {
+      for (let a = 0; a < out.length; a++) {
+        for (let b = a + 1; b < out.length; b++) {
+          const dx = out[b].x - out[a].x;
+          const dy = out[b].y - out[a].y;
+          const d = Math.hypot(dx, dy);
+          if (d >= 2 * HIT_R) continue;
+          const push = (2 * HIT_R - d) / 2;
+          const ux = d > 1e-3 ? dx / d : 1;
+          const uy = d > 1e-3 ? dy / d : 0;
+          out[a].x -= ux * push; out[a].y -= uy * push;
+          out[b].x += ux * push; out[b].y += uy * push;
+        }
+      }
+    }
+    return out;
+  }
+  private hitNode(p: Pt): number {
+    let best = -1;
+    let bestD = HIT_R;
+    for (const c of this.nodeHitCenters()) {
+      const d = Math.hypot(c.x - p.x, c.y - p.y);
       if (d < bestD) {
         bestD = d;
-        best = i;
+        best = c.i;
       }
-    });
+    }
     return best;
   }
-  /** Positionen der Gizmo-Teile des ausgewählten Knotens (Bildschirm) */
-  private gizmoPositions(): { in: Pt; out: Pt; depth: Pt; roll: Pt } | null {
+  /**
+   * Positionen der Gizmo-Teile des ausgewählten Knotens (Bildschirm): Tangenten-Handles nur im Profi-Modus
+   * (Langdruck), dazu das Bogenmenü über dem Knoten mit Tiefe (links), Schräglage (oben) und Löschen (rechts).
+   */
+  private gizmoPositions(): { in: Pt | null; out: Pt | null; depth: Pt; roll: Pt; delete: Pt } | null {
     if (!this.path || this.selected < 0 || this.selected >= this.path.nodes.length) return null;
     const n = this.path.nodes[this.selected];
-    const a = nodeIn(n);
-    const b = nodeOut(n);
-    const sa = toStage(a.x, a.y, a.z / LANE_DEPTH);
-    const sb = toStage(b.x, b.y, b.z / LANE_DEPTH);
     const c = this.nodeScreen(n);
-    return { in: this.view.toScreen(sa.X, sa.Y), out: this.view.toScreen(sb.X, sb.Y), depth: { x: c.x, y: c.y + 44 }, roll: { x: c.x + 44, y: c.y } };
+    const onArc = (deg: number): Pt => ({ x: c.x + MENU_R * Math.cos((deg * Math.PI) / 180), y: c.y - MENU_R * Math.sin((deg * Math.PI) / 180) });
+    let inP: Pt | null = null;
+    let outP: Pt | null = null;
+    if (this.proNode === this.selected) {
+      const a = nodeIn(n);
+      const b = nodeOut(n);
+      const sa = toStage(a.x, a.y, a.z / LANE_DEPTH);
+      const sb = toStage(b.x, b.y, b.z / LANE_DEPTH);
+      inP = this.view.toScreen(sa.X, sa.Y);
+      outP = this.view.toScreen(sb.X, sb.Y);
+    }
+    return { in: inP, out: outP, depth: onArc(150), roll: onArc(90), delete: onArc(30) };
   }
-  private hitGizmo(p: Pt): 'handleIn' | 'handleOut' | 'depth' | 'roll' | null {
+  private hitGizmo(p: Pt): 'handleIn' | 'handleOut' | 'depth' | 'roll' | 'delete' | null {
     const g = this.gizmoPositions();
     if (!g) return null;
     const d = (q: Pt) => Math.hypot(q.x - p.x, q.y - p.y);
-    if (d(g.in) < HIT_R) return 'handleIn';
-    if (d(g.out) < HIT_R) return 'handleOut';
-    if (this.gizmo3D && d(g.depth) < HIT_R) return 'depth';
-    if (this.gizmoRoll && d(g.roll) < HIT_R) return 'roll';
+    if (g.in && d(g.in) < HIT_R) return 'handleIn';
+    if (g.out && d(g.out) < HIT_R) return 'handleOut';
+    if (this.gizmo3D && d(g.depth) < MENU_HIT) return 'depth';
+    if (this.gizmoRoll && d(g.roll) < MENU_HIT) return 'roll';
+    if (this.canDelete(this.selected) && d(g.delete) < MENU_HIT) return 'delete';
     return null;
+  }
+  private canDelete(i: number): boolean {
+    if (!this.path || i < 0 || i >= this.path.nodes.length) return false;
+    const real = this.path.nodes.filter((n) => !isAutoNode(n)).length;
+    return real > 3 && this.path.nodes[i].kind !== 'station';
+  }
+  /** Segment-Ziehen: die Bahn läuft am Anfasspunkt genau durch den Finger (feste Tiefe), Knoten bleiben */
+  private bendTo(st: StagePoint): void {
+    if (!this.path || this.drag.kind !== 'segment') return;
+    const z = this.drag.z ?? 0;
+    const w = toWorld(st.X, st.Y, z);
+    let y = Math.max(this.groundAt(w.x, z) + 0.6, w.y);
+    if (this.level.maxHeight) y = Math.min(y, this.level.maxHeight);
+    bendSegment(this.path, this.drag.seg ?? 0, this.drag.t ?? 0.5, { x: w.x, y, z: z * LANE_DEPTH });
+    this.redrawTrack();
   }
   private onStage(st: StagePoint): boolean {
     const z = clamp(st.Y / LANE_RISE, LANE_MIN - 0.5, LANE_MAX + 0.5);
@@ -619,9 +778,11 @@ export class LevelScene implements Scene {
       const merged = applyOverdraw(this.path, this.stroke, { ...opts, snapDistance: 30 / this.view.camera.zoom });
       this.ghost.clear();
       if (merged) {
-        this.view.setTrack(merged, sampleTrack(merged, 0.5), this.skin, this.terrain, this.allowTunnels, true);
+        const sm = sampleTrack(merged, 0.5);
+        this.view.setTrack(merged, sm, this.skin, this.terrain, this.allowTunnels, true);
         this.previewedCount = count;
         this.drawInk();
+        this.liveFeedback(merged, sm, trackStats(merged, sm));
       }
       return;
     }
@@ -634,6 +795,7 @@ export class LevelScene implements Scene {
         this.previewedCount = count;
         this.drawInk();
         this.drawGhost(ext, sm);
+        this.liveFeedback(ext, sm, trackStats(ext, sm));
       }
       return;
     }
@@ -645,6 +807,7 @@ export class LevelScene implements Scene {
       const sm = sampleTrack(r.path, 0.5);
       this.view.setTrack(r.path, sm, this.skin, this.terrain, this.allowTunnels, true);
       this.drawGhost(r.path, sm);
+      this.liveFeedback(r.path, sm, trackStats(r.path, sm));
     } else this.ghost.clear();
   }
 
@@ -732,10 +895,12 @@ export class LevelScene implements Scene {
   private setPath(path: TrackPath | null, animate: boolean): void {
     this.path = path;
     this.selected = -1;
+    this.proNode = -1;
     this.redrawTrack();
     this.updateUndoButtons();
     if (!path) {
       this.view.terrainR.setTunnelPortals([]);
+      this.measure.clear();
       this.updateGoals();
       this.updateHint();
       if (!this.sandbox) storage.saveDraft(this.level.id, emptyPath());
@@ -751,6 +916,7 @@ export class LevelScene implements Scene {
     }
     this.updateGoals();
     this.updateHint();
+    if (this.samples && this.stats) this.measure.show(path, this.samples, this.stats, (x, z) => this.terrain.groundHeight(x, z));
     if (!this.sandbox) storage.saveDraft(this.level.id, path);
   }
 
@@ -766,6 +932,7 @@ export class LevelScene implements Scene {
     this.stats = trackStats(this.path, this.samples);
     this.view.setTrack(this.path, this.samples, this.skin, this.terrain, this.allowTunnels, false);
     this.drawOverlay();
+    if (this.drag.kind !== 'none' && this.drag.kind !== 'stroke') this.liveFeedback(this.path, this.samples, this.stats);
   }
 
   private afterEdit(): void {
@@ -986,32 +1153,43 @@ export class LevelScene implements Scene {
       const n = nodes[this.selected];
       const k = laneScale(n.z);
       const c = toStage(n.x, n.y, n.z);
-      const a = nodeIn(n);
-      const b = nodeOut(n);
-      const sa = toStage(a.x, a.y, a.z / LANE_DEPTH);
-      const sb = toStage(b.x, b.y, b.z / LANE_DEPTH);
-      const rr = 0.5 * k * zoomScale;
-      g.moveTo(sa.X, sa.Y).lineTo(c.X, c.Y).lineTo(sb.X, sb.Y).stroke({ width: 0.12 * k, color: hexNum(INK), alpha: 0.8 });
-      g.circle(sa.X, sa.Y, rr).fill(0x3ec7c2).stroke({ width: 0.12 * k, color: hexNum(INK) });
-      g.circle(sb.X, sb.Y, rr).fill(0x3ec7c2).stroke({ width: 0.12 * k, color: hexNum(INK) });
-      // Gizmo in Bildschirm-Pixeln: Tiefen-Handle (Quadrat unten) und Roll-Handle (Ring rechts)
-      if (this.gizmo3D) {
-        const gp = this.gizmoPositions()!;
-        const gz = new Graphics();
-        gz.roundRect(gp.depth.x - 13, gp.depth.y - 13, 26, 26, 6).fill(0x9b6dff).stroke({ width: 3, color: hexNum(INK) });
-        gz.moveTo(gp.depth.x, gp.depth.y - 8).lineTo(gp.depth.x, gp.depth.y + 8).moveTo(gp.depth.x - 5, gp.depth.y - 3).lineTo(gp.depth.x, gp.depth.y - 8).lineTo(gp.depth.x + 5, gp.depth.y - 3)
-          .moveTo(gp.depth.x - 5, gp.depth.y + 3).lineTo(gp.depth.x, gp.depth.y + 8).lineTo(gp.depth.x + 5, gp.depth.y + 3).stroke({ width: 2.5, color: 0xffffff, cap: 'round', join: 'round' });
-        const auto = Number.isNaN(n.roll);
-        if (this.gizmoRoll) {
-          gz.circle(gp.roll.x, gp.roll.y, 14).fill(auto ? hexNum(PAPER) : 0xff8a5c).stroke({ width: 3, color: hexNum(INK) });
-          const ang = auto ? 0 : n.roll;
-          gz.moveTo(gp.roll.x - 9 * Math.cos(ang), gp.roll.y - 9 * Math.sin(ang)).lineTo(gp.roll.x + 9 * Math.cos(ang), gp.roll.y + 9 * Math.sin(ang)).stroke({ width: 3, color: hexNum(INK), cap: 'round' });
-          gz.circle(gp.roll.x, gp.roll.y, 2.5).fill(hexNum(INK));
-          if (!auto) this.rollText.text = `${Math.round((n.roll * 180) / Math.PI)}°`;
-          this.rollText.position.set(gp.roll.x + 36, gp.roll.y);
-        }
-        this.gizmoLayer.addChild(gz);
+      const gp = this.gizmoPositions()!;
+      // Tangenten-Handles nur im Profi-Modus (Langdruck auf den Knoten)
+      if (gp.in && gp.out) {
+        const a = nodeIn(n);
+        const b = nodeOut(n);
+        const sa = toStage(a.x, a.y, a.z / LANE_DEPTH);
+        const sb = toStage(b.x, b.y, b.z / LANE_DEPTH);
+        const rr = 0.5 * k * zoomScale;
+        g.moveTo(sa.X, sa.Y).lineTo(c.X, c.Y).lineTo(sb.X, sb.Y).stroke({ width: 0.12 * k, color: hexNum(INK), alpha: 0.8 });
+        g.circle(sa.X, sa.Y, rr).fill(0x3ec7c2).stroke({ width: 0.12 * k, color: hexNum(INK) });
+        g.circle(sb.X, sb.Y, rr).fill(0x3ec7c2).stroke({ width: 0.12 * k, color: hexNum(INK) });
       }
+      // Bogenmenü in Bildschirm-Pixeln über dem Knoten: Tiefe (links), Schräglage (oben), Löschen (rechts)
+      const gz = new Graphics();
+      const sc = this.nodeScreen(n);
+      const arcFrom = (deg: number) => (deg * Math.PI) / 180;
+      gz.arc(sc.x, sc.y, MENU_R, -arcFrom(150), -arcFrom(30)).stroke({ width: 2, color: hexNum(INK), alpha: 0.25 });
+      const button = (q: Pt, fill: number) => gz.circle(q.x, q.y, 22).fill(fill).stroke({ width: 3, color: hexNum(INK) });
+      if (this.gizmo3D) {
+        button(gp.depth, 0x9b6dff);
+        gz.moveTo(gp.depth.x, gp.depth.y - 10).lineTo(gp.depth.x, gp.depth.y + 10).moveTo(gp.depth.x - 6, gp.depth.y - 4).lineTo(gp.depth.x, gp.depth.y - 10).lineTo(gp.depth.x + 6, gp.depth.y - 4)
+          .moveTo(gp.depth.x - 6, gp.depth.y + 4).lineTo(gp.depth.x, gp.depth.y + 10).lineTo(gp.depth.x + 6, gp.depth.y + 4).stroke({ width: 3, color: 0xffffff, cap: 'round', join: 'round' });
+      }
+      const auto = Number.isNaN(n.roll);
+      if (this.gizmoRoll) {
+        button(gp.roll, auto ? hexNum(PAPER) : 0xff8a5c);
+        const ang = auto ? 0 : n.roll;
+        gz.moveTo(gp.roll.x - 13 * Math.cos(ang), gp.roll.y - 13 * Math.sin(ang)).lineTo(gp.roll.x + 13 * Math.cos(ang), gp.roll.y + 13 * Math.sin(ang)).stroke({ width: 3.5, color: hexNum(INK), cap: 'round' });
+        gz.circle(gp.roll.x, gp.roll.y, 3).fill(hexNum(INK));
+        if (!auto) this.rollText.text = `${Math.round((n.roll * 180) / Math.PI)}°`;
+        this.rollText.position.set(gp.roll.x + 40, gp.roll.y);
+      }
+      if (this.canDelete(this.selected)) {
+        button(gp.delete, 0xd64545);
+        gz.moveTo(gp.delete.x - 8, gp.delete.y - 8).lineTo(gp.delete.x + 8, gp.delete.y + 8).moveTo(gp.delete.x + 8, gp.delete.y - 8).lineTo(gp.delete.x - 8, gp.delete.y + 8).stroke({ width: 3.5, color: 0xffffff, cap: 'round' });
+      }
+      this.gizmoLayer.addChild(gz);
     }
   }
 
@@ -1115,24 +1293,36 @@ export class LevelScene implements Scene {
 
   // ------------------------------------------------------------------ Ziele / Hinweise
   private updateGoals(): void {
-    this.goalsBar.removeChildren();
     if (this.sandbox) {
-      if (this.stats) {
-        const txt = label(`${Math.round(this.stats.length)} m · ↑ ${this.stats.maxHeight.toFixed(0)} m · ${this.stats.loops} ◎ · ${this.stats.turns} ↻`, 16, '#ffffff', false, { stroke: { color: INK, width: 4 } });
-        this.goalsBar.addChild(txt);
-      }
+      // Sandkasten: das Maßband zeigt Länge, Höhe, Loopings und Kehren dauerhaft
+      this.goalsBar.removeChildren();
+      this.goalCells = [];
+      this.goalsBuiltFor = '';
+      this.measure.pin(true);
+      if (this.path && this.samples && this.stats) this.measure.show(this.path, this.samples, this.stats, (x, z) => this.terrain.groundHeight(x, z));
+      else this.measure.clear();
       return;
     }
     const ts = this.stats ?? { length: 0, maxHeight: 0, loops: 0, turns: 0, lanes: 0, rolls: 0, maxDrop: 0 };
     const ride = this.sim?.stats ?? null;
     const finished = this.sim?.phase === 'done';
     const ev = this.path ? evaluate(this.level, this.path, ts, ride, finished, this.passengers?.allSeated ?? true) : null;
-    const goals = this.level.goals;
+    this.buildGoalsBar();
+    this.refreshGoals(ev, false);
+  }
+
+  /** Zielleiste einmal je Level und Format bauen (Zellen bleiben, nur die Haken ändern sich) */
+  private buildGoalsBar(): void {
     const portrait = this.h > this.w;
+    const key = `${this.level.id}:${portrait ? 'p' : 'l'}:${this.w}`;
+    if (this.goalsBuiltFor === key) return;
+    this.goalsBuiltFor = key;
+    this.goalsBar.removeChildren();
+    this.goalCells = [];
+    const goals = this.level.goals;
     const perRow = portrait ? 3 : 6;
     const cellW = portrait ? Math.min(126, (this.w - 24) / perRow) : 150;
     goals.forEach((goal, i) => {
-      const r = ev?.goals[i];
       const c = new Container();
       const g = new Graphics();
       const bgW = cellW - 8;
@@ -1146,15 +1336,51 @@ export class LevelScene implements Scene {
       txt.anchor.set(0, 0.5);
       txt.position.set(-bgW / 2 + 36, 0);
       c.addChild(txt);
+      const pop = new Container();
+      pop.position.set(bgW / 2 - 14, 0);
       const ck = new Graphics();
-      check(ck, bgW / 2 - 14, 0, 9, !!r?.done);
-      c.addChild(ck);
+      check(ck, 0, 0, 9, false);
+      pop.addChild(ck);
+      c.addChild(pop);
       const row = Math.floor(i / perRow);
       const col = i % perRow;
       const rowCount = Math.min(perRow, goals.length - row * perRow);
       c.position.set((col - (rowCount - 1) / 2) * cellW, row * 46);
       this.goalsBar.addChild(c);
+      this.goalCells.push({ check: ck, pop, done: false, x: c.position.x + pop.position.x, y: c.position.y });
     });
+  }
+
+  /** Haken setzen; ein neu erreichtes Ziel ploppt (Skalierung 1 → 1,3 → 1) und glitzert */
+  private refreshGoals(ev: Evaluation | null, animate: boolean): void {
+    this.goalCells.forEach((cell, i) => {
+      const done = !!ev?.goals[i]?.done;
+      if (done === cell.done) return;
+      cell.done = done;
+      cell.check.clear();
+      check(cell.check, 0, 0, 9, done);
+      if (done && animate) {
+        cell.pop.scale.set(1.3);
+        const bar = this.goalsBar.position;
+        for (let k = 0; k < 4; k++) this.view.effects.glitter(...(() => { const st = this.view.camera.toStage(bar.x + cell.x, bar.y + cell.y); return [st.X, st.Y] as [number, number]; })());
+      }
+    });
+    for (const cell of this.goalCells) if (cell.pop.scale.x > 1) cell.pop.scale.set(Math.max(1, cell.pop.scale.x - 0.02));
+  }
+
+  /**
+   * Live-Ziele und Maßband während Strich und Drag (höchstens alle 100 ms): die Zielleiste hakt, sobald die
+   * Bahn ein Ziel erfüllt, noch bevor der Finger loslässt
+   */
+  private liveFeedback(path: TrackPath, samples: TrackSamples, stats: TrackStats, force = false): void {
+    const now = performance.now();
+    if (!force && now - this.liveGoalTimer < 100) return;
+    this.liveGoalTimer = now;
+    if (!this.sandbox) {
+      this.buildGoalsBar();
+      this.refreshGoals(evaluate(this.level, path, stats, null, false, true), true);
+    }
+    this.measure.show(path, samples, stats, (x, z) => this.terrain.groundHeight(x, z));
   }
 
   private updateHint(): void {
@@ -1582,7 +1808,10 @@ export class LevelScene implements Scene {
     this.speedText.position.set(w / 2, h - (portrait ? 120 : 108));
     this.toast.position.set(w / 2, h * 0.42);
     this.resultPanel?.position.set(w / 2, h / 2);
-    if (this.mode === 'draw') this.updateGoals();
+    if (this.mode === 'draw') {
+      this.goalsBuiltFor = '';
+      this.updateGoals();
+    }
   }
 
   update(dt: number): void {
@@ -1602,6 +1831,8 @@ export class LevelScene implements Scene {
         this.supportGrow = Math.min(1, this.supportGrow + dt / 0.3);
         this.view.growSupports(1 - (1 - this.supportGrow) ** 2);
       }
+      this.measure.update(dt, (X, Y) => this.view.toScreen(X, Y));
+      for (const cell of this.goalCells) if (cell.pop.scale.x > 1) cell.pop.scale.set(Math.max(1, cell.pop.scale.x - dt * 1.5));
       this.renderChips();
       // Anschlusspunkt atmet (Alpha und Größe), damit das offene Ende als Startpunkt für den nächsten Strich auffällt
       this.endMarker.alpha = 0.55 + 0.45 * Math.sin(this.time * 5);

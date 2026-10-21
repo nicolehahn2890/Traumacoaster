@@ -4,6 +4,7 @@
  *  2. steiler Hügel mit Kehre in der Höhe → 1 Steilkurve in die Nachbarspur, Wagen nie kopfüber
  *  3. Looping in der Luft → 1 Looping, Fahrt kopfüber und wieder aufrecht
  *  4. Löschen-Knopf, Überzeichnen (Hügel in eine flache Bahn)
+ *  7. Bearbeiten: Segment ziehen (Bahn durch den Finger, Knoten bleiben), Langdruck zeigt Profi-Handles
  * Screenshots nach screenshots/scenario-*.png. Nutzt einen vorbereiteten Spielstand (Welt 1 fast komplett).
  */
 import { chromium } from '@playwright/test';
@@ -248,6 +249,79 @@ r = await ride('6-circuit', 6);
 console.log('ride result', r);
 check(r.minUp > -0.1, `Kreis von Hand: Wagen steht nie Kopf (min upy ${r.minUp})`);
 check(r.st.sim?.phase === 'done', `Kreis von Hand: Fahrt kommt an (ist ${r.st.sim?.phase}/${r.st.sim?.fail})`);
+}
+
+// ---------------------------------------------------------------- 7. Bearbeiten: Segment ziehen, Langdruck, Knotenmenü
+if (want('7')) {
+await openLevel();
+// Live-Ziele: Level 8 verlangt 15 m Höhe; mitten im Strich (nach der Kuppe) muss das Ziel schon haken
+let liveGoals = [];
+await strokeStage([[0, 0], [8, 0.5], [16, 6], [24, 16], [32, 16.5], [40, 10], [50, 2], [60, 0.3], [70, 0]], 10, async () => {
+  await sleep(400);
+  liveGoals = await page.evaluate(() => window.tcGame.current.goalCells.map((c) => c.done));
+  await page.screenshot({ path: 'screenshots/scenario-7-live.png' });
+});
+check(liveGoals[1] === true, `Live-Ziel: Höhe ≥ 15 m hakt schon während des Strichs (${JSON.stringify(liveGoals)})`);
+await sleep(800);
+st = await state();
+const n0 = st.nodes;
+const h0 = Number(st.height);
+check(n0 >= 3, `Hügel gezeichnet (${n0} Knoten)`);
+// Anfasspunkt mitten in einem Segment (weit weg von Knoten): Abtastpunkt bei 35 % der Länge
+const grab = await page.evaluate(() => {
+  const s = window.tcGame.current;
+  const sm = s.samples;
+  const i = Math.floor(sm.count * 0.35);
+  // Bühne aus Welt in Spur 0: X = x, Y = y (toStage mit Spur-Anhebung z·4,2)
+  const scr = (j) => s.view.camera.toScreen(sm.x[j], sm.y[j] + sm.z[j] * 4.2);
+  const p = scr(i);
+  const a = scr(Math.max(0, i - 3));
+  const b = scr(Math.min(sm.count - 1, i + 3));
+  const tl = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  // Normale zur Bahn (Bildschirm), nach oben zeigend: quer ziehen heißt biegen, längs heißt überzeichnen
+  let nx = -(b.y - a.y) / tl;
+  let ny = (b.x - a.x) / tl;
+  if (ny > 0) { nx = -nx; ny = -ny; }
+  return { x: sm.x[i], y: sm.y[i], z: sm.z[i], sx: p.x, sy: p.y, nx, ny };
+});
+await page.mouse.move(grab.sx, grab.sy);
+await page.mouse.down();
+for (let k = 1; k <= 8; k++) await page.mouse.move(grab.sx + grab.nx * k * 8, grab.sy + grab.ny * k * 8);
+await page.mouse.up();
+await sleep(600);
+st = await state();
+console.log('after bend', st, grab);
+check(st.nodes === n0, `Segment ziehen: Knotenzahl bleibt (${n0} → ${st.nodes})`);
+check(Number(st.height) > h0 - 0.5, `Segment ziehen: Höhe nicht gesunken (${h0} → ${st.height})`);
+const bent = await page.evaluate((g) => {
+  // die Bahn läuft jetzt quer zur alten Richtung versetzt: kleinster Abstand des alten Anfasspunkts zur neuen Bahn
+  const sm = window.tcGame.current.samples;
+  let best = Infinity;
+  for (let i = 0; i < sm.count; i++) best = Math.min(best, Math.hypot(sm.x[i] - g.x, sm.y[i] - g.y));
+  return best;
+}, grab);
+check(bent > 2, `Segment ziehen: Bahn am Anfasspunkt um ${bent.toFixed(1)} m verschoben`);
+await page.screenshot({ path: 'screenshots/scenario-7-bend.png' });
+// Langdruck auf einen Knoten zeigt die Profi-Handles
+const nodeScreen = await page.evaluate(() => {
+  const s = window.tcGame.current;
+  const n = s.path.nodes[1];
+  return s.view.camera.toScreen(n.x, n.y + n.z * 4.2);
+});
+await page.mouse.move(nodeScreen.x, nodeScreen.y);
+await page.mouse.down();
+// der Langdruck-Timer (480 ms) läuft erst, wenn der Hauptthread frei ist; mit Software-Rendering dauert das
+await sleep(1200);
+await page.mouse.up();
+await sleep(300);
+const pro = await page.evaluate(() => window.tcGame.current.proNode);
+check(pro === 1, `Langdruck zeigt Profi-Handles (proNode ${pro})`);
+await page.screenshot({ path: 'screenshots/scenario-7-pro.png' });
+// Tipp ins Leere beendet den Profi-Modus
+await page.mouse.click(1100, 300);
+await sleep(300);
+const proAfter = await page.evaluate(() => window.tcGame.current.proNode);
+check(proAfter === -1, `Tipp ins Leere beendet den Profi-Modus (proNode ${proAfter})`);
 }
 
 await browser.close();
