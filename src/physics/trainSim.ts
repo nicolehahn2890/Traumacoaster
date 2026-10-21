@@ -56,6 +56,14 @@ export interface CarState {
   feltSide: number;
   inTunnel: boolean;
   inverted: boolean;
+  /** Geschwindigkeit des Wagens in der Welt (x, y in m/s), für Übergaben an die Fahrgäste und die Darstellung */
+  vx: number;
+  vy: number;
+}
+
+/** Flache Kopie eines Wagenzustands (für Vorzustände und Render-Puffer) */
+export function copyCar(src: CarState, dst: CarState): CarState {
+  return Object.assign(dst, src);
 }
 
 export interface RideStats {
@@ -120,6 +128,8 @@ export class TrainSim {
   readonly path: TrackPath;
   readonly opts: TrainSimOptions;
   readonly cars: CarState[] = [];
+  /** Wagenzustände vor dem letzten step(): Das Rendering interpoliert zwischen prevCars und cars */
+  readonly prevCars: CarState[] = [];
   readonly events: RideEvent[] = [];
   readonly stats: RideStats = {
     time: 0, maxSpeed: 0, maxG: 1, minG: 1, maxLatG: 0, airtime: 0, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0, blackout: false, brakesUsed: false, distance: 0,
@@ -141,6 +151,8 @@ export class TrainSim {
   private stallTimer = 0;
   private lapDone = false;
   private peakReported = false;
+  /** Tangentialbeschleunigung des Zugs im letzten Teilschritt (Kettenzug, Launch, Bremse, Reibung, Hangabtrieb) */
+  private aTangential = 0;
 
   constructor(samples: TrackSamples, path: TrackPath, opts: TrainSimOptions) {
     this.samples = samples;
@@ -148,7 +160,7 @@ export class TrainSim {
     this.opts = opts;
     this.collected = opts.coins.map(() => false);
     for (let i = 0; i < opts.cars; i++) {
-      this.cars.push({ index: i, s: 0, x: 0, y: 0, z: 0, tx: 1, ty: 0, tz: 0, upx: 0, upy: 1, upz: 0, sx: 0, sy: 0, sz: 1, bank: 0, angle: 0, gSeat: 1, gFwd: 0, gLat: 0, feltFwd: 0, feltUp: G, feltSide: 0, inTunnel: false, inverted: false });
+      this.cars.push({ index: i, s: 0, x: 0, y: 0, z: 0, tx: 1, ty: 0, tz: 0, upx: 0, upy: 1, upz: 0, sx: 0, sy: 0, sz: 1, bank: 0, angle: 0, gSeat: 1, gFwd: 0, gLat: 0, feltFwd: 0, feltUp: G, feltSide: 0, inTunnel: false, inverted: false, vx: 0, vy: 0 });
       this.wasInTunnel.push(false);
     }
     const launch = opts.startType === 'launch' || opts.startType === 'hydro' || opts.startType === 'swing';
@@ -156,6 +168,7 @@ export class TrainSim {
     this.phase = launch ? 'launch' : 'coast';
     this.v = launch ? 0.5 : STATION_PUSH;
     this.updateCars();
+    for (const c of this.cars) this.prevCars.push({ ...c });
   }
 
   /** Anstieg nahe der Station suchen: Lift von dessen Beginn bis zum ersten Scheitel */
@@ -188,6 +201,7 @@ export class TrainSim {
   }
 
   step(dt: number): void {
+    for (let i = 0; i < this.cars.length; i++) copyCar(this.cars[i], this.prevCars[i]);
     const sub = Math.max(1, Math.ceil(dt / (1 / 120)));
     const h = dt / sub;
     for (let i = 0; i < sub; i++) this.substep(h);
@@ -232,7 +246,9 @@ export class TrainSim {
           this.phase = 'lift';
           this.events.push({ kind: 'liftStart', time: this.t });
         }
-        if (this.v < liftSpeed) {
+        // Kette hält das Tempo (auch wenn der Zug genau Kettentempo fährt): sonst wechselte die
+        // Tangentialbeschleunigung in jedem Teilschritt zwischen Hang und Kette, und die Fahrgäste würden zittern
+        if (this.v <= liftSpeed + 1e-9) {
           this.v = liftSpeed;
           a = Math.max(a, 0);
         }
@@ -282,6 +298,10 @@ export class TrainSim {
       if ((anyAuto || ahead.auto) && this.v > RETURN_SPEED_LIMIT) a -= 7;
     }
 
+    // Die Fahrgäste spüren die echte Beschleunigung des Zugs: am Kettenzug (a ≥ 0 trotz Hang) drückt der Hang
+    // sie in die Lehne, der Launch presst sie in den Sitz, die Bremse wirft sie nach vorn. Die Sprünge der
+    // Geschwindigkeit beim Einklinken der Kette sind nicht enthalten (die Kette greift weich).
+    this.aTangential = a;
     this.v += a * h;
     // Stillstand: auf ebener Strecke oder am Berg → nicht geschafft
     if (!afterFail && this.phase === 'coast' && this.v <= 0.03) {
@@ -316,9 +336,11 @@ export class TrainSim {
       const p0 = toStage(st.x, st.y, st.z);
       const p1 = toStage(st.x + st.t3x, st.y + st.t3y, st.z + st.t3z / LANE_DEPTH);
       car.angle = Math.atan2(p1.Y - p0.Y, p1.X - p0.X);
-      // Beschleunigung: Normalanteil v²·k (Mindestradius 2,5 m) + Hangabtrieb
+      car.vx = st.t3x * this.v;
+      car.vy = st.t3y * this.v;
+      // Beschleunigung: Normalanteil v²·k (Mindestradius 2,5 m) + Tangentialbeschleunigung des Zugs
       const v2 = this.v * this.v;
-      const aTan = -g * st.t3y;
+      const aTan = this.aTangential;
       const kMag = Math.hypot(st.k3x, st.k3y, st.k3z);
       const kScale = kMag > MAX_CURVATURE ? MAX_CURVATURE / kMag : 1;
       const fx = v2 * st.k3x * kScale + aTan * st.t3x;

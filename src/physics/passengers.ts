@@ -54,6 +54,8 @@ export interface PassengerView {
   row: number;
   /** Lage der Teile im Wagen-System (Meter), oder in Weltkoordinaten wenn ejected */
   parts: Record<PartName, PartPose>;
+  /** Lage der Teile vor dem letzten step() (gleiches Bezugssystem wie parts), für die Interpolation beim Rendern */
+  prevParts: Record<PartName, PartPose>;
   ejected: boolean;
   /** Welt-Spur (für die Darstellung des Flugs) */
   lane: number;
@@ -65,6 +67,20 @@ export interface PassengerView {
 interface Ragdoll {
   bodies: Record<PartName, RAPIER.RigidBody>;
   joints: RAPIER.ImpulseJoint[];
+}
+
+export function emptyParts(): Record<PartName, PartPose> {
+  return { torso: { x: 0, y: 0, angle: 0 }, head: { x: 0, y: 0, angle: 0 }, armL: { x: 0, y: 0, angle: 0 }, armR: { x: 0, y: 0, angle: 0 }, legL: { x: 0, y: 0, angle: 0 }, legR: { x: 0, y: 0, angle: 0 } };
+}
+
+export function copyParts(src: Record<PartName, PartPose>, dst: Record<PartName, PartPose>): void {
+  for (const name of PART_NAMES) {
+    const a = src[name];
+    const b = dst[name];
+    b.x = a.x;
+    b.y = a.y;
+    b.angle = a.angle;
+  }
 }
 
 export interface PassengerSimOptions {
@@ -88,6 +104,8 @@ export class PassengerSim {
   private opts: PassengerSimOptions;
   private sideAccum: number[] = [];
   private landTimer: number[] = [];
+  /** Fahrgast ist in diesem Schritt in die Welt übergegangen: parts wechseln das Bezugssystem, nicht interpolieren */
+  private justEjected: boolean[] = [];
   onEject: ((p: PassengerView, side: boolean) => void) | null = null;
 
   constructor(opts: PassengerSimOptions) {
@@ -104,16 +122,24 @@ export class PassengerSim {
         const idx = this.views.length;
         const view: PassengerView = {
           index: idx, car: c, row: r, ejected: false, lane: 0, lean: 0, landed: false,
-          parts: { torso: { x: 0, y: 0, angle: 0 }, head: { x: 0, y: 0, angle: 0 }, armL: { x: 0, y: 0, angle: 0 }, armR: { x: 0, y: 0, angle: 0 }, legL: { x: 0, y: 0, angle: 0 }, legR: { x: 0, y: 0, angle: 0 } },
+          parts: emptyParts(),
+          prevParts: emptyParts(),
         };
         this.views.push(view);
         this.dolls.push(this.buildRagdoll(this.local, c * CAR.spacing + CAR.rows[r] - 0.05, CAR.floorY + RIG.seatY + RIG.torso.hy + 0.02, true));
         this.worldDolls.push(null);
         this.sideAccum.push(0);
         this.landTimer.push(0);
+        this.justEjected.push(false);
       }
     }
     this.buildGround();
+    // Startpose lesen, damit prevParts/parts vom ersten Frame an stimmen
+    for (let i = 0; i < this.views.length; i++) {
+      const d = this.dolls[i];
+      if (d) this.readPose(this.views[i], d);
+      copyParts(this.views[i].parts, this.views[i].prevParts);
+    }
   }
 
   private buildTub(car: number): void {
@@ -185,12 +211,14 @@ export class PassengerSim {
    * carWorldPos: Position der Schiene unter dem Wagen (Welt), für Übergabe in die Welt-Simulation.
    */
   step(cars: CarState[], dt: number, trainSpeed: number, autoSegment: boolean): void {
-    // Wagengeschwindigkeit für Übergabe (Welt-2D)
+    // Wagengeschwindigkeit für Übergabe (Welt-2D): echte Wagen-Geschwindigkeit, falls der Zug sie liefert
     for (let c = 0; c < cars.length; c++) {
       const car = cars[c];
-      this.carVel[c] = { x: car.tx * trainSpeed, y: car.ty * trainSpeed };
+      const hasVel = typeof car.vx === 'number' && typeof car.vy === 'number' && (car.vx !== 0 || car.vy !== 0 || trainSpeed === 0);
+      this.carVel[c] = hasVel ? { x: car.vx, y: car.vy } : { x: car.tx * trainSpeed, y: car.ty * trainSpeed };
       this.carPrev[c] = { x: car.x, y: car.y };
     }
+    for (const v of this.views) copyParts(v.parts, v.prevParts);
     for (let i = 0; i < this.views.length; i++) {
       const v = this.views[i];
       const doll = this.dolls[i];
@@ -241,6 +269,13 @@ export class PassengerSim {
       const outTop = torso.y > CAR.rearWallH + 0.75;
       const outSide = Math.abs(torso.x - ox) > CAR.halfLength + 0.7;
       if (outTop || outSide) this.eject(i, cars, false);
+    }
+    for (let i = 0; i < this.views.length; i++) {
+      if (!this.justEjected[i]) continue;
+      this.justEjected[i] = false;
+      const wd = this.worldDolls[i];
+      if (wd) this.readPose(this.views[i], wd);
+      copyParts(this.views[i].parts, this.views[i].prevParts);
     }
   }
 
@@ -293,6 +328,7 @@ export class PassengerSim {
     this.worldDolls[i] = wd;
     v.ejected = true;
     v.lane = car.z;
+    this.justEjected[i] = true;
     this.onEject?.(v, side);
   }
 

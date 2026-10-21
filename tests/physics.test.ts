@@ -99,6 +99,46 @@ describe('Zug-Simulation', () => {
     expect(sim.stats.maxSpeed * 3.6).toBeGreaterThan(60);
     expect(sim.phase).toBe('done');
   });
+  it('lässt die Fahrgäste den Launch als Beschleunigung spüren', () => {
+    const stroke = stageCurve(0, 80, 160, (x) => 14 * Math.exp(-((x - 55) ** 2) / 80));
+    const { sim } = simFor(stroke, { cars: 1 }, 'launch');
+    let maxFwd = 0;
+    for (let i = 0; i < 30; i++) {
+      sim.step(1 / 60);
+      maxFwd = Math.max(maxFwd, sim.cars[0].feltFwd);
+    }
+    // 12 m/s² Launch minus Reibung und Luftwiderstand
+    expect(maxFwd).toBeGreaterThan(11);
+    expect(maxFwd).toBeLessThan(12.5);
+  });
+  it('drückt die Fahrgäste am Kettenzug in die Lehne (Hangabtrieb ohne Beschleunigung)', () => {
+    const { sim } = simFor(hill(15), { frictionScale: 0 });
+    let checked = 0;
+    let sumDiff = 0;
+    let maxDiff = 0;
+    for (let i = 0; i < 60 * 20 && !sim.events.some((e) => e.kind === 'liftEnd'); i++) {
+      sim.step(1 / 60);
+      const c = sim.cars[0];
+      if (sim.phase === 'lift' && c.ty > 0.3) {
+        // Hangabtrieb g·sin α in die Lehne; kleine Abweichung aus der über ±1,2 m gemittelten Krümmung
+        const d = Math.abs(c.feltFwd - G * c.ty);
+        sumDiff += d;
+        maxDiff = Math.max(maxDiff, d);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(5);
+    // im Mittel Hangabtrieb; an der Kuppe weicht die über ±1,2 m gemittelte Krümmung kurz ab (bis ~1,3 m/s²)
+    expect(sumDiff / checked).toBeLessThan(0.25);
+    expect(maxDiff).toBeLessThan(2);
+  });
+  it('hält den Zustand vor dem Schritt für die Interpolation bereit', () => {
+    const { sim } = simFor(hill(15));
+    sim.step(1 / 60);
+    sim.step(1 / 60);
+    expect(sim.prevCars[0].s).toBeLessThan(sim.cars[0].s);
+    expect(sim.prevCars[0].s).toBeGreaterThan(0);
+  });
   it('fährt einen von Hand geschlossenen Rundkurs bis in die Station', () => {
     // Hügel, kurze Kehre am Ende, Rückweg oberhalb zurück und von oben in die Station (gegen die Abfahrtsrichtung)
     const stroke = [

@@ -7,7 +7,7 @@ import { G } from '@/physics/trainSim';
 const terrain = new Terrain({ width: 100, terrain: [{ kind: 'flat' }] });
 const car = (feltUp: number, feltFwd = 0, gLat = 0): CarState => ({
   index: 0, s: 0, x: 10, y: 5, z: 0, tx: 1, ty: 0, tz: 0, upx: 0, upy: 1, upz: 0, sx: 0, sy: 0, sz: 1, bank: 0, angle: 0,
-  gSeat: feltUp / G, gFwd: feltFwd / G, gLat, feltFwd, feltUp, feltSide: gLat * G, inTunnel: false, inverted: false,
+  gSeat: feltUp / G, gFwd: feltFwd / G, gLat, feltFwd, feltUp, feltSide: gLat * G, inTunnel: false, inverted: false, vx: 10, vy: 0,
 });
 
 describe('Fahrgäste (Rapier)', () => {
