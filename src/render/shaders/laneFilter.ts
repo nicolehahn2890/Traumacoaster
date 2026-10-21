@@ -1,7 +1,8 @@
 /**
  * Spur-Filter (ein Durchgang je Spur): Earle-Stippling auf dunklen Pixeln über ein Hash-Raster in
  * Bildschirmpixeln (Punkte bleiben bei jedem Zoom ein bis drei Pixel groß) und, wahlweise, eine gestufte
- * Luftperspektive (Mischung zum Himmel in zwei harten Stufen). Läuft in halber Auflösung.
+ * Luftperspektive (Mischung zum Himmel in zwei harten Stufen). Läuft in der Auflösung des Renderers: Der Filter
+ * rendert den ganzen Spur-Inhalt (Terrain, Schienen, Zug) in seine Textur, halbe Auflösung machte alles pixelig.
  */
 import { Filter, GlProgram } from 'pixi.js';
 import { hexToRgb } from '../paint';
@@ -101,8 +102,8 @@ export class LaneFilter extends Filter {
           uDensity: { value: opts.density ?? 0.55, type: 'f32' },
         },
       },
-      resolution: 0.5,
-      antialias: 'off',
+      resolution: 'inherit',
+      antialias: 'inherit',
     });
   }
 
