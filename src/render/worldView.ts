@@ -12,6 +12,9 @@ import type { CharacterDef } from '@/editor/characters';
 import { LANE_MAX, LANE_MIN } from '@/track/stage';
 import { Camera } from './camera';
 import { Sky } from './sky';
+import { LaneFilter } from './shaders/laneFilter';
+import { GlowLayer } from './shaders/glowLayer';
+import { fxEnabled } from '@/core/fx';
 import { TerrainRenderer } from './terrainRenderer';
 import { TrackRenderer } from './trackRenderer';
 import { TrainRenderer } from './trainRenderer';
@@ -32,12 +35,17 @@ export class WorldView {
   readonly effects: Effects;
   private paper: TilingSprite;
   private laneContainers = new Map<number, Container>();
+  /** Leuchtebene je Spur (additiv, weichgezeichnet) und Spur-Filter (Stippling) */
+  private glows = new Map<number, GlowLayer>();
+  private laneFilters = new Map<number, LaneFilter>();
+  private fxOn = false;
   private time = 0;
   private worldDef: WorldDef;
   private night: boolean;
 
-  constructor(worldDef: WorldDef, terrain: Terrain, skin: string, night = false) {
+  constructor(worldDef: WorldDef, terrain: Terrain, skin: string, night = false, fx: boolean | null = null) {
     this.worldDef = worldDef;
+    this.fxOn = fx ?? fxEnabled();
     this.night = night;
     this.sky = new Sky(worldDef, night);
     this.terrainR = new TerrainRenderer(terrain, worldDef);
@@ -51,18 +59,26 @@ export class WorldView {
     // Tiefenreihenfolge: hinten → vorne
     for (let z = LANE_MAX; z >= LANE_MIN; z--) {
       const lane = new Container();
+      const glow = new GlowLayer(6);
+      this.glows.set(z, glow);
       lane.addChild(
         this.terrainR.layers.strip.get(z)!,
         this.trackR.layers.supports.get(z)!,
         this.trackR.layers.rails.get(z)!,
         this.trackR.layers.barriers.get(z)!,
         this.trackR.layers.coins.get(z)!,
+        glow.container,
         this.trainR.layers.get(z)!,
         this.terrainR.layers.cover.get(z)!,
       );
       this.laneContainers.set(z, lane);
       this.world.addChild(lane);
+      // Spur-Filter: Stippling auf den Schattenseiten (Luftperspektive machen die Renderer selbst)
+      const pal = worldDef.palette;
+      this.laneFilters.set(z, new LaneFilter({ stipple: pal.stipple, sky: pal.sky[1], depth: 0 }));
     }
+    this.trackR.glowTargets = new Map([...this.glows].map(([z, g]) => [z, g.container]));
+    this.applyFx();
     this.world.addChild(this.effects.container, this.overlay);
     // Nacht: dunkler Schleier über der Welt
     if (night) {
@@ -95,6 +111,24 @@ export class WorldView {
 
   updateTrain(cars: CarState[], passengers: PassengerView[], dt: number): void {
     this.trainR.update(cars, passengers, dt);
+  }
+
+  /** Effekte an/aus (Dev-Overlay, Einstellung): Spur-Filter und Leuchtebenen */
+  setFx(on: boolean): void {
+    this.fxOn = on;
+    this.applyFx();
+  }
+
+  get fx(): boolean {
+    return this.fxOn;
+  }
+
+  private applyFx(): void {
+    for (const [z, lane] of this.laneContainers) {
+      const f = this.laneFilters.get(z);
+      lane.filters = this.fxOn && f ? [f] : [];
+    }
+    for (const g of this.glows.values()) g.enabled = this.fxOn;
   }
 
   /** Nur die Spur z sichtbar lassen (alles andere in der Welt aus), null = alles sichtbar; für Spurstreifen-Texturen */

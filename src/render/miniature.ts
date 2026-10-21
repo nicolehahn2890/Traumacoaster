@@ -153,7 +153,7 @@ export function renderLanes(renderer: Renderer, levelId: number): LaneMiniature 
   const skin = pickSkin(world, unlocked);
   const level = getLevel(levelId);
   const terrain = new Terrain(level);
-  const view = new WorldView(world, terrain, skin, false);
+  const view = new WorldView(world, terrain, skin, false, false);
   view.trackR.setCoins(level.coins ?? []);
   const allowTunnels = unlocked.has('tunnel');
   if (path) {
@@ -198,7 +198,7 @@ export function renderLanes(renderer: Renderer, levelId: number): LaneMiniature 
 
 function render(renderer: Renderer, level: LevelDef, world: WorldDef, skin: string, unlocked: Set<ElementId>, path: TrackPath | null): Miniature {
   const terrain = new Terrain(level);
-  const view = new WorldView(world, terrain, skin, false);
+  const view = new WorldView(world, terrain, skin, false, false);
   view.trackR.setCoins(level.coins ?? []);
   const allowTunnels = unlocked.has('tunnel');
   if (path) {

@@ -118,7 +118,7 @@ const R = 4.2; // Bühnen-Meter pro Spur (Anhebung der Bodenlinie)
 let st = null;
 let r = null;
 const openLevel = async () => {
-  await page.goto(`${BASE}?scene=start&fast=6&level=8`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}?scene=start&fast=6&level=8&fx=1`, { waitUntil: 'networkidle' });
   await sleep(1200);
 };
 

@@ -74,6 +74,9 @@ export class TrackRenderer {
   readonly layers: TrackLayers = { supports: new Map(), rails: new Map(), barriers: new Map(), coins: new Map() };
   private coinSprites: Graphics[] = [];
   private barriers: Barrier[] = [];
+  /** Leuchtebenen je Spur (von der Weltansicht gesetzt): Leuchtkanten der Schienen bei Nacht-Skins */
+  glowTargets: Map<number, Container> | null = null;
+  private glowGraphics = new Map<number, Graphics>();
   private world: WorldDef;
   /** Kontext des letzten draw(), damit die Streben beim Wachsen neu gezeichnet werden können */
   private last: { samples: TrackSamples; style: SkinStyle; terrain: Terrain; sky: string; maxY: number } | null = null;
@@ -92,7 +95,21 @@ export class TrackRenderer {
     for (const g of this.layers.supports.values()) g.clear();
     for (const g of this.layers.rails.values()) g.clear();
     for (const g of this.layers.barriers.values()) g.clear();
+    for (const g of this.glowGraphics.values()) g.clear();
     this.barriers = [];
+  }
+
+  /** Grafik in der Leuchtebene einer Spur (bei Bedarf anlegen); null ohne Leuchtebenen */
+  private glowGraphic(lane: number): Graphics | null {
+    const target = this.glowTargets?.get(lane);
+    if (!target) return null;
+    let g = this.glowGraphics.get(lane);
+    if (!g) {
+      g = new Graphics();
+      this.glowGraphics.set(lane, g);
+      target.addChild(g);
+    }
+    return g;
   }
 
   draw(path: TrackPath, samples: TrackSamples, skin: string, terrain: Terrain, allowTunnels: boolean, preview = false): TunnelPortal[] {
@@ -323,7 +340,12 @@ export class TrackRenderer {
     g.poly(right, false).stroke({ width: 0.16 * k, color: hexNum(rail), cap: 'round', join: 'round' });
     g.poly(left, false).stroke({ width: 0.06 * k, color: hexNum(light), alpha: 0.9, cap: 'round', join: 'round' });
     g.poly(right, false).stroke({ width: 0.06 * k, color: hexNum(light), alpha: 0.9, cap: 'round', join: 'round' });
-    if (style.glow) g.poly(center, false).stroke({ width: 0.05 * k, color: hexNum(style.glow), alpha: 0.6, cap: 'round', join: 'round' });
+    if (style.glow) {
+      g.poly(center, false).stroke({ width: 0.05 * k, color: hexNum(style.glow), alpha: 0.6, cap: 'round', join: 'round' });
+      // Leuchtkante in der additiven Leuchtebene (weichgezeichnet)
+      const gg = this.glowGraphic(lane);
+      if (gg) gg.poly(center, false).stroke({ width: 0.22 * k, color: hexNum(style.glow), alpha: 0.9, cap: 'round', join: 'round' });
+    }
   }
 
   private drawElements(path: TrackPath, s: TrackSamples, C: Float64Array): void {
