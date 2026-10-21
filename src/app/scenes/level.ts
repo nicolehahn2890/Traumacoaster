@@ -1190,13 +1190,20 @@ export class LevelScene implements Scene {
     const simDt = dt * this.timeScale;
     if (!(this.cameraPhase === 'overview' && this.rideTime < 1.2)) {
       if (this.cameraPhase === 'overview') this.cameraPhase = 'follow';
-      this.sim.step(simDt);
+      // Zug und Fahrgäste im Gleichschritt (1/60 s): Die Fahrgäste müssen die Kräfte jedes Teilschritts
+      // spüren. Würde der Zug erst um den ganzen Frame vorrücken, bekämen sie den Endzustand für den ganzen
+      // Frame, bei Zeitraffer also eine kurze Spitze als lange Kraft (und würden grundlos herausfliegen).
       this.physicsAccum += simDt;
-      const auto = this.sim.samples.auto[Math.min(this.sim.samples.count - 1, Math.round(this.sim.cars[0].s / this.sim.samples.step))] === 1;
-      while (this.physicsAccum >= 1 / 60) {
-        this.physicsAccum -= 1 / 60;
-        this.passengers.step(this.sim.cars, 1 / 60, this.sim.v, auto || this.sim.phase === 'failed');
+      const h = 1 / 60;
+      let steps = 0;
+      while (this.physicsAccum >= h && steps < 120) {
+        this.physicsAccum -= h;
+        steps++;
+        this.sim.step(h);
+        const auto = this.sim.samples.auto[Math.min(this.sim.samples.count - 1, Math.round(this.sim.cars[0].s / this.sim.samples.step))] === 1;
+        this.passengers.step(this.sim.cars, h, this.sim.v, auto || this.sim.phase === 'failed');
       }
+      if (steps >= 120) this.physicsAccum = 0;
     }
     this.processEvents();
     this.view.updateTrain(this.sim.cars, this.passengers.views, simDt);
