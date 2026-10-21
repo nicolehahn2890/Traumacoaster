@@ -4,7 +4,7 @@
  */
 import { Container, Graphics, Sprite } from 'pixi.js';
 import type { WorldDef } from '@/levels/types';
-import { art, ART_NAMES } from '@/assets/manifest';
+import { art, ART_NAMES, hasArt } from '@/assets/manifest';
 import { cloudTexture, hexNum, mix, shade, skyTexture } from './paint';
 import type { Camera } from './camera';
 import { noise1, rng } from '@/core/math';
@@ -55,10 +55,16 @@ export class Sky {
     const tint = this.world.id === 6 || this.world.id === 8 || this.world.id === 10 ? shade(this.world.sky[1], 0.25) : this.world.id === 9 ? '#ffd7b0' : '#ffffff';
     const n = this.world.id === 10 ? 4 : 11;
     for (let i = 0; i < n; i++) {
-      const sprite = new Sprite(art(ART_NAMES.cloud(i % 6), () => cloudTexture(i % 6, tint)));
+      // gemalte Wolken (drei Formen a–c, weiß, per Tint gefärbt), sonst prozedural (sechs Formen mit eingebackener Tönung)
+      const painted = hasArt(ART_NAMES.cloud(i % 3));
+      const tex = painted ? art(ART_NAMES.cloud(i % 3), () => cloudTexture(i % 6, tint)) : cloudTexture(i % 6, tint);
+      const sprite = new Sprite(tex);
+      if (painted) sprite.tint = hexNum(tint);
       sprite.anchor.set(0.5);
       const depth = r();
-      sprite.scale.set(0.5 + (1 - depth) * 0.9);
+      // gemalte Kacheln sind größer als die prozedurale (256 px breit): auf dieselbe Bildschirmgröße bringen
+      const norm = painted ? 256 / Math.max(1, tex.width) : 1;
+      sprite.scale.set((0.5 + (1 - depth) * 0.9) * norm);
       sprite.alpha = 0.55 + (1 - depth) * 0.4;
       this.cloudLayer.addChild(sprite);
       this.clouds.push({ sprite, x: r() * 2000 - 400, y: 40 + r() * 260, depth, speed: 2 + r() * 6 });

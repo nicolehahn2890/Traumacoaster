@@ -1,0 +1,203 @@
+{
+  "model": "gpt-image-2.5-sunburst",
+  "figmaFile": "https://www.figma.com/design/aOqgBEtDYgtVoh6osNn16M",
+  "style": "Hand-painted 2D video game texture in the style of Eyvind Earle's mid-century poster illustrations combined with the saturated colors of Rayman Legends: flat opaque gouache shapes with crisp hard edges, exactly three tones per surface (light, mid, shadow), fine stippled dots along the shadow edges, subtle paper grain, no gradients, no soft airbrush, no photorealism, no text, no watermark. Subject: ",
+  "assets": [
+    {
+      "name": "paper_grain",
+      "size": [512, 512],
+      "gen": [1024, 1024],
+      "node": "29:2",
+      "seamless": "xy",
+      "prompt": "a sheet of very subtle fine warm off-white paper grain, almost uniform cream color with tiny faint speckles and fibers, a seamless tileable texture filling the entire frame edge to edge, no objects, no border, no vignette."
+    },
+    {
+      "name": "grass_brush_a",
+      "size": [1024, 1024],
+      "gen": [1024, 1024],
+      "node": "27:2",
+      "seamless": "xy",
+      "prompt": "a meadow grass surface seen straight on from above, flat mid green with hard-edged lighter lime-green patches and horizontal bands of stippled dark blue-green dots, a seamless tileable texture that fills the entire frame edge to edge, no horizon, no sky, no objects, no border."
+    },
+    {
+      "name": "grass_brush_b",
+      "size": [1024, 1024],
+      "gen": [1024, 1024],
+      "node": "30:2",
+      "seamless": "xy",
+      "prompt": "a dry summer meadow surface seen straight on from above in three flat greens (pale yellow-green, olive, deep green) with hard-edged patches, scattered tiny daisies as single white dots and a few yellow dots, stippled dark dots along the patch edges, a seamless tileable texture filling the entire frame edge to edge, no horizon, no sky, no objects, no border."
+    },
+    {
+      "name": "grass_brush_c",
+      "size": [1024, 1024],
+      "gen": [1024, 1024],
+      "node": "31:2",
+      "seamless": "xy",
+      "prompt": "a moss and clover surface seen straight on from above in three flat greens (bright lime, mid green, deep blue-green) with hard-edged rounded patches and dense stippled dark dots in the shadow areas, a seamless tileable texture filling the entire frame edge to edge, no horizon, no sky, no objects, no border."
+    },
+    {
+      "name": "rock_a",
+      "size": [1024, 1024],
+      "gen": [1024, 1024],
+      "node": "32:2",
+      "seamless": "xy",
+      "prompt": "a layered rock face drawn as parallel wavy horizontal bands in three flat tones of warm ochre, sienna brown and dark umber with crisp hard edges and stippled dots along the lower edge of each band, a seamless tileable texture filling the entire frame edge to edge, no sky, no objects, no border."
+    },
+    {
+      "name": "rock_b",
+      "size": [1024, 1024],
+      "gen": [1024, 1024],
+      "node": "33:2",
+      "seamless": "xy",
+      "prompt": "a black volcanic rock surface with thin glowing orange and yellow lava veins running between flat charcoal and dark grey rock shapes with hard edges and stippled ember dots, a seamless tileable texture filling the entire frame edge to edge, no sky, no objects, no border."
+    },
+    {
+      "name": "wood_beam",
+      "size": [1024, 683],
+      "gen": [1536, 1024],
+      "node": "34:2",
+      "seamless": "x",
+      "prompt": "weathered painted wooden planks running horizontally across the whole frame, flat planks in three warm brown tones (honey, chestnut, dark walnut) with a few small dark knots and thin shadow lines between the planks, hard edges, stippled dots along the plank shadows, a seamless tileable texture filling the entire frame edge to edge, no objects, no border."
+    },
+    {
+      "name": "steel",
+      "size": [1024, 0],
+      "gen": [1536, 1024],
+      "node": "35:2",
+      "key": "#ff00ff",
+      "fit": "width",
+      "seamless": "x",
+      "prompt": "a single long horizontal steel roller coaster rail tube spanning the full width of the image, centered vertically, its thickness about one third of the image height, flat teal body with one crisp white highlight line along the top and a dark navy line along the bottom, a row of small dark rivet dots, hard edges; the areas above and below the tube are solid uniform flat magenta #FF00FF, no other objects, no cast shadow on the background."
+    },
+    {
+      "name": "cloud_a",
+      "size": [1024, 512],
+      "gen": [1536, 1024],
+      "node": "36:2",
+      "key": "#ff00ff",
+      "prompt": "one single flat painted cloud made of three stacked white discs with a hard straight bottom edge, a row of stippled grey dots along the lower rim, light from the top left with a pale blue shadow tone, centered with generous empty margin around it, isolated on a solid uniform flat magenta background #FF00FF, no other objects, no sky, no cast shadow on the background."
+    },
+    {
+      "name": "cloud_b",
+      "size": [1024, 512],
+      "gen": [1536, 1024],
+      "node": "37:2",
+      "key": "#ff00ff",
+      "prompt": "one single long thin flat painted cloud in two stacked layers with hard edges and a straight flat bottom, stippled grey dots along the lower rim, light from the top left with a pale lavender shadow tone, centered with generous empty margin around it, isolated on a solid uniform flat magenta background #FF00FF, no other objects, no sky, no cast shadow on the background."
+    },
+    {
+      "name": "cloud_c",
+      "size": [512, 512],
+      "gen": [1024, 1024],
+      "node": "38:2",
+      "key": "#ff00ff",
+      "prompt": "one single small round puffy flat painted cloud with a hard flat bottom edge and a few stippled grey dots along the lower rim, light from the top left with a pale blue shadow tone, centered with generous empty margin around it, isolated on a solid uniform flat magenta background #FF00FF, no other objects, no sky, no cast shadow on the background."
+    },
+    {
+      "name": "stipple_sheet",
+      "size": [512, 512],
+      "procedural": "stipple",
+      "seamless": "xy",
+      "prompt": "(prozedural: gleichmäßig verteilte, leicht unregelmäßige schwarze Tupfen in vier Größen auf Alpha, kachelbar)"
+    },
+    {
+      "name": "leaf_dot",
+      "size": [128, 128],
+      "gen": [1024, 1024],
+      "node": "39:2",
+      "key": "#ffffff",
+      "prompt": "one single small painted leaf-shaped blob with a crisp hard edge, solid black, centered and large, on a pure white background #FFFFFF, nothing else, no shadow, no outline, no texture on the background."
+    },
+    {
+      "name": "glow",
+      "size": [256, 256],
+      "procedural": "glow",
+      "prompt": "(prozedural: weißer radialer Schein, Alpha fällt weich nach außen auf 0)"
+    },
+    {
+      "name": "tree_ball",
+      "size": [512, 512],
+      "gen": [1024, 1024],
+      "node": "26:2",
+      "key": "#ff00ff",
+      "prompt": "one single stylized tree with a round crown built from clusters of stippled dots in three flat greens (light lime, mid green, deep blue-green) with a hard outline, and a thin black elegantly branching trunk with a few tiny colored specks of red and teal. The tree is centered and completely isolated on a solid uniform flat magenta background #FF00FF, no other objects, no ground, no sky, no cast shadow on the background."
+    },
+    {
+      "name": "tree_fan",
+      "size": [512, 512],
+      "gen": [1024, 1024],
+      "node": "40:2",
+      "key": "#ff00ff",
+      "despill": true,
+      "prompt": "one single stylized fan-shaped tree with star-like radiating clusters of needles, a black silhouette trunk and branches with small colored specks in teal and red on the needle tips, crisp hard edges, centered, isolated on a solid uniform flat magenta background #FF00FF, no other objects, no ground, no cast shadow on the background."
+    },
+    {
+      "name": "fir_dots",
+      "size": [512, 512],
+      "gen": [1024, 1024],
+      "node": "41:2",
+      "key": "#ff00ff",
+      "despill": true,
+      "prompt": "one single tall fir tree drawn only with stippled dark blue-green dots that get denser toward the center and the trunk line, forming a triangular silhouette with a short black trunk, centered, isolated on a solid uniform flat magenta background #FF00FF, no other objects, no ground, no cast shadow on the background."
+    },
+    {
+      "name": "portal_arch",
+      "size": [512, 512],
+      "gen": [1024, 1024],
+      "node": "42:2",
+      "key": "#ff00ff",
+      "prompt": "one ornate stone tunnel portal arch seen straight on, built from two parallel contour bands and a keystone in three flat warm grey tones with crisp hard edges and stippled dots along the inner band; the opening inside the arch is the same solid magenta as the background; centered, isolated on a solid uniform flat magenta background #FF00FF, no other objects, no ground, no cast shadow on the background."
+    },
+    {
+      "name": "crystal",
+      "size": [256, 256],
+      "gen": [1024, 1024],
+      "node": "43:2",
+      "key": "#ff00ff",
+      "prompt": "one cluster of three glowing crystals in flat cyan and violet tones with crisp hard edges, each with one bright white facet highlight and a dark base, centered, isolated on a solid uniform flat magenta background #FF00FF, no other objects, no ground, no cast shadow on the background."
+    },
+    {
+      "name": "lantern",
+      "size": [128, 256],
+      "gen": [1024, 1536],
+      "node": "44:2",
+      "key": "#ff00ff",
+      "prompt": "one hanging mine lantern on a short black hook, a flat painted black metal frame with a warm yellow glowing glass body and a small orange flame shape, crisp hard edges, centered, isolated on a solid uniform flat magenta background #FF00FF, no other objects, no cast shadow on the background."
+    },
+    {
+      "name": "water_band",
+      "size": [1024, 0],
+      "gen": [1536, 1024],
+      "node": "45:2",
+      "key": "#ff00ff",
+      "fit": "width",
+      "seamless": "x",
+      "prompt": "a calm lake water surface drawn as a single horizontal band spanning the full width of the image, centered vertically, its height about one third of the image height, made of flat horizontal stripes in two blues and one teal with crisp hard edges and a few short white glint strokes; the areas above and below the band are solid uniform flat magenta #FF00FF, no other objects, no cast shadow on the background."
+    },
+    {
+      "name": "snow_field",
+      "size": [1024, 512],
+      "gen": [1536, 1024],
+      "node": "46:2",
+      "seamless": "xy",
+      "prompt": "a smooth snow field seen from above in two flat tones of white and pale ice blue with crisp hard edges and a few long stippled shadows of fir trees as dotted bands, a seamless tileable texture filling the entire frame edge to edge, no horizon, no sky, no objects, no border."
+    },
+    {
+      "name": "neon_sign",
+      "size": [512, 256],
+      "gen": [1536, 1024],
+      "node": "47:2",
+      "key": "#00ff00",
+      "prompt": "an abstract neon sign made of glowing pink and cyan tube shapes bent into loops and zigzags with no letters and no words, flat painted with a thin bright core line and a slightly darker tube edge, centered, isolated on a solid uniform flat bright green background #00FF00, no other objects, no cast shadow on the background."
+    },
+    {
+      "name": "sticker_paper",
+      "size": [512, 256],
+      "gen": [1536, 1024],
+      "node": "48:2",
+      "key": "#ff00ff",
+      "shadow": true,
+      "prompt": "one blank rectangular sticker of torn off-white paper with slightly rough torn edges and a small hard-edged drop shadow, flat painted, completely empty with no writing or marks on it, centered, isolated on a solid uniform flat magenta background #FF00FF, no other objects."
+    }
+  ]
+}

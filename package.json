@@ -12,7 +12,9 @@
     "test:watch": "vitest",
     "levels:doc": "tsx scripts/gen-levels-doc.ts",
     "screenshots": "node scripts/screenshots.mjs",
-    "scenario": "node scripts/scenario.mjs"
+    "scenario": "node scripts/scenario.mjs",
+    "art:prep": "node scripts/art-prep.mjs",
+    "art:doc": "node scripts/art-prompts-doc.mjs"
   },
   "dependencies": {
     "@dimforge/rapier2d-compat": "^0.21.0",
@@ -21,6 +23,7 @@
   "devDependencies": {
     "@playwright/test": "1.56.1",
     "@types/node": "^22.0.0",
+    "sharp": "^0.34.5",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "^8.3.4",

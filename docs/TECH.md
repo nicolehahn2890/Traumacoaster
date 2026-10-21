@@ -71,17 +71,11 @@ interface TrackPath { nodes: TrackNode[]; elements: TrackElement[]; startType: S
 - Rendering: Schienen als P ± 0,55·S (projiziert, mit Schräglage für die Entwurfsgeschwindigkeit), Wagen als projizierter 3D-Quader mit Sichtbarkeits-Sortierung, Fahrgäste als Billboards im projizierten Wagen-Rahmen.
 
 ## 6. Asset-Pipeline (Drop-in für gemalte Texturen)
-Jede Textur hat einen Namen im Manifest (`src/assets/manifest.ts`). Beim Laden prüft das Spiel, ob `public/art/<name>.png` existiert (HEAD-Request bzw. Asset-Liste). Wenn ja, wird sie genommen, sonst die prozedurale Version erzeugt.
+Jede Textur hat einen Namen im Manifest (`src/assets/manifest.ts`, `ART_NAMES`). Beim Start lädt `loadArtOverrides()` die Liste `public/art/manifest.json` und dazu je Name `public/art/<name>.webp` (Fallback `.png`). `art(name, fallback)` liefert die gemalte Textur oder erzeugt die prozedurale; `hasArt(name)` sagt, ob eine gemalte existiert (die Wolken wählen danach Skalierung und Tönung).
 
-Namensschema: `<kategorie>_<welt|skin>_<variante>.png`, z. B. `sky_w1_day.png`, `rail_wood_tie.png`, `cloud_a.png`, `ground_w3_lane-2.png`, `prop_castle.png`.
+Der Kachelsatz entsteht so: `scripts/art-kit.json` beschreibt jede Kachel (Name, Zielgröße, Figma-Knoten, Regeln `key`/`fit`/`shadow`/`despill`/`seamless`/`procedural`, Prompt). Die Bilder werden im Figma-Bildgenerator erzeugt (Modell `gpt-image-2.5-sunburst`, Datei „Trauma Coaster – Art Kit“) und als PNG nach `art-src/` gelegt (nicht im Repository). `npm run art:prep` (sharp) stellt frei, schneidet zu, macht kachelbar und schreibt `public/art/<name>.webp` + `manifest.json`; `npm run art:doc` schreibt `docs/ART-PROMPTS.md` aus dem Kit. Stilregeln und Prompt-Vorspann: `docs/ART.md`, `docs/ART-PROMPTS.md`.
 
-Prompt-Vorlage für Bildgeneratoren (Englisch, da Modelle Englisch besser verstehen):
-```
-hand-painted 2D game texture, Rayman Legends style, vibrant colors, soft painterly shading,
-visible brush strokes, slightly wobbly outlines, [MOTIV], seamless tileable, flat lighting from top left,
-no text, no watermark, transparent background (PNG)
-```
-Motiv-Beispiele: „wooden roller coaster beam with cross braces“, „fluffy cumulus cloud“, „mossy green meadow ground strip“, „glowing lava rock“.
+Namensschema: `<kategorie>_<variante>` (z. B. `cloud_a`, `grass_brush_b`, `tree_ball`) bzw. mit Welt/Skin, wenn es je Welt eigene Kacheln gibt (`sky_w1_day`, `rail_wood_tie`).
 
 ## 7. Performance-Budget (Mittelklasse-Handy, 60 fps)
 - Draw Calls < 150 pro Frame (Ziel mit dem Stil-Update: Schienen als Band-Mesh, Streben als Meshes, Punkte und Partikel als ParticleContainer; heute: Graphics pro Spur).

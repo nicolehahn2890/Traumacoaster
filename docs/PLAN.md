@@ -59,6 +59,7 @@ Empfehlung: **Hybrid.** Gemalte Kacheln (generiert + CC0) als Materialien, Shade
   3. **Neue Session starten** (Connectors werden beim Start der Session gelesen). Dann liefert `whoami` das Pro-Konto, und Paket D kann Bilder erzeugen.
 - **GPT Plus** lässt sich nicht an diese Session anbinden (ChatGPT hat keinen Connector). Zwei Wege, es trotzdem zu nutzen: (a) Figmas `generate_image` bietet das Modell `gpt-image-2.5-sunburst` an, abgerechnet über Figma-Credits, nicht über GPT Plus; (b) Paket D erzeugt `docs/ART-PROMPTS.md` mit allen Prompts, Dateinamen und Größen, damit die Bilder manuell in ChatGPT erzeugt und in `public/art/` abgelegt werden können (Drop-in-Pipeline, kein Codeeingriff). Paket D ist so gebaut, dass es auch ohne Generator startet (CC0-Pinselkacheln + Shader) und die Kacheln später austauschbar sind.
 - Im Ablauf von Paket D: Skill `figma:figma-create-new-file` laden → Design-Datei „Trauma Coaster – Art Kit“ anlegen → pro Kachel `generate_image` (Prompt aus `docs/ART-PROMPTS.md`, 1024–2048 px) → `image.url` herunterladen → `scripts/art-prep.mjs` (kachelbar, WebP, Manifest).
+- **Stand später am 21.10.:** Der Connector läuft jetzt über das Pro-Konto (Team „playground“, Pro-Sitz); Weave ist verknüpft, aber nicht nötig. Die Asset-URLs (`www.figma.com/api/mcp/asset/…`) sind aus der Session heraus gesperrt (Netzwerkrichtlinie der Umgebung); der Weg ist stattdessen `get_screenshot` mit `enableBase64Response`, das liefert die Knoten in voller Auflösung als PNG auf die Platte. Gemini Flash und GPT-Image 2.5 wurden verglichen; GPT-Image trifft den Earle-Stil deutlich besser (Stippling, schwarze Stämme, harte Kanten) und ist das Modell des Kachelsatzes.
 
 ## Befunde aus der Code-Analyse
 
@@ -387,3 +388,9 @@ Audio (nur Hooks), Vorlagen-Elemente (Helix, Top Hat …), Weiche/Kippschiene/Fa
 - **Zusatz aus dem Szenario-Lauf**: Ein Rundkurs, dessen Rückweg eine Spur hinter der Station ankommt (Playwright-Szenario 6), blieb offen (3D-Abstand = eine Spur); `closePath` misst jetzt Bühnenabstand (≤ 6 m) und Spuren (≤ 1,2) getrennt und schließt per Halbkreis. Test mit dem Szenario-Strich.
 - **Bewusst auf M3 verschoben**: Texte `openHint`/`drawHint`/`tutorial.l1` („Play ergänzt den Rückweg“) bleiben wahr, bis A5 den Auto-Rückweg durch das Absperrband ersetzt.
 - **Verifikation M1**: `npm test` 66 Tests grün, `npm run build` ok, `node scripts/scenario.mjs` alle Prüfungen bestanden, keine Browser-Fehler; Screenshots geprüft (Looping-Fahrt, Rundkurs).
+
+### D2 Textur-Kit (vorgezogen aus M5, Branch `claude/serene-pascal-43m0gq`)
+- 24 Kacheln nach `docs/ART-PROMPTS.md`: 22 mit dem Figma-Bildgenerator (`gpt-image-2.5-sunburst`, Figma-Datei „Trauma Coaster – Art Kit“), `glow` und `stipple_sheet` prozedural. Quelle für Namen, Größen, Knoten, Regeln und Prompts: `scripts/art-kit.json`; `docs/ART-PROMPTS.md` wird daraus erzeugt (`npm run art:doc`).
+- `scripts/art-prep.mjs` (sharp): Chroma-Key mit Saum-Korrektur, Despill für getupfte Motive, Schatten-Regel (Sticker), Zuschnitt auf den Inhalt, Bänder mit fester Breite (Stahlrohr, Wasser), kachelbare Flächen, WebP + `public/art/manifest.json`. Gesamtgröße des Satzes rund 2 MB.
+- Eingebunden: Wolken (`src/render/sky.ts`, drei gemalte Formen mit Tönung je Welt) und Papierkorn (Level und Karte). Die übrigen Kacheln warten auf D4/D5/E1 (Stützen, Terrain, Bäume, Portale, Sticker).
+- Nicht im Repository: `art-src/` (Quellbilder); das Archiv ist die Figma-Datei.

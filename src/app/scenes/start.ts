@@ -18,6 +18,7 @@ import { storage } from '@/core/storage';
 import { unlockAll } from '@/core/dev';
 import { t } from '@/core/i18n';
 import { hexNum, shade, mix, cloudTexture, skyTexture, paperTexture } from '@/render/paint';
+import { art, ART_NAMES } from '@/assets/manifest';
 import { atmosphere } from '@/render/terrainRenderer';
 import { laneRise, laneScale, LANE_MIN, LANE_MAX } from '@/track/stage';
 import { BentSheet, bendAngle, bendPoint, type BendFrame, type XY } from '@/render/bend';
@@ -512,7 +513,7 @@ export class StartScene implements Scene {
     const sky = new Sprite(snap.sky);
     const ui = new Sprite(snap.ui);
     const world = new BentSheet(snap.world, 32, 18);
-    const paper = new TilingSprite({ texture: paperTexture(), width: this.w, height: this.h });
+    const paper = new TilingSprite({ texture: art(ART_NAMES.paper(), paperTexture), width: this.w, height: this.h });
     paper.blendMode = 'multiply';
     this.levelSkyLayer.addChild(sky);
     this.levelWorldLayer.addChild(world.mesh);

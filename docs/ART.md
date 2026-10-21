@@ -46,7 +46,9 @@ Grundakzent des Spiels (UI): Pink `#ff5c8a`, Tinte `#2a1f3d`, Papier `#fff8ec`.
 
 ## 4. Texturen (Drop-in)
 
-Echte gemalte Kacheln liegen unter `public/art/<name>.webp` (PNG als Fallback) und werden über `public/art/manifest.json` geladen (`src/assets/manifest.ts`). Fehlt eine Kachel, nimmt das Spiel die prozedurale Version. Prompts, Größen und Dateinamen: `docs/ART-PROMPTS.md`. Quellen: Figma-Bildgenerator (Referenzbilder aus `refs/`), ChatGPT, CC0-Pakete (Lizenz in `public/art/LICENSES.md` vermerken).
+Echte gemalte Kacheln liegen unter `public/art/<name>.webp` (PNG als Fallback) und werden über `public/art/manifest.json` geladen (`src/assets/manifest.ts`). Fehlt eine Kachel, nimmt das Spiel die prozedurale Version.
+
+Der erste Kachelsatz (24 Kacheln) ist mit dem Figma-Bildgenerator entstanden, Modell `gpt-image-2.5-sunburst` (Gemini Flash war im Vergleich weicher und weniger Earle). Eine Quelle für alles ist `scripts/art-kit.json`: Name, Zielgröße, Figma-Knoten, Aufbereitungsregel und Prompt je Kachel. `npm run art:prep` liest die Quellbilder aus `art-src/` (nicht im Repository, die Figma-Datei ist das Archiv), stellt Freisteller per Chroma-Key frei (Magenta, für Neon Grün, für Formen Weiß; Farbsaum wird herausgerechnet, Magenta-Reste in getupften Motiven per Despill entfernt, gemalte Schlagschatten auf dem Key werden halbtransparentes Dunkel), schneidet auf den Inhalt zu, macht Flächen kachelbar (Ränder mit der halb verschobenen Kachel überblendet) und schreibt WebP plus Manifest. `glow` und `stipple_sheet` entstehen prozedural (SVG), weil sie exakt und kachelbar sein müssen. `npm run art:doc` erzeugt daraus `docs/ART-PROMPTS.md`. Falls später CC0-Kacheln dazukommen: Lizenz in `public/art/LICENSES.md` vermerken.
 
 ## 5. Was nicht in den Stil gehört
 

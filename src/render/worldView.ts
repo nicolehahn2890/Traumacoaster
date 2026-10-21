@@ -16,6 +16,7 @@ import { TerrainRenderer } from './terrainRenderer';
 import { TrackRenderer } from './trackRenderer';
 import { TrainRenderer } from './trainRenderer';
 import { paperTexture } from './paint';
+import { art, ART_NAMES } from '@/assets/manifest';
 import { Effects } from './effects';
 
 export class WorldView {
@@ -42,7 +43,7 @@ export class WorldView {
     this.trackR = new TrackRenderer(worldDef);
     this.trainR = new TrainRenderer(skin);
     this.effects = new Effects();
-    this.paper = new TilingSprite({ texture: paperTexture(), width: 100, height: 100 });
+    this.paper = new TilingSprite({ texture: art(ART_NAMES.paper(), paperTexture), width: 100, height: 100 });
     this.paper.blendMode = 'multiply';
     this.paper.alpha = 0.5;
     this.root.addChild(this.sky.container, this.world, this.paper);
