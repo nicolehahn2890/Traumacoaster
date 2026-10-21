@@ -83,7 +83,39 @@ function fitCubic(pts: Vec3[], first: number, last: number, tHat1: Vec3, tHat2: 
   fitCubic(pts, splitPoint, last, scale3(tHatCenter, -1), tHat2, error, out, depth + 1);
 }
 
-function generateBezier(pts: Vec3[], first: number, last: number, u: number[], tHat1: Vec3, tHat2: Vec3): CubicSegment3 {
+/**
+ * Ein kubisches Segment durch pts[first..last] mit festen Einheitstangenten (tHat2 zeigt vom Ende zurück).
+ * Bis zu `iterations` Newton-Nachbesserungen der Parameter; liefert den größten Abstand und den Index des
+ * größten Fehlers (Teilungsstelle), wenn das Segment die Toleranz nicht erreicht.
+ */
+export function fitCubicWithTangents(pts: Vec3[], first: number, last: number, tHat1: Vec3, tHat2: Vec3, error: number, iterations = 6, newtonBelow = Infinity): { bez: CubicSegment3; maxError: number; splitPoint: number } {
+  if (last - first < 1) {
+    const p = pts[first];
+    return { bez: { p0: p, p1: p, p2: p, p3: p }, maxError: 0, splitPoint: first };
+  }
+  if (last - first === 1) {
+    const d = dist3(pts[last], pts[first]) / 3;
+    return { bez: { p0: pts[first], p1: add3(pts[first], scale3(tHat1, d)), p2: add3(pts[last], scale3(tHat2, d)), p3: pts[last] }, maxError: 0, splitPoint: first };
+  }
+  let u = chordLengthParameterize(pts, first, last);
+  let bez = generateBezier(pts, first, last, u, tHat1, tHat2);
+  let r = computeMaxError(pts, first, last, bez, u);
+  // Nachbessern lohnt nur, wenn das Segment schon nahe dran ist (Schneider: unter dem Vierfachen der Toleranz);
+  // weit daneben wird sofort geteilt, sonst zwingt Newton ein langes Segment in die Toleranz, das in Kurven enger
+  // biegt als die Punktfolge
+  for (let i = 0; i < iterations && r.maxError >= error && r.maxError < error * newtonBelow; i++) {
+    const uPrime = reparameterize(pts, first, last, u, bez);
+    const bez2 = generateBezier(pts, first, last, uPrime, tHat1, tHat2);
+    const r2 = computeMaxError(pts, first, last, bez2, uPrime);
+    if (r2.maxError >= r.maxError) break; // Newton verbessert nicht mehr
+    u = uPrime;
+    bez = bez2;
+    r = r2;
+  }
+  return { bez, maxError: r.maxError, splitPoint: r.splitPoint };
+}
+
+export function generateBezier(pts: Vec3[], first: number, last: number, u: number[], tHat1: Vec3, tHat2: Vec3): CubicSegment3 {
   const nPts = last - first + 1;
   const C = [
     [0, 0],
@@ -114,7 +146,7 @@ function generateBezier(pts: Vec3[], first: number, last: number, u: number[], t
   return { p0: pts[first], p1: add3(pts[first], scale3(tHat1, alphaL)), p2: add3(pts[last], scale3(tHat2, alphaR)), p3: pts[last] };
 }
 
-function reparameterize(pts: Vec3[], first: number, last: number, u: number[], bez: CubicSegment3): number[] {
+export function reparameterize(pts: Vec3[], first: number, last: number, u: number[], bez: CubicSegment3): number[] {
   const out: number[] = [];
   for (let i = first; i <= last; i++) out.push(newtonRaphson(bez, pts[i], u[i - first]));
   return out;
@@ -133,14 +165,14 @@ function newtonRaphson(Q: CubicSegment3, P: Vec3, u: number): number {
   return u - numerator / denominator;
 }
 
-function chordLengthParameterize(pts: Vec3[], first: number, last: number): number[] {
+export function chordLengthParameterize(pts: Vec3[], first: number, last: number): number[] {
   const u = [0];
   for (let i = first + 1; i <= last; i++) u.push(u[i - first - 1] + dist3(pts[i], pts[i - 1]));
   const total = u[u.length - 1] || 1;
   return u.map((v) => v / total);
 }
 
-function computeMaxError(pts: Vec3[], first: number, last: number, bez: CubicSegment3, u: number[]): { maxError: number; splitPoint: number } {
+export function computeMaxError(pts: Vec3[], first: number, last: number, bez: CubicSegment3, u: number[]): { maxError: number; splitPoint: number } {
   let splitPoint = Math.floor((last - first + 1) / 2) + first;
   let maxDist = 0;
   for (let i = first + 1; i < last; i++) {

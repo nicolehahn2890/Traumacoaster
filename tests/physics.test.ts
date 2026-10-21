@@ -139,6 +139,22 @@ describe('Zug-Simulation', () => {
     expect(sim.prevCars[0].s).toBeLessThan(sim.cars[0].s);
     expect(sim.prevCars[0].s).toBeGreaterThan(0);
   });
+  it('hält ein schnelles Tal nach einem 30-m-Drop bei rund 4 g (Begrenzer rechnet das Gefälle ein)', () => {
+    // Drop von 30 m in einen Auslauf: Das Tal ist auf VALLEY_G = 3 g zusätzlich ausgelegt. Der Begrenzer misst die
+    // Sehnenhöhe senkrecht; ohne den Gefälle-Faktor ließ er auf der steilen Flanke bis zu doppelt so enge Radien
+    // durch (6 g statt 4 g). Toleranz für den Bezier-Fit: eine halbe g.
+    const stroke = stageCurve(0, 160, 320, (x) => 30 * Math.exp(-((x - 20) ** 2) / 80) + 22 * Math.exp(-((x - 90) ** 2) / 300));
+    for (const fit of ['legacy', 'apex'] as const) {
+      const r = strokeToTrack(stroke, { fit });
+      closeTrack(r.path);
+      r.path.startType = 'chainlift';
+      const samples = sampleTrack(r.path);
+      const sim = new TrainSim(samples, r.path, { cars: 1, carLength: 2.4, skin: 'skinSteel', frictionScale: 1, gravityScale: 1, startType: 'chainlift', coins: [], terrain: flatTerrain, allowTunnels: true });
+      run(sim);
+      expect(sim.stats.maxSpeed).toBeGreaterThan(20);
+      expect(sim.stats.maxG).toBeLessThan(4.8);
+    }
+  });
   it('fährt einen von Hand geschlossenen Rundkurs bis in die Station', () => {
     // Hügel, kurze Kehre am Ende, Rückweg oberhalb zurück und von oben in die Station (gegen die Abfahrtsrichtung)
     const stroke = [

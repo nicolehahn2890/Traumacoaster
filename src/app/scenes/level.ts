@@ -66,6 +66,9 @@ const SHELF_ELEMENTS: Array<{ kind: ElementKind; unlock: ElementId; color: strin
   { kind: 'splash', unlock: 'splash', color: '#3ec7c2', length: 8 },
   { kind: 'launchBlock', unlock: 'doubleLaunch', color: '#ffd23f', length: 14 },
 ];
+/** Knotenwahl beim Zeichnen: Scheitel-Semantik (Standard) oder der alte Schneider-Fit zum Vergleich (?fit=legacy) */
+const FIT_MODE: 'apex' | 'legacy' = typeof location !== 'undefined' && new URLSearchParams(location.search).get('fit') === 'legacy' ? 'legacy' : 'apex';
+
 const HIT_R = 26;
 
 export class LevelScene implements Scene {
@@ -512,6 +515,7 @@ export class LevelScene implements Scene {
   private strokeOptions() {
     const ground = (x: number, z: number) => (this.allowTunnels ? this.terrain.groundHeight(x, z) : this.terrain.surfaceHeight(x, z));
     return {
+      fit: FIT_MODE,
       groundHeight: ground,
       groundClearance: 0.8,
       maxHeight: this.level.maxHeight ?? 0,

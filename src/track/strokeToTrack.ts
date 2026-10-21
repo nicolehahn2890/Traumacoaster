@@ -17,6 +17,7 @@ import type { Vec3 } from '@/core/math3';
 import { add3, dist3, normalize3, scale3, sub3 } from '@/core/math3';
 import { dedupe, smoothStroke } from '@/core/rdp';
 import { fitWithCorners3 } from '@/core/bezierFit3';
+import { reduceNodes, type ApexHint } from './reduceNodes';
 import { createNode, emptyPath, isAutoNode, isClosed, nodeIn, nodeOut, nodePos, type PathClosure, type TrackNode, type TrackPath } from './model';
 import { LANE_DEPTH, LANE_MAX, LANE_MIN, LANE_RISE, laneRise, laneScale, toStage, type StagePoint } from './stage';
 
@@ -45,6 +46,8 @@ export interface StrokeOptions {
   closeSnap?: number;
   /** Runde Schleifen im rohen Strich (findRoundLoops): ihre Abschnitte werden als Höhe gelesen */
   loopHints?: LoopHint[];
+  /** Knotenwahl: 'apex' (Standard, Scheitel-Semantik, wenige Knoten) oder 'legacy' (Schneider-Fit mit 0,3 m) */
+  fit?: 'apex' | 'legacy';
 }
 
 /** Runde Schleife im rohen Strich (Bühnenkoordinaten): Indizes wie die Strichpunkte */
@@ -1174,10 +1177,15 @@ export function limitVerticalCurvature(world: Vec3[], keep: (i: number) => boole
       const d1 = s[i] - s[i - 1];
       const d2 = s[i + 1] - s[i];
       if (d1 < 1e-6 || d2 < 1e-6) return;
+      // Die Tests messen die Sehnenhöhe senkrecht; auf einem Gefälle ist die Sehnenhöhe quer zur Bahn um den
+      // Kosinus des Gefälles größer. Ohne den Faktor ließ der Begrenzer an steilen Flanken (Auslauf eines Drops)
+      // bis zu doppelt so enge Radien durch, und der Wagen spürte 6 g statt der 4 g, für die das Tal ausgelegt ist.
+      const sinA = Math.max(-1, Math.min(1, (y[i + 1] - y[i - 1]) / (d1 + d2)));
+      const cosA = Math.max(0.3, Math.sqrt(1 - sinA * sinA));
       // Senke: der Punkt darf nicht tiefer liegen als die Parabel durch die Nachbarn
       if (!kept[i]) {
         const mid = y[i - 1] + ((y[i + 1] - y[i - 1]) * d1) / (d1 + d2);
-        const lim = mid - (d1 * d2) / (2 * rValley[i]);
+        const lim = mid - ((d1 * d2) / (2 * rValley[i])) * cosA;
         if (y[i] < lim - 1e-6) {
           y[i] = lim;
           changed = true;
@@ -1187,14 +1195,14 @@ export function limitVerticalCurvature(world: Vec3[], keep: (i: number) => boole
       // (Steigung aus dem vorigen Nachbarn, Krümmung −1/R; exakt für Parabeln, auch bei ungleichen Schritten)
       if (forward && !kept[i + 1]) {
         const slope = (y[i] - y[i - 1]) / d1;
-        const lim = y[i] + slope * d2 - (d2 * (d1 + d2)) / (2 * rCrest[i]);
+        const lim = y[i] + slope * d2 - ((d2 * (d1 + d2)) / (2 * rCrest[i])) * cosA;
         if (y[i + 1] < lim - 1e-6) {
           y[i + 1] = lim;
           changed = true;
         }
       } else if (!forward && !kept[i - 1]) {
         const slope = (y[i + 1] - y[i]) / d2;
-        const lim = y[i] - slope * d1 - (d1 * (d1 + d2)) / (2 * rCrest[i]);
+        const lim = y[i] - slope * d1 - ((d1 * (d1 + d2)) / (2 * rCrest[i])) * cosA;
         if (y[i - 1] < lim - 1e-6) {
           y[i - 1] = lim;
           changed = true;
@@ -1209,7 +1217,12 @@ export function limitVerticalCurvature(world: Vec3[], keep: (i: number) => boole
 }
 
 /** Interpretierte Punkte → Knoten (Anheben über Terrain, Ecken runden, 3D-Fit) */
-export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, events: StrokeEvent[]): TrackNode[] {
+/**
+ * Gelesene Punkte → dichte Weltpunktfolge (Meter, z in Metern), fahrbar gemacht: Mindesthöhe, Bodenhöhe,
+ * geglättet, Kuppen/Täler auf fahrbare Radien, Ecken gerundet, max. 1 m Punktabstand. Dazu die Scheitel der
+ * Ereignisse (Looping, Kehre) als Hinweise für die Knotenwahl.
+ */
+export function densePolyline(points: InterpretedPoint[], opts: StrokeOptions, events: StrokeEvent[]): { pts: Vec3[]; hints: ApexHint[] } {
   const ground = opts.groundHeight ?? (() => 0);
   const clearance = opts.groundClearance ?? 0.6;
   // Höhe über dem Boden der Spur (nie unter der Mindesthöhe); die Bodenhöhe kommt erst nach dem Glätten dazu,
@@ -1242,9 +1255,17 @@ export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, e
     for (let k = 1; k <= n; k++) dense.push(add3(a, scale3(sub3(b, a), k / n)));
   }
   pts = dense;
-  // keine gebrochenen Tangenten aus Strichen (Achterbahnen haben keine Ecken). 0,3 m: Die Linie ist schon geglättet,
-  // so entstehen nur die nötigen Knoten (ein Oval braucht rund zehn), Loopings und Halbkreise bleiben rund
-  const segments = fitWithCorners3(pts, opts.fitError ?? 0.3, 179);
+  const hints: ApexHint[] = events.map((e) => ({ pos: apexOf(e), kind: e.kind === 'loop' ? 'loopApex' : 'turn' }));
+  return { pts, hints };
+}
+
+export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, events: StrokeEvent[]): TrackNode[] {
+  const { pts, hints } = densePolyline(points, opts, events);
+  // Knoten an den Scheiteln (Kuppen, Täler, Kurven, Loopings) mit festen Tangenten, dazwischen so wenige
+  // Segmente wie nötig (reduceNodes); 'legacy': Schneider-Fit ohne Ecken mit 0,3 m (ein Oval braucht rund zehn Knoten)
+  const legacy = opts.fit === 'legacy';
+  const reduced = legacy ? null : reduceNodes(pts, hints, opts.fitError ? { tolTight: opts.fitError, tolLoose: opts.fitError * 3 } : {});
+  const segments = reduced ? reduced.segments : fitWithCorners3(pts, opts.fitError ?? 0.3, 179);
   const nodes: TrackNode[] = [];
   const mk = (p: Vec3): TrackNode => createNode(p.x, p.y, p.z / LANE_DEPTH);
   for (let i = 0; i < segments.length; i++) {
@@ -1263,7 +1284,14 @@ export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, e
     end.inX = last.p2.x - last.p3.x; end.inY = last.p2.y - last.p3.y; end.inZ = (last.p2.z - last.p3.z) / LANE_DEPTH;
     nodes.push(end);
   }
-  // Ereignis-Knoten markieren (nächster Knoten zum Scheitelpunkt)
+  // Ereignis-Knoten markieren: aus der Scheitelwahl, sonst (legacy) der nächste Knoten zum Scheitelpunkt
+  if (reduced) {
+    reduced.kinds.forEach((k, i) => {
+      if (k !== 'normal' && nodes[i] && nodes[i].kind === 'normal') nodes[i].kind = k;
+    });
+    return nodes;
+  }
+  const apexOf = (e: StrokeEvent): Vec3 => hints[events.indexOf(e)]?.pos ?? { x: 0, y: 0, z: 0 };
   for (const e of events) {
     const apex = apexOf(e);
     let best = -1;
