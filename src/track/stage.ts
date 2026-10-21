@@ -12,8 +12,14 @@ import { clamp } from '@/core/math';
 export const LANE_MIN = -2;
 export const LANE_MAX = 2;
 export const LANE_COUNT = 5;
-/** Tiefenabstand zwischen zwei Spuren in Metern (für die horizontale Krümmung der Kurven) */
-export const LANE_DEPTH = 7;
+/**
+ * Tiefenabstand zwischen zwei Spuren in Metern: das Doppelte der Bodenlinien-Anhebung (LANE_RISE),
+ * also eine Schrägsicht von 30° auf die Bühne. Damit hat eine Kehre über zwei Spuren 8,4 m Radius
+ * (bei 60 km/h rund 2,7 g, mit Schräglage fahrbar) und über vier Spuren 16,8 m.
+ * Kehren am Boden werden deshalb nicht roh aus dem Strich gelesen (die Tiefe wäre gegenüber der Bühne
+ * doppelt gestreckt, mit engen Radien an Ein- und Ausfahrt), sondern wie Steilkurven als Halbkreise geformt.
+ */
+export const LANE_DEPTH = 8.4;
 /**
  * Perspektivische Skalierung pro Spur. Bewusst dezent: Je stärker hinten verkleinert wird, desto schiefer
  * wird eine auf dem Bildschirm gezeichnete Bodenkurve in der Welt (die hintere Hälfte wird gestreckt) und
