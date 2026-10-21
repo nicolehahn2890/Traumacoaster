@@ -1,7 +1,7 @@
 /**
  * Band-Mesh: eine Textur entlang einer Polylinie (Schienen, Geländer, Pfeiler-Stämme), wie die „Friezes“ in
  * Rayman Legends. Die Breite darf entlang des Bands variieren; UV.x ist die Bogenlänge (die Textur wiederholt
- * sich mit uScale je Meter), UV.y 0 … 1 über die Breite.
+ * sich mit uScale je Meter, uOffset setzt sie über Stücke hinweg fort), UV.y 0 … 1 über die Breite.
  */
 import { Mesh, MeshGeometry, Texture } from 'pixi.js';
 
@@ -17,7 +17,7 @@ export interface StripGeometry {
 }
 
 /** Gitter aus 2n Punkten (links/rechts der Linie) mit Normalen senkrecht zur Richtung */
-export function buildStrip(points: StripPoint[], halfWidth: number | ((s: number, i: number) => number), uScale = 1): StripGeometry {
+export function buildStrip(points: StripPoint[], halfWidth: number | ((s: number, i: number) => number), uScale = 1, uOffset = 0): StripGeometry {
   const n = points.length;
   const positions = new Float32Array(Math.max(0, n) * 4);
   const uvs = new Float32Array(Math.max(0, n) * 4);
@@ -42,9 +42,9 @@ export function buildStrip(points: StripPoint[], halfWidth: number | ((s: number
     positions[i * 4 + 1] = p.y + ny * hw;
     positions[i * 4 + 2] = p.x - nx * hw;
     positions[i * 4 + 3] = p.y - ny * hw;
-    uvs[i * 4] = s * uScale;
+    uvs[i * 4] = (s + uOffset) * uScale;
     uvs[i * 4 + 1] = 0;
-    uvs[i * 4 + 2] = s * uScale;
+    uvs[i * 4 + 2] = (s + uOffset) * uScale;
     uvs[i * 4 + 3] = 1;
     if (i < n - 1) {
       const k = i * 6;
@@ -62,14 +62,20 @@ export function buildStrip(points: StripPoint[], halfWidth: number | ((s: number
 export class StripMesh {
   readonly mesh: Mesh;
 
-  constructor(texture: Texture) {
+  /** batch: auch lange Bänder (Schienen) in den Batcher zwingen, damit sie mit Graphics und Sprites in einem Draw-Call liegen */
+  constructor(texture: Texture, batch = true) {
     const geometry = new MeshGeometry({ positions: new Float32Array(8), uvs: new Float32Array(8), indices: new Uint32Array(6) });
+    if (batch) geometry.batchMode = 'batch';
     this.mesh = new Mesh({ geometry, texture });
     this.mesh.visible = false;
   }
 
-  setPath(points: StripPoint[], halfWidth: number | ((s: number, i: number) => number), uScale = 1): void {
-    const g = buildStrip(points, halfWidth, uScale);
+  set texture(t: Texture) {
+    this.mesh.texture = t;
+  }
+
+  setPath(points: StripPoint[], halfWidth: number | ((s: number, i: number) => number), uScale = 1, uOffset = 0): void {
+    const g = buildStrip(points, halfWidth, uScale, uOffset);
     if (points.length < 2) {
       this.mesh.visible = false;
       return;
@@ -85,6 +91,10 @@ export class StripMesh {
     pos.update();
     uv.update();
     idx.update();
+  }
+
+  hide(): void {
+    this.mesh.visible = false;
   }
 
   destroy(): void {

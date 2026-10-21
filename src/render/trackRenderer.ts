@@ -1,18 +1,23 @@
 /**
- * Schienen, Schwellen, Streben und Elemente in gemaltem Stil, pro Schienen-Skin.
+ * Schienen, Schwellen, Pfeiler und Elemente in gemaltem Stil, pro Schienen-Skin.
  * Die Schienen liegen in 3D: linke/rechte Schiene = Bahn ± Spurweite · Seitenvektor (mit Schräglage),
- * perspektivisch auf die Bühne projiziert. Die Bahn wird nach Spuren in Stücke geteilt.
+ * perspektivisch auf die Bühne projiziert. Die Bahn wird nach Spuren in Stücke geteilt; jedes Stück sind zwei
+ * Band-Meshes (StripMesh) mit dem Schienenprofil des Skins als Textur (Tinte – Schiene – Lichtkante), die
+ * Schwellen bleiben Striche. Pfeiler kommen aus dem Planer in supports/supportStyle.ts (eine Form je Welt),
+ * jeder als eigener Container am Fuß, der nach dem Zeichnen vom Boden hochwächst.
  */
-import { Container, Graphics } from 'pixi.js';
+import { Container, Graphics, Texture } from 'pixi.js';
 import type { TrackPath, TrackSamples } from '@/track/model';
 import { frameWithBank, railBanks, stateAt } from '@/track/model';
 import type { Terrain } from '@/physics/terrain';
 import type { WorldDef } from '@/levels/types';
 import { laneScale, toStage, LANE_MIN, LANE_MAX, LANE_DEPTH } from '@/track/stage';
-import { hexNum, mix, shade } from './paint';
-import { noise1 } from '@/core/math';
+import { hexNum, mix, railProfileTexture, shade } from './paint';
 import { atmosphere } from './terrainRenderer';
 import { MGraphics } from './mgraphics';
+import { StripMesh, type StripPoint } from './stripMesh';
+import { art, ART_NAMES, hasArt } from '@/assets/manifest';
+import { buildSupport, planSupports, supportKindFor, type SupportGlow } from './supports/supportStyle';
 
 export interface SkinStyle {
   rail: string;
@@ -41,8 +46,10 @@ export const SKIN_STYLES: Record<string, SkinStyle> = {
 export const GAUGE = 0.55;
 
 export interface TrackLayers {
-  supports: Map<number, Graphics>;
-  rails: Map<number, Graphics>;
+  /** Pfeiler je Spur: ein Container je Pfeiler (Ursprung am Fuß, Skalierung = Spur · Wachstum) */
+  supports: Map<number, Container>;
+  /** Schienen je Spur: Schwellen (Graphics) → Band-Meshes → Elemente/Station/Leuchtlinie (Graphics) */
+  rails: Map<number, Container>;
   /** Absperrbänder an offenen Enden (flattern, jeden Frame neu) */
   barriers: Map<number, Graphics>;
   coins: Map<number, Container>;
@@ -70,46 +77,109 @@ function designSpeed(samples: TrackSamples, i: number, maxY: number): number {
   return Math.sqrt(Math.max(0, 2 * 9.81 * (maxY - samples.y[i]))) * 0.8 + 2;
 }
 
+/** halbe Breite des Schienenbands in Spur-Metern (Tinte außen eingeschlossen) */
+const RAIL_HALF = 0.13;
+/** ein Durchlauf des Schienenprofils je 3 Bühnen-Meter */
+const RAIL_REPEAT = 3;
+
 export class TrackRenderer {
   readonly layers: TrackLayers = { supports: new Map(), rails: new Map(), barriers: new Map(), coins: new Map() };
   private coinSprites: Graphics[] = [];
   private barriers: Barrier[] = [];
-  /** Leuchtebenen je Spur (von der Weltansicht gesetzt): Leuchtkanten der Schienen bei Nacht-Skins */
+  /** Leuchtebenen je Spur (von der Weltansicht gesetzt): Leuchtkanten der Schienen und Lichter der Pfeiler */
   glowTargets: Map<number, Container> | null = null;
   private glowGraphics = new Map<number, Graphics>();
+  private supportGlowGraphics = new Map<number, Graphics>();
   private world: WorldDef;
-  /** Kontext des letzten draw(), damit die Streben beim Wachsen neu gezeichnet werden können */
-  private last: { samples: TrackSamples; style: SkinStyle; terrain: Terrain; sky: string; maxY: number } | null = null;
+  /** Schwellen (unter den Schienen) und Elemente/Station (über den Schienen) je Spur */
+  private railUnder = new Map<number, Graphics>();
+  private railOver = new Map<number, Graphics>();
+  private railMeshLayer = new Map<number, Container>();
+  /** Band-Meshes je Spur, wiederverwendet über Zeichnungen hinweg (unbenutzte sind unsichtbar) */
+  private railPool = new Map<number, StripMesh[]>();
+  private railUsed = new Map<number, number>();
+  /** Pfeiler der aktuellen Zeichnung mit ihrer Spur-Skalierung (für das Wachsen) */
+  private supportNodes: Array<{ c: Container; k: number }> = [];
+  private supportGlows: Array<SupportGlow & { lane: number; X: number; Y: number; k: number }> = [];
+  private glowsDrawn = false;
 
   constructor(world: WorldDef) {
     this.world = world;
     for (let z = LANE_MAX; z >= LANE_MIN; z--) {
-      this.layers.supports.set(z, new Graphics());
-      this.layers.rails.set(z, new Graphics());
+      this.layers.supports.set(z, new Container());
+      const rails = new Container();
+      const under = new Graphics();
+      const meshes = new Container();
+      const over = new Graphics();
+      rails.addChild(under, meshes, over);
+      this.railUnder.set(z, under);
+      this.railMeshLayer.set(z, meshes);
+      this.railOver.set(z, over);
+      this.railPool.set(z, []);
+      this.layers.rails.set(z, rails);
       this.layers.barriers.set(z, new Graphics());
       this.layers.coins.set(z, new Container());
     }
   }
 
   clear(): void {
-    for (const g of this.layers.supports.values()) g.clear();
-    for (const g of this.layers.rails.values()) g.clear();
+    for (const c of this.layers.supports.values()) {
+      for (const child of c.removeChildren()) child.destroy({ children: true });
+    }
+    this.supportNodes = [];
+    this.supportGlows = [];
+    this.glowsDrawn = false;
+    for (const g of this.railUnder.values()) g.clear();
+    for (const g of this.railOver.values()) g.clear();
+    for (const pool of this.railPool.values()) for (const m of pool) m.hide();
+    this.railUsed.clear();
     for (const g of this.layers.barriers.values()) g.clear();
     for (const g of this.glowGraphics.values()) g.clear();
+    for (const g of this.supportGlowGraphics.values()) g.clear();
     this.barriers = [];
   }
 
   /** Grafik in der Leuchtebene einer Spur (bei Bedarf anlegen); null ohne Leuchtebenen */
-  private glowGraphic(lane: number): Graphics | null {
+  private glowGraphic(lane: number, map = this.glowGraphics): Graphics | null {
     const target = this.glowTargets?.get(lane);
     if (!target) return null;
-    let g = this.glowGraphics.get(lane);
+    let g = map.get(lane);
     if (!g) {
       g = new Graphics();
-      this.glowGraphics.set(lane, g);
+      map.set(lane, g);
       target.addChild(g);
     }
     return g;
+  }
+
+  /** nächstes freies Band-Mesh der Spur (bei Bedarf anlegen) */
+  private takeRail(lane: number): StripMesh {
+    const pool = this.railPool.get(lane)!;
+    const used = this.railUsed.get(lane) ?? 0;
+    let m = pool[used];
+    if (!m) {
+      m = new StripMesh(Texture.WHITE);
+      pool.push(m);
+      this.railMeshLayer.get(lane)!.addChild(m.mesh);
+    }
+    this.railUsed.set(lane, used + 1);
+    return m;
+  }
+
+  /** Schienenprofil des Skins für eine Spur (Luftperspektive eingerechnet), Holz-Skins mit gemalter Maserung */
+  private railTexture(skin: string, style: SkinStyle, lane: number, sky: string): Texture {
+    const rail = atmosphere(style.rail, lane, sky);
+    const light = atmosphere(style.railLight, lane, sky);
+    const ink = shade(rail, -0.5);
+    const woody = style.support === 'wood' || style.support === 'mine' || style.support === 'hybrid' || style.support === 'ghost';
+    let grain: CanvasImageSource | null = null;
+    if (woody && hasArt(ART_NAMES.wood())) {
+      const res = art(ART_NAMES.wood(), () => Texture.EMPTY).source.resource as unknown;
+      if (typeof ImageBitmap !== 'undefined' && res instanceof ImageBitmap) grain = res;
+      else if (typeof HTMLImageElement !== 'undefined' && res instanceof HTMLImageElement) grain = res;
+      else if (typeof HTMLCanvasElement !== 'undefined' && res instanceof HTMLCanvasElement) grain = res;
+    }
+    return railProfileTexture(`${skin}_${lane}_${sky}_${grain ? 'g' : 'p'}`, rail, light, ink, grain, 3 + lane);
   }
 
   draw(path: TrackPath, samples: TrackSamples, skin: string, terrain: Terrain, allowTunnels: boolean, preview = false): TunnelPortal[] {
@@ -144,17 +214,18 @@ export class TrackRenderer {
       C[i * 2] = pc.X; C[i * 2 + 1] = pc.Y;
     }
 
-    this.last = { samples, style, terrain, sky, maxY };
-    // Vorschau: Schienen, Schwellen und Station wie fertig, nur Streben und Elemente nicht (die Streben wachsen
+    // Vorschau: Schienen, Schwellen und Station wie fertig, nur Pfeiler und Elemente nicht (die Pfeiler wachsen
     // nach dem Loslassen in 0,3 s hoch, siehe redrawSupports)
-    if (!preview) this.drawSupports(samples, style, terrain, sky, maxY, 1);
+    if (!preview) {
+      this.drawSupports(samples, style, terrain, sky);
+      this.setSupportGrowth(1);
+    }
 
     let chunkStart = 0;
     let chunkLane = Math.round(samples.z[0]);
     const flush = (a: number, b: number, lane: number) => {
-      const g = this.layers.rails.get(lane);
-      if (!g) return;
-      this.drawRailChunk(g, samples, L, R, C, a, b, lane, style, sky, preview);
+      if (!this.layers.rails.has(lane)) return;
+      this.drawRailChunk(samples, L, R, C, a, b, lane, skin, style, sky);
     };
     for (let i = 1; i < n; i++) {
       const lane = Math.round(samples.z[i]);
@@ -220,104 +291,62 @@ export class TrackRenderer {
     }
   }
 
-  /** Streben neu zeichnen, mit Wachstum 0 … 1 (vom Boden bis zur Bahn) */
+  /** Pfeiler wachsen lassen, 0 … 1 (vom Boden bis zur Bahn); bei 1 gehen ihre Lichter in die Leuchtebene */
   redrawSupports(growth: number): void {
-    if (!this.last) return;
-    for (const g of this.layers.supports.values()) g.clear();
-    const l = this.last;
-    this.drawSupports(l.samples, l.style, l.terrain, l.sky, l.maxY, growth);
+    this.setSupportGrowth(growth);
   }
 
-  private drawSupports(samples: TrackSamples, style: SkinStyle, terrain: Terrain, sky: string, maxY: number, growth = 1): void {
-    if (growth < 0.02) return;
-    let nextS = 0;
-    for (let i = 0; i < samples.count; i++) {
-      const s = samples.s[i];
-      if (s < nextS) continue;
-      nextS = s + style.postSpacing;
-      const x = samples.x[i];
-      const y = samples.y[i];
-      const z = samples.z[i];
-      const lane = Math.round(z);
-      const g = this.layers.supports.get(lane);
-      if (!g) continue;
-      if (samples.upy[i] < 0.35) continue;
-      if (terrain.insideMountain(x, y, z)) continue;
-      const ground = terrain.groundHeight(x, z) + terrain.mountainHeight(x, z);
-      const h = y - ground;
-      if (h < 1.0) continue;
-      const k = laneScale(z);
-      const top0 = toStage(x, y - 0.25, z);
-      const bot = toStage(x, ground, z);
-      const top = { X: bot.X + (top0.X - bot.X) * growth, Y: bot.Y + (top0.Y - bot.Y) * growth };
-      const post = atmosphere(style.post, z, sky);
-      const brace = atmosphere(style.brace, z, sky);
-      const ink = shade(post, -0.45);
-      const w = (style.support === 'steel' || style.support === 'neon' ? 0.32 : 0.26) * k;
-      const wob = (seed: number) => noise1(seed * 0.37 + i, 3) * 0.12 * k;
-      void maxY;
-      switch (style.support) {
-        case 'wood': case 'hybrid': case 'mine': case 'ghost': {
-          const dx = 0.7 * k;
-          const lean = style.support === 'ghost' ? wob(i) * 3 : 0;
-          for (const sx of [-dx, dx]) {
-            g.moveTo(top.X + sx * 0.6, top.Y).lineTo(bot.X + sx + lean, bot.Y).stroke({ width: w, color: hexNum(post), cap: 'round' });
-            g.moveTo(top.X + sx * 0.6, top.Y).lineTo(bot.X + sx + lean, bot.Y).stroke({ width: w * 0.35, color: hexNum(ink), alpha: 0.35, cap: 'round' });
-          }
-          const levels = Math.max(1, Math.floor((top.Y - bot.Y) / (3 * k)));
-          for (let l = 0; l <= levels; l++) {
-            const f = l / (levels + 0.001);
-            const yy = bot.Y + (top.Y - bot.Y) * f;
-            const sxl = -dx + (-dx * 0.6 + dx) * f;
-            const sxr = dx - (dx - dx * 0.6) * f;
-            g.moveTo(top.X + sxl + wob(l), yy).lineTo(top.X + sxr + wob(l + 7), yy).stroke({ width: w * 0.7, color: hexNum(brace), cap: 'round' });
-            if (l < levels) {
-              const yy2 = bot.Y + (top.Y - bot.Y) * ((l + 1) / (levels + 0.001));
-              g.moveTo(top.X + sxl, yy).lineTo(top.X + sxr, yy2).stroke({ width: w * 0.45, color: hexNum(brace), alpha: 0.9, cap: 'round' });
-              g.moveTo(top.X + sxr, yy).lineTo(top.X + sxl, yy2).stroke({ width: w * 0.45, color: hexNum(brace), alpha: 0.9, cap: 'round' });
-            }
-          }
-          if (style.support === 'hybrid' || style.support === 'ghost') g.circle(top.X, top.Y - 0.9 * k, 0.22 * k).fill({ color: hexNum(style.glow ?? '#ffd23f'), alpha: 0.9 });
-          break;
-        }
-        case 'steel': case 'gold': case 'neon': case 'lava': {
-          const lean = 0.25 * k * (i % 2 === 0 ? 1 : -1);
-          g.moveTo(top.X, top.Y).lineTo(bot.X + lean, bot.Y).stroke({ width: w, color: hexNum(post), cap: 'round' });
-          g.moveTo(top.X - w * 0.3, top.Y).lineTo(bot.X + lean - w * 0.3, bot.Y).stroke({ width: w * 0.3, color: hexNum(shade(post, 0.3)), alpha: 0.7, cap: 'round' });
-          g.ellipse(bot.X + lean, bot.Y, 0.7 * k, 0.22 * k).fill(hexNum(shade(post, -0.2)));
-          if (style.glow) g.moveTo(top.X, top.Y).lineTo(bot.X + lean, bot.Y).stroke({ width: w * 0.2, color: hexNum(style.glow), alpha: 0.8 });
-          if (style.support === 'gold') g.circle(top.X, top.Y - 0.5 * k, 0.3 * k).fill(hexNum('#fff1b8'));
-          break;
-        }
-        case 'ice': {
-          g.moveTo(top.X, top.Y).lineTo(bot.X - 0.5 * k, bot.Y).lineTo(bot.X + 0.5 * k, bot.Y).closePath().fill({ color: hexNum(post), alpha: 0.85 }).stroke({ width: 0.12 * k, color: 0xffffff, alpha: 0.9 });
-          break;
-        }
-        case 'space': {
-          g.roundRect(top.X - 0.8 * k, top.Y - 0.9 * k, 1.6 * k, 0.35 * k, 0.15 * k).fill(hexNum(post));
-          g.moveTo(top.X, top.Y).lineTo(top.X, top.Y - 0.6 * k).stroke({ width: 0.15 * k, color: hexNum(style.glow ?? '#7fd3ff'), alpha: 0.8 });
-          g.circle(top.X, top.Y - 1.3 * k, 0.25 * k).fill({ color: hexNum(style.glow ?? '#7fd3ff'), alpha: 0.5 });
-          break;
-        }
+  private setSupportGrowth(growth: number): void {
+    for (const n of this.supportNodes) {
+      n.c.visible = growth > 0.02;
+      n.c.scale.y = n.k * Math.max(0.001, growth);
+    }
+    if (growth >= 1 && !this.glowsDrawn) {
+      this.glowsDrawn = true;
+      for (const gl of this.supportGlows) {
+        const g = this.glowGraphic(gl.lane, this.supportGlowGraphics);
+        if (!g) continue;
+        g.circle(gl.X, gl.Y, gl.r * gl.k).fill({ color: hexNum(gl.color), alpha: 0.75 });
       }
+    } else if (growth < 1 && this.glowsDrawn) {
+      this.glowsDrawn = false;
+      for (const g of this.supportGlowGraphics.values()) g.clear();
     }
   }
 
-  private drawRailChunk(g: Graphics, s: TrackSamples, L: Float64Array, R: Float64Array, C: Float64Array, a: number, b: number, lane: number, style: SkinStyle, sky: string, preview: boolean): void {
+  /** Pfeiler je Welt: Planer wählt die Fußpunkte, Bauer zeichnet die Form; ein Container je Pfeiler */
+  private drawSupports(samples: TrackSamples, style: SkinStyle, terrain: Terrain, sky: string): void {
+    const kind = supportKindFor(this.world.id);
+    const plans = planSupports(samples, terrain, style.postSpacing, kind);
+    const ctx = { style, world: this.world, sky, glows: [] as SupportGlow[] };
+    for (const p of plans) {
+      const parent = this.layers.supports.get(p.lane);
+      if (!parent) continue;
+      const k = laneScale(p.z);
+      const bot = toStage(p.x, p.ground, p.z);
+      const c = buildSupport(p, ctx);
+      c.position.set(bot.X, bot.Y);
+      c.scale.set(k, k);
+      parent.addChild(c);
+      this.supportNodes.push({ c, k });
+      for (const gl of ctx.glows) this.supportGlows.push({ ...gl, lane: p.lane, X: bot.X + gl.x * k, Y: bot.Y + gl.y * k, k });
+      ctx.glows.length = 0;
+    }
+  }
+
+  private drawRailChunk(s: TrackSamples, L: Float64Array, R: Float64Array, C: Float64Array, a: number, b: number, lane: number, skin: string, style: SkinStyle, sky: string): void {
     const k = laneScale(lane);
-    const rail = atmosphere(style.rail, lane, sky);
-    const light = atmosphere(style.railLight, lane, sky);
     const tie = atmosphere(style.tie, lane, sky);
-    const ink = shade(rail, -0.5);
-    const left: number[] = [];
-    const right: number[] = [];
+    const under = this.railUnder.get(lane)!;
+    const over = this.railOver.get(lane)!;
+    const left: StripPoint[] = [];
+    const right: StripPoint[] = [];
     const center: number[] = [];
     for (let i = a; i <= b; i++) {
-      left.push(L[i * 2], L[i * 2 + 1]);
-      right.push(R[i * 2], R[i * 2 + 1]);
+      left.push({ x: L[i * 2], y: L[i * 2 + 1] });
+      right.push({ x: R[i * 2], y: R[i * 2 + 1] });
       center.push(C[i * 2], C[i * 2 + 1]);
     }
-    void preview; // die Vorschau zeigt die Schienen wie die fertige Bahn
     // Schwellen zwischen den Schienen
     let nextS = s.s[a];
     const tieSpacing = style.support === 'steel' || style.support === 'space' || style.support === 'neon' ? 1.4 : 0.8;
@@ -332,16 +361,18 @@ export class TrackRenderer {
       const dx = rx - lx;
       const dy = ry - ly;
       const ext = 0.18;
-      g.moveTo(lx - dx * ext, ly - dy * ext).lineTo(rx + dx * ext, ry + dy * ext).stroke({ width: tieW, color: hexNum(tie), cap: 'round' });
+      under.moveTo(lx - dx * ext, ly - dy * ext).lineTo(rx + dx * ext, ry + dy * ext).stroke({ width: tieW, color: hexNum(tie), cap: 'round' });
     }
-    g.poly(left, false).stroke({ width: 0.26 * k, color: hexNum(ink), alpha: 0.7, cap: 'round', join: 'round' });
-    g.poly(right, false).stroke({ width: 0.26 * k, color: hexNum(ink), alpha: 0.7, cap: 'round', join: 'round' });
-    g.poly(left, false).stroke({ width: 0.16 * k, color: hexNum(rail), cap: 'round', join: 'round' });
-    g.poly(right, false).stroke({ width: 0.16 * k, color: hexNum(rail), cap: 'round', join: 'round' });
-    g.poly(left, false).stroke({ width: 0.06 * k, color: hexNum(light), alpha: 0.9, cap: 'round', join: 'round' });
-    g.poly(right, false).stroke({ width: 0.06 * k, color: hexNum(light), alpha: 0.9, cap: 'round', join: 'round' });
+    // Schienen als Band-Mesh (Profil: Tinte – Schiene – Lichtkante), UV läuft mit der Bogenlänge weiter
+    const tex = this.railTexture(skin, style, lane, sky);
+    const uOffset = s.s[a] * k;
+    for (const pts of [left, right]) {
+      const m = this.takeRail(lane);
+      m.texture = tex;
+      m.setPath(pts, RAIL_HALF * k, 1 / (RAIL_REPEAT * k), uOffset);
+    }
     if (style.glow) {
-      g.poly(center, false).stroke({ width: 0.05 * k, color: hexNum(style.glow), alpha: 0.6, cap: 'round', join: 'round' });
+      over.poly(center, false).stroke({ width: 0.05 * k, color: hexNum(style.glow), alpha: 0.6, cap: 'round', join: 'round' });
       // Leuchtkante in der additiven Leuchtebene (weichgezeichnet)
       const gg = this.glowGraphic(lane);
       if (gg) gg.poly(center, false).stroke({ width: 0.22 * k, color: hexNum(style.glow), alpha: 0.9, cap: 'round', join: 'round' });
@@ -360,7 +391,7 @@ export class TrackRenderer {
         pts.push(C[i * 2], C[i * 2 + 1]);
         lane = Math.round(s.z[i]);
       }
-      const g = this.layers.rails.get(lane);
+      const g = this.railOver.get(lane);
       if (!g || pts.length < 4) continue;
       const k = laneScale(lane);
       g.poly(pts, false).stroke({ width: 0.7 * k, color: hexNum(shade(color, -0.4)), cap: 'round', join: 'round' });
@@ -371,7 +402,7 @@ export class TrackRenderer {
 
   private drawStation(s: TrackSamples, style: SkinStyle, sky: string): void {
     const lane = Math.round(s.z[0]);
-    const g = this.layers.rails.get(lane);
+    const g = this.railOver.get(lane);
     if (!g) return;
     const k = laneScale(lane);
     const p = toStage(s.x[0], s.y[0], s.z[0]);

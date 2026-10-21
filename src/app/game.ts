@@ -1,7 +1,7 @@
 /**
  * Game: Pixi-Anwendung, Szenenwechsel mit Überblendung, Eingabe, Resize/Orientation.
  */
-import { DevOverlay } from '@/core/devOverlay';
+import { DevOverlay, type DevStats } from '@/core/devOverlay';
 import { Application, Container, Graphics, RenderTexture } from 'pixi.js';
 import { InputManager } from '@/core/input';
 import type { Scene } from './scene';
@@ -149,6 +149,11 @@ export class Game {
       const view = (this.scene as unknown as { view?: { effects?: { count: number } } }).view;
       this.devOverlay.frame(view?.effects?.count ?? 0);
     }
+  }
+
+  /** Messwerte des Dev-Overlays (?dev=1), sonst null; die Szenarien prüfen damit das Draw-Call-Budget */
+  get dev(): DevStats | null {
+    return this.devOverlay?.stats ?? null;
   }
 
   get isPortrait(): boolean {
