@@ -1383,12 +1383,18 @@ export function closeTrack(path: TrackPath, returnHeight = 0.7): void {
   const retLen = Math.max(1, Math.abs(r2.x - r1.x) / 3);
   r1.inX = -back * Math.min(retLen, 3); r1.inY = 0; r1.inZ = 0; r1.outX = back * retLen; r1.outY = 0; r1.outZ = 0;
   r2.inX = -back * retLen; r2.inY = 0; r2.inZ = 0; r2.outX = back * Math.min(retLen, 3); r2.outY = 0; r2.outZ = 0;
+  // Anschlüsse: Handles auf ein Drittel der kurzen Verbindungsstücke kürzen (die Bogen-Handles sind für
+  // 45°-Stücke ausgelegt und wären hier zu lang: Schlenker direkt an der Station)
   const a0 = arcEnd[0];
-  const lo = Math.max(1, dist3(nodePos(a0), pl) / 3);
+  const lo = Math.max(0.5, dist3(nodePos(a0), pl) / 3);
   last.outX = endDir.x * lo; last.outY = endDir.y * lo; last.outZ = (endDir.z * lo) / LANE_DEPTH;
+  const a0l = Math.hypot(a0.inX, a0.inY, a0.inZ * LANE_DEPTH) || 1;
+  a0.inX *= lo / a0l; a0.inY *= lo / a0l; a0.inZ *= lo / a0l;
   const aN = arcStart[arcStart.length - 1];
-  const li = Math.max(1, dist3(pf, nodePos(aN)) / 3);
+  const li = Math.max(0.5, dist3(pf, nodePos(aN)) / 3);
   first.inX = -startDir.x * li; first.inY = -startDir.y * li; first.inZ = (-startDir.z * li) / LANE_DEPTH;
+  const aNl = Math.hypot(aN.outX, aN.outY, aN.outZ * LANE_DEPTH) || 1;
+  aN.outX *= li / aNl; aN.outY *= li / aNl; aN.outZ *= li / aNl;
   nodes[0].kind = 'station';
 }
 

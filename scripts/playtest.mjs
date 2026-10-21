@@ -195,9 +195,11 @@ if (want('cars')) {
       const st = await page.evaluate(() => { const s = window.tcGame.current; const c = s?.sim?.cars?.[0]; return { t: s?.sim?.t ?? 0, mode: s?.mode, c: c ? [c.x, c.y, c.z, c.upy] : null }; });
       if (st.mode === 'result' || st.t >= t) {
         if (st.c) {
-          await page.evaluate(([x, y, z]) => { const s = window.tcGame.current; s.cameraPhase = 'manual'; const k = Math.pow(0.94, z); s.view.camera.set(x * k, (y + 0.8) * k + 4.2 * z, 40); }, st.c);
-          await sleep(200);
+          // Fahrt für das Foto anhalten (Zeitraffer), Kamera auf den Wagen, danach weiterfahren
+          await page.evaluate(([x, y, z]) => { const s = window.tcGame.current; s.__step = s.sim.step; s.sim.step = () => {}; s.cameraPhase = 'manual'; const k = Math.pow(0.94, z); s.view.camera.set(x * k, (y + 0.8) * k + 4.2 * z, 40); s.view.camera.snap?.(); }, st.c);
+          await sleep(300);
           await page.screenshot({ path: `screenshots/playtest-cars-${name}.png` });
+          await page.evaluate(() => { const s = window.tcGame.current; if (s.__step) s.sim.step = s.__step; s.cameraPhase = 'follow'; });
           console.log('cars', name, st.c);
         }
         break;
