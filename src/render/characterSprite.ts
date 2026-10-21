@@ -6,12 +6,15 @@
 import { Container, Graphics } from 'pixi.js';
 import { MGraphics } from './mgraphics';
 import type { CharacterDef } from '@/editor/characters';
-import type { PartName, PartPose } from '@/physics/passengers';
+import type { FaceKind, PartName, PartPose } from '@/physics/passengers';
 import { RIG } from '@/physics/passengers';
 import { hexNum, shade } from './paint';
 import { clamp } from '@/core/math';
 
 const INK = 0x2a1f3d;
+
+export type EyeKind = 'normal' | 'bead' | 'line' | 'big';
+export type MouthKind = 'closed' | 'open' | 'grin';
 
 export class CharacterSprite {
   readonly container = new Container();
@@ -24,6 +27,18 @@ export class CharacterSprite {
   private blinkPhase = 0;
   private mouthOpen = 0;
   private eyeBase: Array<{ x: number; y: number; r: number }> = [];
+  private belt = new MGraphics();
+  private beltLevel = 0;
+  private beltBroken = false;
+  private faceFx = new MGraphics();
+  private stars = new Container();
+  private face: FaceKind = 'normal';
+  private starSpin = 0;
+  /** Oberkopf mit Scharnier hinten unten (Terrance-&-Phillip-Klappen) */
+  private headInner = new Container();
+  private eyeMode: EyeKind = 'normal';
+  private mouthMode: MouthKind | null = null;
+  private armBase: Record<'L' | 'R', number> = { L: 0, R: 0 };
 
   constructor(def: CharacterDef) {
     this.def = def;
@@ -38,6 +53,7 @@ export class CharacterSprite {
   setDef(def: CharacterDef): void {
     this.def = def;
     for (const p of Object.values(this.parts)) p.removeChildren();
+    this.headInner.removeChildren();
     this.pupils = [];
     this.eyeLids = [];
     this.eyeBase = [];
@@ -120,6 +136,9 @@ export class CharacterSprite {
       this.mouth.position.set(0, faceTop - 0.075);
       this.parts.torso.addChild(this.mouth);
       this.drawMouth(0);
+      // Gurt/Bügel über dem Rumpf (eigene Grafik, siehe setBelt)
+      this.parts.torso.addChild(this.belt);
+      this.drawBelt();
     }
     // --- Oberkopf ---
     {
@@ -127,6 +146,11 @@ export class CharacterSprite {
       const hx = RIG.head.hx;
       const hy = RIG.head.hy;
       const face = hexNum(d.skin);
+      // Scharnier hinten unten: Drehpunkt an der Hinterkante der Schnittlinie
+      this.headInner.pivot.set(-hx, -hy);
+      this.headInner.position.set(-hx, -hy);
+      this.headInner.rotation = 0;
+      this.parts.head.addChild(this.headInner);
       const shape = d.headShape;
       const wide = shape === 'wide' ? 1.12 : shape === 'tall' ? 0.92 : 1;
       const tall = shape === 'tall' ? 1.18 : shape === 'egg' ? 1.08 : 1;
@@ -152,20 +176,20 @@ export class CharacterSprite {
         if (d.eyes === 'wink' && sx === 1) g.ellipse(ex, eyeY, eyeR * 0.85, ry).fill(face);
         this.eyeBase.push({ x: ex, y: eyeY, r: eyeR });
       }
-      this.parts.head.addChild(g);
+      this.headInner.addChild(g);
       // Pupillen + Lider (animiert)
       for (const e of this.eyeBase) {
         const p = new MGraphics();
         p.circle(0, 0, e.r * 0.42).fill(hexNum(d.eyeColor));
         p.circle(e.r * 0.12, e.r * 0.12, e.r * 0.14).fill(0xffffff);
         p.position.set(e.x, e.y);
-        this.parts.head.addChild(p);
+        this.headInner.addChild(p);
         this.pupils.push(p);
         const lid = new MGraphics();
         lid.ellipse(0, 0, e.r * 0.9, e.r * 1.05).fill(face);
         lid.position.set(e.x, e.y);
         lid.scale.y = 0;
-        this.parts.head.addChild(lid);
+        this.headInner.addChild(lid);
         this.eyeLids.push(lid);
       }
       // Brauen
@@ -178,7 +202,7 @@ export class CharacterSprite {
           bg.moveTo(ex - 0.06, 0.095 + tilt).quadraticCurveTo(ex, 0.12 - tilt, ex + 0.06, 0.095 - tilt).stroke({ width: bw, color: hexNum(d.hairColor), cap: 'round' });
         }
       }
-      this.parts.head.addChild(bg);
+      this.headInner.addChild(bg);
       // Brille
       if (d.glasses !== 'none') {
         const gg = new MGraphics();
@@ -191,18 +215,22 @@ export class CharacterSprite {
         }
         gg.moveTo(-eyeDx + eyeR, eyeY).lineTo(eyeDx - eyeR, eyeY).stroke({ width: 0.018, color: col });
         gg.moveTo(-eyeDx - eyeR * 1.05, eyeY + 0.01).lineTo(-hx * wide, eyeY + 0.03).moveTo(eyeDx + eyeR * 1.05, eyeY + 0.01).lineTo(hx * wide, eyeY + 0.03).stroke({ width: 0.018, color: col });
-        this.parts.head.addChild(gg);
+        this.headInner.addChild(gg);
       }
       // Haare
       const hg = new MGraphics();
       this.drawHair(hg, d, hx * wide, hy * tall);
-      this.parts.head.addChild(hg);
+      this.headInner.addChild(hg);
       // Hut
       if (d.hat !== 'none') {
         const hh = new MGraphics();
         this.drawHat(hh, d, hx * wide, hy * tall);
-        this.parts.head.addChild(hh);
+        this.headInner.addChild(hh);
       }
+      // Mimik-Overlay (X-Augen, Spiralen) und Sternenkreis über dem Kopf (benommen)
+      this.headInner.addChild(this.faceFx, this.stars);
+      this.stars.position.set(0, hy * tall + 0.12);
+      this.drawFace();
     }
   }
 
@@ -276,6 +304,17 @@ export class CharacterSprite {
     g.clear();
     const d = this.def;
     const w = 0.07;
+    if (this.face === 'faint') {
+      // offener Mund, Zunge hängt raus
+      g.ellipse(0, -0.01, w * 0.6, 0.03).fill(0x5a1f2b).stroke({ width: 0.018, color: INK });
+      g.roundRect(-0.025, -0.07, 0.05, 0.07, 0.02).fill(0xff6f9c).stroke({ width: 0.014, color: INK });
+      return;
+    }
+    if (this.mouthMode === 'open') open = 0.8;
+    else if (this.mouthMode === 'grin') {
+      g.moveTo(-w, 0.01).quadraticCurveTo(0, -0.05, w, 0.01).closePath().fill(0xffffff).stroke({ width: 0.018, color: INK });
+      return;
+    } else if (this.mouthMode === 'closed') open = 0;
     if (open > 0.15) {
       g.ellipse(0, -open * 0.04, w * 0.7 + open * 0.02, 0.02 + open * 0.07).fill(0x5a1f2b).stroke({ width: 0.018, color: INK });
       g.ellipse(0, -open * 0.04 + 0.01, w * 0.45, 0.012 + open * 0.02).fill(0xffffff);
@@ -298,16 +337,149 @@ export class CharacterSprite {
       c.position.set(p.x, p.y + offsetY);
       c.rotation = p.angle;
     }
+    this.armBase.L = parts.armL.angle;
+    this.armBase.R = parts.armR.angle;
+  }
+
+  // ---- Animator-Ziel (Cut-out-Puppe): Kopf klappen, Augen, Mund, Arme, Hüpfer, Neigung
+  setHeadFlap(rad: number): void {
+    this.headInner.rotation = rad;
+  }
+  setEyes(kind: EyeKind): void {
+    if (kind === this.eyeMode) return;
+    this.eyeMode = kind;
+    const scale = kind === 'bead' ? 1.5 : kind === 'big' ? 1.9 : 1;
+    for (const p of this.pupils) p.scale.set(scale);
+    for (const l of this.eyeLids) l.scale.y = kind === 'line' ? 1 : 0;
+  }
+  setMouth(kind: MouthKind | null): void {
+    if (kind === this.mouthMode) return;
+    this.mouthMode = kind;
+    this.drawMouth(this.mouthOpen);
+  }
+  /** Arm starr an der Schulter schwenken (relativ zur Pose) */
+  setArm(side: 'L' | 'R', angle: number): void {
+    const part = side === 'L' ? this.parts.armL : this.parts.armR;
+    part.rotation = this.armBase[side] + angle;
+  }
+  /** Ganzer Körper hüpft (Meter) */
+  setHop(dy: number): void {
+    this.container.pivot.y = -dy;
+  }
+  setTilt(rad: number): void {
+    this.container.rotation = rad;
+  }
+
+  /** Mimik: normal, ohnmächtig (X-Augen, Zunge), benommen (Spiralaugen, Sterne kreisen) */
+  setFace(face: FaceKind): void {
+    if (face === this.face) return;
+    this.face = face;
+    this.drawFace();
+  }
+
+  private drawFace(): void {
+    const g = this.faceFx;
+    g.clear();
+    this.stars.removeChildren();
+    const normal = this.face === 'normal';
+    for (const p of this.pupils) p.visible = normal;
+    this.drawMouth(this.mouthOpen);
+    if (normal) return;
+    for (const e of this.eyeBase) {
+      if (this.face === 'faint') {
+        const r = e.r * 0.5;
+        g.moveTo(e.x - r, e.y - r).lineTo(e.x + r, e.y + r).moveTo(e.x + r, e.y - r).lineTo(e.x - r, e.y + r).stroke({ width: 0.022, color: INK, cap: 'round' });
+      } else {
+        // Spirale aus kurzen Bögen
+        let a = 0;
+        let rad = 0.01;
+        g.moveTo(e.x + rad, e.y);
+        for (let k = 0; k < 18; k++) {
+          a += 0.9;
+          rad += 0.0032;
+          g.lineTo(e.x + Math.cos(a) * rad, e.y + Math.sin(a) * rad);
+        }
+        g.stroke({ width: 0.016, color: INK, cap: 'round' });
+      }
+    }
+    if (this.face === 'dizzy') {
+      for (let i = 0; i < 3; i++) {
+        const st = new MGraphics();
+        const a = (i * Math.PI * 2) / 3;
+        const pts: number[] = [];
+        for (let k = 0; k < 10; k++) {
+          const rr = k % 2 === 0 ? 0.045 : 0.02;
+          pts.push(Math.cos((k * Math.PI) / 5) * rr, Math.sin((k * Math.PI) / 5) * rr);
+        }
+        st.poly(pts).fill(0xffd23f).stroke({ width: 0.012, color: INK });
+        st.position.set(Math.cos(a) * 0.16, Math.sin(a) * 0.05);
+        this.stars.addChild(st);
+      }
+    }
+  }
+
+  /** Gurtstufe setzen (0 = ohne); broken = gerissen (hängt lose) */
+  setBelt(level: number, broken: boolean): void {
+    if (level === this.beltLevel && broken === this.beltBroken) return;
+    this.beltLevel = level;
+    this.beltBroken = broken;
+    this.drawBelt();
+  }
+
+  private drawBelt(): void {
+    const g = this.belt;
+    g.clear();
+    const level = this.beltLevel;
+    if (level <= 0) return;
+    const hx = RIG.torso.hx;
+    const hy = RIG.torso.hy;
+    const strap = 0x4a4458;
+    const metal = 0xc9c4d6;
+    const broken = this.beltBroken;
+    if (level === 1) {
+      // Beckengurt: Band quer über den Schoß, Schnalle in der Mitte; gerissen: hängt links herab
+      if (broken) g.moveTo(-hx, -hy + 0.1).lineTo(-hx + 0.04, -hy - 0.1).stroke({ width: 0.05, color: strap, cap: 'round' });
+      else {
+        g.moveTo(-hx - 0.02, -hy + 0.1).lineTo(hx + 0.02, -hy + 0.1).stroke({ width: 0.05, color: strap, cap: 'round' });
+        g.roundRect(-0.035, -hy + 0.07, 0.07, 0.06, 0.01).fill(metal).stroke({ width: 0.012, color: INK });
+      }
+    } else if (level === 2) {
+      // Bügel: dicker Balken vor dem Bauch; gerissen: hochgeklappt
+      if (broken) g.roundRect(hx - 0.02, -hy - 0.02, 0.07, 0.34, 0.03).fill(metal).stroke({ width: 0.015, color: INK });
+      else g.roundRect(-hx - 0.05, -hy + 0.06, hx * 2 + 0.1, 0.08, 0.04).fill(metal).stroke({ width: 0.015, color: INK });
+    } else {
+      // Schulterbügel (3) und Rennsitz (4): zwei Gurte von den Schultern zum Schoß, beim Rennsitz breiter mit Seitenwangen
+      const w = level === 4 ? 0.07 : 0.05;
+      if (level === 4) g.roundRect(-hx - 0.09, -hy + 0.05, 0.06, hy * 1.6, 0.02).fill(0x2f2a3d).roundRect(hx + 0.03, -hy + 0.05, 0.06, hy * 1.6, 0.02).fill(0x2f2a3d);
+      if (broken) {
+        g.moveTo(-hx + 0.05, hy - 0.08).lineTo(-hx - 0.06, -hy + 0.02).stroke({ width: w, color: strap, cap: 'round' });
+        g.moveTo(hx - 0.05, hy - 0.08).lineTo(hx + 0.06, -hy + 0.02).stroke({ width: w, color: strap, cap: 'round' });
+      } else {
+        g.moveTo(-hx + 0.05, hy - 0.08).lineTo(-0.03, -hy + 0.1).stroke({ width: w, color: strap, cap: 'round' });
+        g.moveTo(hx - 0.05, hy - 0.08).lineTo(0.03, -hy + 0.1).stroke({ width: w, color: strap, cap: 'round' });
+        g.roundRect(-0.05, -hy + 0.06, 0.1, 0.07, 0.015).fill(metal).stroke({ width: 0.012, color: INK });
+      }
+    }
   }
 
   /** Mimik: Pupillen folgen den Kräften, Blinzeln, Mund */
   update(dt: number, feltFwd: number, feltUp: number, gSeat: number): void {
+    if (this.face === 'dizzy') {
+      this.starSpin += dt * 4;
+      this.stars.children.forEach((st, i) => {
+        const a = this.starSpin + (i * Math.PI * 2) / 3;
+        st.position.set(Math.cos(a) * 0.16, Math.sin(a) * 0.05);
+      });
+    }
+    if (this.face !== 'normal') return;
     this.blinkT -= dt;
     if (this.blinkT <= 0) {
       this.blinkPhase = 0.18;
       this.blinkT = 2 + Math.random() * 4;
     }
-    if (this.blinkPhase > 0) {
+    if (this.eyeMode === 'line') {
+      for (const l of this.eyeLids) l.scale.y = 1;
+    } else if (this.blinkPhase > 0) {
       this.blinkPhase -= dt;
       const f = Math.sin((this.blinkPhase / 0.18) * Math.PI);
       for (const l of this.eyeLids) l.scale.y = 0.01 * f;
@@ -320,6 +492,7 @@ export class CharacterSprite {
       const e = this.eyeBase[i];
       p.position.set(e.x + px, e.y + py);
     });
+    if (this.mouthMode) return;
     const target = clamp(Math.abs(gSeat - 1) * 0.5 + (gSeat < 0 ? 0.6 : 0), 0, 1);
     this.mouthOpen += (target - this.mouthOpen) * Math.min(1, dt * 10);
     this.drawMouth(this.mouthOpen);

@@ -43,7 +43,19 @@ export const GAUGE = 0.55;
 export interface TrackLayers {
   supports: Map<number, Graphics>;
   rails: Map<number, Graphics>;
+  /** Absperrbänder an offenen Enden (flattern, jeden Frame neu) */
+  barriers: Map<number, Graphics>;
   coins: Map<number, Container>;
+}
+
+/** Absperrband: Fußpunkt, Rahmen (Seite, oben) und Spur */
+interface Barrier {
+  x: number;
+  y: number;
+  z: number;
+  sx: number;
+  sy: number;
+  sz: number;
 }
 
 export interface TunnelPortal {
@@ -59,15 +71,22 @@ function designSpeed(samples: TrackSamples, i: number, maxY: number): number {
 }
 
 export class TrackRenderer {
-  readonly layers: TrackLayers = { supports: new Map(), rails: new Map(), coins: new Map() };
+  readonly layers: TrackLayers = { supports: new Map(), rails: new Map(), barriers: new Map(), coins: new Map() };
   private coinSprites: Graphics[] = [];
+  private barriers: Barrier[] = [];
+  /** Leuchtebenen je Spur (von der Weltansicht gesetzt): Leuchtkanten der Schienen bei Nacht-Skins */
+  glowTargets: Map<number, Container> | null = null;
+  private glowGraphics = new Map<number, Graphics>();
   private world: WorldDef;
+  /** Kontext des letzten draw(), damit die Streben beim Wachsen neu gezeichnet werden können */
+  private last: { samples: TrackSamples; style: SkinStyle; terrain: Terrain; sky: string; maxY: number } | null = null;
 
   constructor(world: WorldDef) {
     this.world = world;
     for (let z = LANE_MAX; z >= LANE_MIN; z--) {
       this.layers.supports.set(z, new Graphics());
       this.layers.rails.set(z, new Graphics());
+      this.layers.barriers.set(z, new Graphics());
       this.layers.coins.set(z, new Container());
     }
   }
@@ -75,6 +94,22 @@ export class TrackRenderer {
   clear(): void {
     for (const g of this.layers.supports.values()) g.clear();
     for (const g of this.layers.rails.values()) g.clear();
+    for (const g of this.layers.barriers.values()) g.clear();
+    for (const g of this.glowGraphics.values()) g.clear();
+    this.barriers = [];
+  }
+
+  /** Grafik in der Leuchtebene einer Spur (bei Bedarf anlegen); null ohne Leuchtebenen */
+  private glowGraphic(lane: number): Graphics | null {
+    const target = this.glowTargets?.get(lane);
+    if (!target) return null;
+    let g = this.glowGraphics.get(lane);
+    if (!g) {
+      g = new Graphics();
+      this.glowGraphics.set(lane, g);
+      target.addChild(g);
+    }
+    return g;
   }
 
   draw(path: TrackPath, samples: TrackSamples, skin: string, terrain: Terrain, allowTunnels: boolean, preview = false): TunnelPortal[] {
@@ -109,7 +144,10 @@ export class TrackRenderer {
       C[i * 2] = pc.X; C[i * 2 + 1] = pc.Y;
     }
 
-    if (!preview) this.drawSupports(samples, style, terrain, sky, maxY);
+    this.last = { samples, style, terrain, sky, maxY };
+    // Vorschau: Schienen, Schwellen und Station wie fertig, nur Streben und Elemente nicht (die Streben wachsen
+    // nach dem Loslassen in 0,3 s hoch, siehe redrawSupports)
+    if (!preview) this.drawSupports(samples, style, terrain, sky, maxY, 1);
 
     let chunkStart = 0;
     let chunkLane = Math.round(samples.z[0]);
@@ -135,11 +173,63 @@ export class TrackRenderer {
       if (inside !== wasInside && allowTunnels) portals.push({ x: samples.x[i], y: samples.y[i], z: samples.z[i], dir: inside ? 1 : -1 });
       wasInside = inside;
     }
-    if (!preview) this.drawStation(samples, style, sky);
+    this.drawStation(samples, style, sky);
+    // Offene Bahn: Absperrband am Ende und 3 m hinter der Station (die Fahrt endet hier, kein Rückweg)
+    if (!samples.closed && !preview) {
+      const end = stateAt(samples, samples.length);
+      const fe = frameWithBank(end, 0);
+      this.barriers.push({ x: end.x, y: end.y, z: end.z, sx: fe.S.x, sy: fe.S.y, sz: fe.S.z });
+      const st0 = stateAt(samples, 0);
+      const f0 = frameWithBank(st0, 0);
+      this.barriers.push({ x: st0.x - st0.t3x * 3, y: st0.y - st0.t3y * 3, z: st0.z - (st0.t3z * 3) / LANE_DEPTH, sx: f0.S.x, sy: f0.S.y, sz: f0.S.z });
+      this.updateBarriers(0);
+    }
     return portals;
   }
 
-  private drawSupports(samples: TrackSamples, style: SkinStyle, terrain: Terrain, sky: string, maxY: number): void {
+  /** Absperrbänder zeichnen: zwei Pfosten (1,1 m), drei gelb-schwarze Bänder, die im Wind flattern */
+  updateBarriers(time: number): void {
+    if (!this.barriers.length) return;
+    for (const g of this.layers.barriers.values()) g.clear();
+    const ink = 0x2a1f3d;
+    for (const b of this.barriers) {
+      const lane = Math.round(b.z);
+      const g = this.layers.barriers.get(lane);
+      if (!g) continue;
+      const k = laneScale(lane);
+      const half = 0.95;
+      const l = toStage(b.x - b.sx * half, b.y - b.sy * half, b.z - (b.sz * half) / LANE_DEPTH);
+      const r = toStage(b.x + b.sx * half, b.y + b.sy * half, b.z + (b.sz * half) / LANE_DEPTH);
+      for (const p of [l, r]) {
+        g.moveTo(p.X, p.Y - 0.1 * k).lineTo(p.X, p.Y + 1.1 * k).stroke({ width: 0.14 * k, color: ink, cap: 'round' });
+        g.circle(p.X, p.Y + 1.1 * k, 0.1 * k).fill(0xffd23f);
+      }
+      const segs = 8;
+      for (const h of [0.35, 0.65, 0.95]) {
+        for (let j = 0; j < segs; j++) {
+          const t0 = j / segs;
+          const t1 = (j + 1) / segs;
+          const flutter = (t: number) => 0.08 * Math.sin(6 * time + b.x + t * 7 + h * 9) * Math.sin(Math.PI * t);
+          const x0 = l.X + (r.X - l.X) * t0;
+          const y0 = l.Y + (r.Y - l.Y) * t0 + (h + flutter(t0)) * k;
+          const x1 = l.X + (r.X - l.X) * t1;
+          const y1 = l.Y + (r.Y - l.Y) * t1 + (h + flutter(t1)) * k;
+          g.moveTo(x0, y0).lineTo(x1, y1).stroke({ width: 0.16 * k, color: j % 2 === 0 ? 0xffd23f : ink, cap: 'butt' });
+        }
+      }
+    }
+  }
+
+  /** Streben neu zeichnen, mit Wachstum 0 … 1 (vom Boden bis zur Bahn) */
+  redrawSupports(growth: number): void {
+    if (!this.last) return;
+    for (const g of this.layers.supports.values()) g.clear();
+    const l = this.last;
+    this.drawSupports(l.samples, l.style, l.terrain, l.sky, l.maxY, growth);
+  }
+
+  private drawSupports(samples: TrackSamples, style: SkinStyle, terrain: Terrain, sky: string, maxY: number, growth = 1): void {
+    if (growth < 0.02) return;
     let nextS = 0;
     for (let i = 0; i < samples.count; i++) {
       const s = samples.s[i];
@@ -157,8 +247,9 @@ export class TrackRenderer {
       const h = y - ground;
       if (h < 1.0) continue;
       const k = laneScale(z);
-      const top = toStage(x, y - 0.25, z);
+      const top0 = toStage(x, y - 0.25, z);
       const bot = toStage(x, ground, z);
+      const top = { X: bot.X + (top0.X - bot.X) * growth, Y: bot.Y + (top0.Y - bot.Y) * growth };
       const post = atmosphere(style.post, z, sky);
       const brace = atmosphere(style.brace, z, sky);
       const ink = shade(post, -0.45);
@@ -226,11 +317,7 @@ export class TrackRenderer {
       right.push(R[i * 2], R[i * 2 + 1]);
       center.push(C[i * 2], C[i * 2 + 1]);
     }
-    if (preview) {
-      g.poly(center, false).stroke({ width: 0.5 * k, color: hexNum(light), alpha: 0.9, cap: 'round', join: 'round' });
-      g.poly(center, false).stroke({ width: 0.2 * k, color: 0xffffff, alpha: 0.8, cap: 'round', join: 'round' });
-      return;
-    }
+    void preview; // die Vorschau zeigt die Schienen wie die fertige Bahn
     // Schwellen zwischen den Schienen
     let nextS = s.s[a];
     const tieSpacing = style.support === 'steel' || style.support === 'space' || style.support === 'neon' ? 1.4 : 0.8;
@@ -253,7 +340,12 @@ export class TrackRenderer {
     g.poly(right, false).stroke({ width: 0.16 * k, color: hexNum(rail), cap: 'round', join: 'round' });
     g.poly(left, false).stroke({ width: 0.06 * k, color: hexNum(light), alpha: 0.9, cap: 'round', join: 'round' });
     g.poly(right, false).stroke({ width: 0.06 * k, color: hexNum(light), alpha: 0.9, cap: 'round', join: 'round' });
-    if (style.glow) g.poly(center, false).stroke({ width: 0.05 * k, color: hexNum(style.glow), alpha: 0.6, cap: 'round', join: 'round' });
+    if (style.glow) {
+      g.poly(center, false).stroke({ width: 0.05 * k, color: hexNum(style.glow), alpha: 0.6, cap: 'round', join: 'round' });
+      // Leuchtkante in der additiven Leuchtebene (weichgezeichnet)
+      const gg = this.glowGraphic(lane);
+      if (gg) gg.poly(center, false).stroke({ width: 0.22 * k, color: hexNum(style.glow), alpha: 0.9, cap: 'round', join: 'round' });
+    }
   }
 
   private drawElements(path: TrackPath, s: TrackSamples, C: Float64Array): void {

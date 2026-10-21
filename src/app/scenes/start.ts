@@ -13,21 +13,27 @@ import { Button, label, INK, PAPER, iconGear, iconPerson, star, paintRect, Toast
 import { WORLDS } from '@/levels/worlds';
 import { LEVELS } from '@/levels/levels';
 import type { LevelDef, WorldDef } from '@/levels/types';
+import { Sky, type SkyView } from '@/render/sky';
 import { Terrain } from '@/physics/terrain';
 import { storage } from '@/core/storage';
 import { unlockAll } from '@/core/dev';
 import { t } from '@/core/i18n';
-import { hexNum, shade, mix, cloudTexture, skyTexture, paperTexture } from '@/render/paint';
+import { hexNum, shade, mix, paperTexture } from '@/render/paint';
+import { art, ART_NAMES } from '@/assets/manifest';
 import { atmosphere } from '@/render/terrainRenderer';
 import { laneRise, laneScale, LANE_MIN, LANE_MAX } from '@/track/stage';
 import { BentSheet, bendAngle, bendPoint, type BendFrame, type XY } from '@/render/bend';
-import { HORIZON_Y, cachedMiniature, getMiniature, levelDraft, miniBounds, type MiniBounds } from '@/render/miniature';
+import { HORIZON_Y, cachedMiniature, getMiniature, levelDraft, miniBounds, renderLanes, type LaneMiniature, type MiniBounds } from '@/render/miniature';
+import { unfoldAngle, unfoldLift, unfoldSquash } from '@/render/unfold';
+import { LANE_RISE } from '@/track/stage';
 import { captureLevel, releaseSnapshot, type LevelSnapshot } from '../mapTransition';
 import { LevelScene } from './level';
 import { MyTracksScene } from './myTracks';
 import { EditorScene } from './editor';
 import { SplashScene } from './splash';
 import { clamp, lerp, smoothstep } from '@/core/math';
+import { WheelPhysics } from '../wheelPhysics';
+import { haptics } from '@/platform/haptics';
 import { drawProp } from '@/render/props';
 
 /** Ein Level auf der Scheibe */
@@ -47,6 +53,8 @@ interface Spot {
   fade: number;
   badge: Container | null;
   badgeScale: number;
+  /** Hüpfer der Miniatur nach dem Überfahren des Rastpunkts (1 → 0) */
+  bob: number;
 }
 
 /** Eine Welt als Zone der Scheibe */
@@ -77,13 +85,15 @@ interface Transition {
   S: number;
   F0: XY;
   F1: XY;
-  sky: Sprite;
   ui: Sprite;
   world: BentSheet;
-  paper: TilingSprite;
+  /** Spurstreifen der Ziel-Miniatur, die sich beim Übergang aufklappen (null, wenn nicht renderbar) */
+  lanes: { sheets: BentSheet[]; mini: LaneMiniature } | null;
 }
 
-const SPRING = 55;
+
+/** Nachtwelten (wie im Level: Geister, Vulkan, Weltraum) */
+const isNightWorld = (wd: WorldDef): boolean => wd.id === 6 || wd.id === 8 || wd.id === 10;
 
 function palette(wd: WorldDef): Palette {
   const sky = wd.sky[1];
@@ -109,12 +119,10 @@ export class StartScene implements Scene {
   readonly container = new Container();
   readonly handlers: InputHandlers = {};
   private game!: Game;
-  private sky = new Sprite();
-  /** alter Himmel, der beim Zonenwechsel ausblendet */
-  private skyOld = new Sprite();
-  private clouds: Array<{ s: Sprite; depth: number; x: number; y: number; speed: number }> = [];
-  private cloudLayer = new Container();
-  private levelSkyLayer = new Container();
+  /** Derselbe Himmel wie im Level (Wolken, Sonne, Hügel-Silhouette); beim Übergang wandert die Wolkenlage mit */
+  private skyR: Sky | null = null;
+  /** Papierkorn wie im Level, dauerhaft (so fehlt beim Übergang nichts, das einblenden müsste) */
+  private paper: TilingSprite | null = null;
   private globe = new Container();
   private ground = new Graphics();
   private sheets = new Container();
@@ -144,14 +152,8 @@ export class StartScene implements Scene {
   private R = 600;
   private surfaceY = 450;
   private gateW = 200;
-  /** Bogenposition in der Bildmitte (Karten-Pixel) */
-  private focus = 0;
-  private velocity = 0;
-  private target: number | null = null;
-  private targetIdx = 0;
-  private dragging = false;
-  private lastDragX = 0;
-  private lastDragT = 0;
+  /** Drehscheibe als Glücksrad: Fokus (Bogenposition in der Bildmitte), Schwung, Rasten, Gummiband */
+  private wheel = new WheelPhysics([]);
   private cur = 0;
   private shownWorld = -1;
   private frame: BendFrame = { fx: 400, fy: 450, s: 1, k: 1 / 600 };
@@ -170,13 +172,18 @@ export class StartScene implements Scene {
   enter(game: Game): void {
     this.game = game;
     this.hud = [this.title, this.worldName, this.worldInfo, this.playBtn, this.tracksBtn, this.gearBtn, this.peopleBtn, this.devBtn];
-    this.container.addChild(this.sky, this.skyOld, this.levelSkyLayer, this.cloudLayer, this.globe, this.overLayer, ...this.hud, this.toast);
-    this.globe.addChild(this.ground, this.sheets, this.levelWorldLayer, this.gates, this.badges);
-    this.skyOld.alpha = 0;
-    this.buildClouds();
-    this.buildSpots();
     const startId = this.from?.levelId ?? clamp(storage.progress.current, 1, LEVELS.length);
     this.cur = startId - 1;
+    const startWorld = WORLDS[LEVELS[this.cur].world - 1];
+    this.skyR = new Sky(startWorld, isNightWorld(startWorld));
+    this.shownWorld = startWorld.id - 1;
+    if (this.from) this.skyR.importState(this.from.skyState);
+    this.paper = new TilingSprite({ texture: art(ART_NAMES.paper(), paperTexture), width: this.w, height: this.h });
+    this.paper.blendMode = 'multiply';
+    this.paper.alpha = 0.5;
+    this.container.addChild(this.skyR.container, this.globe, this.paper, this.overLayer, ...this.hud, this.toast);
+    this.globe.addChild(this.ground, this.sheets, this.levelWorldLayer, this.gates, this.badges);
+    this.buildSpots();
     this.layout();
     this.focus = this.spots[this.cur].pos;
     this.playBtn.onTap = () => !this.busy && this.openSpot(this.spots[this.cur]);
@@ -211,13 +218,27 @@ export class StartScene implements Scene {
     return !!this.trans || !!this.opening;
   }
 
+  /** Bogenposition in der Bildmitte (Karten-Pixel) */
+  private get focus(): number {
+    return this.wheel.focus;
+  }
+  private set focus(v: number) {
+    this.wheel.focus = v;
+  }
+  private get velocity(): number {
+    return this.wheel.velocity;
+  }
+  private get dragging(): boolean {
+    return this.wheel.dragging;
+  }
+
   // ------------------------------------------------------------------ Aufbau
   private buildSpots(): void {
     this.spots = LEVELS.map((level) => {
       const path = levelDraft(level.id);
       return {
         id: level.id, world: level.world - 1, level, bounds: miniBounds(level, new Terrain(level), path),
-        m: 1, pos: 0, width: 0, sheet: null, fade: 0, badge: null, badgeScale: 1,
+        m: 1, pos: 0, width: 0, sheet: null, fade: 0, badge: null, badgeScale: 1, bob: 0,
       };
     });
     this.zones = WORLDS.map((wd, i) => ({ world: i, start: 0, gate: 0, sign: this.makeGate(wd, i) }));
@@ -273,20 +294,6 @@ export class StartScene implements Scene {
     return c;
   }
 
-  private buildClouds(): void {
-    this.cloudLayer.removeChildren();
-    this.clouds = [];
-    for (let i = 0; i < 10; i++) {
-      const s = new Sprite(cloudTexture(i % 6));
-      s.anchor.set(0.5);
-      const depth = (i % 5) / 5;
-      s.scale.set(0.45 + (1 - depth) * 0.8);
-      s.alpha = 0.6 + (1 - depth) * 0.35;
-      this.cloudLayer.addChild(s);
-      this.clouds.push({ s, depth, x: (i * 251) % 1400, y: 40 + ((i * 97) % 220), speed: 4 + (i % 3) * 3 });
-    }
-  }
-
   /**
    * Lage aller Level auf dem Bogen. Jede Miniatur bekommt ihren eigenen Maßstab, damit breite und hohe Bahnen
    * genauso in den Blick passen wie kleine; zwischen den Miniaturen wechselt der Maßstab weich.
@@ -295,8 +302,9 @@ export class StartScene implements Scene {
     const { w, h } = this;
     const portrait = h > w;
     this.R = portrait ? Math.max(w * 0.95, h * 0.55) : Math.max(w * 0.6, h * 0.9);
-    this.surfaceY = portrait ? h * 0.63 : h * 0.79;
-    const textBottom = portrait ? 222 : 100;
+    // Scheibe höher im Bild: die Miniatur bekommt mehr Raum, „Spielen“ liegt in beiden Formaten mittig darunter
+    this.surfaceY = portrait ? h * 0.56 : h * 0.74;
+    const textBottom = portrait ? 176 : 88;
     const maxH = Math.max(60, this.surfaceY - textBottom - 52);
     const targetW = portrait ? w * 0.92 : Math.min(w * 0.46, 520);
     const gap = targetW * 0.16;
@@ -317,6 +325,7 @@ export class StartScene implements Scene {
       sp.pos = x + sp.width / 2;
       x += sp.width + gap;
     }
+    this.wheel.setPositions(this.spots.map((sp) => sp.pos));
   }
 
   /** Maßstab an einer Bogenposition (zwischen den Miniaturen linear) */
@@ -336,49 +345,23 @@ export class StartScene implements Scene {
   }
 
   private nearest(p: number): number {
-    let best = 0;
-    let bestD = Infinity;
-    for (let i = 0; i < this.spots.length; i++) {
-      const d = Math.abs(this.spots[i].pos - p);
-      if (d < bestD) {
-        bestD = d;
-        best = i;
-      }
-    }
-    return best;
+    return this.wheel.nearest(p);
   }
 
   // ------------------------------------------------------------------ Eingabe
   private setupInput(): void {
     this.handlers.dragStart = (pt) => {
       if (this.settingsOpen || this.busy) return;
-      this.dragging = true;
-      this.lastDragX = pt.x;
-      this.lastDragT = performance.now();
-      this.velocity = 0;
-      this.target = null;
+      this.wheel.dragStart(pt.x, performance.now());
     };
     this.handlers.dragMove = (pt) => {
       if (!this.dragging) return;
-      const now = performance.now();
-      const dx = pt.x - this.lastDragX;
-      const dt = Math.max(1, now - this.lastDragT) / 1000;
-      this.lastDragX = pt.x;
-      this.lastDragT = now;
-      // an den Enden gummiartig
-      const first = this.spots[0].pos;
-      const last = this.spots[this.spots.length - 1].pos;
-      const over = this.focus < first || this.focus > last;
-      const d = (-dx / this.frame.s) * (over ? 0.35 : 1);
-      this.focus += d;
-      this.velocity = lerp(this.velocity, d / dt, 0.6);
+      this.wheel.dragMove(pt.x, performance.now(), this.frame.s);
     };
     this.handlers.dragEnd = () => {
       if (!this.dragging) return;
-      this.dragging = false;
-      if (performance.now() - this.lastDragT > 120) this.velocity = 0;
-      // Einrasten dort, wo der Schwung die Scheibe hintragen würde
-      this.selectSpot(this.nearest(this.focus + this.velocity / 4));
+      // Loslassen: mit Schwung dreht die Scheibe frei aus und rastet in Fahrtrichtung ein (Glücksrad)
+      this.wheel.dragEnd(performance.now());
     };
     this.handlers.tap = (pt) => {
       if (this.settingsOpen) {
@@ -402,7 +385,7 @@ export class StartScene implements Scene {
     this.handlers.key = (k) => {
       if (this.busy || this.settingsOpen) return;
       // vom Ziel aus weiterzählen, falls die Scheibe noch dreht
-      const from = this.target !== null ? this.targetIdx : this.cur;
+      const from = this.wheel.target !== null ? this.wheel.targetIndex : this.cur;
       if (k === 'ArrowLeft') this.selectSpot(from - 1);
       if (k === 'ArrowRight') this.selectSpot(from + 1);
       if (k === 'Enter') this.openSpot(this.spots[this.cur]);
@@ -410,8 +393,7 @@ export class StartScene implements Scene {
   }
 
   private selectSpot(i: number): void {
-    this.targetIdx = clamp(i, 0, this.spots.length - 1);
-    this.target = this.spots[this.targetIdx].pos;
+    this.wheel.select(i);
   }
 
   /** Liegt der Punkt (Bildschirm-Pixel) in den Grenzen des Containers? */
@@ -475,7 +457,7 @@ export class StartScene implements Scene {
     if (this.settingsOpen) this.toggleSettings();
     storage.setCurrent(sp.id);
     this.selectSpot(this.spots.indexOf(sp));
-    this.velocity = 0;
+    this.wheel.velocity = 0;
     const level = new LevelScene(sp.id);
     const opening: { spot: Spot; level: LevelScene | null } = { spot: sp, level: null };
     this.opening = opening;
@@ -496,9 +478,9 @@ export class StartScene implements Scene {
   private launchOpening(): void {
     const op = this.opening;
     if (!op?.level || Math.abs(this.focus - op.spot.pos) > 0.75) return;
-    this.focus = op.spot.pos;
-    this.target = null;
-    this.velocity = 0;
+    this.wheel.focus = op.spot.pos;
+    this.wheel.target = null;
+    this.wheel.velocity = 0;
     const level = op.level;
     level.update(0);
     const snap = captureLevel(this.game, op.spot.id, level.transitionLayers());
@@ -509,33 +491,78 @@ export class StartScene implements Scene {
   private startTransition(dir: 1 | -1, sp: Spot, snap: LevelSnapshot, level: LevelScene | null): void {
     const cam = snap.cam;
     const xc = (sp.bounds.minX + sp.bounds.maxX) / 2;
-    const sky = new Sprite(snap.sky);
     const ui = new Sprite(snap.ui);
     const world = new BentSheet(snap.world, 32, 18);
-    const paper = new TilingSprite({ texture: paperTexture(), width: this.w, height: this.h });
-    paper.blendMode = 'multiply';
-    this.levelSkyLayer.addChild(sky);
     this.levelWorldLayer.addChild(world.mesh);
-    this.overLayer.addChild(paper, ui);
+    this.overLayer.addChild(ui);
+    // Spurstreifen der Miniatur (fünf Texturen, nur für diesen Übergang)
+    let lanes: Transition['lanes'] = null;
+    try {
+      const mini = renderLanes(this.game.app.renderer, sp.id);
+      const sheets = mini.textures.map((tex) => new BentSheet(tex, 20, 8));
+      for (const sh of sheets) this.sheets.addChild(sh.mesh);
+      lanes = { sheets, mini };
+    } catch (err) {
+      console.warn('Spurstreifen nicht renderbar', err);
+    }
     this.trans = {
       dir, t: 0, dur: dir === 1 ? 1.55 : 1.35, spot: sp, level, snap, xc,
       S: cam.zoom / sp.m,
       F0: { x: this.w / 2, y: this.surfaceY },
       F1: { x: (xc - cam.x) * cam.zoom + cam.width / 2, y: cam.height / 2 - (HORIZON_Y - cam.y) * cam.zoom },
-      sky, ui, world, paper,
+      ui, world, lanes,
     };
-    this.dragging = false;
+    this.wheel.dragging = false;
   }
 
   private endTransition(): void {
     const tr = this.trans;
     if (!tr) return;
     this.trans = null;
-    tr.sky.destroy();
     tr.ui.destroy();
     tr.world.destroy();
-    tr.paper.destroy();
+    if (tr.lanes) {
+      for (const sh of tr.lanes.sheets) sh.destroy();
+      for (const tex of tr.lanes.mini.textures) tex.destroy(true);
+    }
     releaseSnapshot(tr.snap);
+  }
+
+  /**
+   * Spurstreifen der Ziel-Miniatur im Übergang: jede Spur klappt (hinten zuerst) etwas vom Boden ab und wird dabei
+   * leicht gestaucht, bis das Level-Bild übernimmt; auf dem Rückweg läuft es rückwärts.
+   */
+  private updateLaneSheets(sp: Spot, p: number): void {
+    const tr = this.trans;
+    if (!tr?.lanes) return;
+    const f = this.frame;
+    const bb = tr.lanes.mini.bounds;
+    const xc = (bb.minX + bb.maxX) / 2;
+    const u0 = sp.pos - this.focus;
+    const alpha = 1 - ramp(p, 0.6, 0.9);
+    tr.lanes.sheets.forEach((sh, i) => {
+      const z = tr.lanes!.mini.lanes[i];
+      const squash = unfoldSquash(z, p);
+      const lift = unfoldLift(z, p) * LANE_RISE * 0.5 * sp.m;
+      sh.update((tu, tv, out) => {
+        const X = xc + (bb.minX + tu * (bb.maxX - bb.minX) - xc) * squash;
+        const Y = bb.maxY - tv * (bb.maxY - bb.minY);
+        bendPoint(f, u0 + (X - xc) * sp.m, (Y - HORIZON_Y) * sp.m + lift, out);
+      });
+      sh.mesh.alpha = alpha;
+      sh.mesh.visible = alpha > 0.005;
+    });
+    void unfoldAngle;
+  }
+
+  /** Blick für den gemeinsamen Himmel: auf der Karte ruhig (Wolken 0,3×), im Übergang zur Level-Kamera hin */
+  private skyView(p: number): SkyView {
+    const mx = this.focus / 5;
+    const rest: SkyView = { x: mx, y: 10, zoom: 12, parallax: 0.3 };
+    const cam = this.trans?.snap.cam;
+    if (!cam) return rest;
+    const q = ramp(p, 0.2, 0.9);
+    return { x: lerp(mx, cam.x, q), y: lerp(10, cam.y, q), zoom: lerp(12, cam.zoom, q), parallax: lerp(0.3, 1, q) };
   }
 
   /** Fortschritt des Übergangs: 0 = Karte in Ruhe, 1 = Level */
@@ -572,7 +599,8 @@ export class StartScene implements Scene {
       if (this.trans.t >= this.trans.dur) {
         const tr = this.trans;
         if (tr.dir === 1 && tr.level) {
-          // Bild und Level sind jetzt deckungsgleich: Level übernehmen (räumt diese Szene ab)
+          // Bild und Level sind jetzt deckungsgleich: Wolkenlage übergeben, Level übernehmen (räumt diese Szene ab)
+          if (this.skyR) tr.level.adoptSky(this.skyR.exportState());
           this.game.adopt(tr.level);
           return;
         }
@@ -599,18 +627,8 @@ export class StartScene implements Scene {
     this.updateSpots(dt, p);
     this.updateGates(p);
     this.updateTransitionLayers(p);
-    // Himmel und Wolken
-    if (this.skyOld.alpha > 0) this.skyOld.alpha = Math.max(0, this.skyOld.alpha - dt * 1.6);
-    // Der Karten-Himmel bleibt deckend darunter, der Level-Himmel blendet darüber ein (sonst schiene beim
-    // Überblenden der dunkle Hintergrund durch); nur die Wolken der Karte gehen
-    this.cloudLayer.alpha = 1 - ramp(p, 0.3, 0.85);
-    for (const c of this.clouds) {
-      c.x += c.speed * dt;
-      const par = 60 + (1 - c.depth) * 220;
-      let sx = (c.x - (this.focus / this.R) * par) % 1600;
-      if (sx < -200) sx += 1600;
-      c.s.position.set(sx - 200, c.y + Math.sin(this.time * 0.4 + c.x) * 4);
-    }
+    // Derselbe Himmel wie im Level: Wolken wandern mit der Scheibe (gedämpft) und im Übergang zur Level-Kamera hin
+    this.skyR?.update(dt, this.skyView(p));
     const hudA = 1 - ramp(p, 0, 0.3);
     for (const el of this.hud) {
       el.alpha = hudA;
@@ -620,18 +638,14 @@ export class StartScene implements Scene {
   }
 
   private updateScroll(dt: number): void {
-    if (this.dragging) return;
-    const first = this.spots[0].pos;
-    const last = this.spots[this.spots.length - 1].pos;
-    const tgt = this.target ?? this.spots[this.nearest(clamp(this.focus, first, last))].pos;
-    // gedämpfte Feder: Der Schwung des Wischens läuft weich ins Einrasten aus
-    const a = SPRING * (tgt - this.focus) - 2 * Math.sqrt(SPRING) * this.velocity;
-    this.velocity += a * dt;
-    this.focus += this.velocity * dt;
-    if (Math.abs(tgt - this.focus) < 0.2 && Math.abs(this.velocity) < 2) {
-      this.focus = tgt;
-      this.velocity = 0;
-      this.target = null;
+    const { passed } = this.wheel.step(dt);
+    // jeder überfahrene Rastpunkt klickt: Haptik, Schild hüpft, Miniatur wippt
+    for (const i of passed) {
+      const sp = this.spots[i];
+      if (!sp) continue;
+      sp.badgeScale = 1.3;
+      sp.bob = 1;
+      haptics.selection();
     }
   }
 
@@ -770,15 +784,20 @@ export class StartScene implements Scene {
         const bb = sp.bounds;
         const xc = (bb.minX + bb.maxX) / 2;
         const u0 = sp.pos - this.focus;
+        // Miniaturen wippen leicht (Parallaxe-Leben), ein überfahrener Rastpunkt lässt sie kurz hüpfen
+        const wobble = tr ? 0 : 1.5 * Math.sin(this.time * 1.3 + sp.id) + 6 * sp.bob * (1 - sp.bob);
         sp.sheet.update((tu, tv, out) => {
           const X = bb.minX + tu * (bb.maxX - bb.minX);
           const Y = bb.maxY - tv * (bb.maxY - bb.minY);
-          bendPoint(f, u0 + (X - xc) * sp.m, (Y - HORIZON_Y) * sp.m, out);
+          bendPoint(f, u0 + (X - xc) * sp.m, (Y - HORIZON_Y) * sp.m + wobble, out);
         });
         const locked = !this.worldUnlocked(sp.world);
         const base = sp.fade * (locked ? 0.6 : 1);
-        sp.sheet.mesh.alpha = isTarget ? base * (1 - ramp(p, 0.8, 0.95)) : base * others;
+        // Ziel des Übergangs: statt der flachen Miniatur klappen ihre Spurstreifen auf (wenn vorhanden)
+        const hasLanes = isTarget && !!tr?.lanes;
+        sp.sheet.mesh.alpha = hasLanes ? 0 : isTarget ? base * (1 - ramp(p, 0.8, 0.95)) : base * others;
         sp.sheet.mesh.visible = sp.sheet.mesh.alpha > 0.005;
+        if (hasLanes) this.updateLaneSheets(sp, p);
       }
       // Schild über der Miniatur
       if (!sp.badge) {
@@ -786,6 +805,7 @@ export class StartScene implements Scene {
         this.badges.addChild(sp.badge);
       }
       const isCur = this.spots[this.cur] === sp;
+      sp.bob = Math.max(0, sp.bob - dt * 4);
       sp.badgeScale = lerp(sp.badgeScale, isCur && !tr ? 1.14 : 1, Math.min(1, dt * 10));
       const u = sp.pos - this.focus;
       bendPoint(f, u, (sp.bounds.maxY - HORIZON_Y) * sp.m + 26, this.tmp);
@@ -828,10 +848,7 @@ export class StartScene implements Scene {
       const Y = (cam.height / 2 - tv * cam.height) / cam.zoom + cam.y;
       bendPoint(f, u0 + (X - tr.xc) * sp.m, (Y - HORIZON_Y) * sp.m, out);
     });
-    tr.world.mesh.alpha = ramp(p, 0.4, 0.8);
-    const skyB = ramp(p, 0.3, 0.85);
-    tr.sky.alpha = skyB;
-    tr.paper.alpha = 0.5 * skyB;
+    tr.world.mesh.alpha = tr.lanes ? ramp(p, 0.6, 0.9) : ramp(p, 0.4, 0.8);
     tr.ui.alpha = ramp(p, 0.82, 1);
   }
 
@@ -842,21 +859,9 @@ export class StartScene implements Scene {
     const locked = !this.worldUnlocked(sp.world);
     this.worldInfo.text = `${t('level', { n: sp.id })} · ${sp.level.name}${locked ? '  ·  ' + t('locked') : ''}`;
     if (sp.world !== this.shownWorld) {
-      // Himmel der Zone weich überblenden
-      if (this.shownWorld >= 0) {
-        this.skyOld.texture = this.sky.texture;
-        this.skyOld.alpha = 1;
-      }
+      // Himmel der Zone weich überblenden (derselbe Himmel wie im Level dieser Welt)
       this.shownWorld = sp.world;
-      this.sky.texture = skyTexture(`start_w${wd.id}`, wd.sky, wd.id + 50);
-      this.fitSky();
-    }
-  }
-
-  private fitSky(): void {
-    for (const s of [this.sky, this.skyOld]) {
-      s.width = this.w;
-      s.height = this.h;
+      this.skyR?.setWorld(wd, isNightWorld(wd), 0.6);
     }
   }
 
@@ -928,16 +933,20 @@ export class StartScene implements Scene {
   resize(w: number, h: number): void {
     this.w = w;
     this.h = h;
-    this.fitSky();
+    this.skyR?.resize(w, h);
+    if (this.paper) {
+      this.paper.width = w;
+      this.paper.height = h;
+    }
     const portrait = h > w;
-    // Quer ist wenig Höhe: Texte kompakter, „Spielen“ unten rechts, damit die Miniatur frei steht
-    this.title.position.set(w / 2, portrait ? 118 : 34);
-    this.title.style.fontSize = portrait ? 38 : 28;
-    this.worldName.position.set(w / 2, portrait ? 168 : 66);
-    this.worldName.style.fontSize = portrait ? 28 : 22;
-    this.worldInfo.position.set(w / 2, this.worldName.y + (portrait ? 34 : 24));
-    this.worldInfo.style.fontSize = portrait ? 18 : 15;
-    this.playBtn.position.set(portrait ? w / 2 : w - 135, portrait ? h - 70 : h - 50);
+    // Texte oben kompakt, „Spielen“ in beiden Formaten mittig unter der Scheibe
+    this.title.position.set(w / 2, portrait ? 96 : 30);
+    this.title.style.fontSize = portrait ? 36 : 26;
+    this.worldName.position.set(w / 2, portrait ? 140 : 58);
+    this.worldName.style.fontSize = portrait ? 26 : 20;
+    this.worldInfo.position.set(w / 2, this.worldName.y + (portrait ? 30 : 22));
+    this.worldInfo.style.fontSize = portrait ? 17 : 14;
+    this.playBtn.position.set(w / 2, portrait ? h - 70 : h - 46);
     this.tracksBtn.position.set(w - (portrait ? 105 : 115), 44);
     this.gearBtn.position.set(44, 44);
     this.peopleBtn.position.set(110, 44);
@@ -949,8 +958,8 @@ export class StartScene implements Scene {
     if (this.trans) this.trans.t = this.trans.dur;
     const id = this.spots[this.cur].id;
     this.layout();
-    this.focus = this.spots[id - 1].pos;
-    this.target = null;
-    this.velocity = 0;
+    this.wheel.focus = this.spots[id - 1].pos;
+    this.wheel.target = null;
+    this.wheel.velocity = 0;
   }
 }

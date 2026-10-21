@@ -117,7 +117,7 @@ Warum die Steilheit entscheidet: Eine Bodenkehre ist genau dort steil, wo der St
 | 4 | **In der Höhe: Kreuzung = Looping.** | Kreuzt der Strich sich selbst und die Schleife ist klar gezeichnet (Scheitel mindestens 4,5 m von der Kreuzung, Umfang mindestens 12 m, rund: 4π·Fläche/Umfang² ≥ 0,4), wird sie zum vertikalen Looping in derselben Tiefe. Der Wagen fährt wirklich kopfüber (3D-Rahmen mit Paralleltransport). Kleine oder spitze Schleifen sind Zittern und werden nicht zum Looping. |
 | 5 | **In der Höhe: Kehre = Steilkurve.** | Dreht der Strich in x um, ohne sich zu kreuzen (Hin- und Rückweg je ≥ 5 m), entsteht eine überhöhte Kurve: ein Halbkreis in der Horizontalen, dessen Radius aus der gezeichneten Breite folgt (mindestens zwei Spuren = 8,4 m, höchstens vier = 16,8 m) und tempo-bewusst wächst: Aus der Fallhöhe bis zur Kurve wird das Tempo geschätzt und der Radius so gewählt, dass die Querbeschleunigung unter 2,5 g bleibt, soweit die Bühne Platz hat. Rückweg höher im Bild = nach hinten, tiefer = nach vorne. Die Kurve bleibt auf Einfahrtshöhe, der gezeichnete Höhenunterschied wird danach weich abgebaut; die Länge dieses Übergangs wächst mit dem Tempo, damit die Kuppe danach keine Fahrgäste aus dem Sitz hebt. Kleinere Rückwärts-Haken (unter 5 m) sind Zittern und werden entfernt. |
 | 6 | **Zurück auf den Boden.** | Kommt die Bahn in der Höhen-Lesart bis auf die Bodenlinie herunter, liest das System wieder Tiefe. Der Übergang ist weich (6 m). |
-| 7 | **Offen bleibt offen, Schluss von Hand ist sauber.** | Endet der Strich auf dem Bildschirm nahe der Station (8 m), wird die Runde geschlossen, und zwar elegant: Kommt der Strich in Abfahrtsrichtung an, werden die letzten 14 m weich auf die gerade Einfahrt gelegt (gleiche Spur, Höhe, Richtung). Kommt er gegen die Abfahrtsrichtung hinter der Station vorbei und dreht dort um (Oval, Rundkurs), ersetzt ein Halbkreis mit Mitte auf der Station die gezeichnete Schluss-Kehre (Radius aus den Spuren zwischen Rückweg und Station; liegt der Rückweg nur eine Spur daneben, wird er vorher eine Spur nach außen geführt). Die Hand trifft die Station nie genau; ohne diese Schritte gäbe es am Schluss Schlenker oder S-Kurven. Sonst bleibt die Bahn offen: Das Ende leuchtet, ein neuer Strich ab dem Ende setzt die Bahn fort, bis sie die Station erreicht. Beim Zeichnen wird nie ein Rückweg vorgeschlagen. Erst Play ergänzt für die Fahrt einen automatischen Rückweg (zwei Halbkreis-Kehren über die Nachbarspur, Bremsstrecke) auf einer Kopie; die Zeichnung bleibt, wie sie ist. Der Rückweg zählt für keine Ziele. |
+| 7 | **Offen bleibt offen, Schluss von Hand ist sauber.** | Endet der Strich auf dem Bildschirm nahe der Station (8 m), wird die Runde geschlossen, und zwar elegant: Kommt der Strich in Abfahrtsrichtung an, werden die letzten 14 m weich auf die gerade Einfahrt gelegt (gleiche Spur, Höhe, Richtung). Kommt er gegen die Abfahrtsrichtung hinter der Station vorbei und dreht dort um (Oval, Rundkurs), ersetzt ein Halbkreis mit Mitte auf der Station die gezeichnete Schluss-Kehre (Radius aus den Spuren zwischen Rückweg und Station; liegt der Rückweg nur eine Spur daneben, wird er vorher eine Spur nach außen geführt). Die Hand trifft die Station nie genau; ohne diese Schritte gäbe es am Schluss Schlenker oder S-Kurven. Sonst bleibt die Bahn offen: Das Ende leuchtet, ein neuer Strich ab dem Ende setzt die Bahn fort, bis sie die Station erreicht; die Schlussverbindung erscheint schon während des Strichs als gestrichelte Geister-Schiene. Es gibt keinen automatischen Rückweg: An einem offenen Ende (und 3 m hinter der Station) steht ein gelb-schwarzes Absperrband. Drückt man trotzdem Play, fährt der Zug bis zum Ende: Kommt er mit über 6 m/s an, blockieren die Räder auf den letzten Metern (Funken), und er fliegt über die Kante hinaus; langsamer kippt er über die Vorderkante. Beides ist der Fehlschlag „Absperrung“ (`openEnd`), die Fahrt zählt nicht. |
 | 8 | **3D-Handles.** | Knoten antippen zeigt die Bezier-Handles (in 3D: Tangente mit Tiefenanteil). Unter dem Knoten sitzt das **Tiefen-Handle** (Quadrat): vertikal ziehen schiebt den Knoten nach hinten oder vorne; so lassen sich Spuren nachträglich ändern, sobald Handles freigeschaltet sind (ab Level 2). Rechts sitzt das **Roll-Handle** (Ring): ziehen setzt die Schräglage von Hand, Doppeltipp schaltet zurück auf automatisch. Schrauben (Rolls) entstehen nur über dieses Handle, nie aus dem Strich; es erscheint mit der Freischaltung „Roll“ (Welt 4). |
 | 9 | **Überzeichnen wie der Illustrator-Stift.** | Beginnt und endet ein neuer Strich auf der Bahn (30 px), ersetzt er nur den Abschnitt dazwischen, mit derselben Lesart (Boden/Höhe) und weichen Nahtstellen. Das Strichende blendet auf die Tiefe der Bahn zurück. |
 | 10 | **Wegräumen.** | Der rote Papierkorb oben rechts löscht die ganze Bahn (mit Undo). Ein neuer Strich auf freier Fläche ersetzt die Bahn ebenfalls. |
@@ -128,14 +128,17 @@ Warum die Steilheit entscheidet: Eine Bodenkehre ist genau dort steil, wo der St
 - Es gibt nie einen Modus, Regler oder Schalter. Egal wie viele Elemente freigeschaltet sind, der Strich bleibt derselbe.
 
 ### 3.6 Live-Feedback beim Zeichnen
-1. Der rohe Strich erscheint sofort als leuchtende Linie (Tinte), grün für Boden, pink für Höhe, gelb beim Überzeichnen.
-2. Alle 80 ms wird der Strich interpretiert und als Vorschau-Bahn gezeichnet (Schienen, noch ohne Streben).
-3. Erkennt das System eine Steilkurve, zieht die Vorschau den Bogen in die Nachbarspur; ein Looping zeigt sich als Schleife mit Scheitelknoten.
-4. Beim Loslassen schließen sich die Enden, Streben wachsen aus dem Boden.
+1. Die Bahn selbst ist die Vorschau: Alle 80 ms (oder so oft, wie das Gerät schafft) wird der Strich interpretiert und als echte Bahn gezeichnet, mit Schienen, Schwellen und Station, nur noch ohne Streben. Hinter dem Finger bleibt ein kurzer Tintenschwanz (grün für Boden, pink für Höhe, gelb beim Überzeichnen), bis die Vorschau nachgezogen hat.
+2. Erkennt das System eine Steilkurve, zieht die Vorschau den Bogen in die Nachbarspur; ein Looping zeigt sich als Schleife mit violettem Ring am Scheitel; die Schlussverbindung zur Station erscheint als gestrichelte Geister-Schiene, sobald der Strich nah genug ist.
+3. Die Zielleiste hakt live: Erreicht die Bahn ein Ziel (Höhe, Looping, Kehre), ploppt der Haken schon während des Strichs oder Drags, nicht erst beim Loslassen.
+4. Das Maßband zeigt den höchsten Punkt mit Lotlinie und Höhe, die Gesamtlänge an der Station und Marken an Loopings (◎) und Kehren (↻); es blendet 1,2 s nach der letzten Änderung aus, im Sandkasten bleibt es.
+5. Beim Loslassen schließen sich die Enden (falls nah genug), die Streben wachsen in 0,3 s aus dem Boden.
 
-### 3.7 Knoten, Handles, Roll-Handle
-- Die Bahn wird intern als geschlossener Pfad aus kubischen Bezier-Segmenten in 3D gespeichert. Knoten haben Position (x, Höhe, Tiefe), zwei 3D-Tangenten-Handles und einen Rollwinkel (automatisch oder manuell).
-- Handles sind nur am angetippten Knoten sichtbar. Sie sind 14 px groß, haben aber eine Trefferfläche von 44 px.
+### 3.7 Knoten, Segmente, Profi-Handles, Roll-Handle
+- Die Bahn wird intern als geschlossener Pfad aus kubischen Bezier-Segmenten in 3D gespeichert. Knoten haben Position (x, Höhe, Tiefe), zwei 3D-Tangenten-Handles und einen Rollwinkel (automatisch oder manuell). Die Knoten liegen dort, wo der Fit sie braucht (ein Oval hat fünf bis sieben, ein Hügel fünf bis sechs); ein Doppeltipp auf die Bahn setzt einen weiteren Knoten genau dorthin.
+- **Bearbeiten ohne Handles:** Die Bahn wird direkt angefasst. Ein Finger auf der Schiene, quer zur Bahn gezogen, biegt das Segment: Die Bahn läuft am Griffpunkt genau durch den Finger, beide Knoten bleiben, die Tangenten passen sich an (G1). Längs der Bahn gezogen überzeichnet der Finger den Abschnitt. Knoten lassen sich ziehen (Trefferfläche 32 px; eng liegende Knoten werden für den Treffer unsichtbar auseinandergeschoben).
+- **Knotenmenü:** Ein angetippter Knoten zeigt ein Bogenmenü darüber: Tiefe (links, ziehen), Schräglage (oben, ziehen; Doppeltipp = automatisch), Löschen (rechts, tippen; die Station und die letzten drei Knoten nicht).
+- **Profi-Modus:** Langdruck auf einen Knoten (0,5 s, kurzes Vibrieren) zeigt seine Tangenten-Handles; sie bleiben, bis woanders getippt wird. Handles sind nur hier nötig, etwa für eine gezielt asymmetrische Kuppe.
 - Die Schräglage ist standardmäßig automatisch: Der Wagen neigt sich so, dass die gefühlte Kraft (Fliehkraft plus Schwerkraft) durch den Sitz geht, bis 80°. Das Roll-Handle überschreibt das; eine volle Drehung über zwei Knoten erzeugt eine **Schleife** (Heartline-Roll).
 
 ### 3.8 Grenzen und Sonderfälle
@@ -160,12 +163,12 @@ Warum die Steilheit entscheidet: Eine Bodenkehre ist genau dort steil, wo der St
 
 ### 4.2 Gesten-Tabelle
 
-| Geste | Auf leerer Fläche | Auf der Bahn | Auf Knoten/Handle | Auf Chip | Mit Maus |
+| Geste | Auf leerer Fläche | Auf der Bahn | Auf Knoten/Menü | Auf Chip | Mit Maus |
 |---|---|---|---|---|---|
-| Tippen | Knoten-Auswahl aufheben | Knoten auswählen (Handles einblenden) | Knoten auswählen | Chip umschalten | Linksklick |
-| Ziehen (1 Finger) | Neue Bahn zeichnen (wenn noch keine) oder Überzeichnen (wenn Start auf Bahn) | Abschnitt verschieben | Handle/Knoten ziehen | Spur um mehrere Ebenen ändern | Linke Maustaste ziehen |
-| Doppeltipp | Zoom-Reset (ganze Bahn) | Knoten einfügen | Knoten löschen | – | Doppelklick |
-| Langdruck | – | Element-Kontext (Booster/Bremse hierher) | Handle unabhängig machen | – | Rechtsklick |
+| Tippen | Knoten-Auswahl aufheben | Element entfernen (wenn getroffen) | Knoten auswählen (Bogenmenü: Tiefe, Schräglage, Löschen) | Chip umschalten | Linksklick |
+| Ziehen (1 Finger) | Neue Bahn zeichnen; am leuchtenden offenen Ende: fortsetzen | Quer zur Bahn: Segment biegen · längs der Bahn: überzeichnen | Knoten ziehen; Menü-Knopf Tiefe/Schräglage ziehen; Profi-Handle ziehen | Spur um mehrere Ebenen ändern | Linke Maustaste ziehen |
+| Doppeltipp | Zoom-Reset (ganze Bahn) | Knoten einfügen | Knoten löschen; auf Schräglage: automatisch | – | Doppelklick |
+| Langdruck | – | – | Profi-Handles des Knotens zeigen | – | Rechtsklick |
 | 2 Finger ziehen | Pan | Pan | Pan | Pan | Rechte Taste ziehen oder Leertaste + ziehen |
 | Pinch | Zoom | Zoom | Zoom | Zoom | Mausrad |
 | 2-Finger-Tipp | Undo | Undo | Undo | Undo | Strg+Z |
@@ -217,12 +220,18 @@ illudiy-Logo, zwei Sekunden, handgemalt, mit einem kleinen Zug, der durch das Lo
 - Über dem Boden ziehen **Wolken** in drei Parallaxe-Ebenen mit, langsamer als die Scheibe.
 - Unten der Button **Spielen** (öffnet das Level in der Mitte; quer unten rechts), oben rechts **Meine Bahnen**. Einstellungen liegen hinter einem kleinen Zahnrad oben links, daneben der Figuren-Editor.
 - Tippen auf die Miniatur in der Mitte öffnet das Level, Tippen auf einen Nachbarn dreht ihn in die Mitte, Tippen auf ein Tor springt an den Anfang der Welt.
+- **Glücksrad** (`src/app/wheelPhysics.ts`): Ein Wisch dreht die Scheibe frei (zähe plus trockene Reibung, höchstens 3500 px/s), unter 420 px/s fängt sie der nächste Rastpunkt in Fahrtrichtung mit einer gedämpften Feder (leichtes Überschwingen); ein langsamer, aber deutlicher Schub geht einen Rastpunkt weiter, ein kleiner Ruck rastet beim nächsten ein; an den Enden hält ein Gummiband. Jeder überfahrene Rastpunkt klickt (Haptik), sein Schild hüpft, die Miniatur wippt. Miniaturen wippen leicht im Stand, Wolken wandern mit 0,3-facher Parallaxe.
+- **Layout:** Die Scheibe liegt höher (Oberkante bei 56 % der Höhe im Hochformat, 74 % im Querformat), Titel und Weltname kompakt darüber, „Spielen“ in beiden Formaten mittig unter der Scheibe.
+- **Ein Himmel für Karte und Level:** Karte und Level benutzen dieselbe Himmel-Klasse (Verlauf der Welt, Sonne, ferne Hügel, gemalte Wolken) und reichen beim Übergang die Wolkenlage weiter; der Zonenwechsel blendet den Himmel in 0,6 s über. Beim Öffnen eines Levels zieht der Blick von der Karte zur Level-Kamera, während die Parallaxe von 0,3 auf 1 wächst: kein Sprung in Himmel oder Wolken. Papierkorn liegt dauerhaft über der Karte.
+- **Ebenen klappen auf:** Beim Öffnen werden die fünf Spurstreifen der Miniatur getrennt gerendert und fächern sich nacheinander auf (hinterste Spur zuerst, je Spur rund 60 ms versetzt): Sie heben kurz vom Boden ab, stauchen sich leicht und legen sich wieder deckungsgleich auf das Level-Bild; auf dem Rückweg läuft es rückwärts.
 
 ### 5.3 Level-Screen
 Beim Öffnen biegt sich die gekrümmte Scheibe gerade und wird zum Bühnenboden des Levels: Die Miniatur wächst auf die Größe des Levels, die Krümmung geht auf null, Himmel und Knöpfe blenden über (1,5 s, ohne Schnitt). Zurück zur Karte krümmt sich der Boden wieder zur Drehscheibe, mit der gerade gebauten Bahn als Miniatur. Technisch ist beides derselbe Boden mit anderer Krümmung (siehe TECH.md). Oben erscheinen die Anforderungen. Die Geisterhand zeigt bei Bedarf die Geste.
 
 ### 5.4 Fahrt
 Play startet den Zug. UI blendet sich aus bis auf Stop und die Anforderungen (die während der Fahrt abgehakt werden). Kamera siehe Kapitel 14. Nach der Ankunft oder dem Unfall: 1,5 Sekunden Nachlauf (Fahrgäste jubeln oder liegen im Gras), dann Ergebnis.
+- **Inszenierung der Fehlschläge** (statt Strafe): Sticker als zwei schräge Papierkarten mit großem Text („Entgleist!“, „Abgestürzt!“, „Zurückgerollt!“, „Platsch!“, „Absperrung!“, „{Name} fliegt!“, „Gefangen!“, „Gurt gerissen!“) knallen in 0,18 s herein; Kamera wackelt beim Fehlschlag, bei der Radblockade vor dem Absperrband und bei jedem Aufprall des Wracks; Staub beim Aufschlag und bei der Landung eines Fahrgasts, Fetzen des Absperrbands beim Durchbrechen, Funkenspur unter blockierten Rädern. Fahrgäste über 7 g werden für 2 s ohnmächtig (X-Augen, Zunge), nach der Landung benommen (Spiralaugen, kreisende Sterne); im Flug rudern die Arme. Das Ergebnis wartet, bis alle Fliegenden gelandet sind (höchstens 6 s), damit Flugweite und Landung stimmen.
+- **Vor der Abfahrt** (Übersicht, 1,2 s) winken die Fahrgäste; im Zeichenmodus wartet der Zug in der Station, die Fahrgäste tuscheln, blinzeln und hüpfen (siehe 11.1); ein Tipp auf einen Fahrgast erschreckt ihn.
 
 ### 5.5 Ergebnis
 Karte mit Sternen (animiert nacheinander), Zielen mit Haken oder Kreuz, Highlights (Top-Speed, max. g, Airtime, Coins), Freischaltung mit Clip. Buttons: Nochmal, Weiter, Teilen (Screenshot der Bahn mit Kurzlink, später). Bei Fehlschlag: Ein Satz, was schiefging („Mia ist bei 2,1 g Airtime rausgeflogen“), mit Zeitlupen-Clip.
@@ -257,18 +266,21 @@ Die Bahn ist eine echte 3D-Kurve (x, Höhe y, Tiefe z). Aus den Bezier-Segmenten
 ### 6.3 Entgleisen und Scheitern
 | Ereignis | Bedingung | Folge |
 |---|---|---|
-| Entgleisen in der Kurve | g_s > Limit (Holz 2,5 g, Hybrid 3 g, Stahl 3,5 g, Eis 3 g) | Zug fliegt tangential weg, Fahrgäste purzeln, Fahrt nicht geschafft |
-| Aus dem Looping fallen | Oben im Looping v² < 9,81 · r | Zug löst sich, Fahrgäste fallen, Fahrt nicht geschafft |
+| Entgleisen in der Kurve | g_s > Limit (Holz 2,0 g, Mine 2,2 g, Hybrid 2,4 g, Eis 2,6 g, Stahl/Gold/Lava 3,0 g, Neon 3,2 g, Weltraum 3,5 g) | Zug fliegt tangential weiter, kippt zur Seite der Querkraft und driftet aus der Spur; die Wagen hängen an der Kette, schlagen auf, beim Aufprall purzeln die Fahrgäste raus; das Wrack bleibt liegen (auch auf dem Dach). Fahrt nicht geschafft |
+| Aus dem Looping fallen | Oben im Looping v² < 9,81 · r (0,12 s lang aus dem Sitz gezogen) | Zug löst sich und überschlägt sich im Fall, Aufprall wie beim Entgleisen, Fahrt nicht geschafft |
 | Rückroller | v = 0 auf Anstieg | Zug rollt zurück zur Station, Fahrt nicht geschafft |
 | Rauswurf | Fahrgast verlässt die Wanne (echte Physik) | Fahrt nicht geschafft, Fahrgast landet mit Ragdoll |
 | Überlast | g_v > 6 g | Fahrgäste werden ohnmächtig (Augen zu, Zunge raus), Fahrt gilt, aber kein Stern 3 |
 | Wasser ohne Splash-Element | Bahn taucht ins Wasser | Zug bremst hart, Fontäne, Fahrt meist nicht geschafft |
+| Absperrung (offenes Ende) | Die Bahn endet nicht in der Station | Über 6 m/s: Räder blockieren 0,3 s (Funken), der Zug fliegt über die Kante und landet wie beim Entgleisen; darunter kippt er langsam über die Vorderkante. Fahrt nicht geschafft |
 
 ### 6.4 Fahrgäste (echte Physik)
 - Jeder Fahrgast ist ein Ragdoll aus Rumpf (mit Unterkopf), Oberkopf, zwei Armen, zwei Beinen, verbunden über Gelenke mit Grenzen.
-- Der Wagen ist eine **offene Wanne**: Boden, Rückenlehne, Vorderwand, Sitzfläche. Keine Bügel, keine Gurte. Die Wanne wird kinematisch entlang der Bahn geführt; die Fahrgäste sind dynamische Körper in der Wanne.
+- Der Wagen ist eine **offene Wanne**: Boden, Rückenlehne, Vorderwand, Sitzfläche. Die Wanne wird kinematisch entlang der Bahn geführt; die Fahrgäste sind dynamische Körper in der Wanne.
+- **Gurte als Progression** (`src/physics/belts.ts`): Welt 1 fährt ohne Gurt (der Rauswurf ist der Humor), ab Welt 2 Beckengurt (hält 0,6 g), Welt 4 Bügel (1,5 g), Welt 6 Schulterbügel (3 g), Welt 9 Rennsitz (5 g). Der Gurt ist eine Feder am Rumpf, die nur Bewegungen aus dem Sitz heraus (nach oben, nach vorn) hält; zieht die Kraft länger als 0,2 s über die Haltekraft, reißt er sichtbar (hängt lose, Abzeichen im HUD rot, Text „Gurt gerissen!“), und der Fahrgast fliegt wie ohne Gurt. Seitlich kippt ein Fahrgast über die Bordwand ab 2,2 g (ohne/Beckengurt), 2,8 g (Bügel), 3,5 g (Schulterbügel), 4 g (Rennsitz). Einzelne Level setzen eine eigene Stufe (`restraint`): Level 12 mit Beckengurt, Level 13 und 19 ohne.
 - Vertikale Kräfte wirken real: Bei negativer g hebt der Körper ab, bei starker Airtime verlässt er die Wanne. Kopfüber im Looping werden sie vom Sitz- und Lehnenkontakt gehalten, solange die Zentripetalkraft reicht.
-- Seitliche Kräfte (Kurven) wirken als Neigung: Der Ragdoll bekommt eine seitliche Scheinkraft proportional zu g_s, die ihn Richtung Kamera oder von ihr weg drückt. Ab 2,5 g seitlich kippt er über die Wannenkante (als „Rauswurf nach vorne/hinten“ inszeniert mit Größenänderung).
+- Seitliche Kräfte (Kurven) wirken als Neigung: Der Ragdoll bekommt eine seitliche Scheinkraft proportional zu g_s, die ihn Richtung Kamera oder von ihr weg drückt. Über der seitlichen Grenze der Gurtstufe kippt er über die Wannenkante (als „Rauswurf nach vorne/hinten“ inszeniert mit Größenänderung).
+- **Wieder fangen:** Ein Fliegender, dessen Rumpf mit weniger als 9 m/s Relativgeschwindigkeit in die Wanne eines Wagens derselben Spur fällt (frühestens 0,4 s nach dem Abflug), sitzt wieder (Zeitlupe, Konfetti, „wieder eingefangen!“). Die Flugweite (Abflugpunkt bis Landung) wird gemessen.
 - Die Fahrgäste reagieren sichtbar: Pupillen gehen in Fahrtrichtung der Kraft, Blinzeln bei Schreck, Mund auf ab 3 g, Haare und Kleidung flattern mit dem Fahrtwind.
 
 ### 6.5 Welt-Abweichungen
@@ -306,6 +318,8 @@ Alle Zieltypen, die das Spiel auswertet (Quelle: `src/levels/types.ts`):
 | Ohne Bremse | ⊘ | Keine Bremse eingesetzt |
 | Drop | ⤓ | Größter zusammenhängender Höhenverlust |
 | Element | ▣ | Ein bestimmtes Element (Vorlage, Weiche, Fallschacht) n-mal eingebaut |
+
+**Negative Ziele** (nur in ausgewählten Leveln, mit eigener Regie: Zeitlupe und Kamera auf dem Fliegenden): „n fliegen raus“ (`eject`), „n wieder gefangen“ (`catch`: ein Wagen fängt den Fliegenden wieder ein), „Flug ≥ x m“ (`flight`: weitester Flug eines Fahrgasts). In Leveln mit solchen Zielen ist der Rauswurf kein Fehlschlag; der Zug muss trotzdem in der Station ankommen. Erste Level: 13 „Abflug“ (1 fliegt raus, Höhe ≥ 20 m, Bonus Flug ≥ 15 m), 19 „Rückfänger“ (1 wieder gefangen, vier Wagen), 23 „Feuerwerk“ (Bonus Flug ≥ 30 m).
 
 ### 7.2 Sterne
 - ★ Alle Pflichtziele erfüllt und Ankunft.
@@ -449,6 +463,7 @@ Die Figuren folgen dem Entwurf aus dem Prompt: große, leicht schiefe Köpfe, ri
 - **Teile:** Oberkopf, Unterkopf-mit-Rumpf, linker Arm, rechter Arm, linkes Bein, rechtes Bein. Sechs Teile, fünf Gelenke. Oberkopf-Gelenk sitzt an der Oberlippe (Nick-Bewegung ±20°, so dass der Mund beim Schreien aufgeht).
 - **Animation:** Pupillen bewegen sich entgegen der Beschleunigung (bei Airtime nach oben, im Looping zur Mitte). Blinzeln alle 2 bis 6 Sekunden, Schreck-Blinzeln bei plötzlicher Kraft. Mund öffnet sich proportional zu |g|. Haare und Kleidung flattern mit Fahrtwind (einfache Verlet-Ketten).
 - **Physik:** Jedes Teil ist ein Rapier-Körper (Kapsel), die Gelenke sind Revolute-Joints mit Limits. Die Wanne hält sie. Siehe 6.4.
+- **Animation nach Terrance & Phillip** (`src/render/cutoutAnimator.ts`): Cut-out-Puppen, deren Teile sich nur verschieben und drehen, bewusst ruckelig auf 12 Schritten pro Sekunde ohne Zwischenwerte. Der Oberkopf klappt um ein Scharnier hinten an der Mundlinie nach oben (Reden 10°/28° im Zweier-Takt, Erschrecken 35°), Augen als Perlen, Striche (Blinzeln) oder groß (Schreck), Arme als starre Streifen, die an der Schulter schwingen (Winken), der Körper hüpft als Ganzes. Clips: `idle` (Atmen, kleines Klappen, Blinzeln), `talk`, `wave`, `hop`, `scared` (6 Frames, kehrt zurück), `scream`, `dizzy`, `faint`. Einsatz: Figuren-Editor (Idle, Tipp → Erschrecken, Speichern → Winken), stehender Zug im Zeichenmodus (Idle/Reden zufällig, Tipp → Erschrecken), Übersicht vor der Abfahrt (Winken). Während der Fahrt bestimmt die Physik die Posen; der Animator pausiert. Kein Pups-Gag.
 
 ### 11.2 Figuren-Editor
 Ziel: Jeder soll sich und seine Freunde in zwei Minuten nachbauen.

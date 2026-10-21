@@ -12,10 +12,14 @@ import type { CharacterDef } from '@/editor/characters';
 import { LANE_MAX, LANE_MIN } from '@/track/stage';
 import { Camera } from './camera';
 import { Sky } from './sky';
+import { LaneFilter } from './shaders/laneFilter';
+import { GlowLayer } from './shaders/glowLayer';
+import { fxEnabled } from '@/core/fx';
 import { TerrainRenderer } from './terrainRenderer';
 import { TrackRenderer } from './trackRenderer';
 import { TrainRenderer } from './trainRenderer';
 import { paperTexture } from './paint';
+import { art, ART_NAMES } from '@/assets/manifest';
 import { Effects } from './effects';
 
 export class WorldView {
@@ -31,35 +35,50 @@ export class WorldView {
   readonly effects: Effects;
   private paper: TilingSprite;
   private laneContainers = new Map<number, Container>();
+  /** Leuchtebene je Spur (additiv, weichgezeichnet) und Spur-Filter (Stippling) */
+  private glows = new Map<number, GlowLayer>();
+  private laneFilters = new Map<number, LaneFilter>();
+  private fxOn = false;
+  private time = 0;
   private worldDef: WorldDef;
   private night: boolean;
 
-  constructor(worldDef: WorldDef, terrain: Terrain, skin: string, night = false) {
+  constructor(worldDef: WorldDef, terrain: Terrain, skin: string, night = false, fx: boolean | null = null) {
     this.worldDef = worldDef;
+    this.fxOn = fx ?? fxEnabled();
     this.night = night;
     this.sky = new Sky(worldDef, night);
     this.terrainR = new TerrainRenderer(terrain, worldDef);
     this.trackR = new TrackRenderer(worldDef);
     this.trainR = new TrainRenderer(skin);
     this.effects = new Effects();
-    this.paper = new TilingSprite({ texture: paperTexture(), width: 100, height: 100 });
+    this.paper = new TilingSprite({ texture: art(ART_NAMES.paper(), paperTexture), width: 100, height: 100 });
     this.paper.blendMode = 'multiply';
     this.paper.alpha = 0.5;
     this.root.addChild(this.sky.container, this.world, this.paper);
     // Tiefenreihenfolge: hinten → vorne
     for (let z = LANE_MAX; z >= LANE_MIN; z--) {
       const lane = new Container();
+      const glow = new GlowLayer(6);
+      this.glows.set(z, glow);
       lane.addChild(
         this.terrainR.layers.strip.get(z)!,
         this.trackR.layers.supports.get(z)!,
         this.trackR.layers.rails.get(z)!,
+        this.trackR.layers.barriers.get(z)!,
         this.trackR.layers.coins.get(z)!,
+        glow.container,
         this.trainR.layers.get(z)!,
         this.terrainR.layers.cover.get(z)!,
       );
       this.laneContainers.set(z, lane);
       this.world.addChild(lane);
+      // Spur-Filter: Stippling auf den Schattenseiten (Luftperspektive machen die Renderer selbst)
+      const pal = worldDef.palette;
+      this.laneFilters.set(z, new LaneFilter({ stipple: pal.stipple, sky: pal.sky[1], depth: 0 }));
     }
+    this.trackR.glowTargets = new Map([...this.glows].map(([z, g]) => [z, g.container]));
+    this.applyFx();
     this.world.addChild(this.effects.container, this.overlay);
     // Nacht: dunkler Schleier über der Welt
     if (night) {
@@ -81,12 +100,56 @@ export class WorldView {
     if (!preview) this.terrainR.setTunnelPortals(portals);
   }
 
+  /** Streben wachsen (0 … 1) nach dem Loslassen des Strichs */
+  growSupports(growth: number): void {
+    this.trackR.redrawSupports(growth);
+  }
+
   buildTrain(cars: number, riders: CharacterDef[], perCar: number): void {
     this.trainR.build(cars, riders, perCar);
   }
 
   updateTrain(cars: CarState[], passengers: PassengerView[], dt: number): void {
     this.trainR.update(cars, passengers, dt);
+  }
+
+  /** Effekte an/aus (Dev-Overlay, Einstellung): Spur-Filter und Leuchtebenen */
+  setFx(on: boolean): void {
+    this.fxOn = on;
+    this.applyFx();
+  }
+
+  get fx(): boolean {
+    return this.fxOn;
+  }
+
+  private applyFx(): void {
+    for (const [z, lane] of this.laneContainers) {
+      const f = this.laneFilters.get(z);
+      lane.filters = this.fxOn && f ? [f] : [];
+    }
+    for (const g of this.glows.values()) g.enabled = this.fxOn;
+  }
+
+  /** Nur die Spur z sichtbar lassen (alles andere in der Welt aus), null = alles sichtbar; für Spurstreifen-Texturen */
+  showOnlyLane(z: number | null): void {
+    for (const child of this.world.children) {
+      let isLane = false;
+      let lane = 0;
+      for (const [lz, c] of this.laneContainers) {
+        if (c === child) {
+          isLane = true;
+          lane = lz;
+        }
+      }
+      child.visible = z === null ? true : isLane && lane === z;
+    }
+  }
+
+  /** Stehender Zug (Zeichenmodus): Pose setzen und Cut-out-Clips fortschreiben */
+  updateStandingTrain(cars: CarState[], passengers: PassengerView[], dt: number): void {
+    this.trainR.update(cars, passengers, dt);
+    this.trainR.idleUpdate(dt);
   }
 
   resize(w: number, h: number): void {
@@ -97,10 +160,12 @@ export class WorldView {
   }
 
   update(dt: number): void {
+    this.time += dt;
+    this.trackR.updateBarriers(this.time);
     this.camera.update(dt);
     const c = this.camera;
     this.world.scale.set(c.zoom, -c.zoom);
-    this.world.position.set(c.width / 2 - c.x * c.zoom, c.height / 2 + c.y * c.zoom);
+    this.world.position.set(c.width / 2 - (c.x + c.ox) * c.zoom, c.height / 2 + (c.y + c.oy) * c.zoom);
     this.sky.update(dt, c);
     this.effects.update(dt);
   }

@@ -29,6 +29,8 @@ export interface Settings {
   devMode: boolean;
   /** im Dev-Modus gewählter Bahntyp ('' = der Welt) */
   devSkin: string;
+  /** Grafikeffekte (Shader): auto = nach Gerät, high = an, low = aus */
+  fx: 'auto' | 'high' | 'low';
 }
 
 export interface SavedTrack {
@@ -53,7 +55,7 @@ interface Store {
 function defaults(): Store {
   return {
     progress: { stars: {}, highest: 0, current: 1, drafts: {} },
-    settings: { sound: true, music: true, language: 'de', shakeUndo: true, seenSplash: false, rideSpeed: 3, devMode: false, devSkin: '' },
+    settings: { sound: true, music: true, language: 'de', shakeUndo: true, seenSplash: false, rideSpeed: 3, devMode: false, devSkin: '', fx: 'auto' },
     tracks: [],
     characters: DEFAULT_CHARACTERS.map((c) => ({ ...c })),
     riders: DEFAULT_CHARACTERS.map((c) => c.id),

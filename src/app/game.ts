@@ -1,6 +1,7 @@
 /**
  * Game: Pixi-Anwendung, Szenenwechsel mit Überblendung, Eingabe, Resize/Orientation.
  */
+import { DevOverlay } from '@/core/devOverlay';
 import { Application, Container, Graphics, RenderTexture } from 'pixi.js';
 import { InputManager } from '@/core/input';
 import type { Scene } from './scene';
@@ -18,6 +19,7 @@ export class Game {
   private pending: (() => Scene) | null = null;
   width = 800;
   height = 600;
+  private devOverlay: DevOverlay | null = null;
 
   async init(): Promise<void> {
     setLanguage(storage.settings.language);
@@ -56,6 +58,16 @@ export class Game {
       this.tick(dt);
     });
     this.app.renderer.on('resize', () => this.onResize());
+    // ?dev=1: Bilder pro Sekunde, Draw-Calls, Partikel, Filter-Schalter (Taste F)
+    if (new URLSearchParams(location.search).get('dev') === '1') {
+      this.devOverlay = new DevOverlay();
+      const gl = (this.app.renderer as unknown as { gl?: WebGL2RenderingContext }).gl ?? null;
+      this.devOverlay.attach(gl);
+      this.devOverlay.onToggleFilters = (on) => {
+        const view = (this.scene as unknown as { view?: { setFx?: (on: boolean) => void } }).view;
+        view?.setFx?.(on);
+      };
+    }
     this.onResize();
     window.addEventListener('orientationchange', () => setTimeout(() => this.onResize(), 150));
   }
@@ -133,6 +145,10 @@ export class Game {
       this.fade.eventMode = this.fadeAlpha > 0.05 ? 'static' : 'none';
     }
     this.scene?.update(dt);
+    if (this.devOverlay) {
+      const view = (this.scene as unknown as { view?: { effects?: { count: number } } }).view;
+      this.devOverlay.frame(view?.effects?.count ?? 0);
+    }
   }
 
   get isPortrait(): boolean {

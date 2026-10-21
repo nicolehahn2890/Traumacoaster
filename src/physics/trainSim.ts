@@ -10,6 +10,7 @@ import type { TrackPath, TrackSamples, TrackState } from '@/track/model';
 import { carFrame, stateAt } from '@/track/model';
 import { LANE_DEPTH, toStage } from '@/track/stage';
 import type { Terrain } from './terrain';
+import { FlightSim, type FlightKind } from './flightSim';
 
 export const G = 9.81;
 
@@ -31,8 +32,8 @@ export const SKIN_PHYSICS: Record<string, SkinPhysics> = {
   skinSpace: { friction: 0.008, lateralLimit: 3.5 },
 };
 
-export type RidePhase = 'lift' | 'launch' | 'coast' | 'done' | 'failed';
-export type FailReason = 'derail' | 'fall' | 'stall' | 'eject' | 'water' | 'ejectSide';
+export type RidePhase = 'lift' | 'launch' | 'coast' | 'done' | 'failed' | 'flying';
+export type FailReason = 'derail' | 'fall' | 'stall' | 'eject' | 'water' | 'ejectSide' | 'openEnd';
 
 export interface CarState {
   index: number;
@@ -56,6 +57,14 @@ export interface CarState {
   feltSide: number;
   inTunnel: boolean;
   inverted: boolean;
+  /** Geschwindigkeit des Wagens in der Welt (x, y in m/s), für Übergaben an die Fahrgäste und die Darstellung */
+  vx: number;
+  vy: number;
+}
+
+/** Flache Kopie eines Wagenzustands (für Vorzustände und Render-Puffer) */
+export function copyCar(src: CarState, dst: CarState): CarState {
+  return Object.assign(dst, src);
 }
 
 export interface RideStats {
@@ -73,10 +82,16 @@ export interface RideStats {
   blackout: boolean;
   brakesUsed: boolean;
   distance: number;
+  /** Fahrgäste, die rausgeflogen sind (aus der Fahrgast-Simulation gemischt) */
+  ejected: number;
+  /** Fahrgäste, die ein Wagen wieder eingefangen hat */
+  caught: number;
+  /** weitester Flug eines Fahrgasts in Metern */
+  flightMax: number;
 }
 
 export interface RideEvent {
-  kind: 'coin' | 'tunnelEnter' | 'tunnelExit' | 'booster' | 'brake' | 'splash' | 'liftStart' | 'liftEnd' | 'launchEnd' | 'peak' | 'fail' | 'finish' | 'inversion';
+  kind: 'coin' | 'tunnelEnter' | 'tunnelExit' | 'booster' | 'brake' | 'splash' | 'liftStart' | 'liftEnd' | 'launchEnd' | 'peak' | 'fail' | 'finish' | 'inversion' | 'wheelLock';
   time: number;
   car?: number;
   index?: number;
@@ -105,6 +120,12 @@ const LIFT_SEARCH = 30; // m: so weit nach der Station darf der Anstieg beginnen
 const LIFT_MIN_SLOPE = 0.06;
 const LAUNCH_LENGTH = 26;
 const LAUNCH_ACCEL = 12;
+/** Offenes Ende (Absperrband): ab diesem Tempo blockieren die Räder auf den letzten Metern und der Zug fliegt ab, darunter kippt er */
+const OPEN_END_FLY_SPEED = 6;
+const WHEEL_LOCK_SECONDS = 0.3;
+const WHEEL_LOCK_DECEL = 25;
+/** unter dieses Tempo bremst die Blockade nicht (der Zug soll über die Kante, nicht davor stehen bleiben) */
+const WHEEL_LOCK_FLOOR = 2;
 const HYDRO_ACCEL = 24;
 const SWING_ACCEL = 16;
 const BOOSTER_ACCEL = 8;
@@ -120,13 +141,20 @@ export class TrainSim {
   readonly path: TrackPath;
   readonly opts: TrainSimOptions;
   readonly cars: CarState[] = [];
+  /** Wagenzustände vor dem letzten step(): Das Rendering interpoliert zwischen prevCars und cars */
+  readonly prevCars: CarState[] = [];
   readonly events: RideEvent[] = [];
   readonly stats: RideStats = {
-    time: 0, maxSpeed: 0, maxG: 1, minG: 1, maxLatG: 0, airtime: 0, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0, blackout: false, brakesUsed: false, distance: 0,
+    time: 0, maxSpeed: 0, maxG: 1, minG: 1, maxLatG: 0, airtime: 0, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0, blackout: false, brakesUsed: false, distance: 0, ejected: 0, caught: 0, flightMax: 0,
   };
   readonly collected: boolean[];
   phase: RidePhase = 'coast';
   failReason: FailReason | null = null;
+  /** Freiflug nach Entgleisen, Fall oder offenem Ende (Phase 'flying') */
+  flight: FlightSim | null = null;
+  /** Restzeit der Radblockade vor dem offenen Ende (Funken), 0 = keine */
+  wheelLock = 0;
+  private lockArmed = false;
   s = 0;
   v = 0;
   t = 0;
@@ -141,6 +169,8 @@ export class TrainSim {
   private stallTimer = 0;
   private lapDone = false;
   private peakReported = false;
+  /** Tangentialbeschleunigung des Zugs im letzten Teilschritt (Kettenzug, Launch, Bremse, Reibung, Hangabtrieb) */
+  private aTangential = 0;
 
   constructor(samples: TrackSamples, path: TrackPath, opts: TrainSimOptions) {
     this.samples = samples;
@@ -148,7 +178,7 @@ export class TrainSim {
     this.opts = opts;
     this.collected = opts.coins.map(() => false);
     for (let i = 0; i < opts.cars; i++) {
-      this.cars.push({ index: i, s: 0, x: 0, y: 0, z: 0, tx: 1, ty: 0, tz: 0, upx: 0, upy: 1, upz: 0, sx: 0, sy: 0, sz: 1, bank: 0, angle: 0, gSeat: 1, gFwd: 0, gLat: 0, feltFwd: 0, feltUp: G, feltSide: 0, inTunnel: false, inverted: false });
+      this.cars.push({ index: i, s: 0, x: 0, y: 0, z: 0, tx: 1, ty: 0, tz: 0, upx: 0, upy: 1, upz: 0, sx: 0, sy: 0, sz: 1, bank: 0, angle: 0, gSeat: 1, gFwd: 0, gLat: 0, feltFwd: 0, feltUp: G, feltSide: 0, inTunnel: false, inverted: false, vx: 0, vy: 0 });
       this.wasInTunnel.push(false);
     }
     const launch = opts.startType === 'launch' || opts.startType === 'hydro' || opts.startType === 'swing';
@@ -156,6 +186,7 @@ export class TrainSim {
     this.phase = launch ? 'launch' : 'coast';
     this.v = launch ? 0.5 : STATION_PUSH;
     this.updateCars();
+    for (const c of this.cars) this.prevCars.push({ ...c });
   }
 
   /** Anstieg nahe der Station suchen: Lift von dessen Beginn bis zum ersten Scheitel */
@@ -181,19 +212,28 @@ export class TrainSim {
     return SKIN_PHYSICS[this.opts.skin] ?? SKIN_PHYSICS.skinWood;
   }
   get finished(): boolean {
-    return this.phase === 'done' || this.phase === 'failed';
+    return this.phase === 'done' || this.phase === 'failed' || this.phase === 'flying';
   }
   get kmh(): number {
     return Math.abs(this.v) * 3.6;
   }
 
   step(dt: number): void {
+    for (let i = 0; i < this.cars.length; i++) copyCar(this.cars[i], this.prevCars[i]);
     const sub = Math.max(1, Math.ceil(dt / (1 / 120)));
     const h = dt / sub;
     for (let i = 0; i < sub; i++) this.substep(h);
   }
 
   private substep(h: number): void {
+    if (this.phase === 'flying' && this.flight) {
+      this.sinceFail += h;
+      this.flight.step(h);
+      this.flight.writeTo(this.cars);
+      // Tempo des ersten Wagens für die Anzeige (vorzeichenlos, die Bahn spielt keine Rolle mehr)
+      this.v = Math.hypot(this.cars[0].vx, this.cars[0].vy);
+      return;
+    }
     if (this.phase === 'failed') {
       this.sinceFail += h;
       this.integrate(h, true);
@@ -232,7 +272,9 @@ export class TrainSim {
           this.phase = 'lift';
           this.events.push({ kind: 'liftStart', time: this.t });
         }
-        if (this.v < liftSpeed) {
+        // Kette hält das Tempo (auch wenn der Zug genau Kettentempo fährt): sonst wechselte die
+        // Tangentialbeschleunigung in jedem Teilschritt zwischen Hang und Kette, und die Fahrgäste würden zittern
+        if (this.v <= liftSpeed + 1e-9) {
           this.v = liftSpeed;
           a = Math.max(a, 0);
         }
@@ -280,9 +322,31 @@ export class TrainSim {
       }
       const ahead = stateAt(this.samples, this.s + RETURN_LOOKAHEAD);
       if ((anyAuto || ahead.auto) && this.v > RETURN_SPEED_LIMIT) a -= 7;
+      // Offenes Ende (Absperrband): kommt der Zug mit Tempo an, blockieren die Räder auf den letzten Metern
+      // (Funken), so dass die Blockade genau an der Kante endet; danach fliegt er ab (fail 'openEnd' in checkEvents)
+      if (!this.samples.closed) {
+        if (!this.lockArmed && this.v > OPEN_END_FLY_SPEED) {
+          const vEnd = Math.max(WHEEL_LOCK_FLOOR, this.v - WHEEL_LOCK_DECEL * WHEEL_LOCK_SECONDS);
+          const lockDist = (WHEEL_LOCK_SECONDS * (this.v + vEnd)) / 2;
+          if (this.s >= L - lockDist) {
+            this.lockArmed = true;
+            this.wheelLock = WHEEL_LOCK_SECONDS;
+            this.events.push({ kind: 'wheelLock', time: this.t, car: 0 });
+          }
+        }
+        if (this.wheelLock > 0) {
+          this.wheelLock = Math.max(0, this.wheelLock - h);
+          if (this.v > WHEEL_LOCK_FLOOR) a -= WHEEL_LOCK_DECEL;
+        }
+      }
     }
 
+    // Die Fahrgäste spüren die echte Beschleunigung des Zugs: am Kettenzug (a ≥ 0 trotz Hang) drückt der Hang
+    // sie in die Lehne, der Launch presst sie in den Sitz, die Bremse wirft sie nach vorn. Die Sprünge der
+    // Geschwindigkeit beim Einklinken der Kette sind nicht enthalten (die Kette greift weich).
+    this.aTangential = a;
     this.v += a * h;
+    if (this.wheelLock > 0 && this.v < WHEEL_LOCK_FLOOR) this.v = WHEEL_LOCK_FLOOR;
     // Stillstand: auf ebener Strecke oder am Berg → nicht geschafft
     if (!afterFail && this.phase === 'coast' && this.v <= 0.03) {
       this.stallTimer += h;
@@ -293,7 +357,7 @@ export class TrainSim {
     } else this.stallTimer = 0;
     this.s += this.v * h;
     this.stats.distance += Math.abs(this.v) * h;
-    if (!afterFail && this.s >= L && this.phase === 'coast') this.lapDone = true;
+    if (!afterFail && this.samples.closed && this.s >= L && this.phase === 'coast') this.lapDone = true;
     this.stats.maxSpeed = Math.max(this.stats.maxSpeed, Math.abs(this.v));
   }
 
@@ -316,9 +380,11 @@ export class TrainSim {
       const p0 = toStage(st.x, st.y, st.z);
       const p1 = toStage(st.x + st.t3x, st.y + st.t3y, st.z + st.t3z / LANE_DEPTH);
       car.angle = Math.atan2(p1.Y - p0.Y, p1.X - p0.X);
-      // Beschleunigung: Normalanteil v²·k (Mindestradius 2,5 m) + Hangabtrieb
+      car.vx = st.t3x * this.v;
+      car.vy = st.t3y * this.v;
+      // Beschleunigung: Normalanteil v²·k (Mindestradius 2,5 m) + Tangentialbeschleunigung des Zugs
       const v2 = this.v * this.v;
-      const aTan = -g * st.t3y;
+      const aTan = this.aTangential;
       const kMag = Math.hypot(st.k3x, st.k3y, st.k3z);
       const kScale = kMag > MAX_CURVATURE ? MAX_CURVATURE / kMag : 1;
       const fx = v2 * st.k3x * kScale + aTan * st.t3x;
@@ -378,6 +444,11 @@ export class TrainSim {
       this.wasInTunnel[car.index] = car.inTunnel;
     }
     const st = stateAt(this.samples, this.s);
+    // Offenes Ende erreicht: Absperrband, der Zug fliegt ab (Räder waren blockiert) oder kippt über die Kante
+    if (!this.samples.closed && this.v > 0 && this.s >= L - 0.05) {
+      this.fail('openEnd', 0);
+      return;
+    }
     if (!st.auto) {
       for (const car of this.cars) {
         if (car.gLat > this.skinPhysics.lateralLimit) {
@@ -407,10 +478,26 @@ export class TrainSim {
   }
 
   fail(reason: FailReason, car = 0): void {
-    if (this.phase === 'failed') return;
+    if (this.phase === 'failed' || this.phase === 'flying') return;
     this.phase = 'failed';
     this.failReason = reason;
     this.events.push({ kind: 'fail', time: this.t, reason, car });
+    // Entgleisen und Fall: der Zug verlässt die Schiene und fliegt (zur Kamera oder von ihr weg, je nach Querkraft)
+    if (reason === 'derail' || reason === 'fall') {
+      const c = this.cars[car] ?? this.cars[0];
+      const side = c.feltSide > 0 ? 1 : c.feltSide < 0 ? -1 : 1;
+      this.startFlight(reason === 'derail' ? 'derail' : 'fall', side);
+    } else if (reason === 'openEnd') {
+      // mit Tempo (Räder waren blockiert) fliegt der Zug ab, sonst kippt er langsam über die Kante
+      this.wheelLock = 0;
+      this.startFlight(this.lockArmed ? 'launch' : 'tip', 1);
+    }
+  }
+
+  /** Zug in den Freiflug übergeben (die Wagenzustände liefern Lage und Geschwindigkeit) */
+  startFlight(kind: FlightKind, side = 1): void {
+    this.flight = new FlightSim(this.cars, { terrain: this.opts.terrain, gravity: this.opts.gravityScale, carLength: this.opts.carLength, kind, side });
+    this.phase = 'flying';
   }
 }
 

@@ -139,9 +139,66 @@ export function getMiniature(renderer: Renderer, levelId: number): Miniature {
   return mini;
 }
 
+/** Fünf Spurstreifen-Texturen eines Levels (nur für den Übergang; der Aufrufer gibt sie danach frei) */
+export interface LaneMiniature {
+  textures: RenderTexture[];
+  lanes: number[];
+  bounds: MiniBounds;
+}
+
+export function renderLanes(renderer: Renderer, levelId: number): LaneMiniature {
+  const path = levelDraft(levelId);
+  const unlocked = unlockedFor(levelId);
+  const world = worldOfLevel(levelId);
+  const skin = pickSkin(world, unlocked);
+  const level = getLevel(levelId);
+  const terrain = new Terrain(level);
+  const view = new WorldView(world, terrain, skin, false, false);
+  view.trackR.setCoins(level.coins ?? []);
+  const allowTunnels = unlocked.has('tunnel');
+  if (path) {
+    const samples = sampleTrack(path, 0.25);
+    view.setTrack(path, samples, skin, terrain, allowTunnels, false);
+    try {
+      const opts = simOptionsForLevel(level, path, terrain, skin, allowTunnels);
+      const sim = new TrainSim(samples, path, opts);
+      view.buildTrain(opts.cars, [], 0);
+      view.updateTrain(sim.cars, [], 0);
+    } catch {
+      /* ohne Zug */
+    }
+  }
+  const b = miniBounds(level, terrain, path);
+  const bw = b.maxX - b.minX;
+  const bh = b.maxY - b.minY;
+  // etwas gröber als die Miniatur selbst: fünf Texturen auf einmal
+  const ppm = Math.min(MINI_PPM * 0.75, MAX_TEX_W / bw, MAX_TEX_H / bh);
+  const tw = Math.ceil(bw * ppm);
+  const th = Math.ceil(bh * ppm);
+  const cam = view.camera;
+  cam.minZoom = 0.1;
+  cam.resize(tw, th);
+  cam.set((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2, ppm);
+  view.update(0);
+  const holder = new Container();
+  holder.addChild(view.world);
+  const lanes = Terrain.lanes();
+  const textures: RenderTexture[] = [];
+  for (const z of lanes) {
+    view.showOnlyLane(z);
+    const tex = RenderTexture.create({ width: tw, height: th, resolution: 1, antialias: true });
+    renderer.render({ container: holder, target: tex, clear: true, clearColor: [0, 0, 0, 0] });
+    textures.push(tex);
+  }
+  view.showOnlyLane(null);
+  holder.destroy({ children: true });
+  view.destroy();
+  return { textures, lanes, bounds: b };
+}
+
 function render(renderer: Renderer, level: LevelDef, world: WorldDef, skin: string, unlocked: Set<ElementId>, path: TrackPath | null): Miniature {
   const terrain = new Terrain(level);
-  const view = new WorldView(world, terrain, skin, false);
+  const view = new WorldView(world, terrain, skin, false, false);
   view.trackR.setCoins(level.coins ?? []);
   const allowTunnels = unlocked.has('tunnel');
   if (path) {

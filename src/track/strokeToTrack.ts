@@ -11,13 +11,15 @@
  *    Im Höhen-Modus gilt: Kreuzung = Looping, Kehrtwende ohne Kreuzung = Steilkurve in die Nachbarspur
  *    (Rückweg höher im Bild = nach hinten).
  */
+import { SegmentGrid } from '@/core/segmentGrid';
 import type { Vec2 } from '@/core/math';
-import { dist, segmentIntersection, smoothstep } from '@/core/math';
+import { dist, segmentDistance, segmentIntersection, smoothstep } from '@/core/math';
 import type { Vec3 } from '@/core/math3';
 import { add3, dist3, normalize3, scale3, sub3 } from '@/core/math3';
 import { dedupe, smoothStroke } from '@/core/rdp';
 import { fitWithCorners3 } from '@/core/bezierFit3';
-import { createNode, emptyPath, isAutoNode, isClosed, nodeIn, nodeOut, nodePos, type TrackNode, type TrackPath } from './model';
+import { reduceNodes, type ApexHint } from './reduceNodes';
+import { createNode, emptyPath, isAutoNode, isClosed, nodeIn, nodeOut, nodePos, type PathClosure, type TrackNode, type TrackPath } from './model';
 import { LANE_DEPTH, LANE_MAX, LANE_MIN, LANE_RISE, laneRise, laneScale, toStage, type StagePoint } from './stage';
 
 export type StrokeMode = 'floor' | 'height';
@@ -41,6 +43,23 @@ export interface StrokeOptions {
   zShift?: (index: number) => number;
   /** Offene Bahn sofort mit automatischem Rückweg schließen (Standard: nein, die Bahn bleibt offen) */
   autoClose?: boolean;
+  /** Bühnen-Meter: endet der Strich so nah an der Station, wird die Runde geschlossen (Standard 8 m) */
+  closeSnap?: number;
+  /** Runde Schleifen im rohen Strich (findRoundLoops): ihre Abschnitte werden als Höhe gelesen */
+  loopHints?: LoopHint[];
+  /** Knotenwahl: 'apex' (Standard, Scheitel-Semantik, wenige Knoten) oder 'legacy' (Schneider-Fit mit 0,3 m) */
+  fit?: 'apex' | 'legacy';
+  /** Vorschau während des Strichs: weniger Glättungs-Durchläufe, doppelte Fit-Toleranz (schneller, grob gleich) */
+  preview?: boolean;
+}
+
+/** Runde Schleife im rohen Strich (Bühnenkoordinaten): Indizes wie die Strichpunkte */
+export interface LoopHint {
+  from: number;
+  to: number;
+  apex: number;
+  cross: Vec2;
+  gap?: { dx: number; dy: number };
 }
 
 export interface StrokeEvent {
@@ -53,6 +72,8 @@ export interface StrokeEvent {
   radius?: number;
   /** Kehre am Boden (Tiefe kommt aus dem Strich, keine zusätzliche Verschiebung) */
   floor?: boolean;
+  /** Looping über eine Fast-Kreuzung: Vektor von der Einfahrt zur Ausfahrt an der engsten Stelle */
+  gap?: { dx: number; dy: number };
 }
 
 export interface InterpretedPoint {
@@ -103,6 +124,15 @@ const HOOK_MAX = 5;
 const LOOP_MIN_APEX = 4.5; // Abstand Scheitel–Kreuzung in Metern
 const LOOP_MIN_LENGTH = 12; // Strichlänge der Schleife
 const LOOP_MIN_ROUNDNESS = 0.4; // 4π·Fläche/Umfang² (Kreis = 1)
+/** Fast-Kreuzung: Die Ausfahrt verfehlt die Einfahrt um höchstens so viel (Meter) und die Schleife ist rund genug */
+const LOOP_GAP_MAX = 1.5;
+const LOOP_MIN_ROUNDNESS_GAP = 0.45;
+/** Nach einer Fast-Kreuzung wird die Ausfahrt über diese Strecke (Meter) auf die Einfahrt gezogen, damit sie wirklich kreuzt */
+const LOOP_GAP_BLEND = 8;
+/** Schleife im rohen Strich (noch ohne Lesart): rund und etwa so hoch wie breit, sonst ist es ein Oval am Boden */
+const LOOP_RAW_ROUNDNESS = 0.5;
+const LOOP_RAW_ASPECT_MIN = 0.5;
+const LOOP_RAW_ASPECT_MAX = 2.0;
 
 /** Bühnen-Y der Bodenlinie an Welt-x und Tiefe z */
 function groundY(ground: (x: number, z: number) => number, X: number, z: number): number {
@@ -419,6 +449,13 @@ export function interpretStroke(pts: Vec2[], opts: StrokeOptions): InterpretedPo
     for (let i = r.start; i <= r.end; i++) runOf[i] = ri;
   });
   const climb = runs.map((r) => isClimb(pts, r, ground));
+  // Eine runde Schleife ist ein Looping, auch wenn sie am Boden beginnt: Ihre steigenden Abschnitte sind
+  // Anstiege, nicht Bewegungen in die Tiefe (die Steilheitsprüfung allein hielte den Kreis für eine Bodenkehre)
+  for (const h of opts.loopHints ?? []) {
+    runs.forEach((r, ri) => {
+      if (!climb[ri] && r.rising && r.end > h.from && r.start < h.to) climb[ri] = true;
+    });
+  }
   const clampZ = (z: number) => Math.max(LANE_MIN, Math.min(LANE_MAX, z));
   const heightPoint = (i: number, z: number): InterpretedPoint => {
     const k = laneScale(z);
@@ -507,44 +544,72 @@ export function interpretStroke(pts: Vec2[], opts: StrokeOptions): InterpretedPo
  * entgegengesetzter x-Richtung, ist das der Rückweg einer Kehre, der den Hinweg überquert (Überführung,
  * in der Nachbarspur), kein Looping.
  */
-export function detectLoops(points: InterpretedPoint[]): StrokeEvent[] {
-  const events: StrokeEvent[] = [];
-  const n = points.length;
-  const P = (i: number): Vec2 => ({ x: points[i].x, y: points[i].y });
-  const xDir = (i: number): number => Math.sign(points[i + 1].x - points[i].x);
+/** Schleifenkörper von der Kreuzung bis zurück: Scheitel, Fläche, Umfang, Rundheit und Seitenverhältnis */
+function loopBody(P: (i: number) => Vec2, cum: Float64Array, i: number, j: number, cross: Vec2) {
+  let apex = i + 1;
+  let best = -1;
+  let area = 0;
+  let prev: Vec2 = cross;
+  let minX = cross.x, maxX = cross.x, minY = cross.y, maxY = cross.y;
+  for (let k = i + 1; k <= j; k++) {
+    const p = P(k);
+    const d = Math.hypot(p.x - cross.x, p.y - cross.y);
+    if (d > best) {
+      best = d;
+      apex = k;
+    }
+    area += prev.x * p.y - p.x * prev.y;
+    prev = p;
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  }
+  area = Math.abs(area + prev.x * cross.y - cross.x * prev.y) / 2;
+  const p1 = P(i + 1);
+  const pj = P(j);
+  const perimeter = cum[j] - cum[i + 1] + Math.hypot(p1.x - cross.x, p1.y - cross.y) + Math.hypot(pj.x - cross.x, pj.y - cross.y);
+  const roundness = perimeter > 0 ? (4 * Math.PI * area) / (perimeter * perimeter) : 0;
+  const aspect = maxX - minX > 1e-6 ? (maxY - minY) / (maxX - minX) : 0;
+  return { apex, apexDist: best, perimeter, roundness, aspect };
+}
+
+/**
+ * Runde Schleifen im rohen Strich (Bühnenkoordinaten, noch ohne Lesart). Eine Schleife, die sich kreuzt oder
+ * nur knapp verfehlt, groß und rund ist und etwa so hoch wie breit, ist ein Looping, selbst wenn sie direkt am
+ * Boden beginnt. Ovale am Boden sind viel breiter als hoch und bleiben Bodenkurven; Kehren mit Rückweg in
+ * Gegenrichtung sind keine Schleifen.
+ */
+export function findRoundLoops(pts: Vec2[]): LoopHint[] {
+  const hints: LoopHint[] = [];
+  const n = pts.length;
+  if (n < 8) return hints;
+  const P = (i: number): Vec2 => pts[i];
+  const xDir = (i: number): number => Math.sign(pts[i + 1].x - pts[i].x);
   const cum = new Float64Array(n);
-  for (let k = 1; k < n; k++) cum[k] = cum[k - 1] + Math.hypot(points[k].x - points[k - 1].x, points[k].y - points[k - 1].y);
-  const total = cum[n - 1] ?? 0;
-  const closing = (k: number) => cum[k] < CLOSE_ZONE || total - cum[k] < CLOSE_ZONE;
+  for (let k = 1; k < n; k++) cum[k] = cum[k - 1] + dist(pts[k - 1], pts[k]);
+  const inHint = (k: number) => hints.some((h) => k >= h.from && k <= h.to);
+  /** erstes k > i, das in einer Schleife liegt (die Suche reicht nur bis dahin), sonst n − 1 */
+  const limitAfter = (i: number): number => {
+    let lim = n - 1;
+    for (const h of hints) if (h.from > i && h.from < lim) lim = h.from;
+    return lim;
+  };
+  const grid = new SegmentGrid(pts);
+  const accept = (i: number, j: number, cross: Vec2, gap?: { dx: number; dy: number }): boolean => {
+    const b = loopBody(P, cum, i, j, cross);
+    if (b.apexDist < LOOP_MIN_APEX || b.perimeter < LOOP_MIN_LENGTH || b.roundness < LOOP_RAW_ROUNDNESS) return false;
+    if (b.aspect < LOOP_RAW_ASPECT_MIN || b.aspect > LOOP_RAW_ASPECT_MAX) return false;
+    hints.push({ from: i, to: j + 1, apex: b.apex, cross, gap });
+    return true;
+  };
+  // Durchlauf 1: echte Kreuzungen (nicht in den ersten Metern: dort schließt ein Kreis seinen Anfang)
   let i = 0;
   while (i < n - 3) {
     let found = false;
-    if (points[i].mode === 'height' && !closing(i)) {
-      for (let j = i + 2; j < n - 1; j++) {
-        if (points[j].mode !== 'height' || Math.abs(points[j].z - points[i].z) > 0.3) continue;
-        if (xDir(i) * xDir(j) < 0 || closing(j + 1)) continue;
+    if (cum[i] >= CLOSE_ZONE) {
+      for (const j of grid.near(i, 0, i + 2, n - 1)) {
+        if (xDir(i) * xDir(j) < 0) continue;
         const hit = segmentIntersection(P(i), P(i + 1), P(j), P(j + 1));
         if (hit) {
-          let apex = i + 1;
-          let best = -1;
-          // Fläche (Schnürsenkelformel) und Umfang der Schleife von der Kreuzung bis zurück zur Kreuzung
-          let area = 0;
-          let prev: Vec2 = hit.point;
-          for (let k = i + 1; k <= j; k++) {
-            const d = Math.hypot(points[k].x - hit.point.x, points[k].y - hit.point.y);
-            if (d > best) {
-              best = d;
-              apex = k;
-            }
-            area += prev.x * points[k].y - points[k].x * prev.y;
-            prev = P(k);
-          }
-          area = Math.abs(area + prev.x * hit.point.y - hit.point.x * prev.y) / 2;
-          const perimeter = cum[j] - cum[i + 1] + Math.hypot(points[i + 1].x - hit.point.x, points[i + 1].y - hit.point.y) + Math.hypot(points[j].x - hit.point.x, points[j].y - hit.point.y);
-          const roundness = perimeter > 0 ? (4 * Math.PI * area) / (perimeter * perimeter) : 0;
-          if (best >= LOOP_MIN_APEX && perimeter >= LOOP_MIN_LENGTH && roundness >= LOOP_MIN_ROUNDNESS) {
-            events.push({ kind: 'loop', index: apex, from: i, to: j + 1 });
-          }
+          accept(i, j, hit.point);
           i = j + 1;
           found = true;
           break;
@@ -553,7 +618,158 @@ export function detectLoops(points: InterpretedPoint[]): StrokeEvent[] {
     }
     if (!found) i++;
   }
+  // Durchlauf 2: Fast-Kreuzungen außerhalb gefundener Schleifen
+  i = 0;
+  while (i < n - 3) {
+    let found = false;
+    if (cum[i] >= CLOSE_ZONE && !inHint(i)) {
+      let bestJ = -1;
+      let bestD = LOOP_GAP_MAX;
+      let bestA: Vec2 = P(i);
+      let bestB: Vec2 = P(i);
+      for (const j of grid.near(i, LOOP_GAP_MAX, i + 6, limitAfter(i))) {
+        if (xDir(i) * xDir(j) < 0) continue;
+        const sd = segmentDistance(P(i), P(i + 1), P(j), P(j + 1));
+        if (sd.d < bestD) {
+          bestD = sd.d;
+          bestJ = j;
+          bestA = sd.a;
+          bestB = sd.b;
+        }
+      }
+      if (bestJ >= 0) {
+        const mid = { x: (bestA.x + bestB.x) / 2, y: (bestA.y + bestB.y) / 2 };
+        if (accept(i, bestJ, mid, { dx: bestB.x - bestA.x, dy: bestB.y - bestA.y })) {
+          i = bestJ + 1;
+          found = true;
+        }
+      }
+    }
+    if (!found) i++;
+  }
+  return hints;
+}
+
+export function detectLoops(points: InterpretedPoint[], hints: LoopHint[] = []): StrokeEvent[] {
+  const events: StrokeEvent[] = [];
+  const n = points.length;
+  const P = (i: number): Vec2 => ({ x: points[i].x, y: points[i].y });
+  const xDir = (i: number): number => Math.sign(points[i + 1].x - points[i].x);
+  const cum = new Float64Array(n);
+  for (let k = 1; k < n; k++) cum[k] = cum[k - 1] + Math.hypot(points[k].x - points[k - 1].x, points[k].y - points[k - 1].y);
+  const closing = (k: number) => cum[k] < CLOSE_ZONE;
+  // Schleifen aus dem rohen Strich sind schon geprüft (sie beginnen oft am Boden, wo die Lesart den Kreuzungspunkt
+  // noch als Boden liest); die Durchläufe unten suchen nur außerhalb davon weiter
+  for (const h of hints) if (h.to < n) events.push({ kind: 'loop', index: Math.min(n - 1, h.apex), from: h.from, to: h.to, gap: h.gap });
+  const inLoop = (k: number) => events.some((e) => k >= e.from! && k <= e.to!);
+  /** erstes k > i in einem Looping (die Suche reicht nur bis dahin), sonst n − 1 */
+  const limitAfter = (i: number): number => {
+    let lim = n - 1;
+    for (const e of events) if (e.from! > i && e.from! < lim) lim = e.from!;
+    return lim;
+  };
+  const grid = new SegmentGrid(points.map((p) => ({ x: p.x, y: p.y })));
+  /** Segment j kommt als Ausfahrt zur Einfahrt i in Frage: Höhe, gleiche Tiefe, gleiche x-Richtung, nicht am Anfang */
+  const candidate = (i: number, j: number): boolean =>
+    points[j].mode === 'height' && Math.abs(points[j].z - points[i].z) <= 0.3 && xDir(i) * xDir(j) >= 0;
+  /** Schleife von der (echten oder virtuellen) Kreuzung bis zurück: groß, lang und rund genug? Dann Ereignis. */
+  const accept = (i: number, j: number, cross: Vec2, minRoundness: number, gap?: { dx: number; dy: number }): boolean => {
+    const b = loopBody(P, cum, i, j, cross);
+    if (b.apexDist >= LOOP_MIN_APEX && b.perimeter >= LOOP_MIN_LENGTH && b.roundness >= minRoundness) {
+      events.push({ kind: 'loop', index: b.apex, from: i, to: j + 1, gap });
+      return true;
+    }
+    return false;
+  };
+  // Durchlauf 1: echte Kreuzungen
+  let i = 0;
+  while (i < n - 3) {
+    let found = false;
+    if (points[i].mode === 'height' && !closing(i) && !inLoop(i)) {
+      for (const j of grid.near(i, 0, i + 2, limitAfter(i))) {
+        if (!candidate(i, j)) continue;
+        const hit = segmentIntersection(P(i), P(i + 1), P(j), P(j + 1));
+        if (hit) {
+          accept(i, j, hit.point, LOOP_MIN_ROUNDNESS);
+          i = j + 1;
+          found = true;
+          break;
+        }
+      }
+    }
+    if (!found) i++;
+  }
+  // Durchlauf 2: Fast-Kreuzungen außerhalb der erkannten Loopings. Die Hand trifft die Einfahrt nicht genau;
+  // verfehlt die Ausfahrt sie nur knapp und die Schleife ist rund, zählt sie trotzdem als Looping (die Ausfahrt
+  // wird danach auf die Einfahrt gezogen, siehe shapeLoopCrossing)
+  i = 0;
+  while (i < n - 3) {
+    let found = false;
+    if (points[i].mode === 'height' && !closing(i) && !inLoop(i)) {
+      let bestJ = -1;
+      let bestD = LOOP_GAP_MAX;
+      let bestA: Vec2 = P(i);
+      let bestB: Vec2 = P(i);
+      // ein erkannter Looping darf nicht Teil der neuen Schleife sein (Suche nur bis zum nächsten Looping)
+      for (const j of grid.near(i, LOOP_GAP_MAX, i + 6, limitAfter(i))) {
+        if (!candidate(i, j)) continue;
+        const sd = segmentDistance(P(i), P(i + 1), P(j), P(j + 1));
+        if (sd.d < bestD) {
+          bestD = sd.d;
+          bestJ = j;
+          bestA = sd.a;
+          bestB = sd.b;
+        }
+      }
+      if (bestJ >= 0) {
+        const mid = { x: (bestA.x + bestB.x) / 2, y: (bestA.y + bestB.y) / 2 };
+        if (accept(i, bestJ, mid, LOOP_MIN_ROUNDNESS_GAP, { dx: bestB.x - bestA.x, dy: bestB.y - bestA.y })) {
+          i = bestJ + 1;
+          found = true;
+        }
+      }
+    }
+    if (!found) i++;
+  }
+  events.sort((a, b) => a.index - b.index);
   return events;
+}
+
+/**
+ * Looping aus einer Fast-Kreuzung: Die Ausfahrt wird auf die Einfahrt gezogen (plus 0,3 m Überschuss, damit sie
+ * wirklich kreuzt). Die Verschiebung wächst vom Scheitel bis zur Ausfahrt an und läuft danach über
+ * LOOP_GAP_BLEND Meter wieder aus, so bleibt der Strich stetig.
+ */
+export function shapeLoopCrossing(points: InterpretedPoint[], loop: StrokeEvent): void {
+  const g = loop.gap;
+  const to = loop.to;
+  if (!g || to === undefined) return;
+  const gl = Math.hypot(g.dx, g.dy);
+  if (gl < 1e-6) return;
+  const sx = -(g.dx + (g.dx / gl) * 0.3);
+  const sy = -(g.dy + (g.dy / gl) * 0.3);
+  const n = points.length;
+  const apex = Math.max(0, Math.min(loop.index, to));
+  const seg = (k: number) => Math.hypot(points[k].x - points[k - 1].x, points[k].y - points[k - 1].y);
+  // Anlauf vom Scheitel bis zur Ausfahrt
+  let inLen = 0;
+  for (let k = apex + 1; k <= Math.min(to, n - 1); k++) inLen += seg(k);
+  let s = 0;
+  for (let k = apex + 1; k <= Math.min(to, n - 1); k++) {
+    s += seg(k);
+    const f = inLen > 0 ? smoothstep(s / inLen) : 1;
+    points[k].x += sx * f;
+    points[k].y += sy * f;
+  }
+  // Auslauf nach der Ausfahrt
+  s = 0;
+  for (let k = to + 1; k < n; k++) {
+    s += seg(k);
+    const f = 1 - smoothstep(s / LOOP_GAP_BLEND);
+    if (f <= 0) break;
+    points[k].x += sx * f;
+    points[k].y += sy * f;
+  }
 }
 
 /**
@@ -809,9 +1025,11 @@ export function shapeTurns(points: InterpretedPoint[], stroke: Vec2[], turns: St
 
 /** Interpretation mit Ereignissen: erster Durchlauf erkennt Loopings/Kehrtwenden, zweiter wendet die Tiefen der Steilkurven an. */
 export function interpretWithEvents(pts: Vec2[], opts: StrokeOptions): { points: InterpretedPoint[]; events: StrokeEvent[] } {
+  const hints = opts.allowLoops === false ? [] : opts.loopHints ?? findRoundLoops(pts);
+  opts = { ...opts, loopHints: hints };
   let points = interpretStroke(pts, opts);
   if (points.length < 2) return { points, events: [] };
-  const loops = opts.allowLoops === false ? [] : detectLoops(points);
+  const loops = opts.allowLoops === false ? [] : detectLoops(points, hints);
   let turns = opts.allowTurns === false ? [] : [...detectTurns(points, loops, 'height'), ...detectTurns(points, loops, 'floor')];
   if (turns.some((t) => t.floor)) {
     // Boden-Kehren brauchen nach dem Scheitel noch Strich für den Halbkreis; und endet der Strich nahe der
@@ -820,7 +1038,7 @@ export function interpretWithEvents(pts: Vec2[], opts: StrokeOptions): { points:
     const cum = new Float64Array(n);
     for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + dist(pts[i - 1], pts[i]);
     const closeAt = opts.closeAt ?? { X: pts[0].x, Y: pts[0].y };
-    const closing = Math.hypot(pts[n - 1].x - closeAt.X, pts[n - 1].y - closeAt.Y) <= CLOSE_SNAP;
+    const closing = Math.hypot(pts[n - 1].x - closeAt.X, pts[n - 1].y - closeAt.Y) <= (opts.closeSnap ?? CLOSE_SNAP);
     turns = turns.filter((t) => {
       if (!t.floor) return true;
       const tail = cum[n - 1] - cum[t.index];
@@ -833,6 +1051,7 @@ export function interpretWithEvents(pts: Vec2[], opts: StrokeOptions): { points:
     if (turns.some((t) => !t.floor)) points = interpretStroke(pts, { ...opts, zShift: (i) => shift[Math.max(0, Math.min(shift.length - 1, i))] });
     shapeTurns(points, pts, turns, opts.groundHeight ?? (() => 0), opts.groundClearance ?? 0.6);
   }
+  for (const l of loops) shapeLoopCrossing(points, l);
   return { points, events: [...loops, ...turns].sort((a, b) => a.index - b.index) };
 }
 
@@ -972,10 +1191,15 @@ export function limitVerticalCurvature(world: Vec3[], keep: (i: number) => boole
       const d1 = s[i] - s[i - 1];
       const d2 = s[i + 1] - s[i];
       if (d1 < 1e-6 || d2 < 1e-6) return;
+      // Die Tests messen die Sehnenhöhe senkrecht; auf einem Gefälle ist die Sehnenhöhe quer zur Bahn um den
+      // Kosinus des Gefälles größer. Ohne den Faktor ließ der Begrenzer an steilen Flanken (Auslauf eines Drops)
+      // bis zu doppelt so enge Radien durch, und der Wagen spürte 6 g statt der 4 g, für die das Tal ausgelegt ist.
+      const sinA = Math.max(-1, Math.min(1, (y[i + 1] - y[i - 1]) / (d1 + d2)));
+      const cosA = Math.max(0.3, Math.sqrt(1 - sinA * sinA));
       // Senke: der Punkt darf nicht tiefer liegen als die Parabel durch die Nachbarn
       if (!kept[i]) {
         const mid = y[i - 1] + ((y[i + 1] - y[i - 1]) * d1) / (d1 + d2);
-        const lim = mid - (d1 * d2) / (2 * rValley[i]);
+        const lim = mid - ((d1 * d2) / (2 * rValley[i])) * cosA;
         if (y[i] < lim - 1e-6) {
           y[i] = lim;
           changed = true;
@@ -985,14 +1209,14 @@ export function limitVerticalCurvature(world: Vec3[], keep: (i: number) => boole
       // (Steigung aus dem vorigen Nachbarn, Krümmung −1/R; exakt für Parabeln, auch bei ungleichen Schritten)
       if (forward && !kept[i + 1]) {
         const slope = (y[i] - y[i - 1]) / d1;
-        const lim = y[i] + slope * d2 - (d2 * (d1 + d2)) / (2 * rCrest[i]);
+        const lim = y[i] + slope * d2 - ((d2 * (d1 + d2)) / (2 * rCrest[i])) * cosA;
         if (y[i + 1] < lim - 1e-6) {
           y[i + 1] = lim;
           changed = true;
         }
       } else if (!forward && !kept[i - 1]) {
         const slope = (y[i + 1] - y[i]) / d2;
-        const lim = y[i] - slope * d1 - (d1 * (d1 + d2)) / (2 * rCrest[i]);
+        const lim = y[i] - slope * d1 - ((d1 * (d1 + d2)) / (2 * rCrest[i])) * cosA;
         if (y[i - 1] < lim - 1e-6) {
           y[i - 1] = lim;
           changed = true;
@@ -1007,7 +1231,12 @@ export function limitVerticalCurvature(world: Vec3[], keep: (i: number) => boole
 }
 
 /** Interpretierte Punkte → Knoten (Anheben über Terrain, Ecken runden, 3D-Fit) */
-export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, events: StrokeEvent[]): TrackNode[] {
+/**
+ * Gelesene Punkte → dichte Weltpunktfolge (Meter, z in Metern), fahrbar gemacht: Mindesthöhe, Bodenhöhe,
+ * geglättet, Kuppen/Täler auf fahrbare Radien, Ecken gerundet, max. 1 m Punktabstand. Dazu die Scheitel der
+ * Ereignisse (Looping, Kehre) als Hinweise für die Knotenwahl.
+ */
+export function densePolyline(points: InterpretedPoint[], opts: StrokeOptions, events: StrokeEvent[]): { pts: Vec3[]; hints: ApexHint[] } {
   const ground = opts.groundHeight ?? (() => 0);
   const clearance = opts.groundClearance ?? 0.6;
   // Höhe über dem Boden der Spur (nie unter der Mindesthöhe); die Bodenhöhe kommt erst nach dem Glätten dazu,
@@ -1026,7 +1255,7 @@ export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, e
   const cumW = new Float64Array(world.length);
   for (let i = 1; i < world.length; i++) cumW[i] = cumW[i - 1] + dist3(world[i - 1], world[i]);
   const inLoop = (i: number) => loopRanges.some(([a, b]) => cumW[i] >= a - 1 && cumW[i] <= b + 1);
-  limitVerticalCurvature(world, inLoop, dist3(world[0], world[world.length - 1]) < 1);
+  limitVerticalCurvature(world, inLoop, dist3(world[0], world[world.length - 1]) < 1, opts.preview ? 60 : 400);
   if (opts.maxHeight && opts.maxHeight > 0) for (const p of world) p.y = Math.min(p.y, opts.maxHeight);
   let pts = roundCorners3(world);
   const keep = simplify3(pts, 0.04);
@@ -1040,9 +1269,17 @@ export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, e
     for (let k = 1; k <= n; k++) dense.push(add3(a, scale3(sub3(b, a), k / n)));
   }
   pts = dense;
-  // keine gebrochenen Tangenten aus Strichen (Achterbahnen haben keine Ecken). 0,3 m: Die Linie ist schon geglättet,
-  // so entstehen nur die nötigen Knoten (ein Oval braucht rund zehn), Loopings und Halbkreise bleiben rund
-  const segments = fitWithCorners3(pts, opts.fitError ?? 0.3, 179);
+  const hints: ApexHint[] = events.map((e) => ({ pos: apexOf(e), kind: e.kind === 'loop' ? 'loopApex' : 'turn' }));
+  return { pts, hints };
+}
+
+export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, events: StrokeEvent[]): TrackNode[] {
+  const { pts, hints } = densePolyline(points, opts, events);
+  // Knoten an den Scheiteln (Kuppen, Täler, Kurven, Loopings) mit festen Tangenten, dazwischen so wenige
+  // Segmente wie nötig (reduceNodes); 'legacy': Schneider-Fit ohne Ecken mit 0,3 m (ein Oval braucht rund zehn Knoten)
+  const legacy = opts.fit === 'legacy';
+  const reduced = legacy ? null : reduceNodes(pts, hints, { ...(opts.fitError ? { tolTight: opts.fitError, tolLoose: opts.fitError * 3 } : {}), tolScale: opts.preview ? 2 : 1 });
+  const segments = reduced ? reduced.segments : fitWithCorners3(pts, opts.fitError ?? 0.3, 179);
   const nodes: TrackNode[] = [];
   const mk = (p: Vec3): TrackNode => createNode(p.x, p.y, p.z / LANE_DEPTH);
   for (let i = 0; i < segments.length; i++) {
@@ -1061,7 +1298,14 @@ export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, e
     end.inX = last.p2.x - last.p3.x; end.inY = last.p2.y - last.p3.y; end.inZ = (last.p2.z - last.p3.z) / LANE_DEPTH;
     nodes.push(end);
   }
-  // Ereignis-Knoten markieren (nächster Knoten zum Scheitelpunkt)
+  // Ereignis-Knoten markieren: aus der Scheitelwahl, sonst (legacy) der nächste Knoten zum Scheitelpunkt
+  if (reduced) {
+    reduced.kinds.forEach((k, i) => {
+      if (k !== 'normal' && nodes[i] && nodes[i].kind === 'normal') nodes[i].kind = k;
+    });
+    return nodes;
+  }
+  const apexOf = (e: StrokeEvent): Vec3 => hints[events.indexOf(e)]?.pos ?? { x: 0, y: 0, z: 0 };
   for (const e of events) {
     const apex = apexOf(e);
     let best = -1;
@@ -1084,7 +1328,7 @@ export function strokeToTrack(stroke: StagePoint[], opts: StrokeOptions = {}): S
   if (pts.length < 2) return { path: emptyPath(), events: [], points: [] };
   const { points, events } = interpretWithEvents(pts, opts);
   if (points.length < 2) return { path: emptyPath(), events: [], points: [] };
-  snapEndToStart(points, opts.groundHeight ?? (() => 0), events);
+  snapEndToStart(points, opts.groundHeight ?? (() => 0), events, undefined, opts.closeSnap);
   const nodes = pointsToNodes(points, opts, events);
   if (nodes.length < 2) return { path: emptyPath(), events: [], points };
   nodes[0].kind = 'station';
@@ -1116,7 +1360,7 @@ export interface CloseTarget {
  * S-Kurve mit winzigem Radius. Kommt der Strich gegen die Abfahrtsrichtung auf derselben Spur an, bleibt
  * es bei closePath (Kehre in die Nachbarspur).
  */
-export function snapEndToStart(points: InterpretedPoint[], ground: (x: number, z: number) => number, events: StrokeEvent[] = [], target?: CloseTarget): boolean {
+export function snapEndToStart(points: InterpretedPoint[], ground: (x: number, z: number) => number, events: StrokeEvent[] = [], target?: CloseTarget, snap = CLOSE_SNAP): boolean {
   const n = points.length;
   if (n < 20) return false;
   const W = (p: InterpretedPoint): Vec3 => ({ x: p.x, y: p.y + ground(p.x, p.z), z: p.z * LANE_DEPTH });
@@ -1131,7 +1375,7 @@ export function snapEndToStart(points: InterpretedPoint[], ground: (x: number, z
   const end = W(points[n - 1]);
   const sStart = toStage(start.x, start.y, start.z / LANE_DEPTH);
   const sEnd = toStage(end.x, end.y, end.z / LANE_DEPTH);
-  if (Math.hypot(sStart.X - sEnd.X, sStart.Y - sEnd.Y) > CLOSE_SNAP) return false;
+  if (Math.hypot(sStart.X - sEnd.X, sStart.Y - sEnd.Y) > snap) return false;
   const dx = Math.sign(startDir.x) || 1;
 
   // Schluss-Kehre: zuletzt lief der Strich hinter der Station gegen die Abfahrtsrichtung
@@ -1221,10 +1465,10 @@ export function extendTrack(path: TrackPath, stroke: StagePoint[], opts: StrokeO
   if (points.length < 2) return null;
   const station = path.nodes[0];
   const sp = nodePos(station);
-  snapEndToStart(points, ground, events, { pos: sp, dir: sub3(nodeOut(station), sp) });
+  snapEndToStart(points, ground, events, { pos: sp, dir: sub3(nodeOut(station), sp) }, opts.closeSnap);
   const newNodes = pointsToNodes(points, opts, events);
   if (newNodes.length < 2) return null;
-  const out: TrackPath = { ...path, nodes: path.nodes.map((n) => ({ ...n })), elements: path.elements.map((e) => ({ ...e })), templates: { ...path.templates } };
+  const out: TrackPath = { nodes: path.nodes.map((n) => ({ ...n })), elements: path.elements.map((e) => ({ ...e })), startType: path.startType, templates: { ...path.templates } };
   const last = out.nodes[out.nodes.length - 1];
   // erster neuer Knoten liegt praktisch auf dem Ende → weglassen
   if (dist3(nodePos(last), nodePos(newNodes[0])) < 1.0) newNodes.shift();
@@ -1276,10 +1520,40 @@ export function buildTurnArc(xCenter: number, dir: number, yFrom: number, yTo: n
  * - Ende nahe am Start (≤ 6 m): weiche Verbindung.
  * - Sonst bleibt die Bahn offen (closed = false). Den automatischen Rückweg ergänzt erst closeTrack.
  */
-export function closePath(path: TrackPath): void {
+/**
+ * Rundenschluss rückgängig machen: automatische Knoten entfernen, vom Schluss entfernte Knoten wieder
+ * anhängen und überschriebene Handles zurücksetzen. Danach ist die Bahn wieder so, wie sie gezeichnet
+ * (bzw. zuletzt bearbeitet) wurde, und closePath kann den Schluss neu berechnen.
+ */
+export function restoreClosure(path: TrackPath): void {
   const nodes = path.nodes;
-  if (nodes.length < 2) return;
   for (let i = nodes.length - 1; i >= 0; i--) if (isAutoNode(nodes[i])) nodes.splice(i, 1);
+  const c = path.closure;
+  if (!c) return;
+  if (c.lastOut && c.lastOut.index < nodes.length) {
+    const n = nodes[c.lastOut.index];
+    [n.outX, n.outY, n.outZ] = c.lastOut.out;
+  }
+  if (nodes.length) [nodes[0].inX, nodes[0].inY, nodes[0].inZ] = c.firstIn;
+  nodes.push(...c.trimmed.map((n) => ({ ...n })));
+  delete path.closure;
+}
+
+/** Protokoll anlegen: Stations-Eingang sichern, bevor der Schluss ihn überschreibt */
+function startClosure(first: TrackNode): PathClosure {
+  return { trimmed: [], firstIn: [first.inX, first.inY, first.inZ], lastOut: null };
+}
+
+/**
+ * Bahn schließen (wiederholbar). Zuerst wird ein früherer Schluss zurückgenommen (restoreClosure), dann:
+ * - Ende auf dem Start: direkt geschlossen (bei Ankunft gegen die Fahrtrichtung mit Kehre in die Station).
+ * - Ende nahe am Start (≤ 6 m): weiche Verbindung.
+ * - Sonst bleibt die Bahn offen (closed = false). Den automatischen Rückweg ergänzt erst closeTrack.
+ * Alles, was der Schluss entfernt oder überschreibt, steht im Protokoll path.closure.
+ */
+export function closePath(path: TrackPath): void {
+  restoreClosure(path);
+  const nodes = path.nodes;
   if (nodes.length < 2) return;
   path.closed = true;
   const first = nodes[0];
@@ -1287,16 +1561,21 @@ export function closePath(path: TrackPath): void {
   const pf = nodePos(first);
   const pl = nodePos(last);
   const gap = dist3(pf, pl);
+  // Abstand in der Bühnenebene und in Spuren getrennt: Ein Rückweg, der hinter der Station eine Spur
+  // weiter hinten ankommt, ist von Hand geschlossen (die Hand trifft die Spur nicht genau)
+  const gapXY = Math.hypot(pf.x - pl.x, pf.y - pl.y);
+  const gapLanes = Math.abs(first.z - last.z);
   const endDir = normalize3(sub3(pl, nodeIn(last)));
   const startDir = normalize3(sub3(nodeOut(first), pf));
+  const closure = startClosure(first);
 
   // Ende am Start, aber Ankunft gegen die Abfahrtsrichtung der Station (Rundkurs von Hand geschlossen,
   // Rückweg hinter der Station): ohne Kehre gäbe es eine Spitzkehre an der Station. Die letzten Knoten,
   // die schon im Bereich der Kehre liegen, werden durch einen Halbkreis in die Station ersetzt.
-  if (gap <= 6 && endDir.x * startDir.x < -0.2) {
+  if (gapXY <= 6 && gapLanes <= 1.2 && endDir.x * startDir.x < -0.2) {
     const l2Z = nodes[nodes.length - 1].z;
     const R = Math.max((TURNAROUND_LANES * LANE_DEPTH) / 2, (Math.abs(l2Z - first.z) * LANE_DEPTH) / 2);
-    while (nodes.length > 3 && Math.abs(nodes[nodes.length - 1].x - first.x) < 2 * R) nodes.pop();
+    while (nodes.length > 3 && Math.abs(nodes[nodes.length - 1].x - first.x) < 2 * R) closure.trimmed.unshift(nodes.pop()!);
     const l2 = nodes[nodes.length - 1];
     const zTo = first.z;
     let zFrom = l2.z;
@@ -1311,9 +1590,11 @@ export function closePath(path: TrackPath): void {
     nodes.push(...arc);
     const dirL = normalize3(sub3(nodePos(l2), nodeIn(l2)));
     const lo = Math.max(1, dist3(nodePos(arc[0]), nodePos(l2)) / 3);
+    closure.lastOut = { index: nodes.indexOf(l2), out: [l2.outX, l2.outY, l2.outZ] };
     l2.outX = dirL.x * lo; l2.outY = dirL.y * lo; l2.outZ = (dirL.z * lo) / LANE_DEPTH;
     first.inX = aN.inX; first.inY = aN.inY; first.inZ = aN.inZ;
     nodes[0].kind = 'station';
+    path.closure = closure;
     return;
   }
 
@@ -1321,9 +1602,10 @@ export function closePath(path: TrackPath): void {
     // Strichende liegt auf dem Start: Endknoten verwerfen, Ankunft in Abfahrtsrichtung der Station
     // (sonst kommt der Strich z. B. von oben herab und die Bahn macht an der Station einen Schlenker)
     const len = Math.max(1.5, Math.hypot(last.inX, last.inY, last.inZ * LANE_DEPTH));
-    nodes.pop();
+    closure.trimmed.unshift(nodes.pop()!);
     first.inX = -startDir.x * len; first.inY = -startDir.y * len; first.inZ = (-startDir.z * len) / LANE_DEPTH;
     first.kind = 'station';
+    path.closure = closure;
     return;
   }
 
@@ -1332,9 +1614,11 @@ export function closePath(path: TrackPath): void {
     const toStart = normalize3(sub3(pf, pl));
     const outDir = normalize3(add3(scale3(endDir, 0.5), scale3(toStart, 0.5)));
     const inDir = normalize3(add3(scale3(startDir, -0.5), scale3(toStart, -0.5)));
+    closure.lastOut = { index: nodes.length - 1, out: [last.outX, last.outY, last.outZ] };
     last.outX = outDir.x * h; last.outY = outDir.y * h; last.outZ = (outDir.z * h) / LANE_DEPTH;
     first.inX = inDir.x * h; first.inY = inDir.y * h; first.inZ = (inDir.z * h) / LANE_DEPTH;
     nodes[0].kind = 'station';
+    path.closure = closure;
     return;
   }
 
@@ -1349,9 +1633,9 @@ export function closePath(path: TrackPath): void {
  */
 export function closeTrack(path: TrackPath, returnHeight = 0.7): void {
   if (isClosed(path)) return;
+  restoreClosure(path);
   const nodes = path.nodes;
   if (nodes.length < 2) return;
-  for (let i = nodes.length - 1; i >= 0; i--) if (isAutoNode(nodes[i])) nodes.splice(i, 1);
   const first = nodes[0];
   const last = nodes[nodes.length - 1];
   const pf = nodePos(first);
@@ -1359,6 +1643,9 @@ export function closeTrack(path: TrackPath, returnHeight = 0.7): void {
   const endDir = normalize3(sub3(pl, nodeIn(last)));
   const startDir = normalize3(sub3(nodeOut(first), pf));
   path.closed = true;
+  const closure = startClosure(first);
+  closure.lastOut = { index: nodes.length - 1, out: [last.outX, last.outY, last.outZ] };
+  path.closure = closure;
 
   const z0 = Math.round(first.z);
   const ze = Math.round(last.z);

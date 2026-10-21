@@ -49,8 +49,18 @@ export class Effects {
     const colors = [0xff5c8a, 0xffd23f, 0x3ec7c2, 0x9b6dff, 0x7ee081, 0xff8a5c];
     for (let i = 0; i < n; i++) this.spawn(x + (Math.random() - 0.5) * 6, y, colors[i % colors.length], { vx: (Math.random() - 0.5) * 14, vy: 6 + Math.random() * 12, maxLife: 1.6 + Math.random(), gravity: -9, size: 0.5, spin: (Math.random() - 0.5) * 10, shrink: false, sparkle: i % 3 === 0 });
   }
-  dust(x: number, y: number): void {
-    this.spawn(x, y, 0xe8d9b5, { vx: (Math.random() - 0.5) * 2, vy: 1 + Math.random(), maxLife: 0.7, gravity: 0, size: 0.8 + Math.random() * 0.8 });
+  dust(x: number, y: number, n = 1): void {
+    for (let i = 0; i < n; i++) {
+      this.spawn(x + (Math.random() - 0.5) * 1.5, y, 0xe8d9b5, { vx: (Math.random() - 0.5) * 2, vy: 1 + Math.random(), maxLife: 0.7, gravity: 0, size: 0.8 + Math.random() * 0.8 });
+    }
+  }
+  /** Fetzen des Absperrbands (gelb/schwarz) beim Durchbrechen */
+  ribbons(x: number, y: number, n = 12): void {
+    for (let i = 0; i < n; i++) this.spawn(x + (Math.random() - 0.5) * 1.5, y + Math.random(), i % 2 ? 0xffd23f : 0x2a1f3d, { vx: 2 + Math.random() * 6, vy: 2 + Math.random() * 5, maxLife: 1 + Math.random() * 0.6, gravity: -9, size: 0.45, spin: (Math.random() - 0.5) * 12, shrink: false });
+  }
+  /** Anzahl lebender Partikel (für Tests) */
+  get count(): number {
+    return this.particles.length;
   }
   glitter(x: number, y: number): void {
     this.spawn(x + (Math.random() - 0.5) * 1.5, y + (Math.random() - 0.5) * 1.5, 0xffffff, { vx: 0, vy: 0.5, maxLife: 0.5, size: 0.35, sparkle: true });

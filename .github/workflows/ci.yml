@@ -1,0 +1,59 @@
+name: CI
+
+# Prüft jeden Push auf Arbeitsbranches und jede Pull-Request: Tests und Typecheck/Build in einem Job,
+# die sechs Playwright-Szenarien (Zeichnen, Fahrt, Ergebnis) als parallele Matrix. Ein Szenario braucht
+# mit Software-Rendering auf dem Runner mehrere Minuten (jede Mausbewegung wartet auf den Frame);
+# nacheinander liefen alle sechs ins 25-Minuten-Timeout. main baut und deployt über deploy.yml.
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  scenario:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # 1 Oval (+ stehender Zug, Himmel-Übergabe), 2 Hügel+Oval mit Schräglage, 3 Steilkurve, 4 Looping,
+        # 5 Löschen/Überzeichnen/Vorschau/Absperrband, 6 Rundkurs von Hand, 7 Bearbeiten (Segment ziehen, Langdruck),
+        # 8 Entgleisen auf Holz (Freiflug, Sticker), 9 Karte (Glücksrad, gemeinsamer Himmel, Play mittig)
+        step: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Szenario ${{ matrix.step }} im Browser
+        run: node scripts/scenario.mjs ${{ matrix.step }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-${{ matrix.step }}
+          path: screenshots/
+          if-no-files-found: ignore

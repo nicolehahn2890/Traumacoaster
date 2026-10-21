@@ -4,6 +4,7 @@
  *  2. steiler Hügel mit Kehre in der Höhe → 1 Steilkurve in die Nachbarspur, Wagen nie kopfüber
  *  3. Looping in der Luft → 1 Looping, Fahrt kopfüber und wieder aufrecht
  *  4. Löschen-Knopf, Überzeichnen (Hügel in eine flache Bahn)
+ *  7. Bearbeiten: Segment ziehen (Bahn durch den Finger, Knoten bleiben), Langdruck zeigt Profi-Handles
  * Screenshots nach screenshots/scenario-*.png. Nutzt einen vorbereiteten Spielstand (Welt 1 fast komplett).
  */
 import { chromium } from '@playwright/test';
@@ -39,12 +40,13 @@ const check = (cond, msg) => { if (!cond) { failures.push(msg); console.error('C
 /** Bühnen-Meter → Bildschirm-Pixel über die Kamera der Szene */
 const toScreen = (pts) => page.evaluate((pts) => pts.map(([X, Y]) => { const p = window.tcGame.current.view.camera.toScreen(X, Y); return [p.x, p.y]; }), pts);
 
-/** Weicher Strich: Catmull-Rom durch die Stützpunkte, wie ein echter Finger */
-async function stroke(points, steps = 8) {
+/** Weicher Strich: Catmull-Rom durch die Stützpunkte, wie ein echter Finger; onMid läuft nach der Hälfte der Punkte */
+async function stroke(points, steps = 8, onMid = null) {
   const P = (i) => points[Math.max(0, Math.min(points.length - 1, i))];
   await page.mouse.move(points[0][0], points[0][1]);
   await page.mouse.down();
   for (let i = 0; i < points.length - 1; i++) {
+    if (onMid && i === Math.floor((points.length - 1) / 2)) await onMid();
     const [p0, p1, p2, p3] = [P(i - 1), P(i), P(i + 1), P(i + 2)];
     for (let s = 1; s <= steps; s++) {
       const t = s / steps;
@@ -58,7 +60,7 @@ async function stroke(points, steps = 8) {
   await page.mouse.up();
 }
 /** Strich in Bühnen-Metern (X, Y) */
-const strokeStage = async (pts, steps = 8) => stroke(await toScreen(pts), steps);
+const strokeStage = async (pts, steps = 8, onMid = null) => stroke(await toScreen(pts), steps, onMid);
 
 const state = () => page.evaluate(() => {
   const s = window.tcGame.current;
@@ -66,7 +68,8 @@ const state = () => page.evaluate(() => {
   return {
     scene: s?.constructor?.name, mode: s?.mode, nodes: s?.path?.nodes?.length ?? 0,
     loops: s?.stats?.loops, turns: s?.stats?.turns, lanes: s?.stats?.lanes, height: s?.stats?.maxHeight?.toFixed(1),
-    sim: s?.sim ? { phase: s.sim.phase, fail: s.sim.failReason, t: s.sim.t.toFixed(1), coins: s.sim.stats.coins, maxG: s.sim.stats.maxG.toFixed(1), maxLat: s.sim.stats.maxLatG.toFixed(2), maxSpeed: (s.sim.stats.maxSpeed * 3.6).toFixed(0), inversions: s.sim.stats.inversions } : null,
+    sticker: !!(s?.sticker?.visible && s.sticker.alpha > 0), particles: s?.view?.effects?.count ?? 0,
+    sim: s?.sim ? { phase: s.sim.phase, fail: s.sim.failReason, flight: s.sim.flight?.kind ?? null, t: s.sim.t.toFixed(1), coins: s.sim.stats.coins, maxG: s.sim.stats.maxG.toFixed(1), maxLat: s.sim.stats.maxLatG.toFixed(2), maxSpeed: (s.sim.stats.maxSpeed * 3.6).toFixed(0), inversions: s.sim.stats.inversions } : null,
     car: car ? { z: car.z.toFixed(2), bank: ((car.bank * 180) / Math.PI).toFixed(0), upy: car.upy.toFixed(2), y: car.y.toFixed(1) } : null,
   };
 });
@@ -115,7 +118,7 @@ const R = 4.2; // Bühnen-Meter pro Spur (Anhebung der Bodenlinie)
 let st = null;
 let r = null;
 const openLevel = async () => {
-  await page.goto(`${BASE}?scene=start&fast=6&level=8`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}?scene=start&fast=6&level=8&fx=1`, { waitUntil: 'networkidle' });
   await sleep(1200);
 };
 
@@ -126,11 +129,18 @@ await sleep(800);
 if (want('1')) {
 await openLevel();
 console.log('state', await state());
+// Gemeinsamer Himmel: das Level hat die Wolkenlage der Karte übernommen (gleiche Welt, Wolken vorhanden)
+const skyState = await page.evaluate(() => window.tcGame.current.view.sky.exportState());
+check(skyState.worldId === 1 && skyState.clouds.length > 3, `Himmel im Level übernommen (Welt ${skyState.worldId}, ${skyState.clouds.length} Wolken)`);
 const oval = [[2, 0], [20, 0], [40, 0], [48, 0.3 * R], [50, R], [48, 1.7 * R], [40, 2 * R], [20, 2 * R], [2, 2 * R], [-6, 1.7 * R], [-8, R], [-6, 0.3 * R], [0, 0], [2, 0]];
 await strokeStage(oval, 10);
 await sleep(800);
 st = await state();
 console.log('after oval', st);
+// Zeichenmodus: der Zug wartet in der Station, die Fahrgäste tuscheln (Cut-out-Animatoren)
+const standing = await page.evaluate(() => ({ cars: window.tcGame.current.view.trainR.cars.length, anims: window.tcGame.current.view.trainR.animators.size, standCars: window.tcGame.current.standCars.length }));
+check(standing.cars >= 1 && standing.cars === standing.standCars, `Stehender Zug in der Station (${standing.cars} Wagen)`);
+check(standing.anims >= 2, `Fahrgäste des stehenden Zugs sind animiert (${standing.anims} Animatoren)`);
 check(st.turns === 2, `Oval: 2 Kurven (ist ${st.turns})`);
 check(st.lanes === 2, `Oval: 2 Spuren (vorne und hinten, ist ${st.lanes})`);
 check(st.loops === 0, `Oval: kein Looping (ist ${st.loops})`);
@@ -155,15 +165,18 @@ await page.screenshot({ path: 'screenshots/scenario-2-hill-oval.png' });
 r = await ride('2-hill-oval', 9);
 console.log('ride result', r);
 check(r.st.sim?.phase === 'done', `Hügel+Oval: Fahrt kommt an (ist ${r.st.sim?.phase}/${r.st.sim?.fail})`);
-check(r.minUp > 0.3, `Hügel+Oval: Wagen steht nie Kopf (min upy ${r.minUp})`);
+// nie kopfüber: die automatische Schräglage geht bis 80° (upy = cos 80° ≈ 0,17); der Rundkurs wird jetzt von Hand
+// geschlossen und mit vollem Tempo durch die Schlusskurve gefahren, statt über den gebremsten Auto-Rückweg
+check(r.minUp > 0.15, `Hügel+Oval: Wagen steht nie Kopf (min upy ${r.minUp})`);
 check(r.maxBank > 15, `Hügel+Oval: Wagen legt sich in die Kurve (max Schräglage ${r.maxBank}°)`);
 }
 
 // ---------------------------------------------------------------- 3. Steilkurve in der Höhe
 if (want('3')) {
 await openLevel();
-// Lifthügel, Drop auf 10 m, Kehre in der Höhe (Rückweg 2 m höher = nach hinten), Abfahrt auf die Bodenlinie der Spur 1
-const hairpin = [[0, 0], [6, 1], [10, 7], [14, 16], [18, 18], [24, 14], [30, 10], [40, 10], [46, 10.2], [50, 12], [46, 13.8], [40, 14], [26, 14], [18, 13.2], [10, 10], [2, 6], [-4, R + 0.3], [-12, R]];
+// Lifthügel, Drop auf 10 m, Kehre in der Höhe (Rückweg 2 m höher = nach hinten), Abfahrt auf die Bodenlinie der Spur 1.
+// Der Rückweg kommt hinter der Station auf Spur 1 an und dreht dort in die Station (kein Auto-Rückweg mehr)
+const hairpin = [[0, 0], [6, 1], [10, 7], [14, 16], [18, 18], [24, 14], [30, 10], [40, 10], [46, 10.2], [50, 12], [46, 13.8], [40, 14], [26, 14], [18, 13.2], [10, 10], [2, 6], [-4, R + 0.3], [-7, R], [-8, 0.5 * R], [-6, 0.15 * R], [0, 0], [2, 0]];
 await strokeStage(hairpin, 10);
 await sleep(800);
 st = await state();
@@ -182,13 +195,14 @@ check(r.st.sim?.phase === 'done', `Steilkurve: Fahrt kommt an (ist ${r.st.sim?.p
 if (want('4')) {
 await openLevel();
 // Lifthügel 20 m, Looping mit Scheitel bei 13 m (genug Tempo oben), Auslauf auf den Boden
-const loop = [[0, 0], [6, 1], [10, 7], [14, 16], [18, 20], [26, 16], [34, 7], [40, 3], [46, 3.5], [50, 8], [48, 12.5], [43, 13], [38, 9], [40, 4], [46, 2], [60, 0.4], [74, 0.2]];
+// Der Auslauf dreht am Boden auf Spur 2 und führt zurück in die Station (kein Auto-Rückweg mehr)
+const loop = [[0, 0], [6, 1], [10, 7], [14, 16], [18, 20], [26, 16], [34, 7], [40, 3], [46, 3.5], [50, 8], [48, 12.5], [43, 13], [38, 9], [40, 4], [46, 2], [60, 0.4], [70, 0.2], [76, 0.3 * R], [78, R], [76, 1.7 * R], [70, 2 * R], [40, 2 * R], [10, 2 * R], [-6, 1.7 * R], [-8, R], [-6, 0.3 * R], [0, 0], [2, 0]];
 await strokeStage(loop, 10);
 await sleep(800);
 st = await state();
 console.log('after loop', st);
 check(st.loops === 1, `Looping: 1 Looping (ist ${st.loops})`);
-check(st.lanes === 1, `Looping: bleibt in der Spur (ist ${st.lanes})`);
+check(st.lanes === 2, `Looping: bleibt in der Spur, nur der Rückweg liegt auf Spur 2 (Spuren ${st.lanes})`);
 await page.screenshot({ path: 'screenshots/scenario-4-loop.png' });
 r = await ride('4-loop', 8);
 console.log('ride result', r);
@@ -200,7 +214,14 @@ check(r.st.sim?.phase === 'done', `Looping: Fahrt kommt an (ist ${r.st.sim?.phas
 // ---------------------------------------------------------------- 5. Löschen und Überzeichnen
 if (want('5')) {
 await openLevel();
-await strokeStage([[0, 0], [20, 0.1], [40, 0], [60, 0.1]], 10);
+// Vorschau: mitten im Strich sind schon Schienen gezeichnet (Breite der Schienen-Grafik der Spur 0 in Bühnen-Metern)
+let previewWidth = 0;
+await strokeStage([[0, 0], [20, 0.1], [40, 0], [60, 0.1]], 10, async () => {
+  await sleep(300);
+  previewWidth = await page.evaluate(() => window.tcGame.current.view.trackR.layers.rails.get(0).getLocalBounds().width);
+  await page.screenshot({ path: 'screenshots/scenario-5-preview.png' });
+});
+check(previewWidth > 10, `Vorschau zeigt Schienen während des Strichs (Breite ${previewWidth.toFixed(1)} m)`);
 await sleep(600);
 st = await state();
 check(st.nodes >= 2, `Flache Bahn gezeichnet (${st.nodes} Knoten)`);
@@ -219,6 +240,15 @@ console.log('after overdraw', st);
 check(Number(st.height) > 8, `Überzeichnen: Hügel eingebaut (Höhe ${st.height})`);
 check(st.lanes === lanesBefore, `Überzeichnen: Spuren bleiben wie vorher (${lanesBefore} → ${st.lanes})`);
 check(st.loops === 0, `Überzeichnen: kein Looping (ist ${st.loops})`);
+// Offenes Ende: Absperrband steht, die Fahrt endet dort (Räder blockieren, Abflug), kein Auto-Rückweg
+const barrierW = await page.evaluate(() => window.tcGame.current.view.trackR.layers.barriers.get(0).getLocalBounds().width);
+check(barrierW > 1, `Absperrband am offenen Ende gezeichnet (Breite ${barrierW.toFixed(1)} m)`);
+await page.screenshot({ path: 'screenshots/scenario-5-barrier.png' });
+r = await ride('5-openend', 5);
+console.log('ride result', r);
+check(r.st.sim?.fail === 'openEnd', `Offenes Ende: Fahrt endet mit openEnd (ist ${r.st.sim?.phase}/${r.st.sim?.fail})`);
+check(r.st.sim?.phase === 'flying', `Offenes Ende: der Zug fliegt ab (Phase ${r.st.sim?.phase})`);
+check(r.st.sim?.flight === 'launch', `Offenes Ende: mit Tempo → Abflug (Flugart ${r.st.sim?.flight})`);
 await page.screenshot({ path: 'screenshots/scenario-5-overdraw.png' });
 }
 
@@ -238,6 +268,203 @@ r = await ride('6-circuit', 6);
 console.log('ride result', r);
 check(r.minUp > -0.1, `Kreis von Hand: Wagen steht nie Kopf (min upy ${r.minUp})`);
 check(r.st.sim?.phase === 'done', `Kreis von Hand: Fahrt kommt an (ist ${r.st.sim?.phase}/${r.st.sim?.fail})`);
+}
+
+// ---------------------------------------------------------------- 7. Bearbeiten: Segment ziehen, Langdruck, Knotenmenü
+if (want('7')) {
+await openLevel();
+// Live-Ziele: Level 8 verlangt 15 m Höhe; mitten im Strich (nach der Kuppe) muss das Ziel schon haken
+let liveGoals = [];
+await strokeStage([[0, 0], [8, 0.5], [16, 6], [24, 16], [32, 16.5], [40, 10], [50, 2], [60, 0.3], [70, 0]], 10, async () => {
+  await sleep(400);
+  liveGoals = await page.evaluate(() => window.tcGame.current.goalCells.map((c) => c.done));
+  await page.screenshot({ path: 'screenshots/scenario-7-live.png' });
+});
+check(liveGoals[1] === true, `Live-Ziel: Höhe ≥ 15 m hakt schon während des Strichs (${JSON.stringify(liveGoals)})`);
+const barrier7 = await page.evaluate(() => window.tcGame.current.view.trackR.layers.barriers.get(0).getLocalBounds().width);
+check(barrier7 > 1, `Offener Hügel: Absperrband am Ende (Breite ${barrier7.toFixed(1)} m)`);
+await sleep(800);
+st = await state();
+const n0 = st.nodes;
+const h0 = Number(st.height);
+check(n0 >= 3, `Hügel gezeichnet (${n0} Knoten)`);
+// Anfasspunkt mitten in einem Segment (weit weg von Knoten): Abtastpunkt bei 35 % der Länge
+const grab = await page.evaluate(() => {
+  const s = window.tcGame.current;
+  const sm = s.samples;
+  const i = Math.floor(sm.count * 0.35);
+  // Bühne aus Welt in Spur 0: X = x, Y = y (toStage mit Spur-Anhebung z·4,2)
+  const scr = (j) => s.view.camera.toScreen(sm.x[j], sm.y[j] + sm.z[j] * 4.2);
+  const p = scr(i);
+  const a = scr(Math.max(0, i - 3));
+  const b = scr(Math.min(sm.count - 1, i + 3));
+  const tl = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  // Normale zur Bahn (Bildschirm), nach oben zeigend: quer ziehen heißt biegen, längs heißt überzeichnen
+  let nx = -(b.y - a.y) / tl;
+  let ny = (b.x - a.x) / tl;
+  if (ny > 0) { nx = -nx; ny = -ny; }
+  return { x: sm.x[i], y: sm.y[i], z: sm.z[i], sx: p.x, sy: p.y, nx, ny };
+});
+await page.mouse.move(grab.sx, grab.sy);
+await page.mouse.down();
+for (let k = 1; k <= 8; k++) await page.mouse.move(grab.sx + grab.nx * k * 8, grab.sy + grab.ny * k * 8);
+await page.mouse.up();
+await sleep(600);
+st = await state();
+console.log('after bend', st, grab);
+check(st.nodes === n0, `Segment ziehen: Knotenzahl bleibt (${n0} → ${st.nodes})`);
+check(Number(st.height) > h0 - 0.5, `Segment ziehen: Höhe nicht gesunken (${h0} → ${st.height})`);
+const bent = await page.evaluate((g) => {
+  // die Bahn läuft jetzt quer zur alten Richtung versetzt: kleinster Abstand des alten Anfasspunkts zur neuen Bahn
+  const sm = window.tcGame.current.samples;
+  let best = Infinity;
+  for (let i = 0; i < sm.count; i++) best = Math.min(best, Math.hypot(sm.x[i] - g.x, sm.y[i] - g.y));
+  return best;
+}, grab);
+check(bent > 2, `Segment ziehen: Bahn am Anfasspunkt um ${bent.toFixed(1)} m verschoben`);
+await page.screenshot({ path: 'screenshots/scenario-7-bend.png' });
+// Langdruck auf einen Knoten zeigt die Profi-Handles; vorher die Kamera zur Ruhe kommen lassen (sie führt nach
+// einer Änderung weich nach, und die Knotenposition auf dem Bildschirm wandert mit)
+await sleep(1500);
+// Gedrückt wird auf die Trefferfläche des Knotens 1 (eng liegende Knoten werden für den Treffer auseinandergeschoben,
+// die Trefferfläche kann also neben dem gezeichneten Punkt liegen)
+const nodeScreen = await page.evaluate(() => {
+  const s = window.tcGame.current;
+  const c = s.nodeHitCenters().find((h) => h.i === 1);
+  if (c) return { x: c.x, y: c.y, hit: s.hitNode({ x: c.x, y: c.y }) };
+  const n = s.path.nodes[1];
+  const p = s.view.camera.toScreen(n.x, n.y + n.z * 4.2);
+  return { x: p.x, y: p.y, hit: s.hitNode(p) };
+});
+console.log('long press at', nodeScreen);
+let pro = -1;
+for (let attempt = 0; attempt < 3 && pro !== 1; attempt++) {
+  await page.mouse.move(nodeScreen.x, nodeScreen.y);
+  await page.mouse.down();
+  // der Langdruck-Timer (480 ms) läuft erst, wenn der Hauptthread frei ist; mit Software-Rendering dauert das:
+  // gedrückt halten, bis der Profi-Modus da ist (höchstens 2,5 s), dann loslassen
+  for (let i = 0; i < 25; i++) {
+    await sleep(100);
+    pro = await page.evaluate(() => window.tcGame.current.proNode);
+    if (pro === 1) break;
+  }
+  await page.mouse.up();
+  await sleep(300);
+  pro = await page.evaluate(() => window.tcGame.current.proNode);
+  if (pro !== 1) console.log('long press attempt', attempt, 'proNode', pro);
+}
+check(pro === 1, `Langdruck zeigt Profi-Handles (proNode ${pro}, Treffer ${nodeScreen.hit})`);
+await page.screenshot({ path: 'screenshots/scenario-7-pro.png' });
+// Tipp ins Leere beendet den Profi-Modus
+await page.mouse.click(1100, 300);
+await sleep(300);
+const proAfter = await page.evaluate(() => window.tcGame.current.proNode);
+check(proAfter === -1, `Tipp ins Leere beendet den Profi-Modus (proNode ${proAfter})`);
+}
+
+// ---------------------------------------------------------------- 8. Entgleisen auf Holz
+if (want('8')) {
+await openLevel();
+// 30-m-Lifthügel mit runder Kuppe (r 6 m lift-seitig, r 25 m bis 40° Gefälle, damit niemand an der Kuppe
+// rausfliegt), Abfahrt 40°, enge Kehre am Boden, Rückweg auf Spur 2 und Kehre in die Station: Dort liegt die
+// Querkraft auf der Holzbahn (Welt 1) bei rund 80 km/h trotz voller Schräglage über 2 g. Der Zug entgleist,
+// fliegt, kippt zur Seite und bleibt liegen; beim Aufschlag fliegen die Fahrgäste raus.
+const derail = [[0, 0], [4.6, 8], [9.8, 17], [15.6, 27], [17.8, 29.2], [20.8, 30], [25.1, 29.6], [29.3, 28.5], [33.3, 26.7], [36.9, 24.2], [50.7, 12.6], [64.5, 1], [68, 0], [72, 0], [75.5, 0.3 * R], [76, R], [75.5, 1.7 * R], [72, 2 * R], [36, 2 * R], [0, 2 * R], [-3.5, 1.7 * R], [-4, R], [-3.5, 0.3 * R], [0, 0]];
+const derailScreen = await toScreen(derail);
+check(derailScreen.every(([x, y]) => x > 0 && x < 1280 && y > 0 && y < 800), `Entgleisen: Strich liegt im Bild (${JSON.stringify(derailScreen[4])})`);
+await stroke(derailScreen, 10);
+await sleep(800);
+st = await state();
+console.log('after derail stroke', st);
+check(Number(st.height) > 25, `Entgleisen: Hügel über 25 m (ist ${st.height})`);
+check(st.turns >= 1, `Entgleisen: mindestens 1 Kurve (ist ${st.turns})`);
+await page.mouse.click(640, 800 - 56);
+let flightSt = null;
+let shots = 0;
+let stickerSeen = false;
+let dustSeen = false;
+for (let i = 0; i < 900; i++) {
+  await sleep(100);
+  const s = await state();
+  if (s.sticker) stickerSeen = true;
+  if (s.sim?.phase === 'flying') {
+    if (s.particles > 0) dustSeen = true;
+    if (!flightSt) flightSt = s;
+    // zwei Bilder aus dem Flug: direkt nach dem Entgleisen (Zeitlupe) und etwas später
+    if (shots < 2 && (shots === 0 || i % 3 === 0)) {
+      await page.screenshot({ path: `screenshots/scenario-8-flight-${shots}.png` });
+      shots++;
+    }
+  }
+  if (i % 20 === 0) console.log('ride 8', s.sim, s.car);
+  if (s.mode === 'result') break;
+}
+await sleep(800);
+await page.screenshot({ path: 'screenshots/scenario-8-result.png' });
+st = await state();
+const ejected = await page.evaluate(() => window.tcGame.current.passengers?.views.filter((v) => v.ejected).length ?? -1);
+console.log('after derail ride', st, 'ejected', ejected);
+check(flightSt !== null, 'Entgleisen: der Zug geht in den Freiflug');
+check(flightSt?.sim?.fail === 'derail', `Entgleisen: Grund ist derail (ist ${flightSt?.sim?.fail})`);
+check(Number(flightSt?.sim?.maxSpeed) > 70, `Entgleisen: über 70 km/h vor dem Entgleisen (ist ${flightSt?.sim?.maxSpeed})`);
+check(st.mode === 'result', `Entgleisen: Ergebnis erscheint (ist ${st.mode})`);
+check(st.sim?.phase === 'flying', `Entgleisen: Phase bleibt flying (ist ${st.sim?.phase})`);
+check(Math.abs(Number(st.car?.bank)) > 60, `Entgleisen: Wagen liegt auf der Seite (Schräglage ${st.car?.bank}°)`);
+check(ejected > 0, `Entgleisen: Fahrgäste fliegen beim Aufprall raus (${ejected})`);
+check(stickerSeen, 'Entgleisen: Sticker „Entgleist!“ erscheint');
+check(dustSeen, 'Entgleisen: Staub/Funken beim Aufprall (Partikel > 0)');
+}
+
+// ---------------------------------------------------------------- 9. Karte: Glücksrad und gemeinsamer Himmel
+if (want('9')) {
+await page.goto(`${BASE}?scene=start`, { waitUntil: 'networkidle' });
+await sleep(1500);
+const before = await page.evaluate(() => ({ cur: window.tcGame.current.cur, focus: window.tcGame.current.wheel.focus, sky: window.tcGame.current.skyR?.exportState().clouds.length ?? 0 }));
+check(before.sky > 3, `Karte zeigt denselben Himmel wie das Level (${before.sky} Wolken)`);
+// Wisch nach links: 600 px in rund 160 ms → die Scheibe dreht frei aus und rastet mindestens zwei Rastpunkte weiter ein
+await page.mouse.move(900, 500);
+await page.mouse.down();
+for (let i = 1; i <= 8; i++) {
+  await page.mouse.move(900 - i * 75, 500);
+  await sleep(20);
+}
+await page.mouse.up();
+let settled = false;
+let after = before;
+for (let i = 0; i < 60 && !settled; i++) {
+  await sleep(100);
+  after = await page.evaluate(() => ({ cur: window.tcGame.current.cur, focus: window.tcGame.current.wheel.focus, sky: 0 }));
+  settled = await page.evaluate(() => window.tcGame.current.wheel.velocity === 0 && window.tcGame.current.wheel.target !== null && Math.abs(window.tcGame.current.wheel.target - window.tcGame.current.wheel.focus) < 0.01);
+}
+const onSpot = await page.evaluate(() => window.tcGame.current.spots.some((sp) => Math.abs(sp.pos - window.tcGame.current.wheel.focus) < 0.01));
+console.log('wheel', before, after, settled, onSpot);
+check(settled && onSpot, `Glücksrad rollt aus und rastet auf einem Rastpunkt ein (Fokus ${after.focus.toFixed(1)})`);
+check(after.cur >= before.cur + 1, `Glücksrad: Wisch dreht mindestens einen Rastpunkt weiter (${before.cur} → ${after.cur})`);
+// Schneller Wisch mit festen Zeitstempeln (unter Software-Rendering kommen die Mausereignisse zu langsam an):
+// 600 px in 150 ms → freie Drehung, mindestens zwei Rastpunkte weiter, jeder überfahrene Rastpunkt klickt einmal
+const fast = await page.evaluate(() => {
+  const s = window.tcGame.current;
+  const w = s.wheel;
+  const t0 = performance.now();
+  w.dragStart(900, t0);
+  for (let i = 1; i <= 6; i++) w.dragMove(900 - i * 100, t0 + i * 25, 1);
+  w.dragEnd(t0 + 160);
+  return { v: w.velocity, cur: s.cur };
+});
+let after2 = after;
+for (let i = 0; i < 80; i++) {
+  await sleep(100);
+  const st2 = await page.evaluate(() => ({ cur: window.tcGame.current.cur, focus: window.tcGame.current.wheel.focus, v: window.tcGame.current.wheel.velocity, target: window.tcGame.current.wheel.target }));
+  after2 = { cur: st2.cur, focus: st2.focus, sky: 0 };
+  if (st2.v === 0 && st2.target !== null && Math.abs(st2.target - st2.focus) < 0.01) break;
+}
+console.log('fast flick', fast, after2);
+check(Math.abs(fast.v) > 1500, `Schneller Wisch gibt Schwung (${fast.v.toFixed(0)} px/s)`);
+check(after2.cur >= fast.cur + 2, `Glücksrad: schneller Wisch mindestens zwei Rastpunkte weiter (${fast.cur} → ${after2.cur})`);
+await page.screenshot({ path: 'screenshots/scenario-9-map.png' });
+// Play liegt mittig unter der Scheibe
+const playX = await page.evaluate(() => window.tcGame.current.playBtn.x);
+check(Math.abs(playX - 640) < 2, `Play-Knopf mittig (x ${playX})`);
 }
 
 await browser.close();

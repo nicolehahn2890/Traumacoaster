@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { evaluate } from '@/levels/evaluator';
 import { LEVELS, getLevel, unlockedUpTo } from '@/levels/levels';
 import { WORLDS } from '@/levels/worlds';
+import { restraintFor } from '@/physics/belts';
+import { hasNegativeGoals } from '@/levels/evaluator';
+import { trackStats, sampleTrack } from '@/track/model';
+import { closeTrack, stageCurve, strokeToTrack } from '@/track/strokeToTrack';
 import { emptyPath } from '@/track/model';
 import type { RideStats } from '@/physics/trainSim';
 
 const ride = (over: Partial<RideStats> = {}): RideStats => ({
   time: 20, maxSpeed: 15, maxG: 3, minG: 0.5, maxLatG: 1, airtime: 0.5, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0,
-  blackout: false, brakesUsed: false, distance: 100, ...over,
+  blackout: false, brakesUsed: false, distance: 100, ejected: 0, caught: 0, flightMax: 0, ...over,
 });
 
 describe('Level-Daten', () => {
@@ -67,5 +71,44 @@ describe('Zielauswertung', () => {
     expect(withRide.goals[0].done).toBe(true);
     const ejected = evaluate(level, path, ts, ride({ coins: 5 }), true, false);
     expect(ejected.requiredDone).toBe(false);
+  });
+});
+
+describe('Gurte und negative Ziele', () => {
+  it('Gurtstufen wachsen mit den Welten, einzelne Level weichen ab', () => {
+    const w = (id: number) => WORLDS[id - 1];
+    expect(restraintFor(getLevel(1), w(1))).toBe(0);
+    expect(restraintFor(getLevel(12), w(1))).toBe(1); // Airtime-Hügel mit Beckengurt
+    expect(restraintFor(getLevel(13), w(1))).toBe(0); // Abflug ohne Gurt
+    expect(restraintFor(getLevel(16), w(2))).toBe(1);
+    expect(restraintFor(getLevel(19), w(2))).toBe(0); // Rückfänger ohne Gurt
+    expect(restraintFor(getLevel(50), w(4))).toBe(2);
+    expect(restraintFor(getLevel(80), w(6))).toBe(3);
+    expect(restraintFor(getLevel(140), w(10))).toBe(4);
+    for (const l of LEVELS) expect([0, 1, 2, 3, 4]).toContain(restraintFor(l, w(l.world)));
+  });
+  it('in Leveln mit negativen Zielen ist der Rauswurf erlaubt, sonst nicht', () => {
+    expect(hasNegativeGoals(getLevel(13))).toBe(true);
+    expect(hasNegativeGoals(getLevel(19))).toBe(true);
+    expect(hasNegativeGoals(getLevel(23))).toBe(true);
+    expect(hasNegativeGoals(getLevel(1))).toBe(false);
+    const r = strokeToTrack(stageCurve(0, 70, 140, (x) => 22 * Math.exp(-((x - 25) ** 2) / 60)));
+    closeTrack(r.path);
+    const ts = trackStats(r.path, sampleTrack(r.path));
+    // Level 13 (Abflug): einer fliegt raus, der Zug kommt an → geschafft, Bonus bei 15 m Flug
+    const abflug = evaluate(getLevel(13), r.path, ts, ride({ ejected: 1, flightMax: 16 }), true, false);
+    expect(abflug.requiredDone).toBe(true);
+    expect(abflug.bonusDone).toBe(true);
+    const kurz = evaluate(getLevel(13), r.path, ts, ride({ ejected: 1, flightMax: 4 }), true, false);
+    expect(kurz.requiredDone).toBe(true);
+    expect(kurz.bonusDone).toBe(false);
+    const keiner = evaluate(getLevel(13), r.path, ts, ride({ ejected: 0 }), true, true);
+    expect(keiner.requiredDone).toBe(false);
+    // Level 1: ein Rauswurf bleibt ein Fehlschlag
+    const normal = evaluate(getLevel(1), r.path, ts, ride({ ejected: 1 }), true, false);
+    expect(normal.requiredDone).toBe(false);
+    // Level 19 (Rückfänger): gefangen zählt
+    const fang = evaluate(getLevel(19), r.path, ts, ride({ ejected: 2, caught: 1, maxG: 3.5 }), true, false);
+    expect(fang.requiredDone).toBe(true);
   });
 });

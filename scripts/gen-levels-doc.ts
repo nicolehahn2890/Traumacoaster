@@ -6,11 +6,13 @@ import { writeFileSync } from 'node:fs';
 import { LEVELS, unlockedUpTo } from '../src/levels/levels';
 import { WORLDS } from '../src/levels/worlds';
 import { ELEMENT_NAMES, goalLabel } from '../src/levels/goalLabels';
+import { BELTS, restraintFor } from '../src/physics/belts';
+import { hasNegativeGoals } from '../src/levels/evaluator';
 
 const lines: string[] = [];
 lines.push('# Anhang A: Die 150 Level von Trauma Coaster');
 lines.push('');
-lines.push('Automatisch erzeugt aus `src/levels/levels.ts` (`npm run levels:doc`). Jedes Level verlangt zusätzlich immer: Der Zug kommt heil in der Station an und kein Fahrgast fliegt heraus. Bonusziele (kursiv) zählen für den 2. und 3. Stern.');
+lines.push('Automatisch erzeugt aus `src/levels/levels.ts` (`npm run levels:doc`). Jedes Level verlangt zusätzlich immer: Der Zug kommt heil in der Station an und kein Fahrgast fliegt heraus; nur in Leveln mit negativen Zielen (fliegt raus, wieder gefangen, Flug ≥ x m) ist der Rauswurf gewollt. Die Spalte „Gurt“ zeigt die Gurtstufe (Welt-Standard, einzelne Level weichen ab): ohne Gurt, Beckengurt (hält 0,6 g), Bügel (1,5 g), Schulterbügel (3 g), Rennsitz (5 g); darüber reißt der Gurt. Bonusziele (kursiv) zählen für den 2. und 3. Stern.');
 lines.push('');
 
 for (const w of WORLDS) {
@@ -18,10 +20,11 @@ for (const w of WORLDS) {
   lines.push('');
   lines.push(`**Thema:** ${w.theme}  `);
   lines.push(`**Look:** ${w.look}  `);
-  lines.push(`**Schienenstil:** ${ELEMENT_NAMES[w.skin]}`);
+  lines.push(`**Schienenstil:** ${ELEMENT_NAMES[w.skin]}  `);
+  lines.push(`**Gurt:** ${BELTS[w.restraint].name}`);
   lines.push('');
-  lines.push('| Nr. | Name | Hook | Ziele | Terrain | Breite | Schaltet frei |');
-  lines.push('|---|---|---|---|---|---|---|');
+  lines.push('| Nr. | Name | Hook | Ziele | Terrain | Breite | Gurt | Schaltet frei |');
+  lines.push('|---|---|---|---|---|---|---|---|');
   for (const id of w.levels) {
     const l = LEVELS[id - 1];
     const goals = l.goals.map((g) => (g.bonus ? `*${goalLabel(g)}*` : goalLabel(g))).join(', ');
@@ -46,7 +49,9 @@ for (const w of WORLDS) {
     if (l.trackBudget) extras.push(`Budget ${l.trackBudget} m`);
     if (l.cars) extras.push(`${l.cars} Wagen`);
     const unlocks = (l.unlocks ?? []).map((u) => ELEMENT_NAMES[u]).join(', ') || '–';
-    lines.push(`| ${l.id} | ${l.name} | ${l.hook} | ${goals} | ${terrain}${extras.length ? ` (${extras.join(', ')})` : ''} | ${l.width} m | ${unlocks} |`);
+    const belt = restraintFor(l, w);
+    const beltCell = `${BELTS[belt].name}${l.restraint !== undefined ? '*' : ''}${hasNegativeGoals(l) ? ' (Rauswurf erlaubt)' : ''}`;
+    lines.push(`| ${l.id} | ${l.name} | ${l.hook} | ${goals} | ${terrain}${extras.length ? ` (${extras.join(', ')})` : ''} | ${l.width} m | ${beltCell} | ${unlocks} |`);
   }
   lines.push('');
 }

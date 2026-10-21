@@ -95,11 +95,11 @@ const W1: LevelDef[] = [
   L('Sanfte Landung', 'Komfort zählt: Höchstens 3,5 g. Die Bremse hilft, aber ohne gibt es den Bonus.', {
     goals: [g('height', 20), g('maxG', 3.5), bonus('noBrakes')], width: 90,
   }),
-  L('Airtime-Hügel', 'Kleine, schnelle Hügel heben die Fahrgäste aus dem Sitz. Aber nicht zu sehr!', {
-    goals: [g('airtime', 1), g('height', 18)], width: 100, terrain: [hill(35, 16, 3), hill(65, 16, 3)], coins: [...arc(35, 5, 8, 4), ...arc(65, 5, 8, 4)],
+  L('Airtime-Hügel', 'Kleine, schnelle Hügel heben die Fahrgäste aus dem Sitz. Zum Glück gibt es hier einen Beckengurt.', {
+    goals: [g('airtime', 1), g('height', 18)], width: 100, terrain: [hill(35, 16, 3), hill(65, 16, 3)], coins: [...arc(35, 5, 8, 4), ...arc(65, 5, 8, 4)], restraint: 1,
   }),
-  L('Tempo', 'Sechzig Stundenkilometer. Höhe ist Geschwindigkeit.', {
-    goals: [g('speed', 60), g('height', 25)], width: 100, coins: col(60, 3, 20, 5),
+  L('Abflug', 'Ohne Gurt hebt es die Fahrgäste aus dem Sitz. Diesmal ist das gewollt: Einer soll rausfliegen, je weiter, desto besser.', {
+    goals: [g('eject', 1), g('height', 20), bonus('flight', 15)], width: 100, coins: col(60, 3, 20, 5), restraint: 0,
   }),
   L('Wiesen-Tour', 'Eine lange Runde über die ganze Wiese mit Coins auf dem Weg.', {
     goals: [g('length', 150), g('coins', 8), g('turns', 2)], unlocks: ['house'], width: 110, coins: [...row(10, 100, 7, 5, 0), ...row(20, 90, 7, 4, 1)],
@@ -125,8 +125,8 @@ const W2: LevelDef[] = [
   L('Katapult', 'Mit Launch kannst du vom Boden aus hoch hinaus. Baue den Hügel nach dem Start.', {
     goals: [g('launch'), g('height', 25)], unlocks: ['longTrain'], width: 110, coins: col(70, 5, 22, 5),
   }),
-  L('Volle Wagen', 'Vier Wagen, acht Fahrgäste. Mehr Masse, gleiche Physik, mehr Verantwortung.', {
-    goals: [g('height', 20), g('maxG', 4)], width: 110, passengers: 8, cars: 4, coins: arc(55, 4, 18, 6),
+  L('Rückfänger', 'Vier Wagen, acht Fahrgäste und keine Gurte: Wer rausfliegt, landet vielleicht im nächsten Wagen. Fang einen wieder ein.', {
+    goals: [g('catch', 1), g('height', 20), bonus('maxG', 4)], width: 110, passengers: 8, cars: 4, coins: arc(55, 4, 18, 6), restraint: 0,
   }),
   L('Riesenrad-Runde', 'Vier Kurven um das Riesenrad herum. Drei Spuren, viele Coins.', {
     goals: [g('turns', 4), g('lanes', 3), g('coins', 10)], unlocks: ['booster'], width: 110,
@@ -139,8 +139,8 @@ const W2: LevelDef[] = [
     goals: [g('loops', 2), g('launch'), bonus('coins', 10)], unlocks: ['fireworks'], width: 120,
     coins: [...ring(50, 10, 6, 5), ...ring(85, 9, 5, 5)],
   }),
-  L('Feuerwerk', 'Je höher, desto näher am Feuerwerk. 35 Meter und 85 km/h.', {
-    goals: [g('height', 35), g('speed', 85), bonus('airtime', 2)], width: 120, coins: col(60, 10, 32, 6),
+  L('Feuerwerk', 'Je höher, desto näher am Feuerwerk. 35 Meter und 85 km/h; wer dabei rausfliegt, fliegt weit.', {
+    goals: [g('height', 35), g('speed', 85), bonus('flight', 30)], width: 120, coins: col(60, 10, 32, 6),
   }),
   L('Achterbahn-Rallye', 'Eine lange Fahrt: mindestens 25 Sekunden und 220 Meter Strecke.', {
     goals: [g('time', 25), g('length', 220)], width: 130, coins: row(10, 120, 8, 8),

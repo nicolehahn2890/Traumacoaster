@@ -82,6 +82,23 @@ export function segmentIntersection(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2): { t
   return { t, u, point: add(p1, scale(d1, t)) };
 }
 
+/** Nächste Punkte zweier Strecken (a auf p1→p2, b auf p3→p4) und ihr Abstand; bei Schnitt d = 0 */
+export function segmentDistance(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2): { d: number; a: Vec2; b: Vec2 } {
+  const hit = segmentIntersection(p1, p2, p3, p4);
+  if (hit) return { d: 0, a: hit.point, b: hit.point };
+  let best = { d: Infinity, a: p1, b: p3 };
+  const onSeg = (p: Vec2, a: Vec2, b: Vec2): Vec2 => add(a, scale(sub(b, a), pointSegmentDistance(p, a, b).t));
+  const tryPair = (a: Vec2, b: Vec2) => {
+    const d = dist(a, b);
+    if (d < best.d) best = { d, a, b };
+  };
+  tryPair(p1, onSeg(p1, p3, p4));
+  tryPair(p2, onSeg(p2, p3, p4));
+  tryPair(onSeg(p3, p1, p2), p3);
+  tryPair(onSeg(p4, p1, p2), p4);
+  return best;
+}
+
 /** Abstand eines Punktes zu einer Strecke und Fußpunkt-Parameter */
 export function pointSegmentDistance(p: Vec2, a: Vec2, b: Vec2): { d: number; t: number } {
   const ab = sub(b, a);
