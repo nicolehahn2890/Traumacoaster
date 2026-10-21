@@ -11,6 +11,7 @@
  *    Im Höhen-Modus gilt: Kreuzung = Looping, Kehrtwende ohne Kreuzung = Steilkurve in die Nachbarspur
  *    (Rückweg höher im Bild = nach hinten).
  */
+import { SegmentGrid } from '@/core/segmentGrid';
 import type { Vec2 } from '@/core/math';
 import { dist, segmentDistance, segmentIntersection, smoothstep } from '@/core/math';
 import type { Vec3 } from '@/core/math3';
@@ -48,6 +49,8 @@ export interface StrokeOptions {
   loopHints?: LoopHint[];
   /** Knotenwahl: 'apex' (Standard, Scheitel-Semantik, wenige Knoten) oder 'legacy' (Schneider-Fit mit 0,3 m) */
   fit?: 'apex' | 'legacy';
+  /** Vorschau während des Strichs: weniger Glättungs-Durchläufe, doppelte Fit-Toleranz (schneller, grob gleich) */
+  preview?: boolean;
 }
 
 /** Runde Schleife im rohen Strich (Bühnenkoordinaten): Indizes wie die Strichpunkte */
@@ -583,6 +586,13 @@ export function findRoundLoops(pts: Vec2[]): LoopHint[] {
   const cum = new Float64Array(n);
   for (let k = 1; k < n; k++) cum[k] = cum[k - 1] + dist(pts[k - 1], pts[k]);
   const inHint = (k: number) => hints.some((h) => k >= h.from && k <= h.to);
+  /** erstes k > i, das in einer Schleife liegt (die Suche reicht nur bis dahin), sonst n − 1 */
+  const limitAfter = (i: number): number => {
+    let lim = n - 1;
+    for (const h of hints) if (h.from > i && h.from < lim) lim = h.from;
+    return lim;
+  };
+  const grid = new SegmentGrid(pts);
   const accept = (i: number, j: number, cross: Vec2, gap?: { dx: number; dy: number }): boolean => {
     const b = loopBody(P, cum, i, j, cross);
     if (b.apexDist < LOOP_MIN_APEX || b.perimeter < LOOP_MIN_LENGTH || b.roundness < LOOP_RAW_ROUNDNESS) return false;
@@ -595,7 +605,7 @@ export function findRoundLoops(pts: Vec2[]): LoopHint[] {
   while (i < n - 3) {
     let found = false;
     if (cum[i] >= CLOSE_ZONE) {
-      for (let j = i + 2; j < n - 1; j++) {
+      for (const j of grid.near(i, 0, i + 2, n - 1)) {
         if (xDir(i) * xDir(j) < 0) continue;
         const hit = segmentIntersection(P(i), P(i + 1), P(j), P(j + 1));
         if (hit) {
@@ -617,8 +627,7 @@ export function findRoundLoops(pts: Vec2[]): LoopHint[] {
       let bestD = LOOP_GAP_MAX;
       let bestA: Vec2 = P(i);
       let bestB: Vec2 = P(i);
-      for (let j = i + 6; j < n - 1; j++) {
-        if (inHint(j)) break;
+      for (const j of grid.near(i, LOOP_GAP_MAX, i + 6, limitAfter(i))) {
         if (xDir(i) * xDir(j) < 0) continue;
         const sd = segmentDistance(P(i), P(i + 1), P(j), P(j + 1));
         if (sd.d < bestD) {
@@ -653,6 +662,13 @@ export function detectLoops(points: InterpretedPoint[], hints: LoopHint[] = []):
   // noch als Boden liest); die Durchläufe unten suchen nur außerhalb davon weiter
   for (const h of hints) if (h.to < n) events.push({ kind: 'loop', index: Math.min(n - 1, h.apex), from: h.from, to: h.to, gap: h.gap });
   const inLoop = (k: number) => events.some((e) => k >= e.from! && k <= e.to!);
+  /** erstes k > i in einem Looping (die Suche reicht nur bis dahin), sonst n − 1 */
+  const limitAfter = (i: number): number => {
+    let lim = n - 1;
+    for (const e of events) if (e.from! > i && e.from! < lim) lim = e.from!;
+    return lim;
+  };
+  const grid = new SegmentGrid(points.map((p) => ({ x: p.x, y: p.y })));
   /** Segment j kommt als Ausfahrt zur Einfahrt i in Frage: Höhe, gleiche Tiefe, gleiche x-Richtung, nicht am Anfang */
   const candidate = (i: number, j: number): boolean =>
     points[j].mode === 'height' && Math.abs(points[j].z - points[i].z) <= 0.3 && xDir(i) * xDir(j) >= 0;
@@ -670,8 +686,7 @@ export function detectLoops(points: InterpretedPoint[], hints: LoopHint[] = []):
   while (i < n - 3) {
     let found = false;
     if (points[i].mode === 'height' && !closing(i) && !inLoop(i)) {
-      for (let j = i + 2; j < n - 1; j++) {
-        if (inLoop(j)) break;
+      for (const j of grid.near(i, 0, i + 2, limitAfter(i))) {
         if (!candidate(i, j)) continue;
         const hit = segmentIntersection(P(i), P(i + 1), P(j), P(j + 1));
         if (hit) {
@@ -695,9 +710,8 @@ export function detectLoops(points: InterpretedPoint[], hints: LoopHint[] = []):
       let bestD = LOOP_GAP_MAX;
       let bestA: Vec2 = P(i);
       let bestB: Vec2 = P(i);
-      for (let j = i + 6; j < n - 1; j++) {
-        // ein erkannter Looping darf nicht Teil der neuen Schleife sein
-        if (inLoop(j)) break;
+      // ein erkannter Looping darf nicht Teil der neuen Schleife sein (Suche nur bis zum nächsten Looping)
+      for (const j of grid.near(i, LOOP_GAP_MAX, i + 6, limitAfter(i))) {
         if (!candidate(i, j)) continue;
         const sd = segmentDistance(P(i), P(i + 1), P(j), P(j + 1));
         if (sd.d < bestD) {
@@ -1241,7 +1255,7 @@ export function densePolyline(points: InterpretedPoint[], opts: StrokeOptions, e
   const cumW = new Float64Array(world.length);
   for (let i = 1; i < world.length; i++) cumW[i] = cumW[i - 1] + dist3(world[i - 1], world[i]);
   const inLoop = (i: number) => loopRanges.some(([a, b]) => cumW[i] >= a - 1 && cumW[i] <= b + 1);
-  limitVerticalCurvature(world, inLoop, dist3(world[0], world[world.length - 1]) < 1);
+  limitVerticalCurvature(world, inLoop, dist3(world[0], world[world.length - 1]) < 1, opts.preview ? 60 : 400);
   if (opts.maxHeight && opts.maxHeight > 0) for (const p of world) p.y = Math.min(p.y, opts.maxHeight);
   let pts = roundCorners3(world);
   const keep = simplify3(pts, 0.04);
@@ -1264,7 +1278,7 @@ export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, e
   // Knoten an den Scheiteln (Kuppen, Täler, Kurven, Loopings) mit festen Tangenten, dazwischen so wenige
   // Segmente wie nötig (reduceNodes); 'legacy': Schneider-Fit ohne Ecken mit 0,3 m (ein Oval braucht rund zehn Knoten)
   const legacy = opts.fit === 'legacy';
-  const reduced = legacy ? null : reduceNodes(pts, hints, opts.fitError ? { tolTight: opts.fitError, tolLoose: opts.fitError * 3 } : {});
+  const reduced = legacy ? null : reduceNodes(pts, hints, { ...(opts.fitError ? { tolTight: opts.fitError, tolLoose: opts.fitError * 3 } : {}), tolScale: opts.preview ? 2 : 1 });
   const segments = reduced ? reduced.segments : fitWithCorners3(pts, opts.fitError ?? 0.3, 179);
   const nodes: TrackNode[] = [];
   const mk = (p: Vec3): TrackNode => createNode(p.x, p.y, p.z / LANE_DEPTH);

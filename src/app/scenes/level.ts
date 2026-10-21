@@ -66,6 +66,8 @@ const SHELF_ELEMENTS: Array<{ kind: ElementKind; unlock: ElementId; color: strin
   { kind: 'splash', unlock: 'splash', color: '#3ec7c2', length: 8 },
   { kind: 'launchBlock', unlock: 'doubleLaunch', color: '#ffd23f', length: 14 },
 ];
+/** Bühnen-Meter Tinte hinter dem Finger (die Bahn selbst ist die Vorschau) */
+const INK_TAIL = 1.5;
 /** Knotenwahl beim Zeichnen: Scheitel-Semantik (Standard) oder der alte Schneider-Fit zum Vergleich (?fit=legacy) */
 const FIT_MODE: 'apex' | 'legacy' = typeof location !== 'undefined' && new URLSearchParams(location.search).get('fit') === 'legacy' ? 'legacy' : 'apex';
 
@@ -93,6 +95,12 @@ export class LevelScene implements Scene {
   private strokeKind: StrokeKind = 'new';
   private strokeModes: StrokeMode[] = [];
   private previewTimer = 0;
+  /** Dauer der letzten Vorschau in Sekunden: der Takt passt sich an (mindestens 80 ms, sonst das Doppelte) */
+  private previewCost = 0;
+  /** Strichpunkte, die die letzte Vorschau schon als Bahn zeigt; die Tinte zeigt nur den Rest hinter dem Finger */
+  private previewedCount = 0;
+  /** Streben wachsen nach dem Loslassen von 0 auf 1 (0,3 s) */
+  private supportGrow = 1;
   private drag: DragState = { kind: 'none' };
   private sim: TrainSim | null = null;
   private passengers: PassengerSim | null = null;
@@ -583,47 +591,55 @@ export class LevelScene implements Scene {
       g.poly(this.stroke.flatMap((p) => [p.X, p.Y]), false).stroke({ width: 0.6, color: 0xc9a36b, alpha: 0.95, cap: 'round', join: 'round' });
       return;
     }
-    // Tinte je Modus färben: Boden (Tiefe) grün, Höhe pink
-    const modes = this.strokeModes;
+    // Die Bahn selbst ist die Vorschau; die Tinte zeigt nur den Rest hinter dem Finger: alles, was die letzte
+    // Vorschau noch nicht als Bahn zeigt, mindestens die letzten 1,5 Bühnen-Meter
     const n = this.stroke.length;
-    let runStart = 0;
-    const colorFor = (m: StrokeMode | undefined) => (m === 'height' ? 0xff5c8a : 0x7ee081);
-    for (let i = 1; i <= n; i++) {
-      const mi = modes[Math.min(modes.length - 1, Math.floor((i / n) * Math.max(1, modes.length)))];
-      const mPrev = modes[Math.min(modes.length - 1, Math.floor(((i - 1) / n) * Math.max(1, modes.length)))];
-      if (i === n || mi !== mPrev) {
-        const seg = this.stroke.slice(runStart, Math.min(n, i + 1)).flatMap((p) => [p.X, p.Y]);
-        if (seg.length >= 4) {
-          g.poly(seg, false).stroke({ width: 0.9, color: 0xffffff, alpha: 0.5, cap: 'round', join: 'round' });
-          g.poly(seg, false).stroke({ width: 0.45, color: this.strokeKind === 'overdraw' ? 0xffd23f : colorFor(mPrev), alpha: 0.95, cap: 'round', join: 'round' });
-        }
-        runStart = i;
-      }
+    let i = n - 1;
+    let len = 0;
+    while (i > 0 && len < INK_TAIL) {
+      len += Math.hypot(this.stroke[i].X - this.stroke[i - 1].X, this.stroke[i].Y - this.stroke[i - 1].Y);
+      i--;
     }
+    i = Math.max(0, Math.min(i, this.previewedCount - 1));
+    const seg = this.stroke.slice(i).flatMap((p) => [p.X, p.Y]);
+    if (seg.length < 4) return;
+    const modes = this.strokeModes;
+    const mode = modes.length ? modes[modes.length - 1] : undefined;
+    const color = this.strokeKind === 'overdraw' ? 0xffd23f : mode === 'height' ? 0xff5c8a : 0x7ee081;
+    g.poly(seg, false).stroke({ width: 0.5, color: 0xffffff, alpha: 0.35, cap: 'round', join: 'round' });
+    g.poly(seg, false).stroke({ width: 0.25, color, alpha: 0.55, cap: 'round', join: 'round' });
   }
 
   private previewStroke(): void {
     if (!this.stroke || this.stroke.length < 4) return;
     if (this.strokeKind === 'terrain') return;
+    const opts = { ...this.strokeOptions(), preview: true };
+    const count = this.stroke.length;
     if (this.strokeKind === 'overdraw' && this.path && this.samples) {
-      const merged = applyOverdraw(this.path, this.stroke, { ...this.strokeOptions(), snapDistance: 30 / this.view.camera.zoom });
+      const merged = applyOverdraw(this.path, this.stroke, { ...opts, snapDistance: 30 / this.view.camera.zoom });
       this.ghost.clear();
-      if (merged) this.view.setTrack(merged, sampleTrack(merged, 0.5), this.skin, this.terrain, this.allowTunnels, true);
+      if (merged) {
+        this.view.setTrack(merged, sampleTrack(merged, 0.5), this.skin, this.terrain, this.allowTunnels, true);
+        this.previewedCount = count;
+        this.drawInk();
+      }
       return;
     }
     if (this.strokeKind === 'extend' && this.path) {
-      const ext = extendTrack(this.path, this.stroke, this.strokeOptions());
+      const ext = extendTrack(this.path, this.stroke, opts);
       if (ext) {
         this.strokeModes = [];
-        this.drawInk();
         const sm = sampleTrack(ext, 0.5);
         this.view.setTrack(ext, sm, this.skin, this.terrain, this.allowTunnels, true);
+        this.previewedCount = count;
+        this.drawInk();
         this.drawGhost(ext, sm);
       }
       return;
     }
-    const r = strokeToTrack(this.stroke, this.strokeOptions());
+    const r = strokeToTrack(this.stroke, opts);
     this.strokeModes = r.points.map((p) => p.mode);
+    if (r.path.nodes.length >= 2) this.previewedCount = count;
     this.drawInk();
     if (r.path.nodes.length >= 2) {
       const sm = sampleTrack(r.path, 0.5);
@@ -636,6 +652,8 @@ export class LevelScene implements Scene {
     const stroke = this.stroke;
     this.stroke = null;
     this.strokeModes = [];
+    this.previewedCount = 0;
+    this.previewCost = 0;
     this.ink.clear();
     this.ghost.clear();
     if (!stroke || stroke.length < 3) {
@@ -727,6 +745,9 @@ export class LevelScene implements Scene {
       const n = path.nodes[0];
       const s = toStage(n.x, n.y, n.z);
       for (let i = 0; i < 6; i++) this.view.effects.glitter(s.X, s.Y + 1);
+      // Streben wachsen vom Boden hoch
+      this.supportGrow = 0;
+      this.view.growSupports(0);
     }
     this.updateGoals();
     this.updateHint();
@@ -1570,10 +1591,16 @@ export class LevelScene implements Scene {
     if (this.mode === 'draw') {
       if (this.stroke) {
         this.previewTimer += dt;
-        if (this.previewTimer > 0.08) {
+        if (this.previewTimer > Math.max(0.08, 2 * this.previewCost)) {
           this.previewTimer = 0;
+          const t0 = performance.now();
           this.previewStroke();
+          this.previewCost = (performance.now() - t0) / 1000;
         }
+      }
+      if (this.supportGrow < 1) {
+        this.supportGrow = Math.min(1, this.supportGrow + dt / 0.3);
+        this.view.growSupports(1 - (1 - this.supportGrow) ** 2);
       }
       this.renderChips();
       // Anschlusspunkt atmet (Alpha und Größe), damit das offene Ende als Startpunkt für den nächsten Strich auffällt

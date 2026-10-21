@@ -39,12 +39,13 @@ const check = (cond, msg) => { if (!cond) { failures.push(msg); console.error('C
 /** Bühnen-Meter → Bildschirm-Pixel über die Kamera der Szene */
 const toScreen = (pts) => page.evaluate((pts) => pts.map(([X, Y]) => { const p = window.tcGame.current.view.camera.toScreen(X, Y); return [p.x, p.y]; }), pts);
 
-/** Weicher Strich: Catmull-Rom durch die Stützpunkte, wie ein echter Finger */
-async function stroke(points, steps = 8) {
+/** Weicher Strich: Catmull-Rom durch die Stützpunkte, wie ein echter Finger; onMid läuft nach der Hälfte der Punkte */
+async function stroke(points, steps = 8, onMid = null) {
   const P = (i) => points[Math.max(0, Math.min(points.length - 1, i))];
   await page.mouse.move(points[0][0], points[0][1]);
   await page.mouse.down();
   for (let i = 0; i < points.length - 1; i++) {
+    if (onMid && i === Math.floor((points.length - 1) / 2)) await onMid();
     const [p0, p1, p2, p3] = [P(i - 1), P(i), P(i + 1), P(i + 2)];
     for (let s = 1; s <= steps; s++) {
       const t = s / steps;
@@ -58,7 +59,7 @@ async function stroke(points, steps = 8) {
   await page.mouse.up();
 }
 /** Strich in Bühnen-Metern (X, Y) */
-const strokeStage = async (pts, steps = 8) => stroke(await toScreen(pts), steps);
+const strokeStage = async (pts, steps = 8, onMid = null) => stroke(await toScreen(pts), steps, onMid);
 
 const state = () => page.evaluate(() => {
   const s = window.tcGame.current;
@@ -202,7 +203,14 @@ check(r.st.sim?.phase === 'done', `Looping: Fahrt kommt an (ist ${r.st.sim?.phas
 // ---------------------------------------------------------------- 5. Löschen und Überzeichnen
 if (want('5')) {
 await openLevel();
-await strokeStage([[0, 0], [20, 0.1], [40, 0], [60, 0.1]], 10);
+// Vorschau: mitten im Strich sind schon Schienen gezeichnet (Breite der Schienen-Grafik der Spur 0 in Bühnen-Metern)
+let previewWidth = 0;
+await strokeStage([[0, 0], [20, 0.1], [40, 0], [60, 0.1]], 10, async () => {
+  await sleep(300);
+  previewWidth = await page.evaluate(() => window.tcGame.current.view.trackR.layers.rails.get(0).getLocalBounds().width);
+  await page.screenshot({ path: 'screenshots/scenario-5-preview.png' });
+});
+check(previewWidth > 10, `Vorschau zeigt Schienen während des Strichs (Breite ${previewWidth.toFixed(1)} m)`);
 await sleep(600);
 st = await state();
 check(st.nodes >= 2, `Flache Bahn gezeichnet (${st.nodes} Knoten)`);

@@ -82,6 +82,11 @@ export class WorldView {
     if (!preview) this.terrainR.setTunnelPortals(portals);
   }
 
+  /** Streben wachsen (0 … 1) nach dem Loslassen des Strichs */
+  growSupports(growth: number): void {
+    this.trackR.redrawSupports(growth);
+  }
+
   buildTrain(cars: number, riders: CharacterDef[], perCar: number): void {
     this.trainR.build(cars, riders, perCar);
   }

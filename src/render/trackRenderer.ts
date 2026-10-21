@@ -62,6 +62,8 @@ export class TrackRenderer {
   readonly layers: TrackLayers = { supports: new Map(), rails: new Map(), coins: new Map() };
   private coinSprites: Graphics[] = [];
   private world: WorldDef;
+  /** Kontext des letzten draw(), damit die Streben beim Wachsen neu gezeichnet werden können */
+  private last: { samples: TrackSamples; style: SkinStyle; terrain: Terrain; sky: string; maxY: number } | null = null;
 
   constructor(world: WorldDef) {
     this.world = world;
@@ -109,7 +111,10 @@ export class TrackRenderer {
       C[i * 2] = pc.X; C[i * 2 + 1] = pc.Y;
     }
 
-    if (!preview) this.drawSupports(samples, style, terrain, sky, maxY);
+    this.last = { samples, style, terrain, sky, maxY };
+    // Vorschau: Schienen, Schwellen und Station wie fertig, nur Streben und Elemente nicht (die Streben wachsen
+    // nach dem Loslassen in 0,3 s hoch, siehe redrawSupports)
+    if (!preview) this.drawSupports(samples, style, terrain, sky, maxY, 1);
 
     let chunkStart = 0;
     let chunkLane = Math.round(samples.z[0]);
@@ -135,11 +140,20 @@ export class TrackRenderer {
       if (inside !== wasInside && allowTunnels) portals.push({ x: samples.x[i], y: samples.y[i], z: samples.z[i], dir: inside ? 1 : -1 });
       wasInside = inside;
     }
-    if (!preview) this.drawStation(samples, style, sky);
+    this.drawStation(samples, style, sky);
     return portals;
   }
 
-  private drawSupports(samples: TrackSamples, style: SkinStyle, terrain: Terrain, sky: string, maxY: number): void {
+  /** Streben neu zeichnen, mit Wachstum 0 … 1 (vom Boden bis zur Bahn) */
+  redrawSupports(growth: number): void {
+    if (!this.last) return;
+    for (const g of this.layers.supports.values()) g.clear();
+    const l = this.last;
+    this.drawSupports(l.samples, l.style, l.terrain, l.sky, l.maxY, growth);
+  }
+
+  private drawSupports(samples: TrackSamples, style: SkinStyle, terrain: Terrain, sky: string, maxY: number, growth = 1): void {
+    if (growth < 0.02) return;
     let nextS = 0;
     for (let i = 0; i < samples.count; i++) {
       const s = samples.s[i];
@@ -157,8 +171,9 @@ export class TrackRenderer {
       const h = y - ground;
       if (h < 1.0) continue;
       const k = laneScale(z);
-      const top = toStage(x, y - 0.25, z);
+      const top0 = toStage(x, y - 0.25, z);
       const bot = toStage(x, ground, z);
+      const top = { X: bot.X + (top0.X - bot.X) * growth, Y: bot.Y + (top0.Y - bot.Y) * growth };
       const post = atmosphere(style.post, z, sky);
       const brace = atmosphere(style.brace, z, sky);
       const ink = shade(post, -0.45);
@@ -226,11 +241,7 @@ export class TrackRenderer {
       right.push(R[i * 2], R[i * 2 + 1]);
       center.push(C[i * 2], C[i * 2 + 1]);
     }
-    if (preview) {
-      g.poly(center, false).stroke({ width: 0.5 * k, color: hexNum(light), alpha: 0.9, cap: 'round', join: 'round' });
-      g.poly(center, false).stroke({ width: 0.2 * k, color: 0xffffff, alpha: 0.8, cap: 'round', join: 'round' });
-      return;
-    }
+    void preview; // die Vorschau zeigt die Schienen wie die fertige Bahn
     // Schwellen zwischen den Schienen
     let nextS = s.s[a];
     const tieSpacing = style.support === 'steel' || style.support === 'space' || style.support === 'neon' ? 1.4 : 0.8;
