@@ -77,6 +77,7 @@ const TURN_STRAIGHT_WINDOW = 5; // m: über diese Länge wird die Krümmung des 
 const TURN_STRAIGHT_RATE = 0.03; // rad/m: darunter ist ein Rückweg in jedem Fall gerade (8,6° auf 5 m)
 const TURN_STRAIGHT_RATIO = 0.4; // Rückweg gerade, wenn er sich weniger als 40 % so stark krümmt wie die Beuge
 const TURN_WATCH = 5; // m Vorwärtslauf nach einer festgelegten Kehre, in denen sie noch zum Looping werden kann
+const LOOP_CLOSE = (330 * Math.PI) / 180; // Drehung, bei der die Schleife geschlossen ist
 const LOOP_ASPECT_MIN = 0.45; // Schleife in der Höhe: Höhe/Breite mindestens …
 const LOOP_ASPECT_FLOOR = 0.7; // … vom Boden aus (ein flaches Oval über zwei Spuren hat 0,6 und weniger)
 const LOOP_ASPECT_MAX = 2.5;
@@ -491,7 +492,8 @@ class Scanner {
   private commitLoop(prev: FloorSection | HeightSection, bend: number, j: number, laneApex: number, dirX: number): number {
     const { n, cum, theta } = this;
     const sign = Math.sign(theta[j] - theta[bend]) || 1;
-    // Die Schleife endet, wo sich der Strich nicht mehr in ihrem Sinn weiterdreht (spätestens nach einer vollen Runde)
+    // Die Schleife endet, wo der Strich wieder in Einfahrtsrichtung läuft (330°, die Einfahrt beginnt ab 20°) oder sich
+    // nicht mehr in ihrem Sinn weiterdreht (Ausfahrt taucht ab); ein sanfter Bogen danach gehört nicht mehr dazu
     const turn = (m: number) => sign * (theta[m] - theta[bend]);
     let i1 = j;
     const ahead = (m: number): number => {
@@ -499,7 +501,7 @@ class Scanner {
       for (let k = m + 1; k <= Math.min(n - 1, m + 4); k++) best = Math.max(best, turn(k));
       return best;
     };
-    while (i1 < n - 1 && turn(i1) < 2 * Math.PI && ahead(i1) > turn(i1) + 1e-9) i1++;
+    while (i1 < n - 1 && turn(i1) < LOOP_CLOSE && ahead(i1) > turn(i1) + 1e-9) i1++;
     const start = Math.max(bend, prev.i0, this.lockIdx);
     prev.i1 = start;
     if (prev.kind === 'floor') prev.switches = prev.switches.filter((s) => s.i <= start);
@@ -780,7 +782,9 @@ export function interpretGesture(pts: Vec2[], opts: GestureOptions = {}): Gestur
         const end = lastP()!;
         const xNext = X[sec.i1] / laneScale(sec.laneTo);
         const drop = Math.max(0, sc.hMax - yA);
-        carry = { xShift: end.x - xNext, yAbs: yA, runout: TURN_RUNOUT, blendY: Math.max(TURN_BLEND_Y, Math.sqrt(6 * 4 * 1.5 * drop)), blendX: TURN_BLEND, s0: sB };
+        // Versatz in x (Perspektive: hinten ist x = X/k größer) so lang abbauen, dass die Bahn dabei nie rückwärts läuft
+        const xShift = end.x - xNext;
+        carry = { xShift, yAbs: yA, runout: TURN_RUNOUT, blendY: Math.max(TURN_BLEND_Y, Math.sqrt(6 * 4 * 1.5 * drop)), blendX: Math.max(TURN_BLEND, 2 * Math.abs(xShift)), s0: sB };
       }
     } else {
       // Looping: Kreis in der Spur ab dem Einfahrtspunkt, Tangente aus dem Strich, leicht versetzte Ausfahrt
@@ -814,7 +818,8 @@ export function interpretGesture(pts: Vec2[], opts: GestureOptions = {}): Gestur
       lastSrc = sec.i1;
       zPrev = lane;
       const end = lastP()!;
-      carry = { xShift: end.x - X[sec.i1] / k, yAbs: end.y + ground(end.x, end.z), runout: 0, blendY: LOOP_BLEND, blendX: LOOP_BLEND, s0: cum[sec.i1] };
+      const xShift = end.x - X[sec.i1] / k;
+      carry = { xShift, yAbs: end.y + ground(end.x, end.z), runout: 0, blendY: LOOP_BLEND, blendX: Math.max(LOOP_BLEND, 2 * Math.abs(xShift)), s0: cum[sec.i1] };
     }
   }
   if (!out.length && sc.n) {
