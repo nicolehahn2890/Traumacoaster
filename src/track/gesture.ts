@@ -88,6 +88,10 @@ const STEEP_ANGLE = (40 * Math.PI) / 180;
 const STEEP_WINDOW = 4; // Bühnen-Meter, über die der Anstieg im Mittel steil sein muss
 const CLIMB_LOOK = 8; // Bühnen-Meter Vorausblick: kehrt x darin nicht um, war es ein Anstieg
 const CLIMB_RISE_SURE = 2.2 * LANE_RISE; // so hoch über dem Fuß ohne Umkehr: sicher ein Anstieg (keine Kehre reicht so weit)
+const TURN_RAMP_RISE = 3; // Bühnen-Meter: steigt der Strich bis zum Scheitel einer Kehre noch so viel, beginnt der Bogen erst oben
+const CLIMB_RAMP_WINDOW = 6; // m: dreht sich der steile Strich über diese Länge weniger als …
+const CLIMB_RAMP_TURN = (20 * Math.PI) / 180; // … ist er eine gerade Rampe (Anstieg), keine Beuge einer Bodenkehre
+const LOOP_RAW_FROM = (200 * Math.PI) / 180; // Vorschau: ab dieser Drehung zeigt eine offene Umkehr in der Höhe das rohe Profil (wird Looping)
 const ABOVE_STAGE = 0.6;
 const LAND_BAND = 0.9; // Bühnen-Meter um die eigene Bodenlinie: Landung
 const LAND_BAND_FLAT = 1.5; // … bei flachem Strich
@@ -257,6 +261,13 @@ class Scanner {
     while (k > limit && this.Y[k - 1] < this.Y[k] - 0.02) k--;
     return k;
   }
+  /** Ist der steile Strich vor i eine gerade Rampe (dreht sich über 6 m um weniger als 20°)? */
+  rampBefore(i: number, limit: number): boolean {
+    let j = i;
+    while (j > limit && this.cum[i] - this.cum[j] < CLIMB_RAMP_WINDOW) j--;
+    if (this.cum[i] - this.cum[j] < CLIMB_RAMP_WINDOW - 0.6) return false;
+    return Math.abs(this.theta[i] - this.theta[j]) < CLIMB_RAMP_TURN;
+  }
   /** Steigt der Strich über die letzten 4 m spürbar (mehr als 1 m)? */
   rising(i: number, limit: number): boolean {
     let j = i;
@@ -302,7 +313,7 @@ class Scanner {
     let extX = X[i0];
     for (let k = i0 + 1; k < from; k++) if (dir === 0 || (X[k] - extX) * dir >= 0) { extX = X[k]; extIdx = k; }
     let pendingSwitch: { i: number; lane: number } | null = null;
-    let climb: { foot: number; decideAt: number } | null = null;
+    let climb: { foot: number; decideAt: number; ramp: boolean } | null = null;
     const commitClimb = (): number => {
       const foot = climb!.foot;
       sec.i1 = foot;
@@ -327,8 +338,12 @@ class Scanner {
       }
       const retreat = dir ? (extX - X[i]) * dir : 0;
       if (climb) {
-        if (retreat >= REVERSAL_MIN) climb = null; // Bodenkehre: der Strich kehrt um
-        else if (cum[i] >= climb.decideAt || Y[i] - Y[climb.foot] >= CLIMB_RISE_SURE) return commitClimb();
+        // x kehrt um: War der Anstieg eine gerade Rampe, bleibt er Höhe (die Umkehr wird dort eine Steilkurve);
+        // war er die Beuge einer Bodenkehre (rund), ist es keine Höhe
+        if (retreat >= REVERSAL_MIN) {
+          if (climb.ramp) return commitClimb();
+          climb = null;
+        } else if (cum[i] >= climb.decideAt || Y[i] - Y[climb.foot] >= CLIMB_RISE_SURE) return commitClimb();
       }
       if (retreat >= TURN_DETECT) {
         sec.i1 = extIdx;
@@ -337,7 +352,7 @@ class Scanner {
       }
       if (!climb && retreat < REVERSAL_MIN) {
         const w = this.steepWindow(i, i0);
-        if (w >= 0 || (this.aboveStage(i) && this.rising(i, i0))) climb = { foot: this.footBefore(w >= 0 ? w : i, i0), decideAt: cum[i] + CLIMB_LOOK };
+        if (w >= 0 || (this.aboveStage(i) && this.rising(i, i0))) climb = { foot: this.footBefore(w >= 0 ? w : i, i0), decideAt: cum[i] + CLIMB_LOOK, ramp: w >= 0 && this.rampBefore(i, i0) };
       }
       // Spurwechsel: Hysterese über die Spurmitte hinaus und Entprellen
       const lane = this.laneAt(sec, i);
@@ -478,17 +493,27 @@ class Scanner {
         if (cum[j] - cum[k] >= LOOP_STRAIGHT_WINDOW && Math.abs(theta[j] - theta[k]) < LOOP_STRAIGHT_TURN) break;
         continue;
       }
-      if (retreat >= TURN_COMMIT && this.straightBefore(j, TURN_STRAIGHT_WINDOW, bendRate)) turnEnd = this.commitTurn(prev, apex, bend, dirX, j, floorMode);
+      if (retreat >= TURN_COMMIT && this.straightBefore(j, TURN_STRAIGHT_WINDOW, bendRate)) {
+        turnEnd = this.commitTurn(prev, apex, bend, dirX, j, floorMode);
+        if (turnEnd < 0) {
+          // Zickzack: der Strich lief wieder vorwärts, bevor der Halbkreis fertig war. Keine Kehre, der Abschnitt
+          // geht weiter (x bleibt monoton, der kurze Rücklauf fällt weg)
+          prev.i1 = n - 1;
+          const resume = -turnEnd - 1;
+          return prev.kind === 'floor' ? this.scanFloorSection(prev, resume) : this.scanHeightSection(prev, resume);
+        }
+      }
     }
     if (turnEnd >= 0) return turnEnd;
-    // Strich endet, solange die Umkehr noch offen ist
-    if (!floorMode && this.preview) {
-      // Vorschau: Profil roh zeigen (wird beim Loslassen zur Kehre oder zum Looping)
+    // Strich endet, solange die Umkehr noch offen ist: vorläufig als Kehre (Teilbogen bis zur Maus). Dreht der
+    // Strich in der Vorschau schon klar zur Schleife, zeigt sie das rohe Profil (wird beim Loslassen Looping/Kehre)
+    if (!floorMode && this.preview && Math.abs(theta[n - 1] - theta[bend]) >= LOOP_RAW_FROM) {
       (prev as HeightSection).i1 = n - 1;
       (prev as HeightSection).rawFrom = apex;
       return n;
     }
-    return this.commitTurn(prev, apex, bend, dirX, n - 1, floorMode);
+    const end = this.commitTurn(prev, apex, bend, dirX, n - 1, floorMode);
+    return end < 0 ? n : end;
   }
 
   /**
@@ -579,7 +604,8 @@ class Scanner {
       after += Y[k];
       na++;
     }
-    const yDir = na && nb && after / na < before / nb ? -1 : 1;
+    // Rückweg deutlich tiefer als die Anfahrt → nach vorne, sonst nach hinten (bei fast gleicher Höhe stabil hinten)
+    const yDir = na && nb && after / na < before / nb - 1.0 ? -1 : 1;
     const yEntry = floorMode ? this.ground(X[apex] / laneScale(laneFrom), laneFrom) + this.clearance : this.absHeight(apex, laneFrom);
     const drawnR = floorMode ? 0 : this.drawnRadius(prev, apex, dirX, j);
     // Schluss-Kehre: der Strich endet an der Station, die Kehre liegt kurz davor → sie zielt auf die Spur der Station
@@ -601,10 +627,15 @@ class Scanner {
       return { laneTo, R: (Math.abs(laneTo - lf) * LANE_DEPTH) / 2 };
     };
     let { laneTo, R } = pick(laneFrom);
-    // Einfahrt: so weit vor dem Scheitel, wie der Halbkreis weit ist
+    const i1Before = prev.i1;
+    const switchesBefore = prev.kind === 'floor' ? prev.switches.slice() : [];
+    // Einfahrt: so weit vor dem Scheitel, wie der Halbkreis weit ist. In der Höhe aber nie mitten in einer Rampe:
+    // Steigt der Strich bis zum Scheitel noch deutlich, bleibt die Rampe bis oben, wie gezeichnet, und der Bogen
+    // beginnt erst dort (er ragt dann über den gezeichneten Scheitel hinaus), statt die Kurve tiefer zu legen als die Maus
     const entryLimit = Math.max(prev.i0, this.lockIdx);
     let i0 = apex;
     while (i0 > entryLimit && (X[apex] - X[i0 - 1]) * dirX <= R * laneScale(laneFrom)) i0--;
+    if (!floorMode && Y[apex] - Y[i0] > TURN_RAMP_RISE) while (i0 < apex && Y[apex] - Y[i0] > 1.0) i0++;
     if (prev.kind === 'floor') {
       prev.switches = prev.switches.filter((s) => s.i <= i0);
       const laneEntry = this.laneAt(prev, i0);
@@ -630,7 +661,13 @@ class Scanner {
         full = true;
         break;
       }
-      if (maxRetreat - retreat >= TURN_DETECT) break;
+      // der Strich läuft schon wieder vorwärts, bevor der Halbkreis fertig ist: keine Kehre (Zickzack).
+      // Rückgabe −(m + 1): der Aufrufer setzt den Abschnitt ab m fort
+      if (maxRetreat - retreat >= TURN_DETECT) {
+        if (prev.kind === 'floor') prev.switches = switchesBefore;
+        prev.i1 = i1Before;
+        return -(m + 1);
+      }
     }
     const thetaEnd = full ? Math.PI : Math.PI - Math.asin(Math.max(-1, Math.min(1, 1 - maxRetreat / rk)));
     this.sections.push({ kind: 'turn', i0, i1, apex, laneFrom, laneTo, dirX, floor: floorMode, R, thetaEnd });

@@ -145,6 +145,39 @@ describe('Gesten-Interpreter: Kehren oben auf dem Hügel', () => {
   });
 });
 
+describe('Gesten-Interpreter: Rampe, Zickzack', () => {
+  it('liest „am Boden, gerade steil hoch, oben zurück“ als Anstieg mit Steilkurve, nicht als Bodenkehre', () => {
+    const stroke = [
+      ...param(30, (t) => [t * 20, 0]),
+      ...param(30, (t) => [20 + t * 10, t * 12]),
+      ...param(10, (t) => [30 + 2 * Math.sin(Math.PI * t), 12 + 0.6 * (1 - Math.cos(Math.PI * t))]),
+      ...param(30, (t) => [30 - t * 25, 13]),
+    ];
+    const r = strokeToTrack(stroke);
+    const turns = r.events.filter((e) => e.kind === 'turn');
+    expect(turns.length).toBe(1);
+    expect(turns[0].floor).toBe(false);
+    const top = r.points.reduce((a, b) => (b.y > a.y ? b : a));
+    expect(top.y).toBeGreaterThan(10);
+    expect(r.points[r.points.length - 1].mode).toBe('height');
+    expect(trackStats(r.path, sampleTrack(r.path)).maxHeight).toBeGreaterThan(10);
+  });
+  it('macht aus einem kurzen Zickzack in der Luft keine Kehren und keine Kante', () => {
+    const stroke = [
+      ...param(20, (t) => [t * 10, 0]),
+      ...param(30, (t) => [10 + t * 12, 16 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+      ...param(20, (t) => [22 + t * 10, 16]),
+      // sechs schnelle Haken: je 4 m zurück, 8 m vor
+      ...[0, 1, 2, 3, 4, 5].flatMap((k) => [...param(6, (t) => [32 + k * 4 + 4 * t, 16 + t]), ...param(6, (t) => [36 + k * 4 - 4 * t, 17 - t])]),
+      ...param(30, (t) => [56 + t * 30, 16 - 16 * t]),
+    ];
+    const r = strokeToTrack(stroke);
+    expect(r.events.filter((e) => e.kind === 'turn').length).toBe(0);
+    const xs = r.points.map((p) => p.x);
+    for (let i = 1; i < xs.length; i++) expect(xs[i]).toBeGreaterThanOrEqual(xs[i - 1] - 1e-9);
+  });
+});
+
 describe('Gesten-Interpreter: stabil beim Ziehen', () => {
   it('ändert beim Weiterzeichnen nichts an der Bahn, die weiter als 30 m hinter dem Finger liegt', () => {
     const full = tour();
