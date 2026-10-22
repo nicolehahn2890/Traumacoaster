@@ -54,6 +54,8 @@ Der erste Kachelsatz (24 Kacheln) ist mit dem Figma-Bildgenerator entstanden, Mo
 
 Das Stippling der Regel 2 kommt aus dem Spur-Filter (`src/render/shaders/laneFilter.ts`): Punkte in `palette.stipple` auf allen Pixeln unterhalb der Helligkeitsschwelle, dichter zum Schatten hin, in Bildschirmpixeln (bleiben bei jedem Zoom ein bis drei Pixel). Leuchten (Regel 6) läuft über die additive Leuchtebene je Spur (`glowLayer.ts`). Beides lässt sich mit `?fx=0` abschalten und im Dev-Overlay (`?dev=1`, Taste F) vergleichen.
 
+Pfeiler und Streben (Kapitel 3) sind umgesetzt: eine Form je Welt in `src/render/supports/supportStyle.ts`, drei Töne mit harter Kante (Fläche, Tinte-Kontur, Lichtkante), Stämme in Schwarz, Füße symmetrisch zur Bahn, Lichter (Laternen, Neonringe, Glut, Ringe) in der Leuchtebene. Die Schienen laufen als Band-Mesh mit einem Profil je Skin (Tinte – Schiene – Lichtkante), Holz-Skins mit der Maserung der `wood_beam`-Kachel.
+
 ## 5. Was nicht in den Stil gehört
 
 Weiche Cel-Shading-Verläufe, fotorealistische Texturen, Glitzer auf dem Terrain, reines Schwarz außer auf Stämmen und Stützen, Text im Bild, Bewegungsunschärfe.

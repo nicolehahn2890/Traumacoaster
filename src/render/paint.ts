@@ -3,7 +3,7 @@
  * Jede Textur hat einen Namen im Manifest; liegt unter public/art/<name>.png ein echtes Bild,
  * wird es vom Asset-Loader bevorzugt (siehe assets/manifest.ts).
  */
-import { Texture } from 'pixi.js';
+import { CanvasSource, Texture } from 'pixi.js';
 import { noise1, rng } from '@/core/math';
 
 const cache = new Map<string, Texture>();
@@ -130,6 +130,68 @@ export function paperTexture(): Texture {
     ctx.putImageData(img, 0, 0);
     return c;
   });
+}
+
+/**
+ * Schienenprofil für das Band-Mesh: quer (UV.y) Tinte – Schiene – Lichtkante – Schiene – Tinte, längs (UV.x) kachelbar
+ * mit leichter Maserung (bei Holz-Skins zusätzlich die gemalte Holzkachel, multipliziert). 64 × 16 px, wiederholt
+ * sich entlang der Bahn, mit Mipmaps gegen Flimmern bei kleinen Zooms.
+ */
+export function railProfileTexture(key: string, rail: string, light: string, ink: string, grain: CanvasImageSource | null = null, seed = 3): Texture {
+  const name = `railprofile_${key}`;
+  const hit = cache.get(name);
+  if (hit) return hit;
+  const w = 64;
+  const h = 16;
+  const [c, ctx] = canvas(w, h);
+  ctx.clearRect(0, 0, w, h);
+  // Tinte außen (Rand bleibt halb transparent, wie der alte Kontur-Strich)
+  ctx.fillStyle = ink;
+  ctx.globalAlpha = 0.7;
+  ctx.fillRect(0, 0, w, 3);
+  ctx.fillRect(0, h - 3, w, 3);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = rail;
+  ctx.fillRect(0, 3, w, h - 6);
+  if (grain) {
+    try {
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.globalAlpha = 0.45;
+      ctx.drawImage(grain, 0, 0, (grain as HTMLImageElement).width ?? w, 60, 0, 3, w, h - 6);
+    } catch {
+      /* Quelle nicht zeichenbar: nur prozedurale Maserung */
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+  }
+  // Maserung längs: kurze dunklere und hellere Striche
+  const r = rng(seed);
+  for (let i = 0; i < 14; i++) {
+    const x = r() * w;
+    const y = 3 + r() * (h - 6);
+    const len = 6 + r() * 24;
+    ctx.strokeStyle = shade(rail, (r() - 0.5) * 0.3);
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + len, y);
+    ctx.stroke();
+    if (x + len > w) {
+      ctx.beginPath();
+      ctx.moveTo(x - w, y);
+      ctx.lineTo(x - w + len, y);
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = light;
+  ctx.fillRect(0, 6, w, 4);
+  ctx.globalAlpha = 1;
+  const source = new CanvasSource({ resource: c, addressMode: 'repeat', scaleMode: 'linear', autoGenerateMipmaps: true });
+  const tex = new Texture({ source });
+  cache.set(name, tex);
+  return tex;
 }
 
 /** Pinselstrich-Streifen (kachelbar in x) für Bodenflächen */
