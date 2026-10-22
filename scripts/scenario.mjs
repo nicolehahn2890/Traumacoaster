@@ -117,8 +117,8 @@ async function ride(tag, shotAt = 6) {
 const R = 4.2; // Bühnen-Meter pro Spur (Anhebung der Bodenlinie)
 let st = null;
 let r = null;
-const openLevel = async () => {
-  await page.goto(`${BASE}?scene=start&fast=6&level=8&fx=1`, { waitUntil: 'networkidle' });
+const openLevel = async (extra = '') => {
+  await page.goto(`${BASE}?scene=start&fast=6&level=8&fx=1${extra}`, { waitUntil: 'networkidle' });
   await sleep(1200);
 };
 
@@ -153,11 +153,17 @@ check(r.st.sim?.fail === 'stall', `Oval ohne Hügel: Zug rollt aus und bleibt st
 
 // ---------------------------------------------------------------- 2. Hügel + Oval am Boden, Fahrt mit Schräglage
 if (want('2')) {
-await openLevel();
+await openLevel('&dev=1');
 const hillOval = [[0, 0], [6, 1], [10, 6], [14, 13], [18, 14], [22, 11], [28, 3], [34, 0.3], [44, 0], [54, 0.3 * R], [56, R], [54, 1.7 * R], [44, 2 * R], [20, 2 * R], [2, 2 * R], [-6, 1.7 * R], [-8, R], [-6, 0.3 * R], [0, 0]];
 await strokeStage(hillOval, 10);
 await sleep(800);
 st = await state();
+// Draw-Call-Budget (Dev-Overlay): Bahn mit Pfeilern, Band-Mesh-Schienen, fünf Spur-Filtern und Leuchtebenen
+const dev = await page.evaluate(() => window.tcGame.dev);
+console.log('dev', dev);
+check(dev && dev.drawCalls > 0 && dev.drawCalls < 150, `Draw-Calls im Zeichenmodus unter 150 (ist ${dev?.drawCalls})`);
+const supports = await page.evaluate(() => [...window.tcGame.current.view.trackR.layers.supports.values()].reduce((n, c) => n + c.children.length, 0));
+check(supports >= 8, `Pfeiler stehen unter dem Hügel (${supports} Pfeiler)`);
 console.log('after hill+oval', st);
 check(st.turns === 2 && st.lanes === 2 && st.loops === 0, `Hügel+Oval: 2 Kurven, 2 Spuren (vorne und hinten), 0 Loopings (ist ${st.turns}/${st.lanes}/${st.loops})`);
 check(Number(st.height) > 11, `Hügel+Oval: Hügel ist Höhe (${st.height} m)`);
