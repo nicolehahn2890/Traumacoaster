@@ -749,13 +749,14 @@ export function interpretGesture(pts: Vec2[], opts: GestureOptions = {}): Gestur
         const th = (sec.thetaEnd * k) / steps;
         yA = Math.max(yA, ground(arcX(th), arcZ(th)) + clearance);
       }
-      // Anfahrt anheben, wenn die Kurve höher liegt als der Strich davor (Gelände)
+      // Anfahrt anheben, wenn die Kurve höher liegt als der Strich davor (Gelände): 6 m eben, dann über 16 m
+      // (Abstand waagerecht gemessen, die angehobenen Punkte selbst dürfen die Rampe nicht verkürzen)
       if (out.length && yA > yEntryAbs + 1e-6) {
         let d = 0;
         for (let m = out.length - 1; m > 0; m--) {
           const a = out[m];
           const b = out[m - 1];
-          d += Math.hypot(a.x - b.x, a.y + ground(a.x, a.z) - (b.y + ground(b.x, b.z)), (a.z - b.z) * LANE_DEPTH);
+          d += Math.hypot(a.x - b.x, (a.z - b.z) * LANE_DEPTH);
           const f = 1 - smoothstep((d - TURN_RUNOUT) / TURN_BLEND_Y);
           if (f <= 0) break;
           const abs = b.y + ground(b.x, b.z);
