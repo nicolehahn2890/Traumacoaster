@@ -89,14 +89,18 @@ const CLIMB_RISE_SURE = 2.2 * LANE_RISE; // so hoch über dem Fuß ohne Umkehr: 
 const ABOVE_STAGE = 0.6;
 const LAND_BAND = 0.9; // Bühnen-Meter um die eigene Bodenlinie: Landung
 const LAND_BAND_FLAT = 1.5; // … bei flachem Strich
-const LAND_BAND_OTHER = 0.5; // … um eine fremde Bodenlinie (dort muss der Strich der Linie folgen)
+const LAND_BAND_OTHER = 1.0; // … um eine fremde Bodenlinie (dort muss der Strich der Linie folgen)
 const LAND_OTHER_RUN = 3; // m entlang der fremden Linie, bevor dort gelandet wird
+const LAND_FLAT_ANGLE = (20 * Math.PI) / 180; // Geste „ich bin unten“: nach dem Abstieg flach weiter …
+const LAND_FLAT_RUN = 3; // … über diese Länge (m) …
+const LAND_FLAT_DROP = 2.0; // … nachdem der Strich mindestens so weit (Bühnen-Meter) herunterkam
+const LAND_STAGE_MARGIN = 2.0; // Bühnen-Meter über der hintersten bzw. unter der vordersten Linie, in denen eine Landung gilt
 const LAND_ANGLE = (25 * Math.PI) / 180;
 const LAND_BLEND = 20; // m: Spurwechsel in der Abfahrt auf eine andere Spur
 const SWITCH_MARGIN = 1.0; // Bühnen-Meter über die Mitte zwischen zwei Spuren hinaus (Hysterese)
 const SWITCH_DEBOUNCE = 2; // m Strich auf der neuen Seite (Entprellen)
-const LANE_CHANGE_MIN = 14; // m: kürzeste S-Kurve eines Spurwechsels
-const LANE_CHANGE_MAX = 40;
+const LANE_CHANGE_MIN = 16; // m: kürzeste S-Kurve eines Spurwechsels (Radius rund 5 m)
+const LANE_CHANGE_MAX = 28;
 const LOOP_TURN = (300 * Math.PI) / 180; // Drehung, ab der eine Schleife ein Looping ist
 const LOOP_MIN_PERIMETER = 7; // m Strich (weniger ist Zittern)
 const LOOP_R_MIN = 3.5; // m: kleinster Looping (ein Wagen passt hindurch)
@@ -117,10 +121,13 @@ const CLOSE_U_REACH = 40; // m: so weit vor dem Ende gehört eine Boden-Kehre zu
 export const lanesForRadius = (r: number): number => Math.max(1, Math.ceil((2 * r) / LANE_DEPTH - 0.15));
 /** Radius, den ein Zug mit v² ≈ 2·g·Fallhöhe braucht, damit die Querbeschleunigung unter TURN_G bleibt */
 export const radiusForDrop = (drop: number): number => (2 * Math.max(0, drop)) / TURN_G;
-/** Länge der S-Kurve eines Spurwechsels über dz Spuren bei einer Fallhöhe drop (Kuppenradius-Regel R ≈ L²/(6·Δ)) */
-export function laneChangeLength(dz: number, drop: number): number {
-  const R = Math.max(6, radiusForDrop(drop));
-  return Math.min(LANE_CHANGE_MAX, Math.max(LANE_CHANGE_MIN, Math.sqrt(6 * Math.abs(dz) * LANE_DEPTH * R)));
+/**
+ * Länge der S-Kurve eines Spurwechsels über dz Spuren: 14 m je Spur-Sprung (Radius rund 4 m, wie eine enge Kehre),
+ * über mehrere Spuren mit der Wurzel länger. Kein Tempo-Zuschlag: Die Bahn folgt der Hand, die Fahrt zeigt, ob es zu
+ * eng war.
+ */
+export function laneChangeLength(dz: number): number {
+  return Math.min(LANE_CHANGE_MAX, LANE_CHANGE_MIN * Math.sqrt(Math.max(1, Math.abs(dz))));
 }
 
 type FloorSection = { kind: 'floor'; i0: number; i1: number; lane: number; dir: number; switches: Array<{ i: number; lane: number; hMax: number }> };
@@ -367,6 +374,7 @@ class Scanner {
     let yMax = Y[i0];
     let otherSince = -1;
     let otherLane = lane;
+    let flatSince = from;
     for (let i = from; i < n; i++) {
       if (dir === 0) {
         if (Math.abs(X[i] - X[i0]) >= LEG_MIN) {
@@ -404,6 +412,11 @@ class Scanner {
       };
       if (flat && cameDown && ((dOwn <= LAND_BAND && descending) || (dOwn <= LAND_BAND_FLAT && (below || descending)))) return land(Math.round(lane));
       const { lane: c, d } = this.nearest(i);
+      // Geste: Der Strich kam herunter und läuft seit ein paar Metern flach über die Bühne → er ist unten, auf der
+      // nächsten Spur (die Hand trifft keine Linie auf den Meter genau; der Rest Höhe wird in der Landung abgebaut)
+      if (Math.abs(this.slope(i)) >= LAND_FLAT_ANGLE) flatSince = i;
+      const onStage = Y[i] >= this.groundY(X[i], LANE_MIN) - LAND_STAGE_MARGIN && Y[i] <= this.groundY(X[i], LANE_MAX) + LAND_STAGE_MARGIN;
+      if (onStage && yMax - Y[i] >= LAND_FLAT_DROP && cum[i] - cum[flatSince] >= LAND_FLAT_RUN) return land(c);
       if (c !== Math.round(lane) && d <= LAND_BAND_OTHER && flat && cameDown) {
         if (otherSince < 0 || otherLane !== c) {
           otherSince = i;
@@ -556,19 +569,18 @@ class Scanner {
     }
     const yDir = na && nb && after / na < before / nb ? -1 : 1;
     const yEntry = floorMode ? this.ground(X[apex] / laneScale(laneFrom), laneFrom) + this.clearance : this.absHeight(apex, laneFrom);
-    const speedLanes = lanesForRadius(radiusForDrop(this.hMax - yEntry));
     const drawnR = floorMode ? 0 : this.drawnRadius(prev, apex, dirX, j);
     // Schluss-Kehre: der Strich endet an der Station, die Kehre liegt kurz davor → sie zielt auf die Spur der Station
     const closing = floorMode && this.closeLane !== null && cum[n - 1] - cum[apex] <= CLOSE_U_REACH;
-    // Spurenzahl und Richtung des Halbkreises von einer Einfahrtsspur aus: gezeichnete Spuren (Boden) bzw. gezeichnete
-    // Weite (Höhe), bei Tempo mehr, mindestens eine Spur, höchstens die Bühne; ohne Platz dreht die Richtung
+    // Spurenzahl und Richtung des Halbkreises von einer Einfahrtsspur aus: so viele Spuren, wie der Rückweg entfernt
+    // gezeichnet ist (Boden) bzw. wie die gezeichnete Weite hergibt (Höhe), mindestens eine, höchstens die Bühne.
+    // Kein Tempo-Zuschlag: Eine enge Kehre nach einem Hügel bleibt eng, die Fahrt zeigt die Folgen.
     const pick = (lf: number): { laneTo: number; R: number } => {
       if (closing && this.closeLane !== lf) return { laneTo: this.closeLane!, R: (Math.abs(this.closeLane! - lf) * LANE_DEPTH) / 2 };
       let dirZ = laneRead !== lf ? Math.sign(laneRead - lf) : yDir;
       const drawnLanes = floorMode ? Math.abs(laneRead - lf) : lanesForRadius(drawnR);
-      let lanes = Math.min(lanesForRadius(TURN_RADIUS_MAX), Math.max(1, drawnLanes, speedLanes));
-      // Die gezeichnete Richtung gilt; nur ohne jeden Platz dreht sie. Reicht der Platz nicht für den Tempo-Radius,
-      // wird die Kehre so weit wie möglich und der Spieler sieht es in der Fahrt (oder schiebt die Spur mit dem Handle)
+      let lanes = Math.min(lanesForRadius(TURN_RADIUS_MAX), Math.max(1, drawnLanes));
+      // Die gezeichnete Richtung gilt; nur ohne jeden Platz dreht sie
       const room = (d: number) => Math.max(0, Math.round(d > 0 ? LANE_MAX - lf : lf - LANE_MIN));
       if (room(dirZ) === 0 && room(-dirZ) > 0) dirZ = -dirZ;
       lanes = Math.max(1, Math.min(lanes, room(dirZ)));
@@ -645,13 +657,12 @@ function buildTransitions(sc: Scanner, sec: FloorSection, zStart: number): Trans
   };
   let z = zStart;
   if (Math.abs(sec.lane - zStart) > 1e-6) {
-    push(sA, laneChangeLength(sec.lane - zStart, sc.hMax), zStart, sec.lane, true);
+    push(sA, laneChangeLength(sec.lane - zStart), zStart, sec.lane, true);
     z = sec.lane;
   }
   for (const sw of sec.switches) {
     if (sw.lane === z) continue;
-    const drop = sw.hMax - (sc.ground(sc.X[sw.i], z) + sc.clearance);
-    push(sc.cum[sw.i], laneChangeLength(sw.lane - z, drop), z, sw.lane, false);
+    push(sc.cum[sw.i], laneChangeLength(sw.lane - z), z, sw.lane, false);
     z = sw.lane;
   }
   return list;
@@ -720,7 +731,13 @@ export function interpretGesture(pts: Vec2[], opts: GestureOptions = {}): Gestur
       const lane = sec.lane;
       const landLane = sec.landLane;
       const sLand = cum[sec.i1];
-      const blend = landLane !== null && landLane !== lane ? Math.min(LAND_BLEND, 0.6 * (sLand - cum[sec.i0])) : 0;
+      const blend = landLane !== null ? Math.min(LAND_BLEND, 0.6 * (sLand - cum[sec.i0])) : 0;
+      // Resthöhe am Landepunkt (die Hand landet selten genau auf der Linie): über die Landung weich abbauen
+      let rest = 0;
+      if (landLane !== null) {
+        const kL = laneScale(landLane);
+        rest = Math.max(0, (Y[sec.i1] - (ground(X[sec.i1] / kL, landLane) * kL + laneRise(landLane))) / kL);
+      }
       let ext = X[sec.i0];
       for (let i = sec.i0; i <= sec.i1; i++) {
         if (i === lastSrc) continue;
@@ -728,10 +745,14 @@ export function interpretGesture(pts: Vec2[], opts: GestureOptions = {}): Gestur
         if (!raw && (sec.dir === 0 || (X[i] - ext) * sec.dir >= 0)) ext = X[i];
         const xs = raw ? X[i] : ext;
         let z = lane;
-        if (blend > 0 && cum[i] > sLand - blend) z = lane + (landLane! - lane) * smoothstep((cum[i] - (sLand - blend)) / blend);
+        let f = 0;
+        if (blend > 0 && cum[i] > sLand - blend) {
+          f = smoothstep((cum[i] - (sLand - blend)) / blend);
+          if (landLane !== lane) z = lane + (landLane! - lane) * f;
+        }
         const k = laneScale(z);
         const gY = ground(xs / k, z) * k + laneRise(z);
-        push({ x: xs / k, y: Math.max(0, (Y[i] - gY) / k), z, mode: 'height', s: cum[i] });
+        push({ x: xs / k, y: Math.max(0, (Y[i] - gY) / k - rest * f), z, mode: 'height', s: cum[i] });
         lastSrc = i;
       }
       zPrev = landLane ?? lane;

@@ -457,7 +457,8 @@ export function densePolyline(points: InterpretedPoint[], opts: StrokeOptions, e
   const cumW = new Float64Array(world.length);
   for (let i = 1; i < world.length; i++) cumW[i] = cumW[i - 1] + dist3(world[i - 1], world[i]);
   const inLoop = (i: number) => loopRanges.some(([a, b]) => cumW[i] >= a - 1 && cumW[i] <= b + 1);
-  limitVerticalCurvature(world, inLoop, dist3(world[0], world[world.length - 1]) < 1, opts.preview ? 60 : 400);
+  // Der Bahnplaner (Kuppen- und Talradien) greift erst beim Loslassen: Während des Strichs folgt die Bahn der Hand
+  if (!opts.preview) limitVerticalCurvature(world, inLoop, dist3(world[0], world[world.length - 1]) < 1);
   if (opts.maxHeight && opts.maxHeight > 0) for (const p of world) p.y = Math.min(p.y, opts.maxHeight);
   let pts = roundCorners3(world);
   const keep = simplify3(pts, 0.04);
@@ -475,8 +476,59 @@ export function densePolyline(points: InterpretedPoint[], opts: StrokeOptions, e
   return { pts, hints };
 }
 
+/**
+ * Vorschau-Knoten: alle PREVIEW_NODE_STEP Meter ein Knoten genau auf der Punktfolge, Tangenten aus den Nachbarn
+ * (Catmull-Rom). Kein Fit, also nichts, was von Vorschau zu Vorschau anders einrastet; die Scheitel der Ereignisse
+ * bekommen ihre Knotenart (Looping-Ring in der Vorschau).
+ */
+function previewNodes(pts: Vec3[], hints: ApexHint[]): TrackNode[] {
+  const n = pts.length;
+  if (n < 2) return [];
+  const cum = new Float64Array(n);
+  for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + dist3(pts[i - 1], pts[i]);
+  const idx: number[] = [0];
+  let next = PREVIEW_NODE_STEP;
+  for (let i = 1; i < n - 1; i++) {
+    if (cum[i] >= next) {
+      idx.push(i);
+      next = cum[i] + PREVIEW_NODE_STEP;
+    }
+  }
+  if (cum[n - 1] - cum[idx[idx.length - 1]] < PREVIEW_NODE_STEP * 0.4 && idx.length > 1) idx.pop();
+  idx.push(n - 1);
+  const nodes: TrackNode[] = [];
+  for (let k = 0; k < idx.length; k++) {
+    const i = idx[k];
+    const p = pts[i];
+    const a = pts[Math.max(0, i - 1)];
+    const b = pts[Math.min(n - 1, i + 1)];
+    const t = normalize3(sub3(b, a));
+    const nd = createNode(p.x, p.y, p.z / LANE_DEPTH);
+    const lIn = k > 0 ? (cum[i] - cum[idx[k - 1]]) / 3 : 0;
+    const lOut = k < idx.length - 1 ? (cum[idx[k + 1]] - cum[i]) / 3 : 0;
+    nd.inX = -t.x * lIn; nd.inY = -t.y * lIn; nd.inZ = (-t.z * lIn) / LANE_DEPTH;
+    nd.outX = t.x * lOut; nd.outY = t.y * lOut; nd.outZ = (t.z * lOut) / LANE_DEPTH;
+    nodes.push(nd);
+  }
+  for (const h of hints) {
+    let best = -1;
+    let bestD = Infinity;
+    nodes.forEach((nd, i) => {
+      const d = dist3(nodePos(nd), h.pos);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    if (best > 0 && nodes[best].kind === 'normal') nodes[best].kind = h.kind;
+  }
+  return nodes;
+}
+const PREVIEW_NODE_STEP = 2.5;
+
 export function pointsToNodes(points: InterpretedPoint[], opts: StrokeOptions, events: StrokeEvent[]): TrackNode[] {
   const { pts, hints } = densePolyline(points, opts, events);
+  if (opts.preview) return previewNodes(pts, hints);
   // Knoten an den Scheiteln (Kuppen, Täler, Kurven, Loopings) mit festen Tangenten, dazwischen so wenige
   // Segmente wie nötig (reduceNodes); 'legacy': Schneider-Fit ohne Ecken mit 0,3 m (ein Oval braucht rund zehn Knoten)
   const legacy = opts.fit === 'legacy';

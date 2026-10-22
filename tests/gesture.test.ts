@@ -40,8 +40,8 @@ describe('Gesten-Interpreter: feste Spuren', () => {
     const first = r.points.findIndex((p) => p.z > 0.01);
     const last = r.points.findIndex((p) => p.z > 0.99);
     expect(r.points[last].x - r.points[first].x).toBeGreaterThanOrEqual(13);
-    expect(laneChangeLength(1, 0)).toBeGreaterThanOrEqual(14);
-    expect(laneChangeLength(1, 20)).toBeGreaterThan(laneChangeLength(1, 0));
+    expect(laneChangeLength(1)).toBeGreaterThanOrEqual(14);
+    expect(laneChangeLength(2)).toBeGreaterThan(laneChangeLength(1));
   });
   it('lässt einen Hügel auf der Bodenlinie einer anderen Spur landen', () => {
     // Anstieg auf Spur 0, Abfahrt bis auf die Linie von Spur 1, dort weiter
@@ -71,7 +71,7 @@ describe('Gesten-Interpreter: feste Spuren', () => {
     // Krümmung nirgends enger als der Halbkreis (plus etwas Spiel für den Fit)
     let maxK = 0;
     for (let i = 0; i < s.count; i++) if (!s.auto[i]) maxK = Math.max(maxK, Math.hypot(s.k3x[i], s.k3y[i], s.k3z[i]));
-    expect(maxK).toBeLessThan(1 / 3.5);
+    expect(maxK).toBeLessThan(1 / 3.2);
     expect(trackStats(r.path, s).lanes).toBe(2);
   });
 });

@@ -122,7 +122,7 @@ export class LevelScene implements Scene {
   /** Spur und Lesart am Ende des Strichs (aus der letzten Vorschau), für die Spur-Anzeige */
   private strokeLane: { lane: number; mode: StrokeMode } | null = null;
   private previewTimer = 0;
-  /** Dauer der letzten Vorschau in Sekunden: der Takt passt sich an (mindestens 80 ms, sonst das Doppelte) */
+  /** Dauer der letzten Vorschau in Sekunden: der Takt passt sich an (mindestens 40 ms, sonst das Anderthalbfache) */
   private previewCost = 0;
   /** Strichpunkte, die die letzte Vorschau schon als Bahn zeigt; die Tinte zeigt nur den Rest hinter dem Finger */
   private previewedCount = 0;
@@ -2062,7 +2062,7 @@ export class LevelScene implements Scene {
     if (this.mode === 'draw') {
       if (this.stroke) {
         this.previewTimer += dt;
-        if (this.previewTimer > Math.max(0.08, 2 * this.previewCost)) {
+        if (this.previewTimer > Math.max(0.04, 1.5 * this.previewCost)) {
           this.previewTimer = 0;
           const t0 = performance.now();
           this.previewStroke();
