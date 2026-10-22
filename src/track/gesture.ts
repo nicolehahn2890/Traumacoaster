@@ -822,15 +822,17 @@ export function interpretGesture(pts: Vec2[], opts: GestureOptions = {}): Gestur
         carry = { xShift, yAbs: yA, runout: TURN_RUNOUT, blendY: Math.max(TURN_BLEND_Y, Math.sqrt(6 * 4 * 1.5 * drop)), blendX: Math.max(TURN_BLEND, 2 * Math.abs(xShift)), s0: sB };
       }
     } else {
-      // Looping: Kreis in der Spur ab dem Einfahrtspunkt, Tangente aus dem Strich, leicht versetzte Ausfahrt
+      // Looping: Kreis in der Spur ab dem Einfahrtspunkt, Ein- und Ausfahrt waagerecht (die Einfahrt liegt da, wo der
+      // Strich zuletzt fast waagerecht lief; eine schräge Ausfahrt würde hinter dem Kreis eine Kuppe erzwingen),
+      // leicht versetzte Ausfahrt
       const l = lastP();
       const lane = sec.lane;
       const k = laneScale(lane);
       const xE = l ? l.x : X[sec.i0] / k;
       const yE = l ? l.y + ground(l.x, l.z) : ground(xE, lane);
       const a = ang[Math.max(0, Math.min(sc.n - 1, sec.i0))];
-      const tx = Math.cos(a);
-      const ty = Math.sin(a);
+      const tx = Math.cos(a) >= 0 ? 1 : -1;
+      const ty = 0;
       const nx = -sec.sign * ty;
       const ny = sec.sign * tx;
       const R = sec.R;

@@ -322,6 +322,8 @@ export function simplify3(points: Vec3[], tolerance: number): number[] {
   return out;
 }
 
+const RAISE_MAX = 30; // Meter: so weit darf der Begrenzer einen Punkt höchstens über die gezeichnete Höhe heben (Sicherung)
+const KEPT_REACH = 30; // Meter um einen Looping, in denen das Gefälle für den Begrenzer aus der gezeichneten Höhe kommt
 const CREST_G = 2.0; // Kuppen: höchstens 2 g nach oben (mit Sicherheitsfaktor 1,4: g im Sitz etwa −0,4, Floater-Airtime)
 const VALLEY_G = 3.0; // Täler: höchstens 3 g zusätzlich in den Sitz
 const LIFT_V2 = 36; // kleinstes Tempo-Quadrat (Kettenzug 6 m/s)
@@ -386,6 +388,13 @@ export function limitVerticalCurvature(world: Vec3[], keep: (i: number) => boole
   }
   const kept = new Uint8Array(n);
   for (let i = 0; i < n; i++) kept[i] = keep(i) ? 1 : 0;
+  // Punkte im Umkreis von KEPT_REACH Metern um festgehaltene Punkte
+  const nearKept = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!kept[i]) continue;
+    for (let j = i; j >= 0 && s[i] - s[j] <= KEPT_REACH; j--) nearKept[j] = 1;
+    for (let j = i; j < n && s[j] - s[i] <= KEPT_REACH; j++) nearKept[j] = 1;
+  }
   const y = Float64Array.from(y0);
   for (let k = 0; k < maxSweeps; k++) {
     let changed = false;
@@ -396,29 +405,35 @@ export function limitVerticalCurvature(world: Vec3[], keep: (i: number) => boole
       // Die Tests messen die Sehnenhöhe senkrecht; auf einem Gefälle ist die Sehnenhöhe quer zur Bahn um den
       // Kosinus des Gefälles größer. Ohne den Faktor ließ der Begrenzer an steilen Flanken (Auslauf eines Drops)
       // bis zu doppelt so enge Radien durch, und der Wagen spürte 6 g statt der 4 g, für die das Tal ausgelegt ist.
-      const sinA = Math.max(-1, Math.min(1, (y[i + 1] - y[i - 1]) / (d1 + d2)));
+      // Nahe festgehaltener Punkte (Looping) kommt das Gefälle aus der gezeichneten Höhe (y0): Mit dem laufenden
+      // Gefälle schrumpfte der Faktor, je steiler die Regeln die Bahn hoben, und hinter dem festen Punkt
+      // schaukelten sich Vorwärts- und Rückwärtsregel bis in den Himmel auf.
+      const src = nearKept[i] ? y0 : y;
+      const sinA = Math.max(-1, Math.min(1, (src[i + 1] - src[i - 1]) / (d1 + d2)));
       const cosA = Math.max(0.3, Math.sqrt(1 - sinA * sinA));
       // Senke: der Punkt darf nicht tiefer liegen als die Parabel durch die Nachbarn
       if (!kept[i]) {
         const mid = y[i - 1] + ((y[i + 1] - y[i - 1]) * d1) / (d1 + d2);
-        const lim = mid - ((d1 * d2) / (2 * rValley[i])) * cosA;
+        const lim = Math.min(y0[i] + RAISE_MAX, mid - ((d1 * d2) / (2 * rValley[i])) * cosA);
         if (y[i] < lim - 1e-6) {
           y[i] = lim;
           changed = true;
         }
       }
       // Kuppe: der nächste Punkt in Laufrichtung darf nicht tiefer liegen als die Fortsetzung der Parabel
-      // (Steigung aus dem vorigen Nachbarn, Krümmung −1/R; exakt für Parabeln, auch bei ungleichen Schritten)
+      // (Steigung aus dem vorigen Nachbarn, Krümmung −1/R; exakt für Parabeln, auch bei ungleichen Schritten).
+      // Nie über RAISE_MAX hinaus: Hinter einem festgehaltenen Punkt (Looping) können sich Vorwärts- und
+      // Rückwärtsregel sonst gegenseitig hochschaukeln, bis die Bahn senkrecht in den Himmel läuft.
       if (forward && !kept[i + 1]) {
         const slope = (y[i] - y[i - 1]) / d1;
-        const lim = y[i] + slope * d2 - ((d2 * (d1 + d2)) / (2 * rCrest[i])) * cosA;
+        const lim = Math.min(y0[i + 1] + RAISE_MAX, y[i] + slope * d2 - ((d2 * (d1 + d2)) / (2 * rCrest[i])) * cosA);
         if (y[i + 1] < lim - 1e-6) {
           y[i + 1] = lim;
           changed = true;
         }
       } else if (!forward && !kept[i - 1]) {
         const slope = (y[i + 1] - y[i]) / d2;
-        const lim = y[i] - slope * d1 - ((d1 * (d1 + d2)) / (2 * rCrest[i])) * cosA;
+        const lim = Math.min(y0[i - 1] + RAISE_MAX, y[i] - slope * d1 - ((d1 * (d1 + d2)) / (2 * rCrest[i])) * cosA);
         if (y[i - 1] < lim - 1e-6) {
           y[i - 1] = lim;
           changed = true;
