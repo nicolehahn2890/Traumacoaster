@@ -6,11 +6,16 @@
 import { pointSegmentDistance } from '@/core/math';
 import type { StagePoint } from './stage';
 
+/** Zurückziehen: so genau entgegen der Linie muss die Bewegung laufen (cos, Winkel über rund 150°) */
+export const RETRACT_COS = -0.85;
+
 /**
  * Zurückziehen: Index, bis zu dem der Strich erhalten bleibt (der Zeiger wird das neue Ende), oder −1.
- * Bedingung: der Zeiger liegt näher als tol an einem Stück des Strichs und bewegt sich entgegen dessen Richtung
- * (Winkel über 120°). Gesucht wird vom Ende aus über reach Bühnen-Meter. Ein Strich, der seine Linie nur kreuzt
- * (Looping, Acht), läuft quer zu ihr; eine Kehre liegt eine Spur neben der Anfahrt: beides bleibt.
+ * Bedingung: der Zeiger liegt näher als tol an einem Stück des Strichs und bewegt sich fast genau entgegen dessen
+ * Richtung (Winkel über 150°). Gesucht wird vom Ende aus über reach Bühnen-Meter: Ein Rückzug beginnt immer am
+ * Ende und bleibt dort, weil der Zeiger nach jedem Schnitt das Ende ist. Ein Strich, der seine Linie nur kreuzt
+ * (Looping, Acht, Rückweg über einen Hügel), läuft schräg oder quer zu ihr; eine Kehre liegt eine Spur neben der
+ * Anfahrt: beides bleibt.
  */
 export function retractIndex(stroke: StagePoint[], p: StagePoint, motion: { X: number; Y: number }, tol: number, reach: number): number {
   const n = stroke.length;
@@ -27,13 +32,19 @@ export function retractIndex(stroke: StagePoint[], p: StagePoint, motion: { X: n
     const tl = Math.hypot(tx, ty);
     walked += tl;
     if (tl < 1e-6) continue;
-    if ((motion.X * tx + motion.Y * ty) / (ml * tl) > -0.5) continue;
+    if ((motion.X * tx + motion.Y * ty) / (ml * tl) > RETRACT_COS) continue;
     let best = pointSegmentDistance(pv, { x: a.X, y: a.Y }, { x: b.X, y: b.Y }).d;
     if (best > tol) continue;
-    // das nächstgelegene Stück: weiter zurück, solange der Abstand noch kleiner wird
+    // das nächstgelegene Stück: weiter zurück, solange der Abstand noch kleiner wird und die Richtung passt
     let k = i;
     while (k > 1) {
-      const d = pointSegmentDistance(pv, { x: stroke[k - 1].X, y: stroke[k - 1].Y }, { x: stroke[k].X, y: stroke[k].Y }).d;
+      const c = stroke[k - 1];
+      const e = stroke[k];
+      const ux = e.X - c.X;
+      const uy = e.Y - c.Y;
+      const ul = Math.hypot(ux, uy);
+      if (ul > 1e-6 && (motion.X * ux + motion.Y * uy) / (ml * ul) > RETRACT_COS) break;
+      const d = pointSegmentDistance(pv, { x: c.X, y: c.Y }, { x: e.X, y: e.Y }).d;
       if (d > best) break;
       best = d;
       k--;

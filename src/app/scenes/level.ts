@@ -86,8 +86,10 @@ const SHELF_ELEMENTS: Array<{ kind: ElementKind; unlock: ElementId; color: strin
 const INK_TAIL = 1.5;
 /** Zurückziehen des Strichs: so nah (px) an der eigenen Linie und entgegen ihrer Richtung radiert der Zeiger den Strich */
 const RETRACT_PX = 10;
-/** … und so weit (Bühnen-Meter) zurück wird dafür gesucht */
-const RETRACT_REACH = 150;
+/** … und so weit (Bühnen-Meter) hinter dem Ende wird dafür gesucht (ein Rückzug beginnt immer am Ende) */
+const RETRACT_REACH = 6;
+/** … und so weit (Bühnen-Meter) muss der Zeiger erst zurücklaufen, bevor radiert wird (ein Kreuzen der eigenen Linie bleibt) */
+const RETRACT_MIN = 1.0;
 /** Spurende: so lange (s) nach dem letzten Anstoßen bleibt die Tinte rot */
 const BLOCKED_SHOW = 0.6;
 /** Knotenwahl beim Zeichnen: Scheitel-Semantik (Standard) oder der alte Schneider-Fit zum Vergleich (?fit=legacy) */
@@ -130,6 +132,9 @@ export class LevelScene implements Scene {
   private strokeLane: { lane: number; mode: StrokeMode } | null = null;
   /** letzte Zeigerpositionen (Bühne) über rund einen Meter: Bewegungsrichtung für das Zurückziehen */
   private pointerTrail: StagePoint[] = [];
+  /** Zurückziehen läuft (nach RETRACT_MIN auf der Linie zurück); davor zählt retractDist den Weg */
+  private retracting = false;
+  private retractDist = 0;
   /** Spurende: Zeitpunkt des letzten Anstoßens (Kehre in eine Richtung ohne Spur) und gewünschte Richtung */
   private blockedAt = -10;
   private blockedDir = 0;
@@ -429,6 +434,8 @@ export class LevelScene implements Scene {
       this.stroke = [{ X: st.X, Y: st.Y }];
       this.strokeModes = [];
       this.pointerTrail = [{ X: st.X, Y: st.Y }];
+      this.retracting = false;
+      this.retractDist = 0;
       this.blockedAt = -10;
       this.drag = { kind: 'stroke' };
       if (!this.path) this.strokeKind = 'new';
@@ -835,7 +842,18 @@ export class LevelScene implements Scene {
     const motion = { X: p.X - ref.X, Y: p.Y - ref.Y };
     if (Math.hypot(motion.X, motion.Y) < 0.2) return;
     const keep = retractIndex(s, p, motion, Math.max(0.8, RETRACT_PX / this.view.camera.zoom), RETRACT_REACH);
-    if (keep < 0) return;
+    if (keep < 0) {
+      this.retracting = false;
+      this.retractDist = 0;
+      return;
+    }
+    // erst nach einem Meter auf der Linie zurück radieren: ein kurzes Kreuzen der eigenen Linie bleibt stehen
+    if (!this.retracting) {
+      const last = s[s.length - 1];
+      this.retractDist += Math.hypot(p.X - last.X, p.Y - last.Y);
+      if (this.retractDist < RETRACT_MIN) return;
+      this.retracting = true;
+    }
     s.length = keep + 1;
     this.previewedCount = Math.min(this.previewedCount, s.length);
   }
@@ -951,6 +969,8 @@ export class LevelScene implements Scene {
     this.strokeModes = [];
     this.strokeLane = null;
     this.pointerTrail = [];
+    this.retracting = false;
+    this.retractDist = 0;
     this.blockedAt = -10;
     this.previewedCount = 0;
     this.previewCost = 0;

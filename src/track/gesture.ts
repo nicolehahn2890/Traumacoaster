@@ -106,7 +106,7 @@ const LOOP_RAW_FROM = (200 * Math.PI) / 180; // Vorschau: ab dieser Drehung zeig
 const ABOVE_STAGE = 0.6;
 const LAND_BAND = 0.9; // Bühnen-Meter um die eigene Bodenlinie: Landung
 const LAND_BAND_FLAT = 1.5; // … bei flachem Strich
-const LAND_BAND_OTHER = 1.0; // … um eine fremde Bodenlinie (dort muss der Strich der Linie folgen)
+const LAND_BAND_OTHER = 1.2; // … um eine fremde Bodenlinie (dort muss der Strich der Linie folgen)
 const LAND_OTHER_RUN = 3; // m entlang der fremden Linie, bevor dort gelandet wird
 const LAND_FLAT_ANGLE = (20 * Math.PI) / 180; // Geste „ich bin unten“: nach dem Abstieg flach weiter …
 const LAND_FLAT_RUN = 3; // … über diese Länge (m) …
@@ -444,9 +444,10 @@ class Scanner {
       // Geste: Der Strich kam herunter und läuft seit ein paar Metern flach über die Bühne → er ist unten, auf der
       // nächsten Spur (die Hand trifft keine Linie auf den Meter genau; der Rest Höhe wird in der Landung abgebaut)
       if (Math.abs(this.slope(i)) >= LAND_FLAT_ANGLE) flatSince = i;
-      // Eine Gerade über der Bühne, die keine Linie trifft, hält ihre Höhe: Ein Gefälle entsteht nur, wenn die Hand
-      // nach unten zieht (sonst zöge jede Gerade nach einem Hügel diagonal auf die Linie darunter)
-      if (d <= LAND_BAND_FLAT && yMax - Y[i] >= LAND_FLAT_DROP && cum[i] - cum[flatSince] >= LAND_FLAT_RUN) return land(c);
+      // Eine Gerade, die keine Linie trifft, hält ihre Höhe: Ein Gefälle entsteht nur, wenn die Hand nach unten zieht.
+      // Die Geste gilt nur für die eigene Linie; eine fremde Linie zwischen den Linien wäre meist ein Plateau des
+      // Hügels, kein Boden (sonst zöge jede Gerade nach einem Hügel diagonal auf die Linie darunter)
+      if (dOwn <= LAND_BAND_FLAT && yMax - Y[i] >= LAND_FLAT_DROP && cum[i] - cum[flatSince] >= LAND_FLAT_RUN) return land(Math.round(lane));
       if (c !== Math.round(lane) && d <= LAND_BAND_OTHER && flat && cameDown) {
         if (otherSince < 0 || otherLane !== c) {
           otherSince = i;
