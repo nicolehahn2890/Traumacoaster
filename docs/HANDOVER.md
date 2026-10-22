@@ -6,7 +6,7 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
 
 ## 1. Wo wir stehen
 
-- **Branch:** Alles liegt auf `main`. PR #1 (M1 bis M5/D3, Stand e00ec84) wurde am 21.10. gemerged, PR #2 (Spur-Filter
+- **Branch (22.10.):** `claude/nice-cannon-094fka` trägt den Gesten-Interpreter v3 (Zeichnen stabil, feste Spuren, Spur-Anzeige; siehe `docs/PLAN.md`, M2/A8) und geht per Pull Request nach `main`. Davor: Alles liegt auf `main`. PR #1 (M1 bis M5/D3, Stand e00ec84) wurde am 21.10. gemerged, PR #2 (Spur-Filter
   in Renderer-Auflösung, die halbe Auflösung machte die ganze Spur pixelig) ebenfalls, danach D4 und diese Übergabe.
   Jeder Push auf `main` geht über `.github/workflows/deploy.yml` direkt auf GitHub Pages.
   `claude/serene-pascal-43m0gq` ist damit abgeschlossen; neue Arbeit auf einem eigenen Branch ab `main`.
@@ -123,7 +123,7 @@ ansehen.
 
 - `src/app/scenes/level.ts` Zeichnen, Bearbeiten, Fahrt, Ergebnis; `start.ts` Karte (Glücksrad, Übergang);
   `game.ts` App-Shell (Ticker, Dev-Overlay, Szenenwechsel); `mapTransition.ts` Übergabe Karte ↔ Level.
-- `src/track/` Strich → Bahn (`strokeToTrack.ts`, `reduceNodes.ts`), Modell und Abtastung (`model.ts`),
+- `src/track/` Strich → Bahn (`gesture.ts` Lesart in Abschnitte, `strokeToTrack.ts` Pipeline/Schluss/Fortsetzen, `reduceNodes.ts`), Modell und Abtastung (`model.ts`),
   Bearbeitung (`edit.ts`), Überzeichnen (`overdraw.ts`), Bühne/Spuren (`stage.ts`).
 - `src/physics/` Zug (`trainSim.ts`), Freiflug (`flightSim.ts`), Fahrgäste und Gurte (`passengers.ts`,
   `belts.ts`), Terrain (`terrain.ts`), Interpolation.

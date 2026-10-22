@@ -27,11 +27,11 @@ import {
   clonePath, closestSample, createNode, emptyPath, isAutoNode, isClosed, nodeIn, nodeOut, sampleTrack, segmentPoints, trackStats,
   type ElementKind, type StartType, type TrackNode, type TrackPath, type TrackSamples, type TrackStats,
 } from '@/track/model';
-import { strokeToTrack, closePath, extendTrack, interpretStroke, type StrokeMode } from '@/track/strokeToTrack';
+import { strokeToTrack, closePath, extendTrack, interpretStroke, type InterpretedPoint, type StrokeMode } from '@/track/strokeToTrack';
 import { bendSegment } from '@/track/edit';
 import { MeasureOverlay } from '@/render/measureOverlay';
 import { applyOverdraw, nearestOnTrack } from '@/track/overdraw';
-import { laneRise, laneScale, toStage, toWorld, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
+import { laneRise, laneScale, nearestLane, toStage, toWorld, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
 import { hexNum, shade } from '@/render/paint';
@@ -119,6 +119,8 @@ export class LevelScene implements Scene {
   private stroke: StagePoint[] | null = null;
   private strokeKind: StrokeKind = 'new';
   private strokeModes: StrokeMode[] = [];
+  /** Spur und Lesart am Ende des Strichs (aus der letzten Vorschau), für die Spur-Anzeige */
+  private strokeLane: { lane: number; mode: StrokeMode } | null = null;
   private previewTimer = 0;
   /** Dauer der letzten Vorschau in Sekunden: der Takt passt sich an (mindestens 80 ms, sonst das Doppelte) */
   private previewCost = 0;
@@ -154,6 +156,10 @@ export class LevelScene implements Scene {
   private ghost = new Graphics();
   /** Markierung des offenen Endes (pulsiert) */
   private endMarker = new Graphics();
+  /** Spur-Anzeige unten rechts: fünf Ebenen wie die Bühne, die aktive leuchtet (grün Boden, pink Höhe) */
+  private laneHud = new Container();
+  private laneHudG = new Graphics();
+  private laneHudState: { lane: number | null; mode: StrokeMode } = { lane: NaN, mode: 'floor' };
   private chipLayer = new Container();
   private gizmoLayer = new Container();
   private goalsBar = new Container();
@@ -243,7 +249,8 @@ export class LevelScene implements Scene {
     this.view = new WorldView(this.world, this.terrain, this.skin, night);
     this.view.overlay.addChild(this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
-    this.ui.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.toast);
+    this.laneHud.addChild(this.laneHudG);
+    this.ui.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.laneHud, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.toast);
     this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn];
     this.speedBtn.visible = false;
     this.skinBtn.visible = unlockAll();
@@ -273,6 +280,7 @@ export class LevelScene implements Scene {
     this.updateGoals();
     this.updateHint();
     this.updateUndoButtons();
+    this.refreshLaneHud();
   }
 
   exit(): void {
@@ -524,12 +532,14 @@ export class LevelScene implements Scene {
           if (this.selected !== n) this.proNode = -1;
           this.selected = n;
           this.drawOverlay();
+          this.refreshLaneHud();
           return;
         }
       }
       this.selected = -1;
       this.proNode = -1;
       this.drawOverlay();
+      this.refreshLaneHud();
     };
     H.longPress = (p) => {
       if (this.mode !== 'draw' || this.isOverUI(p) || !this.path || !this.unlocked.has('handles')) return;
@@ -727,11 +737,11 @@ export class LevelScene implements Scene {
   }
 
   /**
-   * Vorschau während des Strichs: Looping-Scheitel als Ring und, sobald die Bahn sich schließen würde, die
-   * Schlussverbindung als gestrichelte, laufende Geister-Schiene (ab dem ersten automatischen Knoten,
-   * mindestens die letzten 14 m vor der Station).
+   * Vorschau während des Strichs: Looping-Scheitel als Ring und, sobald das Strichende nah genug an der Station
+   * ist, ein feiner gestrichelter Hinweis zur Station. Der Rundenschluss selbst kommt erst beim Loslassen, damit
+   * die Bahn während des Ziehens nicht in die Station springt.
    */
-  private drawGhost(path: TrackPath, samples: TrackSamples): void {
+  private drawGhost(path: TrackPath): void {
     const g = this.ghost;
     g.clear();
     const zs = 1 / Math.max(0.35, this.view.camera.zoom / 12);
@@ -741,38 +751,23 @@ export class LevelScene implements Scene {
       const k = laneScale(n.z);
       g.circle(sp.X, sp.Y, 0.9 * k * zs).stroke({ width: 0.16 * k * zs, color: 0x9b6dff, alpha: 0.9 });
     }
-    if (!isClosed(path) || !samples.closed || samples.count < 4) return;
-    let sFrom = samples.length - 14;
-    for (let i = 0; i < samples.count; i++) {
-      if (samples.auto[i]) {
-        sFrom = Math.min(sFrom, i * samples.step);
-        break;
-      }
+    if (!this.stroke || this.stroke.length < 2 || isClosed(path) || path.nodes.length < 2) return;
+    const st0 = path.nodes[0];
+    const sp = toStage(st0.x, st0.y, st0.z);
+    const e = this.stroke[this.stroke.length - 1];
+    const d = Math.hypot(sp.X - e.X, sp.Y - e.Y);
+    const snap = Math.max(8, 60 / this.view.camera.zoom);
+    if (d > snap || d < 0.5) return;
+    const dash = 0.7 * zs;
+    const period = dash + 0.5 * zs;
+    const offset = (this.time * 2.5) % period;
+    for (let a = -offset; a < d; a += period) {
+      const s0 = Math.max(0, a) / d;
+      const s1 = Math.min(d, a + dash) / d;
+      if (s1 <= s0) continue;
+      g.moveTo(e.X + (sp.X - e.X) * s0, e.Y + (sp.Y - e.Y) * s0).lineTo(e.X + (sp.X - e.X) * s1, e.Y + (sp.Y - e.Y) * s1).stroke({ width: 0.28 * zs, color: 0xffffff, alpha: 0.75, cap: 'round' });
     }
-    sFrom = Math.max(0, sFrom);
-    const dash = 0.8;
-    const period = dash + 0.5;
-    const offset = (this.time * 3) % period;
-    const runs: number[][] = [];
-    let cur: number[] | null = null;
-    for (let i = 0; i < samples.count; i++) {
-      const sAt = i * samples.step;
-      if (sAt < sFrom) continue;
-      const on = (sAt + offset) % period < dash;
-      const p = toStage(samples.x[i], samples.y[i], samples.z[i]);
-      if (on) {
-        if (!cur) {
-          cur = [];
-          runs.push(cur);
-        }
-        cur.push(p.X, p.Y);
-      } else cur = null;
-    }
-    for (const r of runs) {
-      if (r.length < 4) continue;
-      g.poly(r, false).stroke({ width: 0.62 * zs, color: hexNum(INK), alpha: 0.55, cap: 'round', join: 'round' });
-      g.poly(r, false).stroke({ width: 0.36 * zs, color: 0xffffff, alpha: 0.95, cap: 'round', join: 'round' });
-    }
+    g.circle(sp.X, sp.Y, 0.55 * zs).stroke({ width: 0.16 * zs, color: 0xffffff, alpha: 0.75 });
   }
 
   private drawInk(): void {
@@ -807,9 +802,16 @@ export class LevelScene implements Scene {
     if (this.strokeKind === 'terrain') return;
     const opts = { ...this.strokeOptions(), preview: true };
     const count = this.stroke.length;
+    const last = this.stroke[count - 1];
+    const laneOf = (points: { z: number; mode: StrokeMode }[] | undefined) => {
+      const p = points && points.length ? points[points.length - 1] : null;
+      this.strokeLane = p ? { lane: p.z, mode: p.mode } : { lane: nearestLane(last.Y), mode: 'floor' };
+      this.refreshLaneHud();
+    };
     if (this.strokeKind === 'overdraw' && this.path && this.samples) {
       const merged = applyOverdraw(this.path, this.stroke, { ...opts, snapDistance: 30 / this.view.camera.zoom });
       this.ghost.clear();
+      laneOf(undefined);
       if (merged) {
         const sm = sampleTrack(merged, 0.5);
         this.view.setTrack(merged, sm, this.skin, this.terrain, this.allowTunnels, true);
@@ -820,26 +822,29 @@ export class LevelScene implements Scene {
       return;
     }
     if (this.strokeKind === 'extend' && this.path) {
-      const ext = extendTrack(this.path, this.stroke, opts);
+      const out: { points?: InterpretedPoint[] } = {};
+      const ext = extendTrack(this.path, this.stroke, opts, out);
       if (ext) {
-        this.strokeModes = [];
+        this.strokeModes = out.points?.map((p) => p.mode) ?? [];
+        laneOf(out.points);
         const sm = sampleTrack(ext, 0.5);
         this.view.setTrack(ext, sm, this.skin, this.terrain, this.allowTunnels, true);
         this.previewedCount = count;
         this.drawInk();
-        this.drawGhost(ext, sm);
+        this.drawGhost(ext);
         this.liveFeedback(ext, sm, trackStats(ext, sm));
       }
       return;
     }
     const r = strokeToTrack(this.stroke, opts);
     this.strokeModes = r.points.map((p) => p.mode);
+    laneOf(r.points);
     if (r.path.nodes.length >= 2) this.previewedCount = count;
     this.drawInk();
     if (r.path.nodes.length >= 2) {
       const sm = sampleTrack(r.path, 0.5);
       this.view.setTrack(r.path, sm, this.skin, this.terrain, this.allowTunnels, true);
-      this.drawGhost(r.path, sm);
+      this.drawGhost(r.path);
       this.liveFeedback(r.path, sm, trackStats(r.path, sm));
     } else this.ghost.clear();
   }
@@ -848,6 +853,7 @@ export class LevelScene implements Scene {
     const stroke = this.stroke;
     this.stroke = null;
     this.strokeModes = [];
+    this.strokeLane = null;
     this.previewedCount = 0;
     this.previewCost = 0;
     this.ink.clear();
@@ -959,12 +965,14 @@ export class LevelScene implements Scene {
       this.stats = null;
       this.view.trackR.clear();
       this.drawOverlay();
+      this.refreshLaneHud();
       return;
     }
     this.samples = sampleTrack(this.path, 0.25);
     this.stats = trackStats(this.path, this.samples);
     this.view.setTrack(this.path, this.samples, this.skin, this.terrain, this.allowTunnels, false);
     this.drawOverlay();
+    this.refreshLaneHud();
     if (this.mode === 'draw') this.buildStandingTrain();
     if (this.drag.kind !== 'none' && this.drag.kind !== 'stroke') this.liveFeedback(this.path, this.samples, this.stats);
   }
@@ -1185,6 +1193,51 @@ export class LevelScene implements Scene {
     this.afterEdit();
   }
 
+  // ------------------------------------------------------------------ Spur-Anzeige
+  /**
+   * Welche Ebene gerade gilt: beim Zeichnen die Spur am Strichende, sonst der gewählte Knoten, das offene Ende
+   * oder die Station. Nur im Zeichenmodus und bei geschlossenem Regal sichtbar.
+   */
+  private refreshLaneHud(): void {
+    let lane: number | null = null;
+    let mode: StrokeMode = 'floor';
+    if (this.strokeLane) ({ lane, mode } = this.strokeLane);
+    else if (this.path && this.selected >= 0 && this.selected < this.path.nodes.length) {
+      const n = this.path.nodes[this.selected];
+      lane = n.z;
+      mode = n.y - this.groundAt(n.x, n.z) > 1.5 ? 'height' : 'floor';
+    } else if (this.path && this.path.nodes.length) {
+      const n = isClosed(this.path) ? this.path.nodes[0] : this.path.nodes[this.path.nodes.length - 1];
+      lane = n.z;
+      mode = n.y - this.groundAt(n.x, n.z) > 1.5 ? 'height' : 'floor';
+    }
+    this.laneHud.visible = this.mode === 'draw' && !this.shelfOpen;
+    const st = this.laneHudState;
+    const same = (st.lane === null && lane === null) || (st.lane !== null && lane !== null && Math.round(st.lane) === Math.round(lane));
+    if (same && st.mode === mode) return;
+    this.laneHudState = { lane, mode };
+    this.drawLaneHud();
+  }
+  private drawLaneHud(): void {
+    const g = this.laneHudG;
+    g.clear();
+    const { lane, mode } = this.laneHudState;
+    const ink = hexNum(INK);
+    // fünf Ebenen wie die Bühne: hinten (oben) schmaler und heller, vorne (unten) breiter und satter
+    for (let z = LANE_MAX; z >= LANE_MIN; z--) {
+      const row = LANE_MAX - z;
+      const w = 24 + row * 4;
+      const y = -22 + row * 11;
+      const active = lane !== null && Math.round(lane) === z;
+      const fill = active ? (mode === 'height' ? 0xff5c8a : 0x7ee081) : hexNum(PAPER);
+      g.roundRect(-w / 2, y - 3.5, w, 7, 3.5).fill({ color: fill, alpha: active ? 1 : 0.7 - row * 0.05 }).stroke({ width: 2, color: ink, alpha: active ? 1 : 0.55 });
+      if (!active) continue;
+      // Marke: Punkt = am Boden dieser Ebene, Pfeil = in der Höhe über dieser Ebene
+      if (mode === 'height') g.poly([-4, y + 2, 0, y - 3, 4, y + 2]).fill(0xffffff).stroke({ width: 1, color: ink });
+      else g.circle(0, y, 2.2).fill(0xffffff).stroke({ width: 1, color: ink });
+    }
+  }
+
   // ------------------------------------------------------------------ Overlay (Knoten, Handles, Gizmo)
   private drawOverlay(): void {
     const g = this.overlay;
@@ -1353,6 +1406,7 @@ export class LevelScene implements Scene {
   private toggleShelf(): void {
     this.shelfOpen = !this.shelfOpen;
     this.shelf.visible = this.shelfOpen;
+    this.refreshLaneHud();
   }
   private shelfItemAt(p: Pt): { kind: ElementKind; color: string } | null {
     for (const c of this.shelf.children) {
@@ -1575,6 +1629,7 @@ export class LevelScene implements Scene {
     this.hint.visible = false;
     this.shelfBtn.visible = false;
     this.speedBtn.visible = true;
+    this.laneHud.visible = false;
     this.updateGoals();
   }
 
@@ -1988,6 +2043,7 @@ export class LevelScene implements Scene {
     this.playBtn.position.set(w / 2, h - (portrait ? 64 : 56));
     this.shelfBtn.position.set(w - 46, h - 50);
     this.speedBtn.position.set(w - 46, h - 50);
+    this.laneHud.position.set(w - 46, h - 120);
     this.shelf.position.set(w - 10, h - 120);
     this.hint.position.set(w / 2, h - 178);
     this.hint.style.wordWrapWidth = Math.min(380, w - 40);
