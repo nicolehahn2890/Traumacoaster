@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { interpretGesture, laneChangeLength, scanSections } from '@/track/gesture';
 import { extendTrack, prepareStroke, stageCurve, strokeToTrack } from '@/track/strokeToTrack';
 import { nodeIn, nodeOut, nodePos, sampleTrack, trackStats } from '@/track/model';
-import { laneRise, toStage, type StagePoint } from '@/track/stage';
+import { laneRise, laneScale, toStage, type StagePoint } from '@/track/stage';
 import { normalize3, sub3 } from '@/core/math3';
 
 const param = (n: number, f: (t: number) => [number, number]): StagePoint[] =>
@@ -251,5 +251,55 @@ describe('Fortsetzen am offenen Ende', () => {
     }
     expect(maxK).toBeLessThan(1 / 4);
     expect(ext!.nodes.length).toBeGreaterThan(base.nodes.length);
+  });
+});
+
+describe('Gesten-Interpreter: Spurende, Kehre in Maushöhe, Höhe halten', () => {
+  it('bleibt am Scheitel stehen, wenn die Kehre an der hintersten Spur klar nach hinten gezeichnet ist', () => {
+    const R2 = laneRise(2);
+    const stroke = [...param(40, (t) => [t * 30, R2]), ...param(16, (t) => [30 + 3 * Math.sin(Math.PI * t), R2 + 3 * (1 - Math.cos(Math.PI * t))]), ...param(40, (t) => [30 - t * 30, R2 + 6])];
+    const r = strokeToTrack(stroke, { preview: true });
+    expect(r.blocked).toBeDefined();
+    expect(r.blocked!.dir).toBe(1);
+    expect(r.events.filter((e) => e.kind === 'turn').length).toBe(0);
+    const xs = r.points.map((p) => p.x);
+    expect(Math.max(...xs)).toBeLessThan(33.5 / laneScale(2));
+    expect(r.points.every((p) => Math.round(p.z) === 2)).toBe(true);
+  });
+  it('nimmt bei unklarer Richtung die Seite, die geht (Rückweg auf derselben Linie)', () => {
+    const R2 = laneRise(2);
+    const stroke = [...param(40, (t) => [t * 30, R2]), ...param(16, (t) => [30 + 3 * Math.sin(Math.PI * t), R2 + 0.6 * (1 - Math.cos(Math.PI * t))]), ...param(40, (t) => [30 - t * 30, R2 + 0.5])];
+    const r = strokeToTrack(stroke);
+    expect(r.blocked).toBeUndefined();
+    const turns = r.events.filter((e) => e.kind === 'turn');
+    expect(turns.length).toBe(1);
+    expect(turns[0].dir).toBe(-1);
+  });
+  it('legt eine Steilkurve auf das gezeichnete Höhenprofil: der Rückweg liegt so tief wie gezeichnet', () => {
+    // Anstieg auf 14 m, Kehre, deren Rückweg 3 m tiefer liegt (nach vorne)
+    const stroke = [...param(30, (t) => [t * 20, 0]), ...param(30, (t) => [20 + t * 10, 14 * t]), ...param(12, (t) => [30 + 2 * Math.sin(Math.PI * t), 14 - 1.5 * (1 - Math.cos(Math.PI * t))]), ...param(40, (t) => [30 - t * 30, 11 - 0.02 * t])];
+    const r = strokeToTrack(stroke, { preview: true });
+    const turns = r.events.filter((e) => e.kind === 'turn');
+    expect(turns.length).toBe(1);
+    expect(turns[0].floor).toBe(false);
+    const after = r.points.filter((p) => (p.s ?? 0) > 50 && p.mode === 'height');
+    expect(after.length).toBeGreaterThan(10);
+    // nach der Kurve liegt die Bahn nahe der gezeichneten Höhe (11 m über der Linie der Zielspur), kein Abbau über 16 m
+    for (const p of after.slice(4)) expect(Math.abs(p.y + laneRise(p.z) / laneScale(p.z) - 11 / laneScale(p.z))).toBeLessThan(2.5);
+  });
+  it('hält die Höhe auf einer Geraden nach dem Hügel, wenn sie keine Linie trifft', () => {
+    const stroke = [...param(20, (t) => [t * 10, 0]), ...param(30, (t) => [10 + t * 12, 16 * (1 - Math.cos(Math.PI * t)) * 0.5]), ...param(30, (t) => [22 + t * 14, 16 - 10 * t]), ...param(40, (t) => [36 + t * 30, 6])];
+    const r = strokeToTrack(stroke, { preview: true });
+    const tail = r.points.filter((p) => (p.s ?? 0) > 60);
+    expect(tail.length).toBeGreaterThan(10);
+    for (const p of tail) {
+      expect(p.mode).toBe('height');
+      expect(p.y).toBeGreaterThan(4.5);
+    }
+  });
+  it('landet auf der Linie, wenn die Gerade nach dem Abstieg dicht auf ihr liegt', () => {
+    const stroke = [...param(20, (t) => [t * 10, 0]), ...param(30, (t) => [10 + t * 12, 16 * (1 - Math.cos(Math.PI * t)) * 0.5]), ...param(30, (t) => [22 + t * 14, 16 - 15.2 * t]), ...param(40, (t) => [36 + t * 30, 0.8])];
+    const r = strokeToTrack(stroke, { preview: true });
+    expect(r.points[r.points.length - 1].mode).toBe('floor');
   });
 });

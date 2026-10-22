@@ -9,6 +9,7 @@ import type { CoinSpec, LevelDef } from '@/levels/types';
 import type { TrackPath, TrackSamples, TrackState } from '@/track/model';
 import { carFrame, stateAt } from '@/track/model';
 import { LANE_DEPTH, toStage } from '@/track/stage';
+import { findCrossings, type Crossing } from '@/track/crossings';
 import type { Terrain } from './terrain';
 import { FlightSim, type FlightKind } from './flightSim';
 
@@ -33,7 +34,7 @@ export const SKIN_PHYSICS: Record<string, SkinPhysics> = {
 };
 
 export type RidePhase = 'lift' | 'launch' | 'coast' | 'done' | 'failed' | 'flying';
-export type FailReason = 'derail' | 'fall' | 'stall' | 'eject' | 'water' | 'ejectSide' | 'openEnd';
+export type FailReason = 'derail' | 'fall' | 'stall' | 'eject' | 'water' | 'ejectSide' | 'openEnd' | 'crossing';
 
 export interface CarState {
   index: number;
@@ -148,6 +149,8 @@ export class TrainSim {
     time: 0, maxSpeed: 0, maxG: 1, minG: 1, maxLatG: 0, airtime: 0, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0, blackout: false, brakesUsed: false, distance: 0, ejected: 0, caught: 0, flightMax: 0,
   };
   readonly collected: boolean[];
+  /** Kreuzungen der Bahn mit sich selbst auf gleicher Höhe: dort fährt der Zug auf die andere Schiene auf */
+  readonly crossings: Crossing[];
   phase: RidePhase = 'coast';
   failReason: FailReason | null = null;
   /** Freiflug nach Entgleisen, Fall oder offenem Ende (Phase 'flying') */
@@ -156,6 +159,8 @@ export class TrainSim {
   wheelLock = 0;
   private lockArmed = false;
   s = 0;
+  /** Bogenlänge vor dem letzten Teilschritt (für Ereignisse, die eine Stelle der Bahn passieren) */
+  private sPrev = 0;
   v = 0;
   t = 0;
   sinceFail = 0;
@@ -177,6 +182,7 @@ export class TrainSim {
     this.path = path;
     this.opts = opts;
     this.collected = opts.coins.map(() => false);
+    this.crossings = findCrossings(samples);
     for (let i = 0; i < opts.cars; i++) {
       this.cars.push({ index: i, s: 0, x: 0, y: 0, z: 0, tx: 1, ty: 0, tz: 0, upx: 0, upy: 1, upz: 0, sx: 0, sy: 0, sz: 1, bank: 0, angle: 0, gSeat: 1, gFwd: 0, gLat: 0, feltFwd: 0, feltUp: G, feltSide: 0, inTunnel: false, inverted: false, vx: 0, vy: 0 });
       this.wasInTunnel.push(false);
@@ -241,6 +247,7 @@ export class TrainSim {
       return;
     }
     if (this.phase === 'done') return;
+    this.sPrev = this.s;
     this.integrate(h, false);
     this.updateCars();
     this.t += h;
@@ -449,6 +456,19 @@ export class TrainSim {
       this.fail('openEnd', 0);
       return;
     }
+    // Kreuzung auf gleicher Höhe: Der Zug fährt an der ersten der beiden Stellen auf die andere Schiene auf
+    if (this.crossings.length && this.s !== this.sPrev) {
+      const a = ((Math.min(this.s, this.sPrev) % L) + L) % L;
+      const b = a + Math.abs(this.s - this.sPrev);
+      for (const c of this.crossings) {
+        for (const sHit of [c.s1, c.s2]) {
+          if ((sHit > a && sHit <= b) || (sHit + L > a && sHit + L <= b)) {
+            this.fail('crossing', 0);
+            return;
+          }
+        }
+      }
+    }
     if (!st.auto) {
       for (const car of this.cars) {
         if (car.gLat > this.skinPhysics.lateralLimit) {
@@ -483,10 +503,10 @@ export class TrainSim {
     this.failReason = reason;
     this.events.push({ kind: 'fail', time: this.t, reason, car });
     // Entgleisen und Fall: der Zug verlässt die Schiene und fliegt (zur Kamera oder von ihr weg, je nach Querkraft)
-    if (reason === 'derail' || reason === 'fall') {
+    if (reason === 'derail' || reason === 'fall' || reason === 'crossing') {
       const c = this.cars[car] ?? this.cars[0];
       const side = c.feltSide > 0 ? 1 : c.feltSide < 0 ? -1 : 1;
-      this.startFlight(reason === 'derail' ? 'derail' : 'fall', side);
+      this.startFlight(reason === 'fall' ? 'fall' : 'derail', side);
     } else if (reason === 'openEnd') {
       // mit Tempo (Räder waren blockiert) fliegt der Zug ab, sonst kippt er langsam über die Kante
       this.wheelLock = 0;

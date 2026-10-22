@@ -30,12 +30,14 @@
   "fail.ejectSide": "{name} tipped over the side!",
   "fail.water": "Splash! Without a splash element the water stops the train.",
   "fail.openEnd": "Barrier! The track ends here – draw it back to the station.",
+  "fail.crossing": "The rails cross at the same height: the train ran into the other track. One of them has to be higher.",
   "beltSnap": "{name}: belt snapped!",
   "sticker.derail": "Derailed!",
   "sticker.fall": "Fell off!",
   "sticker.stall": "Rolled back!",
   "sticker.water": "Splash!",
   "sticker.openEnd": "Barrier!",
+  "sticker.crossing": "Crossing!",
   "sticker.eject": "{name} flies!",
   "sticker.ejectSide": "{name} tips over!",
   "sticker.catch": "Caught!",
@@ -109,5 +111,6 @@
   "tutorial.l1": "Put your finger on the ground and draw a hill. Lead the track back to the station, or it ends at the barrier tape.",
   "tutorial.l2": "Tap the track and drag the handles",
   "tutorial.l5": "Draw a flat arc towards the back on the ground (higher on screen = further back)",
-  "tutorial.l8": "Climb steeply and draw a loop in the air that crosses itself"
+  "tutorial.l8": "Climb steeply and draw a loop in the air that crosses itself",
+  "laneEnd": "No level left in that direction"
 }

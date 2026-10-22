@@ -15,11 +15,11 @@ import { dedupe, smoothStroke } from '@/core/rdp';
 import { fitWithCorners3 } from '@/core/bezierFit3';
 import { reduceNodes, type ApexHint } from './reduceNodes';
 import { alignOpposite } from './edit';
-import { interpretGesture, lanesForRadius, radiusForDrop, type InterpretedPoint, type StrokeEvent, type StrokeMode } from './gesture';
+import { interpretGesture, lanesForRadius, radiusForDrop, type BlockedInfo, type InterpretedPoint, type StrokeEvent, type StrokeMode } from './gesture';
 import { createNode, emptyPath, isAutoNode, isClosed, nodeIn, nodeOut, nodePos, type PathClosure, type TrackNode, type TrackPath } from './model';
 import { LANE_DEPTH, LANE_MAX, LANE_MIN, laneRise, laneScale, toStage, type StagePoint } from './stage';
 
-export type { InterpretedPoint, StrokeEvent, StrokeMode } from './gesture';
+export type { BlockedInfo, InterpretedPoint, StrokeEvent, StrokeMode } from './gesture';
 
 export interface StrokeOptions {
   /** Bodenhöhe (Welt) an x, Spur z */
@@ -54,6 +54,8 @@ export interface StrokeResult {
   path: TrackPath;
   events: StrokeEvent[];
   points: InterpretedPoint[];
+  /** Der Strich wollte am Spurende in eine Richtung ohne Spur: die Bahn endet am Scheitel (siehe gesture.ts) */
+  blocked?: BlockedInfo;
 }
 
 const TURNAROUND_LANES = 2; // Kehre in die Station bei Ankunft gegen die Fahrtrichtung
@@ -243,7 +245,7 @@ export function interpretStroke(pts: Vec2[], opts: StrokeOptions): InterpretedPo
 }
 
 /** Lesart mit Ereignissen (Kehren, Loopings); beim Überzeichnen blendet das Ende auf die Ziel-Tiefe */
-export function interpretWithEvents(pts: Vec2[], opts: StrokeOptions): { points: InterpretedPoint[]; events: StrokeEvent[] } {
+export function interpretWithEvents(pts: Vec2[], opts: StrokeOptions): { points: InterpretedPoint[]; events: StrokeEvent[]; blocked?: BlockedInfo } {
   const r = interpretGesture(pts, gestureOptions(opts));
   const n = r.points.length;
   if (opts.endZ !== undefined && n > 2) {
@@ -596,19 +598,19 @@ export function strokeToTrack(stroke: StagePoint[], opts: StrokeOptions = {}): S
   const pts = prepareStroke(stroke);
   if (pts.length < 2) return { path: emptyPath(), events: [], points: [] };
   // Ein neuer Strich beginnt an der Station: dorthin zielt der Rundenschluss
-  const { points, events } = interpretWithEvents(pts, { ...opts, closeAt: opts.closeAt ?? { X: pts[0].x, Y: pts[0].y } });
-  if (points.length < 2) return { path: emptyPath(), events: [], points: [] };
+  const { points, events, blocked } = interpretWithEvents(pts, { ...opts, closeAt: opts.closeAt ?? { X: pts[0].x, Y: pts[0].y } });
+  if (points.length < 2) return { path: emptyPath(), events: [], points: [], blocked };
   // Rundenschluss erst beim Loslassen: Während des Strichs springt die Bahn nicht in die Station
   if (!opts.preview) snapEndToStart(points, opts.groundHeight ?? (() => 0), events, undefined, opts.closeSnap);
   const nodes = pointsToNodes(points, opts, events);
-  if (nodes.length < 2) return { path: emptyPath(), events: [], points };
+  if (nodes.length < 2) return { path: emptyPath(), events: [], points, blocked };
   nodes[0].kind = 'station';
   const path: TrackPath = { ...emptyPath(), nodes };
   // In der Vorschau bleibt die Bahn offen (nur ein Hinweis zur Station); geschlossen wird beim Loslassen
   if (opts.preview) path.closed = false;
   else closePath(path);
   if (opts.autoClose) closeTrack(path);
-  return { path, events, points };
+  return { path, events, points, blocked };
 }
 
 const CLOSE_SNAP = 8; // Bühnen-Meter: endet der Strich so nah an seinem Start, wird die Runde geschlossen
@@ -731,7 +733,7 @@ const LEAD_IN = 6; // Meter: Einlauf entlang der Endtangente, damit der neue Str
  * verlässt das Ende ohne Knick. Der Endknoten übernimmt die Tangente des neuen Stücks (G1 zur bisherigen Bahn).
  * Endet der Strich an der Station, schließt sich die Bahn (beim Loslassen, nicht in der Vorschau).
  */
-export function extendTrack(path: TrackPath, stroke: StagePoint[], opts: StrokeOptions = {}, out?: { points?: InterpretedPoint[] }): TrackPath | null {
+export function extendTrack(path: TrackPath, stroke: StagePoint[], opts: StrokeOptions = {}, out?: { points?: InterpretedPoint[]; blocked?: BlockedInfo }): TrackPath | null {
   if (isClosed(path) || path.nodes.length < 2 || stroke.length < 2) return null;
   const ground = opts.groundHeight ?? (() => 0);
   const clearance = opts.groundClearance ?? 0.6;
@@ -764,7 +766,8 @@ export function extendTrack(path: TrackPath, stroke: StagePoint[], opts: StrokeO
   const station = nodes[0];
   const sp = nodePos(station);
   const readOpts: StrokeOptions = { ...opts, groundHeight: raised, groundClearance: 0, startZ: zEnd, startMode, closeAt: stageOf(sp), lockLength: leadLen };
-  const { points, events } = interpretWithEvents(pts, readOpts);
+  const { points, events, blocked } = interpretWithEvents(pts, readOpts);
+  if (out) out.blocked = blocked;
   // Einlauf abschneiden: die bisherige Bahn bleibt, der neue Teil beginnt genau am Ende
   let cut = 0;
   while (cut < points.length - 1 && (points[cut].s ?? 0) < leadLen - 1e-6) cut++;
