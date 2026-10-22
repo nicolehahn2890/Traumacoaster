@@ -78,6 +78,8 @@ const TURN_STRAIGHT_RATE = 0.03; // rad/m: darunter ist ein Rückweg in jedem Fa
 const TURN_STRAIGHT_RATIO = 0.4; // Rückweg gerade, wenn er sich weniger als 40 % so stark krümmt wie die Beuge
 const TURN_WATCH = 5; // m Vorwärtslauf nach einer festgelegten Kehre, in denen sie noch zum Looping werden kann
 const LOOP_CLOSE = (330 * Math.PI) / 180; // Drehung, bei der die Schleife geschlossen ist
+const LOOP_STRAIGHT_WINDOW = 8; // m: enthält die Schleife ein so langes, fast gerades Stück …
+const LOOP_STRAIGHT_TURN = 0.2; // rad (11°) … ist es keine Schleife, sondern Kehre plus Rückweg
 const LOOP_ASPECT_MIN = 0.45; // Schleife in der Höhe: Höhe/Breite mindestens …
 const LOOP_ASPECT_FLOOR = 0.7; // … vom Boden aus (ein flaches Oval über zwei Spuren hat 0,6 und weniger)
 const LOOP_ASPECT_MAX = 2.5;
@@ -466,10 +468,14 @@ class Scanner {
         return this.commitLoop(prev, bend, j, laneApex, dirX);
       }
       if (turnEnd >= 0) {
-        // Kehre steht; nur noch beobachten, ob der Strich doch zur Schleife weiterdreht
+        // Kehre steht; nur noch beobachten, ob der Strich doch zur Schleife weiterdreht. Läuft er wieder vorwärts
+        // oder ein Stück gerade, bleibt es die Kehre
         let minX = X[turnEnd];
         for (let m = turnEnd; m <= j; m++) if ((X[m] - minX) * dirX < 0) minX = X[m];
         if ((X[j] - minX) * dirX >= TURN_WATCH) break;
+        let k = j;
+        while (k > turnEnd && cum[j] - cum[k] < LOOP_STRAIGHT_WINDOW) k--;
+        if (cum[j] - cum[k] >= LOOP_STRAIGHT_WINDOW && Math.abs(theta[j] - theta[k]) < LOOP_STRAIGHT_TURN) break;
         continue;
       }
       if (retreat >= TURN_COMMIT && this.straightBefore(j, TURN_STRAIGHT_WINDOW, bendRate)) turnEnd = this.commitTurn(prev, apex, bend, dirX, j, floorMode);
@@ -490,6 +496,12 @@ class Scanner {
    * zwei Spuren ist 8,4 m hoch); eine Schleife ist etwa so hoch wie breit. Vom Boden aus muss sie runder sein.
    */
   private loopShaped(bend: number, j: number, floorMode: boolean): boolean {
+    // durchgehend gekrümmt: kein 8-m-Stück, das sich weniger als 11° dreht (Kehre mit geradem Rückweg)
+    let k = bend;
+    for (let m = bend; m <= j; m++) {
+      while (this.cum[m] - this.cum[k + 1] >= LOOP_STRAIGHT_WINDOW) k++;
+      if (this.cum[m] - this.cum[k] >= LOOP_STRAIGHT_WINDOW && Math.abs(this.theta[m] - this.theta[k]) < LOOP_STRAIGHT_TURN) return false;
+    }
     let minX = Infinity;
     let maxX = -Infinity;
     let minY = Infinity;
@@ -577,7 +589,8 @@ class Scanner {
     // Kein Tempo-Zuschlag: Eine enge Kehre nach einem Hügel bleibt eng, die Fahrt zeigt die Folgen.
     const pick = (lf: number): { laneTo: number; R: number } => {
       if (closing && this.closeLane !== lf) return { laneTo: this.closeLane!, R: (Math.abs(this.closeLane! - lf) * LANE_DEPTH) / 2 };
-      let dirZ = laneRead !== lf ? Math.sign(laneRead - lf) : yDir;
+      // Am Boden entscheidet die Spur, die der Rückweg erreicht; in der Höhe nur seine Bildhöhe (höher = hinten)
+      let dirZ = floorMode && laneRead !== lf ? Math.sign(laneRead - lf) : yDir;
       const drawnLanes = floorMode ? Math.abs(laneRead - lf) : lanesForRadius(drawnR);
       let lanes = Math.min(lanesForRadius(TURN_RADIUS_MAX), Math.max(1, drawnLanes));
       // Die gezeichnete Richtung gilt; nur ohne jeden Platz dreht sie

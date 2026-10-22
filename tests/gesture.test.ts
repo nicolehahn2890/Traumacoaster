@@ -116,6 +116,35 @@ describe('Gesten-Interpreter: Loopings', () => {
   });
 });
 
+describe('Gesten-Interpreter: Kehren oben auf dem Hügel', () => {
+  const up = (): StagePoint[] => [...param(20, (t) => [t * 10, 0]), ...param(30, (t) => [10 + t * 12, 20 * (1 - Math.cos(Math.PI * t)) * 0.5]), ...param(30, (t) => [22 + t * 20, 20])];
+  it('legt die Kehre auf die Seite, die der Rückweg zeigt: tiefer = nach vorne, höher = nach hinten', () => {
+    const lower = [...up(), ...param(20, (t) => [42 + 5 * Math.sin(Math.PI * t), 20 - 3 * (1 - Math.cos(Math.PI * t)) * 0.5]), ...param(40, (t) => [42 - t * 30, 17 - t * 4])];
+    const higher = [...up(), ...param(20, (t) => [42 + 5 * Math.sin(Math.PI * t), 20 + 3 * (1 - Math.cos(Math.PI * t)) * 0.5]), ...param(40, (t) => [42 - t * 30, 23 - t * 4])];
+    const tl = strokeToTrack(lower).events.filter((e) => e.kind === 'turn');
+    const th = strokeToTrack(higher).events.filter((e) => e.kind === 'turn');
+    expect(tl.length).toBe(1);
+    expect(th.length).toBe(1);
+    expect(tl[0].dir).toBe(-1);
+    expect(th[0].dir).toBe(1);
+    expect(Math.min(...strokeToTrack(lower).points.map((p) => p.z))).toBeLessThan(-0.9);
+    expect(Math.max(...strokeToTrack(higher).points.map((p) => p.z))).toBeGreaterThan(0.9);
+  });
+  it('macht aus Kehre, Abfahrt und zweiter Kehre keinen Looping', () => {
+    const stroke = [
+      ...up(),
+      ...param(20, (t) => [42 + 5 * Math.sin(Math.PI * t), 20 + 3 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+      ...param(40, (t) => [42 - t * 30, 23 - 18 * t]),
+      ...param(20, (t) => [12 - 5 * Math.sin(Math.PI * t), 5 - 4 * (1 - Math.cos(Math.PI * t)) * 0.5]),
+      ...param(40, (t) => [12 + t * 40, 1 - t]),
+    ];
+    const r = strokeToTrack(stroke);
+    expect(r.events.filter((e) => e.kind === 'loop').length).toBe(0);
+    expect(r.events.filter((e) => e.kind === 'turn').length).toBe(2);
+    expect(trackStats(r.path, sampleTrack(r.path)).loops).toBe(0);
+  });
+});
+
 describe('Gesten-Interpreter: stabil beim Ziehen', () => {
   it('ändert beim Weiterzeichnen nichts an der Bahn, die weiter als 30 m hinter dem Finger liegt', () => {
     const full = tour();
