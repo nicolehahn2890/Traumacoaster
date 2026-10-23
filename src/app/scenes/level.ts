@@ -788,8 +788,10 @@ export class LevelScene implements Scene {
     const fy = clamp(edge(p.y, this.h), -1, 1);
     if (!fx && !fy) return;
     const cam = this.view.camera;
-    // panBy nimmt die Fingerbewegung: Zeiger am rechten Rand heißt Welt nach links schieben
-    cam.panBy(-fx * Math.abs(fx) * AUTOSCROLL_SPEED * dt, -fy * Math.abs(fy) * AUTOSCROLL_SPEED * dt);
+    // panBy nimmt die Fingerbewegung: Zeiger am rechten Rand heißt Welt nach links schieben. Ein langer Frame
+    // (Ruckler) schiebt höchstens 50 ms weit, damit die Bahn keine Sprünge macht
+    const step = Math.min(dt, 0.05);
+    cam.panBy(-fx * Math.abs(fx) * AUTOSCROLL_SPEED * step, -fy * Math.abs(fy) * AUTOSCROLL_SPEED * step);
     cam.clampTo({ minX: -40, maxX: this.level.width + 40, minY: -30, maxY: 160 });
     cam.snap();
     const st = cam.toStage(p.x, p.y);
