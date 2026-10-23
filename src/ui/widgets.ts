@@ -112,6 +112,11 @@ export class Button extends Container {
 
   setText(t: string): void {
     if (this.txt) this.txt.text = t;
+    else if (t) {
+      // ohne Text angelegt (Beschriftung steht erst später fest): Beschriftung jetzt anlegen
+      this.txt = label(t, this.opts.size, this.opts.textColor, this.opts.display);
+      this.addChild(this.txt);
+    }
   }
 
   setEnabled(v: boolean): void {

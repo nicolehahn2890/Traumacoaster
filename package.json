@@ -14,7 +14,8 @@
     "screenshots": "node scripts/screenshots.mjs",
     "scenario": "node scripts/scenario.mjs",
     "art:prep": "node scripts/art-prep.mjs",
-    "art:doc": "node scripts/art-prompts-doc.mjs"
+    "art:doc": "node scripts/art-prompts-doc.mjs",
+    "strokes:replay": "tsx scripts/replay-strokes.ts"
   },
   "dependencies": {
     "@dimforge/rapier2d-compat": "^0.21.0",

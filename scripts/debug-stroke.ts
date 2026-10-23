@@ -1,5 +1,6 @@
 /* Debug-Helfer: Strich interpretieren, Bahn abtasten und Fahrt simulieren; Ausgabe als Text. */
-import { stageCurve, strokeToTrack } from '../src/track/strokeToTrack';
+import { prepareStroke, stageCurve, strokeToTrack } from '../src/track/strokeToTrack';
+import { scanSections } from '../src/track/gesture';
 import { sampleTrack, trackStats } from '../src/track/model';
 import { TrainSim } from '../src/physics/trainSim';
 import { Terrain } from '../src/physics/terrain';
@@ -21,6 +22,7 @@ function report(name: string, stroke: StagePoint[], startType: 'chainlift' | 'la
   const st = trackStats(r.path, s);
   console.log(`\n=== ${name}: nodes=${r.path.nodes.length} len=${s.length.toFixed(1)} events=${JSON.stringify(r.events)} stats=${JSON.stringify(st)}`);
   console.log('modes:', r.points.map((p) => (p.mode === 'floor' ? 'f' : 'H')).join(''));
+  console.log('sections:', scanSections(prepareStroke(stroke), { closeAt: { X: stroke[0].X, Y: stroke[0].Y } }).map((sec) => `${sec.kind}[${sec.i0}-${sec.i1}${sec.kind === 'turn' ? ` ${sec.laneFrom}>${sec.laneTo} R${(sec.R as number).toFixed(1)}` : ''}${sec.kind === 'loop' ? ` R${(sec.R as number).toFixed(1)}` : ''}${sec.kind === 'floor' && (sec.switches as unknown[]).length ? ` sw${JSON.stringify((sec.switches as Array<{ i: number; lane: number }>).map((w) => [w.i, w.lane]))}` : ''}]`).join(' '));
   console.log('nodes:', r.path.nodes.map((n) => `${n.kind[0]}(${n.x.toFixed(1)},${n.y.toFixed(1)},${n.z.toFixed(2)})`).join(' '));
   const sim = new TrainSim(s, r.path, { cars: CARS, carLength: 2.4, skin, frictionScale: 1, gravityScale: 1, startType, coins: [], terrain: flatTerrain, allowTunnels: true });
   console.log(`lift ${sim.liftStart.toFixed(1)}..${sim.liftEnd.toFixed(1)}`);

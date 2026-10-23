@@ -35,9 +35,10 @@ describe('Vorschau während des Strichs', () => {
     const sp = trackStats(prev.path, sampleTrack(prev.path, 0.5));
     expect(Math.abs(sf.maxHeight - sp.maxHeight)).toBeLessThan(0.5);
     expect(sp.loops).toBe(sf.loops);
-    expect(sp.turns).toBe(sf.turns);
+    expect(prev.events.map((e) => e.kind)).toEqual(full.events.map((e) => e.kind));
     expect(sp.lanes).toBe(sf.lanes);
-    expect(prev.path.nodes.length).toBeLessThanOrEqual(full.path.nodes.length + 2);
+    // Vorschau-Knoten liegen alle 2,5 m direkt auf der Linie (kein Fit, der von Takt zu Takt anders einrastet)
+    expect(prev.path.nodes.length).toBeGreaterThan(full.path.nodes.length);
   });
   it('ist in der Vorschau nicht langsamer als die fertige Lesart', () => {
     const t = (opts: { preview?: boolean }) => {

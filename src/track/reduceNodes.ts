@@ -32,6 +32,8 @@ export interface ReduceOptions {
   tolLoose?: number;
   /** Faktor auf beide Toleranzen (Vorschau: gröber und schneller) */
   tolScale?: number;
+  /** höchste Toleranz je Punkt in Metern (Pinsel-Bahn: eng, wo die Bahn einer anderen Stelle nahekommt) */
+  tolAt?: ArrayLike<number>;
   /** Radius in Metern, unter dem die enge Toleranz gilt (Standard 25: Täler bei 90 km/h haben rund 20 m) */
   tightRadius?: number;
   /**
@@ -260,7 +262,8 @@ export function reduceNodes(pts: Vec3[], hints: ApexHint[] = [], opts: ReduceOpt
   const fitRec = (a: number, b: number, depth: number): void => {
     let maxK = 0;
     for (let i = a; i <= b; i++) if (prof[i] > maxK) maxK = prof[i];
-    const tol = toleranceFor(maxK, opts);
+    let tol = toleranceFor(maxK, opts);
+    if (opts.tolAt) for (let i = a; i <= b; i++) tol = Math.min(tol, opts.tolAt[i]);
     const r = fitCubicWithTangents(pts, a, b, T(a), scale3(T(b), -1), tol, 6, NEWTON_BELOW);
     const short = b - a < 3 || cum[b] - cum[a] < MIN_SPLIT_LENGTH;
     opts.trace?.(`[${a}..${b}] err ${r.maxError.toFixed(2)} tol ${tol.toFixed(2)} → ${r.maxError <= tol || short || depth >= 10 ? 'ok' : 'teilen'}`);

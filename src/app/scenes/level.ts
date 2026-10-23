@@ -27,13 +27,14 @@ import {
   clonePath, closestSample, createNode, emptyPath, isAutoNode, isClosed, nodeIn, nodeOut, sampleTrack, segmentPoints, trackStats,
   type ElementKind, type StartType, type TrackNode, type TrackPath, type TrackSamples, type TrackStats,
 } from '@/track/model';
-import { strokeToTrack, closePath, extendTrack, interpretStroke, type StrokeMode } from '@/track/strokeToTrack';
+import { strokeToTrack, closePath, extendTrack, interpretStroke, type BlockedInfo, type InterpretedPoint, type StrokeMode } from '@/track/strokeToTrack';
 import { bendSegment } from '@/track/edit';
 import { RubberBrush } from '@/track/brush';
 import { BrushRefiner, joinLines, lineLength, planBrushTrack, spliceLine, trackLine, type AcceptedSpot, type BrushPlan } from '@/track/brushTrack';
 import { MeasureOverlay } from '@/render/measureOverlay';
 import { applyOverdraw, nearestOnTrack } from '@/track/overdraw';
-import { laneRise, laneScale, toStage, toWorld, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
+import { cutIndexNear, retractIndex } from '@/track/strokeBuffer';
+import { laneRise, laneScale, nearestLane, toStage, toWorld, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
 import { hexNum, shade } from '@/render/paint';
@@ -50,6 +51,8 @@ export interface SandboxConfig {
 
 type Mode = 'draw' | 'ride' | 'result';
 type StrokeKind = 'new' | 'overdraw' | 'terrain' | 'extend';
+/** Lesart des Strichs: Pinsel (Linie = Bahn), Bühne (Boden = Tiefe, steil = Höhe) oder Ein Strich (alles Höhe) */
+type StrokeReading = 'brush' | 'stage' | 'single';
 
 /** Worauf die Kamera in der Zeitlupen-Regie schaut */
 interface CameraFocus {
@@ -85,10 +88,34 @@ const SHELF_ELEMENTS: Array<{ kind: ElementKind; unlock: ElementId; color: strin
 ];
 /** Bühnen-Meter Tinte hinter dem Finger (die Bahn selbst ist die Vorschau) */
 const INK_TAIL = 1.5;
+/** Zurückziehen des Strichs: so nah (px) an der eigenen Linie und entgegen ihrer Richtung radiert der Zeiger den Strich */
+const RETRACT_PX = 10;
+/** … und so weit (Bühnen-Meter) hinter dem Ende wird dafür gesucht (ein Rückzug beginnt immer am Ende) */
+const RETRACT_REACH = 6;
+/** … und so weit (Bühnen-Meter) muss der Zeiger erst zurücklaufen, bevor radiert wird (ein Kreuzen der eigenen Linie bleibt) */
+const RETRACT_MIN = 1.0;
+/** Spurende: so lange (s) nach dem letzten Anstoßen bleibt die Tinte rot */
+const BLOCKED_SHOW = 0.6;
+/** Autoscroll beim Zeichnen: so nah (px) am Bildrand schiebt die Kamera, mit bis zu dieser Geschwindigkeit (px/s) */
+const AUTOSCROLL_PX = 120;
+const AUTOSCROLL_SPEED = 220;
+/** Strichspitze: dicker Punkt unter dem Finger (Radius px) und ein sich verjüngender Schweif (Länge px) entlang des Strichs */
+const TIP_RADIUS_PX = 13;
+const TIP_TAIL_PX = 110;
 /** Knotenwahl beim Zeichnen: Scheitel-Semantik (Standard) oder der alte Schneider-Fit zum Vergleich (?fit=legacy) */
 const FIT_MODE: 'apex' | 'legacy' = typeof location !== 'undefined' && new URLSearchParams(location.search).get('fit') === 'legacy' ? 'legacy' : 'apex';
-/** Zeichnen mit dem Gummiband-Pinsel (Linie = Bahn, Tiefe und Physik wählt die Bahn selbst); ?stage = alte Bühnen-Lesart */
-const BRUSH = typeof location === 'undefined' || !new URLSearchParams(location.search).has('stage');
+/** Lesart per Adresse erzwingen (?brush, ?stage, ?single), sonst gilt die Einstellung (Knopf unten links) */
+const STROKE_MODE_URL: StrokeReading | null = (() => {
+  if (typeof location === 'undefined') return null;
+  const q = new URLSearchParams(location.search);
+  return q.has('brush') ? 'brush' : q.has('stage') ? 'stage' : q.has('single') ? 'single' : null;
+})();
+const STROKE_MODES: StrokeReading[] = ['brush', 'stage', 'single'];
+/** Zeichen-Zoom auf dem Handy: mindestens so viele Pixel pro Bühnen-Meter (eine Spur rund 5 mm); der Rest des Levels
+ *  über Autoscroll am Rand oder Wischen, Doppeltipp auf freie Fläche wechselt zur Übersicht */
+const DRAW_ZOOM_MIN = 7;
+/** Zeichen-Zoom nur, wenn die kürzere Bildschirmseite schmaler ist (Handys) */
+const DRAW_ZOOM_SCREEN = 600;
 /** Gummiband zwischen Finger und Linienende (Bildschirm-Pixel) */
 const BAND_PX = 22;
 /** Tropfen unter dem Finger (Radius, Bildschirm-Pixel) */
@@ -137,10 +164,30 @@ export class LevelScene implements Scene {
   private refining: TrackPath | null = null;
   /** Stellen, die die Bahn nach den Probefahrten hingenommen hat (Anzeige im Dev-Modus) */
   private brushSpots: AcceptedSpot[] = [];
+  /** vorhergesagte Fingerposition (Bühne) für die Strichspitze, null = keine Vorhersage */
+  private predicted: StagePoint | null = null;
+  /** Handy: Übersicht statt Zeichen-Zoom (Doppeltipp auf freie Fläche schaltet um) */
+  private overview = false;
+  /** rohe Fingerpunkte des laufenden Strichs (Bühne X, Y, Millisekunden seit Strichbeginn) für den Strich-Rekorder */
+  private rawStroke: Array<[number, number, number]> = [];
+  private rawStart = 0;
   private strokeKind: StrokeKind = 'new';
   private strokeModes: StrokeMode[] = [];
+  /** Spur und Lesart am Ende des Strichs (aus der letzten Vorschau), für die Spur-Anzeige */
+  private strokeLane: { lane: number; mode: StrokeMode } | null = null;
+  /** letzte Zeigerpositionen (Bühne) über rund einen Meter: Bewegungsrichtung für das Zurückziehen */
+  private pointerTrail: StagePoint[] = [];
+  /** letzte Zeigerposition auf dem Bildschirm während eines Strichs (Autoscroll am Bildrand) */
+  private pointerScreen: Pt | null = null;
+  /** Zurückziehen läuft (nach RETRACT_MIN auf der Linie zurück); davor zählt retractDist den Weg */
+  private retracting = false;
+  private retractDist = 0;
+  /** Spurende: Zeitpunkt des letzten Anstoßens (Kehre in eine Richtung ohne Spur) und gewünschte Richtung */
+  private blockedAt = -10;
+  private blockedDir = 0;
+  private blockedToastAt = -10;
   private previewTimer = 0;
-  /** Dauer der letzten Vorschau in Sekunden: der Takt passt sich an (mindestens 80 ms, sonst das Doppelte) */
+  /** Dauer der letzten Vorschau in Sekunden: der Takt passt sich an (jeden Frame, sonst das 1,25-Fache der Dauer) */
   private previewCost = 0;
   /** Strichpunkte, die die letzte Vorschau schon als Bahn zeigt; die Tinte zeigt nur den Rest hinter dem Finger */
   private previewedCount = 0;
@@ -170,10 +217,17 @@ export class LevelScene implements Scene {
   private ui = new Container();
   private overlay = new Graphics();
   private ink = new Graphics();
+  /** Leichter Schein auf der Bodenlinie der Spur, auf der gerade gezeichnet wird */
+  private laneGlow = new Graphics();
+  private laneGlowState: { lane: number; mode: StrokeMode; blocked: boolean } = { lane: NaN, mode: 'floor', blocked: false };
   /** Geister-Schiene (vorgeschlagene Schlussverbindung) und Looping-Marker während des Strichs */
   private ghost = new Graphics();
   /** Markierung des offenen Endes (pulsiert) */
   private endMarker = new Graphics();
+  /** Spur-Anzeige unten rechts: fünf Ebenen wie die Bühne, die aktive leuchtet (grün Boden, pink Höhe) */
+  private laneHud = new Container();
+  private laneHudG = new Graphics();
+  private laneHudState: { lane: number | null; mode: StrokeMode; blocked: number } = { lane: NaN, mode: 'floor', blocked: 0 };
   private chipLayer = new Container();
   private gizmoLayer = new Container();
   private goalsBar = new Container();
@@ -210,6 +264,8 @@ export class LevelScene implements Scene {
   private saveBtn = new Button('', { width: 48, round: true, color: '#7ee081', icon: iconSave });
   /** Dev-Modus: Bahntyp durchschalten */
   private skinBtn = new Button('DEV', { width: 150, height: 40, size: 15, color: '#2a1f3d' });
+  /** Umschalter der Lesart (Bühne / Ein Strich), zum Ausprobieren */
+  private modeBtn = new Button('', { width: 96, height: 36, size: 14, color: '#2a1f3d' });
   private shelf = new Container();
   private shelfOpen = false;
   private toast = new Toast();
@@ -261,11 +317,14 @@ export class LevelScene implements Scene {
     await initPhysics();
     const night = this.world.id === 6 || this.world.id === 8 || this.world.id === 10 || (this.unlocked.has('nightMode') && this.level.id === 25);
     this.view = new WorldView(this.world, this.terrain, this.skin, night);
-    this.view.overlay.addChild(this.ink, this.ghost, this.overlay, this.endMarker);
+    this.view.overlay.addChild(this.laneGlow, this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
-    this.ui.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.toast);
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn];
+    this.laneHud.addChild(this.laneHudG);
+    this.ui.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.laneHud, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn, this.toast);
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn];
     this.speedBtn.visible = false;
+    this.modeBtn.setText(t(`strokeMode.btn.${this.reading}`));
+    this.modeBtn.onTap = () => this.toggleStrokeMode();
     this.skinBtn.visible = unlockAll();
     this.skinBtn.setText(`DEV · ${ELEMENT_NAMES[this.skin as ElementId] ?? this.skin}`);
     this.skinBtn.onTap = () => this.cycleDevSkin();
@@ -293,6 +352,7 @@ export class LevelScene implements Scene {
     this.updateGoals();
     this.updateHint();
     this.updateUndoButtons();
+    this.refreshLaneHud();
   }
 
   exit(): void {
@@ -423,7 +483,12 @@ export class LevelScene implements Scene {
         }
       }
       this.stroke = [{ X: st.X, Y: st.Y }];
+      this.beginRaw(st);
       this.strokeModes = [];
+      this.pointerTrail = [{ X: st.X, Y: st.Y }];
+      this.retracting = false;
+      this.retractDist = 0;
+      this.blockedAt = -10;
       this.drag = { kind: 'stroke' };
       if (!this.path) this.strokeKind = 'new';
       else {
@@ -442,7 +507,7 @@ export class LevelScene implements Scene {
           this.toast.show(t('newStrokeHint'), 2.2);
         }
       }
-      if (BRUSH && this.strokeKind !== 'terrain') {
+      if (this.brushMode && this.strokeKind !== 'terrain') {
         this.refiner = null;
         this.brush = new RubberBrush(st, BAND_PX / this.view.camera.zoom);
         this.stroke = this.brush.points;
@@ -456,13 +521,9 @@ export class LevelScene implements Scene {
       const st = this.view.camera.toStage(p.x, p.y);
       switch (this.drag.kind) {
         case 'stroke':
-          if (this.brush) {
-            this.brush.move(st);
-            this.drawInk();
-          } else if (this.stroke) {
-            this.stroke.push({ X: st.X, Y: st.Y });
-            this.drawInk();
-          }
+          this.pointerScreen = { x: p.x, y: p.y };
+          this.predicted = null;
+          this.appendStrokePoint(st);
           break;
         case 'trackPending': {
           const d = this.drag;
@@ -478,7 +539,8 @@ export class LevelScene implements Scene {
             this.bendTo(st);
           } else {
             // längs der Bahn: überzeichnen, der Strich beginnt am Anfasspunkt
-            if (BRUSH) {
+            this.beginRaw(d.startSt!);
+            if (this.brushMode) {
               this.refiner = null;
               this.brush = new RubberBrush(d.startSt!, BAND_PX / this.view.camera.zoom);
               this.brush.move(st);
@@ -504,6 +566,7 @@ export class LevelScene implements Scene {
     H.dragEnd = (p) => {
       if (this.mode !== 'draw') return;
       const st = this.view.camera.toStage(p.x, p.y);
+      this.pointerScreen = null;
       switch (this.drag.kind) {
         case 'stroke': this.finishStroke(); break;
         case 'node': case 'handleIn': case 'handleOut': case 'depth': case 'roll': case 'segment': this.afterEdit(); break;
@@ -557,12 +620,14 @@ export class LevelScene implements Scene {
           if (this.selected !== n) this.proNode = -1;
           this.selected = n;
           this.drawOverlay();
+          this.refreshLaneHud();
           return;
         }
       }
       this.selected = -1;
       this.proNode = -1;
       this.drawOverlay();
+      this.refreshLaneHud();
     };
     H.longPress = (p) => {
       if (this.mode !== 'draw' || this.isOverUI(p) || !this.path || !this.unlocked.has('handles')) return;
@@ -596,7 +661,17 @@ export class LevelScene implements Scene {
           return;
         }
       }
+      if (Math.min(this.w, this.h) < DRAW_ZOOM_SCREEN) {
+        this.overview = !this.overview;
+        this.toast.show(t(this.overview ? 'view.overview' : 'view.draw'), 1.4);
+      }
       this.fitCamera(false);
+    };
+    H.dragPredict = (p) => {
+      if (this.mode !== 'draw' || this.drag.kind !== 'stroke' || !this.stroke) return;
+      const st = this.view.camera.toStage(p.x, p.y);
+      this.predicted = { X: st.X, Y: st.Y };
+      this.drawInk();
     };
     H.panStart = () => {
       this.view.camera.direct = true;
@@ -745,9 +820,72 @@ export class LevelScene implements Scene {
   }
 
   // ------------------------------------------------------------------ Strich → Bahn
+  /** Lesart (Einstellung, Umschalter unten links; die Adresse kann sie erzwingen) */
+  private get reading(): StrokeReading {
+    return STROKE_MODE_URL ?? storage.settings.strokeMode ?? 'brush';
+  }
+  private get singleStroke(): boolean {
+    return this.reading === 'single';
+  }
+  private get brushMode(): boolean {
+    return this.reading === 'brush';
+  }
+  /** Pinsel → Bühne → Ein Strich → Pinsel */
+  private toggleStrokeMode(): void {
+    const next = STROKE_MODES[(STROKE_MODES.indexOf(this.reading) + 1) % STROKE_MODES.length];
+    storage.updateSettings({ strokeMode: next });
+    this.modeBtn.setText(t(`strokeMode.btn.${this.reading}`));
+    this.toast.show(t(`strokeMode.${this.reading}`), 2.2);
+  }
+
+  /** Neuer Strichpunkt (Bühne) aus Zeigerbewegung oder Autoscroll: Zurückziehen prüfen, anhängen, Tinte */
+  private appendStrokePoint(st: StagePoint): void {
+    if (!this.stroke) return;
+    const np = { X: st.X, Y: st.Y };
+    this.rawStroke.push([st.X, st.Y, performance.now() - this.rawStart]);
+    if (this.brush) {
+      // Pinsel: Zurückziehen radiert die gemalte Linie (this.stroke ist die Linie des Pinsels), danach zieht das
+      // Gummiband die Linie weiter
+      const before = this.stroke.length;
+      this.retractStroke(np);
+      if (this.stroke.length !== before) this.brush.resetTip();
+      this.brush.move(np);
+      this.drawInk();
+      return;
+    }
+    this.retractStroke(np);
+    this.stroke.push(np);
+    this.drawInk();
+  }
+
+  /**
+   * Autoscroll: Liegt der Zeiger während eines Strichs nah am Bildrand, schiebt die Kamera in diese Richtung (je
+   * näher, desto schneller), und der Strich wächst unter dem stehenden Zeiger weiter, ohne dass man absetzen muss.
+   */
+  private autoscroll(dt: number): void {
+    const p = this.pointerScreen;
+    if (!p || this.drag.kind !== 'stroke' || !this.stroke || this.strokeKind === 'terrain') return;
+    const m = AUTOSCROLL_PX;
+    const edge = (v: number, size: number): number => (v < m ? -(m - v) / m : v > size - m ? (v - (size - m)) / m : 0);
+    const fx = clamp(edge(p.x, this.w), -1, 1);
+    const fy = clamp(edge(p.y, this.h), -1, 1);
+    if (!fx && !fy) return;
+    const cam = this.view.camera;
+    // panBy nimmt die Fingerbewegung: Zeiger am rechten Rand heißt Welt nach links schieben. Ein langer Frame
+    // (Ruckler) schiebt höchstens 50 ms weit, damit die Bahn keine Sprünge macht
+    const step = Math.min(dt, 0.05);
+    cam.panBy(-fx * Math.abs(fx) * AUTOSCROLL_SPEED * step, -fy * Math.abs(fy) * AUTOSCROLL_SPEED * step);
+    cam.clampTo({ minX: -40, maxX: this.level.width + 40, minY: -30, maxY: 160 });
+    cam.snap();
+    const st = cam.toStage(p.x, p.y);
+    const last = this.stroke[this.stroke.length - 1];
+    if (Math.hypot(st.X - last.X, st.Y - last.Y) >= 0.15) this.appendStrokePoint(st);
+  }
+
   private strokeOptions() {
     const ground = (x: number, z: number) => (this.allowTunnels ? this.terrain.groundHeight(x, z) : this.terrain.surfaceHeight(x, z));
     return {
+      single: this.singleStroke,
       fit: FIT_MODE,
       groundHeight: ground,
       groundClearance: 0.8,
@@ -760,11 +898,11 @@ export class LevelScene implements Scene {
   }
 
   /**
-   * Vorschau während des Strichs: Looping-Scheitel als Ring und, sobald die Bahn sich schließen würde, die
-   * Schlussverbindung als gestrichelte, laufende Geister-Schiene (ab dem ersten automatischen Knoten,
-   * mindestens die letzten 14 m vor der Station).
+   * Vorschau während des Strichs: Looping-Scheitel als Ring und, sobald das Strichende nah genug an der Station
+   * ist, ein feiner gestrichelter Hinweis zur Station. Der Rundenschluss selbst kommt erst beim Loslassen, damit
+   * die Bahn während des Ziehens nicht in die Station springt.
    */
-  private drawGhost(path: TrackPath, samples: TrackSamples): void {
+  private drawGhost(path: TrackPath): void {
     const g = this.ghost;
     g.clear();
     const zs = 1 / Math.max(0.35, this.view.camera.zoom / 12);
@@ -774,38 +912,23 @@ export class LevelScene implements Scene {
       const k = laneScale(n.z);
       g.circle(sp.X, sp.Y, 0.9 * k * zs).stroke({ width: 0.16 * k * zs, color: 0x9b6dff, alpha: 0.9 });
     }
-    if (!isClosed(path) || !samples.closed || samples.count < 4) return;
-    let sFrom = samples.length - 14;
-    for (let i = 0; i < samples.count; i++) {
-      if (samples.auto[i]) {
-        sFrom = Math.min(sFrom, i * samples.step);
-        break;
-      }
+    if (!this.stroke || this.stroke.length < 2 || isClosed(path) || path.nodes.length < 2) return;
+    const st0 = path.nodes[0];
+    const sp = toStage(st0.x, st0.y, st0.z);
+    const e = this.stroke[this.stroke.length - 1];
+    const d = Math.hypot(sp.X - e.X, sp.Y - e.Y);
+    const snap = Math.max(8, 60 / this.view.camera.zoom);
+    if (d > snap || d < 0.5) return;
+    const dash = 0.7 * zs;
+    const period = dash + 0.5 * zs;
+    const offset = (this.time * 2.5) % period;
+    for (let a = -offset; a < d; a += period) {
+      const s0 = Math.max(0, a) / d;
+      const s1 = Math.min(d, a + dash) / d;
+      if (s1 <= s0) continue;
+      g.moveTo(e.X + (sp.X - e.X) * s0, e.Y + (sp.Y - e.Y) * s0).lineTo(e.X + (sp.X - e.X) * s1, e.Y + (sp.Y - e.Y) * s1).stroke({ width: 0.28 * zs, color: 0xffffff, alpha: 0.75, cap: 'round' });
     }
-    sFrom = Math.max(0, sFrom);
-    const dash = 0.8;
-    const period = dash + 0.5;
-    const offset = (this.time * 3) % period;
-    const runs: number[][] = [];
-    let cur: number[] | null = null;
-    for (let i = 0; i < samples.count; i++) {
-      const sAt = i * samples.step;
-      if (sAt < sFrom) continue;
-      const on = (sAt + offset) % period < dash;
-      const p = toStage(samples.x[i], samples.y[i], samples.z[i]);
-      if (on) {
-        if (!cur) {
-          cur = [];
-          runs.push(cur);
-        }
-        cur.push(p.X, p.Y);
-      } else cur = null;
-    }
-    for (const r of runs) {
-      if (r.length < 4) continue;
-      g.poly(r, false).stroke({ width: 0.62 * zs, color: hexNum(INK), alpha: 0.55, cap: 'round', join: 'round' });
-      g.poly(r, false).stroke({ width: 0.36 * zs, color: 0xffffff, alpha: 0.95, cap: 'round', join: 'round' });
-    }
+    g.circle(sp.X, sp.Y, 0.55 * zs).stroke({ width: 0.16 * zs, color: 0xffffff, alpha: 0.75 });
   }
 
   private drawInk(): void {
@@ -829,14 +952,149 @@ export class LevelScene implements Scene {
       len += Math.hypot(this.stroke[i].X - this.stroke[i - 1].X, this.stroke[i].Y - this.stroke[i - 1].Y);
       i--;
     }
-    i = Math.max(0, Math.min(i, this.previewedCount - 1));
+    i = Math.max(0, Math.min(i, Math.min(this.previewedCount, n) - 1));
     const seg = this.stroke.slice(i).flatMap((p) => [p.X, p.Y]);
     if (seg.length < 4) return;
     const modes = this.strokeModes;
     const mode = modes.length ? modes[modes.length - 1] : undefined;
-    const color = this.strokeKind === 'overdraw' ? 0xffd23f : mode === 'height' ? 0xff5c8a : 0x7ee081;
+    const blocked = this.time - this.blockedAt < BLOCKED_SHOW;
+    const color = blocked ? 0xff4d5e : this.strokeKind === 'overdraw' ? 0xffd23f : mode === 'height' ? 0xff5c8a : 0x7ee081;
     g.poly(seg, false).stroke({ width: 0.5, color: 0xffffff, alpha: 0.35, cap: 'round', join: 'round' });
     g.poly(seg, false).stroke({ width: 0.25, color, alpha: 0.55, cap: 'round', join: 'round' });
+    this.drawTip(color);
+  }
+
+  /**
+   * Strichspitze als Tropfen: ein dicker Punkt unter dem Finger (auf dem Handy verdeckt der Finger die dünne Linie)
+   * und von dort ein Schweif, der entlang der letzten Strichmeter dünner wird und sich mit der Kurve biegt.
+   */
+  private drawTip(color: number): void {
+    const s = this.stroke;
+    if (!s || s.length < 2) return;
+    const g = this.ink;
+    const zoom = this.view.camera.zoom;
+    const r0 = TIP_RADIUS_PX / zoom;
+    const tail = TIP_TAIL_PX / zoom;
+    const tip = this.predicted ?? s[s.length - 1];
+    // Punkte vom Finger rückwärts bis zur Schweiflänge, mit Abstand vom Finger
+    const pts: Array<{ X: number; Y: number; d: number }> = [{ X: tip.X, Y: tip.Y, d: 0 }];
+    let d = 0;
+    for (let i = s.length - 2; i >= 0 && d < tail; i--) {
+      const a = pts[pts.length - 1];
+      const step = Math.hypot(s[i].X - a.X, s[i].Y - a.Y);
+      if (step < 0.05) continue;
+      d += step;
+      if (d > tail) {
+        const f = (tail - (d - step)) / step;
+        pts.push({ X: a.X + (s[i].X - a.X) * f, Y: a.Y + (s[i].Y - a.Y) * f, d: tail });
+        break;
+      }
+      pts.push({ X: s[i].X, Y: s[i].Y, d });
+    }
+    g.circle(tip.X, tip.Y, r0).fill({ color, alpha: 0.92 });
+    if (pts.length < 2) return;
+    const width = (dd: number): number => Math.max(0.08 / zoom, r0 * Math.pow(1 - dd / tail, 1.6));
+    const left: number[] = [];
+    const right: number[] = [];
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const a = pts[Math.max(0, i - 1)];
+      const b = pts[Math.min(pts.length - 1, i + 1)];
+      let nx = -(b.Y - a.Y);
+      let ny = b.X - a.X;
+      const nl = Math.hypot(nx, ny) || 1;
+      nx /= nl;
+      ny /= nl;
+      const w = width(p.d);
+      left.push(p.X + nx * w, p.Y + ny * w);
+      right.push(p.X - nx * w, p.Y - ny * w);
+    }
+    const poly: number[] = [...left];
+    for (let i = right.length - 2; i >= 0; i -= 2) poly.push(right[i], right[i + 1]);
+    g.poly(poly, true).fill({ color, alpha: 0.92 });
+  }
+
+  /**
+   * Zurückziehen: Läuft der Zeiger auf dem schon gezeichneten Strich zurück (nah an der Linie und entgegen ihrer
+   * Richtung), wird der Strich bis dorthin wieder ausradiert. So lassen sich beim Ziehen kleine Korrekturen machen,
+   * und am Spurende folgt die Bahn dem Finger zurück, statt wegzuspringen. Ein Strich, der seine eigene Linie nur
+   * kreuzt (Looping, Acht), läuft quer zu ihr und bleibt; eine Kehre liegt eine Spur neben der Anfahrt und bleibt auch.
+   */
+  private retractStroke(p: StagePoint): void {
+    const s = this.stroke;
+    const trail = this.pointerTrail;
+    // Bewegungsrichtung über rund einen Meter (ein einzelner Schritt zittert)
+    trail.push(p);
+    while (trail.length > 2 && Math.hypot(p.X - trail[1].X, p.Y - trail[1].Y) >= 1.0) trail.shift();
+    if (!s || s.length < 3) return;
+    const ref = trail[0];
+    const motion = { X: p.X - ref.X, Y: p.Y - ref.Y };
+    if (Math.hypot(motion.X, motion.Y) < 0.2) return;
+    const keep = retractIndex(s, p, motion, Math.max(0.8, RETRACT_PX / this.view.camera.zoom), RETRACT_REACH);
+    if (keep < 0) {
+      this.retracting = false;
+      this.retractDist = 0;
+      return;
+    }
+    // erst nach einem Meter auf der Linie zurück radieren: ein kurzes Kreuzen der eigenen Linie bleibt stehen
+    if (!this.retracting) {
+      const last = s[s.length - 1];
+      this.retractDist += Math.hypot(p.X - last.X, p.Y - last.Y);
+      if (this.retractDist < RETRACT_MIN) return;
+      this.retracting = true;
+    }
+    s.length = keep + 1;
+    this.previewedCount = Math.min(this.previewedCount, s.length);
+  }
+
+  /**
+   * Spurende: Der Strich wollte eine Kehre in eine Richtung, in der keine Spur mehr ist. Die Bahn bleibt am Scheitel
+   * stehen, der Strich dahinter wird abgeschnitten (der Zeiger kann von dort neu ansetzen), die Tinte wird kurz rot,
+   * und ein dezenter Hinweis erscheint (höchstens alle 2,5 s).
+   */
+  private applyBlocked(b: BlockedInfo | undefined): void {
+    if (!b || !this.stroke) return;
+    const s = this.stroke;
+    const best = cutIndexNear(s, b.at, 4);
+    if (best < 1) return;
+    if (best < s.length - 1) {
+      s.length = best + 1;
+      this.previewedCount = Math.min(this.previewedCount, s.length);
+    }
+    this.blockedAt = this.time;
+    this.blockedDir = b.dir;
+    if (this.time - this.blockedToastAt > 2.5) {
+      this.blockedToastAt = this.time;
+      this.toast.show(t('laneEnd'), 1.2);
+    }
+  }
+
+  /** Leichter Schein auf der Bodenlinie der Spur, auf der gerade gezeichnet wird (grün am Boden, pink in der Höhe, rot am Spurende) */
+  private drawLaneGlow(): void {
+    const g = this.laneGlow;
+    const sl = this.strokeLane;
+    if (!sl) {
+      if (!Number.isNaN(this.laneGlowState.lane)) {
+        g.clear();
+        this.laneGlowState = { lane: NaN, mode: 'floor', blocked: false };
+      }
+      return;
+    }
+    const lane = Math.round(clamp(sl.lane, LANE_MIN, LANE_MAX));
+    const blocked = this.time - this.blockedAt < BLOCKED_SHOW;
+    const st = this.laneGlowState;
+    if (lane === st.lane && sl.mode === st.mode && blocked === st.blocked) return;
+    this.laneGlowState = { lane, mode: sl.mode, blocked };
+    g.clear();
+    const k = laneScale(lane);
+    const color = blocked ? 0xff4d5e : sl.mode === 'height' ? 0xff5c8a : 0x7ee081;
+    const pts: number[] = [];
+    for (let x = -20; x <= this.level.width + 20; x += 2) {
+      const p = toStage(x, this.groundAt(x, lane), lane);
+      pts.push(p.X, p.Y);
+    }
+    g.poly(pts, false).stroke({ width: 1.6 * k, color, alpha: 0.16, cap: 'round', join: 'round' });
+    g.poly(pts, false).stroke({ width: 0.5 * k, color, alpha: 0.35, cap: 'round', join: 'round' });
   }
 
   private previewStroke(): void {
@@ -844,9 +1102,17 @@ export class LevelScene implements Scene {
     if (this.strokeKind === 'terrain') return;
     const opts = { ...this.strokeOptions(), preview: true };
     const count = this.stroke.length;
+    const last = this.stroke[count - 1];
+    const laneOf = (points: { z: number; mode: StrokeMode }[] | undefined) => {
+      const p = points && points.length ? points[points.length - 1] : null;
+      this.strokeLane = p ? { lane: p.z, mode: p.mode } : { lane: nearestLane(last.Y), mode: 'floor' };
+      this.refreshLaneHud();
+      this.drawLaneGlow();
+    };
     if (this.strokeKind === 'overdraw' && this.path && this.samples) {
       const merged = applyOverdraw(this.path, this.stroke, { ...opts, snapDistance: 30 / this.view.camera.zoom });
       this.ghost.clear();
+      laneOf(undefined);
       if (merged) {
         const sm = sampleTrack(merged, 0.5);
         this.view.setTrack(merged, sm, this.skin, this.terrain, this.allowTunnels, true);
@@ -857,42 +1123,87 @@ export class LevelScene implements Scene {
       return;
     }
     if (this.strokeKind === 'extend' && this.path) {
-      const ext = extendTrack(this.path, this.stroke, opts);
+      const out: { points?: InterpretedPoint[]; blocked?: BlockedInfo } = {};
+      const ext = extendTrack(this.path, this.stroke, opts, out);
+      this.applyBlocked(out.blocked);
       if (ext) {
-        this.strokeModes = [];
+        this.strokeModes = out.points?.map((p) => p.mode) ?? [];
+        laneOf(out.points);
         const sm = sampleTrack(ext, 0.5);
         this.view.setTrack(ext, sm, this.skin, this.terrain, this.allowTunnels, true);
         this.previewedCount = count;
         this.drawInk();
-        this.drawGhost(ext, sm);
+        this.drawGhost(ext);
         this.liveFeedback(ext, sm, trackStats(ext, sm));
       }
       return;
     }
     const r = strokeToTrack(this.stroke, opts);
+    this.applyBlocked(r.blocked);
     this.strokeModes = r.points.map((p) => p.mode);
+    laneOf(r.points);
     if (r.path.nodes.length >= 2) this.previewedCount = count;
     this.drawInk();
     if (r.path.nodes.length >= 2) {
       const sm = sampleTrack(r.path, 0.5);
       this.view.setTrack(r.path, sm, this.skin, this.terrain, this.allowTunnels, true);
-      this.drawGhost(r.path, sm);
+      this.drawGhost(r.path);
       this.liveFeedback(r.path, sm, trackStats(r.path, sm));
     } else this.ghost.clear();
   }
 
   private finishStroke(): void {
-    if (this.brush) {
-      this.finishBrush();
-      return;
-    }
+    const raw = this.rawStroke;
+    const kind = this.strokeKind;
+    const before = kind === 'new' || !this.path ? null : clonePath(this.path);
+    this.rawStroke = [];
+    if (this.brush) this.finishBrush();
+    else this.finishReadStroke();
+    this.recordStroke(raw, kind, before);
+  }
+
+  private beginRaw(st: StagePoint): void {
+    this.rawStart = performance.now();
+    this.rawStroke = [[st.X, st.Y, 0]];
+  }
+
+  /**
+   * Strich-Rekorder (nur im Dev-Server): fertigen Strich mit rohen Fingerpunkten, Lesart, Zoom und Ergebnis an
+   * /__strokes schicken (landet in recordings/strokes.jsonl, nachspielen mit npm run strokes:replay)
+   */
+  private recordStroke(raw: Array<[number, number, number]>, kind: StrokeKind, before: TrackPath | null): void {
+    if (!import.meta.env.DEV || raw.length < 3 || kind === 'terrain') return;
+    const rec = {
+      at: new Date().toISOString(),
+      level: this.level.id,
+      reading: this.reading,
+      kind,
+      zoom: +this.view.camera.zoom.toFixed(3),
+      screen: [this.w, this.h],
+      dpr: window.devicePixelRatio,
+      points: raw.map(([X, Y, ms]) => [+X.toFixed(3), +Y.toFixed(3), Math.round(ms)]),
+      before,
+      result: this.path ? { nodes: this.path.nodes.length, closed: isClosed(this.path), length: Math.round(this.samples?.length ?? 0), brush: !!this.path.brush } : null,
+    };
+    void fetch('/__strokes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rec) }).catch(() => undefined);
+  }
+
+  /** Strich fertig in der Bühnen- oder Ein-Strich-Lesart */
+  private finishReadStroke(): void {
     const stroke = this.stroke;
     this.stroke = null;
+    this.predicted = null;
     this.strokeModes = [];
+    this.strokeLane = null;
+    this.pointerTrail = [];
+    this.retracting = false;
+    this.retractDist = 0;
+    this.blockedAt = -10;
     this.previewedCount = 0;
     this.previewCost = 0;
     this.ink.clear();
     this.ghost.clear();
+    this.drawLaneGlow();
     if (!stroke || stroke.length < 3) {
       this.redrawTrack();
       return;
@@ -963,8 +1274,9 @@ export class LevelScene implements Scene {
       g.poly(pts, false).stroke({ width: w + 4 / zoom, color: 0xffffff, alpha: 0.6, cap: 'round', join: 'round' });
       g.poly(pts, false).stroke({ width: w, color: hexNum(INK), alpha: 0.95, cap: 'round', join: 'round' });
     }
-    // Gummiband: tritt in Linienrichtung aus, wird zum Finger hin breiter und endet im Tropfen
-    const band = b.band(18);
+    // Gummiband: tritt in Linienrichtung aus, wird zum Finger hin breiter und endet im Tropfen (an der vorhergesagten
+    // Fingerposition, falls der Browser eine liefert)
+    const band = b.band(18, this.predicted ?? undefined);
     const r = TIP_PX / zoom;
     if (band.length >= 2) {
       const left: number[] = [];
@@ -986,8 +1298,9 @@ export class LevelScene implements Scene {
       for (let i = right.length - 2; i >= 0; i -= 2) poly.push(right[i], right[i + 1]);
       g.poly(poly, true).fill({ color: pink, alpha: 0.9 });
     }
-    g.circle(b.finger.X, b.finger.Y, r).fill({ color: pink, alpha: 0.92 });
-    g.circle(b.finger.X, b.finger.Y, r).stroke({ width: 2 / zoom, color: 0xffffff, alpha: 0.85 });
+    const f = this.predicted ?? b.finger;
+    g.circle(f.X, f.Y, r).fill({ color: pink, alpha: 0.92 });
+    g.circle(f.X, f.Y, r).stroke({ width: 2 / zoom, color: 0xffffff, alpha: 0.85 });
   }
 
   /**
@@ -998,8 +1311,13 @@ export class LevelScene implements Scene {
   private finishBrush(): void {
     const brush = this.brush!;
     this.brush = null;
+    this.predicted = null;
     this.stroke = null;
     this.strokeModes = [];
+    this.strokeLane = null;
+    this.pointerTrail = [];
+    this.retracting = false;
+    this.retractDist = 0;
     this.ink.clear();
     this.ghost.clear();
     const drawn = brush.finish();
@@ -1026,7 +1344,7 @@ export class LevelScene implements Scene {
   private startRefine(plan: BrushPlan): void {
     const limit = (SKIN_PHYSICS[this.skin] ?? SKIN_PHYSICS.skinWood).lateralLimit;
     const probe = (path: TrackPath, samples: TrackSamples) =>
-      new TrainSim(samples, path, { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), lateralLimit: Infinity });
+      new TrainSim(samples, path, { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), lateralLimit: Infinity, checkCrossings: false });
     this.refiner = new BrushRefiner(plan, this.brushOptions(), probe, limit);
     this.refining = plan.path;
   }
@@ -1133,12 +1451,14 @@ export class LevelScene implements Scene {
       this.stats = null;
       this.view.trackR.clear();
       this.drawOverlay();
+      this.refreshLaneHud();
       return;
     }
     this.samples = sampleTrack(this.path, 0.25);
     this.stats = trackStats(this.path, this.samples);
     this.view.setTrack(this.path, this.samples, this.skin, this.terrain, this.allowTunnels, false);
     this.drawOverlay();
+    this.refreshLaneHud();
     if (this.mode === 'draw') this.buildStandingTrain();
     if (this.drag.kind !== 'none' && this.drag.kind !== 'stroke') this.liveFeedback(this.path, this.samples, this.stats);
   }
@@ -1326,7 +1646,7 @@ export class LevelScene implements Scene {
     const zPrev = nodes[Math.max(0, i - 1)].z;
     const mirrored = nodes.map((n, k) => (k >= i && !isAutoNode(n) ? 2 * zPrev - n.z : n.z));
     if (mirrored.some((z) => z < LANE_MIN - 0.01 || z > LANE_MAX + 0.01)) {
-      this.toast.show('Keine Spur mehr in dieser Richtung', 1.5);
+      this.toast.show(t('laneEnd'), 1.5);
       return;
     }
     this.pushHistory();
@@ -1357,6 +1677,57 @@ export class LevelScene implements Scene {
     this.pushHistory();
     this.path.elements.push({ kind, s: near.s - def.length / 2, length: def.length });
     this.afterEdit();
+  }
+
+  // ------------------------------------------------------------------ Spur-Anzeige
+  /**
+   * Welche Ebene gerade gilt: beim Zeichnen die Spur am Strichende, sonst der gewählte Knoten, das offene Ende
+   * oder die Station. Nur im Zeichenmodus und bei geschlossenem Regal sichtbar.
+   */
+  private refreshLaneHud(): void {
+    let lane: number | null = null;
+    let mode: StrokeMode = 'floor';
+    if (this.strokeLane) ({ lane, mode } = this.strokeLane);
+    else if (this.path && this.selected >= 0 && this.selected < this.path.nodes.length) {
+      const n = this.path.nodes[this.selected];
+      lane = n.z;
+      mode = n.y - this.groundAt(n.x, n.z) > 1.5 ? 'height' : 'floor';
+    } else if (this.path && this.path.nodes.length) {
+      const n = isClosed(this.path) ? this.path.nodes[0] : this.path.nodes[this.path.nodes.length - 1];
+      lane = n.z;
+      mode = n.y - this.groundAt(n.x, n.z) > 1.5 ? 'height' : 'floor';
+    }
+    this.laneHud.visible = this.mode === 'draw' && !this.shelfOpen;
+    const blocked = this.strokeLane && this.time - this.blockedAt < BLOCKED_SHOW ? this.blockedDir : 0;
+    const st = this.laneHudState;
+    const same = (st.lane === null && lane === null) || (st.lane !== null && lane !== null && Math.round(st.lane) === Math.round(lane));
+    if (same && st.mode === mode && st.blocked === blocked) return;
+    this.laneHudState = { lane, mode, blocked };
+    this.drawLaneHud();
+  }
+  private drawLaneHud(): void {
+    const g = this.laneHudG;
+    g.clear();
+    const { lane, mode, blocked } = this.laneHudState;
+    const ink = hexNum(INK);
+    // Spurende: roter Riegel über der hintersten bzw. unter der vordersten Ebene (dorthin geht es nicht weiter)
+    if (blocked) {
+      const y = blocked > 0 ? -22 - 11 : -22 + (LANE_MAX - LANE_MIN) * 11 + 11;
+      g.roundRect(-14, y - 2.5, 28, 5, 2.5).fill({ color: 0xff4d5e }).stroke({ width: 2, color: ink });
+    }
+    // fünf Ebenen wie die Bühne: hinten (oben) schmaler und heller, vorne (unten) breiter und satter
+    for (let z = LANE_MAX; z >= LANE_MIN; z--) {
+      const row = LANE_MAX - z;
+      const w = 24 + row * 4;
+      const y = -22 + row * 11;
+      const active = lane !== null && Math.round(lane) === z;
+      const fill = active ? (mode === 'height' ? 0xff5c8a : 0x7ee081) : hexNum(PAPER);
+      g.roundRect(-w / 2, y - 3.5, w, 7, 3.5).fill({ color: fill, alpha: active ? 1 : 0.7 - row * 0.05 }).stroke({ width: 2, color: ink, alpha: active ? 1 : 0.55 });
+      if (!active) continue;
+      // Marke: Punkt = am Boden dieser Ebene, Pfeil = in der Höhe über dieser Ebene
+      if (mode === 'height') g.poly([-4, y + 2, 0, y - 3, 4, y + 2]).fill(0xffffff).stroke({ width: 1, color: ink });
+      else g.circle(0, y, 2.2).fill(0xffffff).stroke({ width: 1, color: ink });
+    }
   }
 
   // ------------------------------------------------------------------ Overlay (Knoten, Handles, Gizmo)
@@ -1527,6 +1898,7 @@ export class LevelScene implements Scene {
   private toggleShelf(): void {
     this.shelfOpen = !this.shelfOpen;
     this.shelf.visible = this.shelfOpen;
+    this.refreshLaneHud();
   }
   private shelfItemAt(p: Pt): { kind: ElementKind; color: string } | null {
     for (const c of this.shelf.children) {
@@ -1665,6 +2037,17 @@ export class LevelScene implements Scene {
       const b = this.levelBounds();
       cam.fitBounds({ minX: b.minX, maxX: b.maxX, minY: -4, maxY: Math.min(b.maxY, this.level.width * 0.55) }, 0.08, 30);
     }
+    // Handy: zum Zeichen nicht weiter herauszoomen als DRAW_ZOOM_MIN, damit Spuren und Kringel fingergroß bleiben.
+    // Die Kamera beginnt dann an der Station (bzw. am linken Levelrand) und lässt die Höhe, wie sie war.
+    const t = cam.target;
+    if (this.mode === 'draw' && !this.overview && Math.min(this.w, this.h) < DRAW_ZOOM_SCREEN && t.zoom < DRAW_ZOOM_MIN) {
+      const b = this.levelBounds();
+      const halfW = this.w / 2 / DRAW_ZOOM_MIN;
+      const st = this.path?.nodes[0];
+      const anchor = st ? toStage(st.x, st.y, st.z).X : b.minX;
+      const x = Math.max(b.minX + halfW, Math.min(b.maxX - halfW, anchor + halfW * 0.6));
+      cam.setTarget(x, t.y, DRAW_ZOOM_MIN);
+    }
     if (instant) cam.snap();
   }
 
@@ -1750,6 +2133,8 @@ export class LevelScene implements Scene {
     this.hint.visible = false;
     this.shelfBtn.visible = false;
     this.speedBtn.visible = true;
+    this.modeBtn.visible = false;
+    this.laneHud.visible = false;
     this.updateGoals();
   }
 
@@ -1780,6 +2165,7 @@ export class LevelScene implements Scene {
     this.timeScale = 1;
     this.speedText.text = '';
     this.speedBtn.visible = false;
+    this.modeBtn.visible = true;
     this.shelfBtn.visible = true;
     this.standCars = [];
     this.redrawTrack();
@@ -1798,7 +2184,7 @@ export class LevelScene implements Scene {
     this.ui.removeChild(old);
     old.destroy({ children: true });
     this.playBtn = btn;
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn];
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn];
     this.ui.addChild(this.toast);
   }
 
@@ -1829,7 +2215,7 @@ export class LevelScene implements Scene {
           this.view.camera.shake(0.6, 0.3);
           if (e.reason === 'openEnd') this.view.effects.ribbons(s.X, s.Y + 0.5, 12);
           if (e.reason) this.sticker.show(t('sticker.' + e.reason, { name: this.failName }), e.reason === 'water' ? '#bfefff' : '#ffd23f');
-          audio.play(e.reason === 'derail' ? 'derail' : 'impact');
+          audio.play(e.reason === 'derail' || e.reason === 'crossing' ? 'derail' : 'impact');
           // Rauswurf: Zeitlupe mit Blick auf den Fliegenden; sonst auf den betroffenen Wagen
           const ejectReason = e.reason === 'eject' || e.reason === 'ejectSide';
           const focus: CameraFocus = ejectReason && this.lastEjected >= 0 ? { kind: 'passenger', index: this.lastEjected } : { kind: 'car', index: e.car ?? 0 };
@@ -2151,6 +2537,7 @@ export class LevelScene implements Scene {
     this.clearBtn.position.set(w - 36, safeTop + 26);
     this.saveBtn.position.set(w - 92, safeTop + 26);
     this.skinBtn.position.set(88, h - 50);
+    this.modeBtn.position.set(62, h - (this.skinBtn.visible ? 96 : 50));
     if (portrait) {
       this.levelTitle.position.set(w / 2, safeTop + 72);
       this.goalsBar.position.set(w / 2, safeTop + 112);
@@ -2163,6 +2550,7 @@ export class LevelScene implements Scene {
     this.playBtn.position.set(w / 2, h - (portrait ? 64 : 56));
     this.shelfBtn.position.set(w - 46, h - 50);
     this.speedBtn.position.set(w - 46, h - 50);
+    this.laneHud.position.set(w - 46, h - 120);
     this.shelf.position.set(w - 10, h - 120);
     this.hint.position.set(w / 2, h - 178);
     this.hint.style.wordWrapWidth = Math.min(380, w - 40);
@@ -2180,13 +2568,17 @@ export class LevelScene implements Scene {
     this.time += dt;
     if (this.mode === 'draw') {
       if (this.refiner && !this.stroke) this.stepRefine(REFINE_SLICE_MS);
-      if (this.stroke && !this.brush) {
-        this.previewTimer += dt;
-        if (this.previewTimer > Math.max(0.08, 2 * this.previewCost)) {
-          this.previewTimer = 0;
-          const t0 = performance.now();
-          this.previewStroke();
-          this.previewCost = (performance.now() - t0) / 1000;
+      if (this.stroke) {
+        this.autoscroll(dt);
+        // Pinsel: keine Live-Vorschau der Bahn, die gemalte Linie ist die Vorschau
+        if (!this.brush) {
+          this.previewTimer += dt;
+          if (this.previewTimer > Math.max(0.012, 1.25 * this.previewCost)) {
+            this.previewTimer = 0;
+            const t0 = performance.now();
+            this.previewStroke();
+            this.previewCost = (performance.now() - t0) / 1000;
+          }
         }
       }
       if (this.supportGrow < 1) {

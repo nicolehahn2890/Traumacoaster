@@ -13,6 +13,8 @@ export interface InputHandlers {
   dragStart?: (p: Pt, id: number) => void;
   dragMove?: (p: Pt, id: number) => void;
   dragEnd?: (p: Pt, id: number) => void;
+  /** vorhergesagte Fingerposition (nur zum Zeichnen der Spitze, nie für den Strich selbst) */
+  dragPredict?: (p: Pt, id: number) => void;
   tap?: (p: Pt) => void;
   doubleTap?: (p: Pt) => void;
   longPress?: (p: Pt) => void;
@@ -166,6 +168,9 @@ export class InputManager {
         const list = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
         if (list.length > 1) for (const ce of list) this.handlers.dragMove?.(this.pos(ce), ptr.id);
         else this.handlers.dragMove?.(p, ptr.id);
+        // die Spitze dort zeichnen, wo der Finger gleich sein wird: ein Bild Verzögerung weniger
+        const pred = typeof e.getPredictedEvents === 'function' ? e.getPredictedEvents() : [];
+        if (pred.length) this.handlers.dragPredict?.(this.pos(pred[pred.length - 1]), ptr.id);
       }
     }
   };

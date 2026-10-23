@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { simplifyRDP, smoothStroke } from '@/core/rdp';
 import { fitCurve } from '@/core/bezierFit';
 import { bezierPoint } from '@/core/math';
-import { closePath, closeTrack, detectLoops, detectTurns, extendTrack, findRoundLoops, interpretStroke, interpretWithEvents, magnetLane, removeHooks, stageCurve, strokeToTrack } from '@/track/strokeToTrack';
+import { closePath, closeTrack, extendTrack, interpretStroke, interpretWithEvents, magnetLane, removeHooks, stageCurve, strokeToTrack } from '@/track/strokeToTrack';
 import { segmentDistance } from '@/core/math';
 import { clonePath, sampleTrack, stateAt, trackStats, type TrackPath, type TrackSamples } from '@/track/model';
 import { applyOverdraw } from '@/track/overdraw';
@@ -106,8 +106,9 @@ describe('Lesart des Strichs (Boden = Tiefe, steil = Höhe)', () => {
     const r = interpretStroke(pts, {});
     expect(r.every((p) => p.mode === 'floor')).toBe(true);
     expect(r[r.length - 1].z).toBeCloseTo(2, 1);
-    expect(detectLoops(r).length).toBe(0);
-    expect(detectTurns(r, []).length).toBe(0);
+    const { events } = interpretWithEvents(pts, {});
+    expect(events.filter((e) => e.kind === 'loop').length).toBe(0);
+    expect(events.filter((e) => e.kind === 'turn').length).toBe(1);
   });
   it('erkennt eine Kreuzung am Boden nicht als Looping', () => {
     // liegende Acht am Boden
@@ -177,12 +178,12 @@ describe('Ereignisse in der Höhe', () => {
     // steile Abfahrt (Oben-Vektor kippt mit), aber nie kopfüber
     expect(minUpY(s)).toBeGreaterThan(-0.1);
   });
-  it('macht aus einer kleinen Schleife keinen Looping', () => {
+  it('macht aus einem winzigen Kringel (Zittern) keinen Looping', () => {
     const stroke = [
       ...climb(),
       ...param(30, (t) => {
         const a = -Math.PI / 2 + Math.PI * 2 * t;
-        return [50 + 2 * Math.cos(a) + t * 1.5, 22 + 2 * Math.sin(a)];
+        return [50 + 0.8 * Math.cos(a) + t * 1.5, 20.8 + 0.8 * Math.sin(a)];
       }),
       ...param(40, (t) => [52 + t * 30, 20 - t * 20]),
       ...param(20, (t) => [82 + t * 10, 0]),
@@ -219,8 +220,8 @@ describe('Ereignisse in der Höhe', () => {
   });
   it('ignoriert Zittern', () => {
     const pts = Array.from({ length: 80 }, (_, i) => ({ x: i * 0.5 + (i % 3 === 0 ? -0.2 : 0), y: 12 }));
-    const r = interpretStroke(pts, { startMode: 'height', startZ: 0 });
-    expect(detectTurns(r, []).length).toBe(0);
+    const { events } = interpretWithEvents(pts, { startMode: 'height', startZ: 0 });
+    expect(events.length).toBe(0);
   });
   it('erkennt einen Looping auch, wenn der Strich kurz nach der Ausfahrt endet', () => {
     const stroke = [
@@ -249,7 +250,6 @@ describe('Loopings vom Boden aus (runde Schleife im rohen Strich)', () => {
   ];
   it.each([5, 7, 9])('liest einen Kreis mit Radius %i m, der am Boden beginnt, als Looping statt als zwei Kurven', (R) => {
     const r = strokeToTrack(groundLoop(R));
-    expect(findRoundLoops(groundLoop(R).map((p) => ({ x: p.X, y: p.Y }))).length).toBe(1);
     expect(r.events.filter((e) => e.kind === 'loop').length).toBe(1);
     expect(r.events.filter((e) => e.kind === 'turn').length).toBe(0);
     const s = sampleTrack(r.path);
@@ -284,12 +284,11 @@ describe('Loopings vom Boden aus (runde Schleife im rohen Strich)', () => {
       ...param(40, (t) => [30 - t * 30, 2 * R]),
       ...param(30, (t) => [-R * Math.sin(Math.PI * t), R + R * Math.cos(Math.PI * t)]),
     ];
-    expect(findRoundLoops(oval.map((p) => ({ x: p.X, y: p.Y }))).length).toBe(0);
+    expect(strokeToTrack(oval).events.filter((e) => e.kind === 'loop').length).toBe(0);
     const eight = param(120, (t) => {
       const a = t * Math.PI * 2;
       return [20 * Math.sin(a), 4 * Math.sin(2 * a) + 4] as [number, number];
     });
-    expect(findRoundLoops(eight.map((p) => ({ x: p.X, y: p.Y }))).length).toBe(0);
     expect(strokeToTrack(eight).events.filter((e) => e.kind === 'loop').length).toBe(0);
   });
   it('misst den Abstand zweier Strecken', () => {

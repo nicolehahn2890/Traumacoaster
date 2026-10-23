@@ -6,6 +6,7 @@
 import type { Vec3 } from '@/core/math3';
 import { bezier3, bezier3d1, bezier3d2, cross3, dot3, normalize3, sub3, len3 } from '@/core/math3';
 import { LANE_DEPTH } from './stage';
+import { findCrossings } from './crossings';
 
 export type NodeKind = 'normal' | 'loopApex' | 'turn' | 'station' | 'closeTurn' | 'closeReturn';
 export type StartType = 'chainlift' | 'launch' | 'hydro' | 'swing' | 'verticalLift';
@@ -471,6 +472,8 @@ export interface TrackStats {
   lanes: number;
   rolls: number;
   maxDrop: number;
+  /** Kreuzungen der Bahn mit sich selbst auf gleicher Höhe (dort entgleist der Zug) */
+  crossings?: number;
 }
 
 /** Kennzahlen: Höhe, Loopings (Inversionen), Kurven (Gierwinkel-Bögen ≥ 60°), Spuren, Schleifen, Drop */
@@ -528,5 +531,5 @@ export function trackStats(path: TrackPath, samples: TrackSamples): TrackStats {
   // Schleifen: manuelle Rollwinkel, die eine volle Drehung erreichen
   let rolls = 0;
   for (const nd of path.nodes) if (!Number.isNaN(nd.roll) && Math.abs(nd.roll) >= Math.PI * 1.9) rolls++;
-  return { length: samples.length, maxHeight, loops, turns, lanes: laneSet.size, rolls, maxDrop };
+  return { length: samples.length, maxHeight, loops, turns, lanes: laneSet.size, rolls, maxDrop, crossings: findCrossings(samples).length };
 }

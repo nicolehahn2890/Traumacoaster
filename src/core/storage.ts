@@ -31,6 +31,8 @@ export interface Settings {
   devSkin: string;
   /** Grafikeffekte (Shader): auto = nach Gerät, high = an, low = aus */
   fx: 'auto' | 'high' | 'low';
+  /** Lesart des Strichs: 'stage' (Boden = Tiefe, steil = Höhe) oder 'single' (alles Höhe, nur Wenden wechseln die Ebene) */
+  strokeMode?: 'brush' | 'stage' | 'single';
 }
 
 export interface SavedTrack {
@@ -55,7 +57,7 @@ interface Store {
 function defaults(): Store {
   return {
     progress: { stars: {}, highest: 0, current: 1, drafts: {} },
-    settings: { sound: true, music: true, language: 'de', shakeUndo: true, seenSplash: false, rideSpeed: 3, devMode: false, devSkin: '', fx: 'auto' },
+    settings: { sound: true, music: true, language: 'de', shakeUndo: true, seenSplash: false, rideSpeed: 3, devMode: false, devSkin: '', fx: 'auto', strokeMode: 'brush' },
     tracks: [],
     characters: DEFAULT_CHARACTERS.map((c) => ({ ...c })),
     riders: DEFAULT_CHARACTERS.map((c) => c.id),

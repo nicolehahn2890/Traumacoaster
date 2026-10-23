@@ -61,6 +61,11 @@ export class Camera {
     return { minX: this.x - hw, maxX: this.x + hw, minY: this.y - hh, maxY: this.y + hh };
   }
 
+  /** Zielposition und -zoom (die Kamera gleitet dorthin) */
+  get target(): { x: number; y: number; zoom: number } {
+    return { x: this.tx, y: this.ty, zoom: this.tz };
+  }
+
   setTarget(x: number, y: number, zoom?: number): void {
     this.tx = x;
     this.ty = y;

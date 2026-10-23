@@ -3,13 +3,15 @@
  * Die Ansicht zeigt Tiefe nur als Versatz nach oben (Bildhöhe Y = Höhe + Tiefe · LANE_RISE / LANE_DEPTH, ohne
  * Verkleinerung nach hinten). Was das Bild nicht festlegt, wählt die Bahn selbst:
  *  - Tiefe je Stelle (planBrushTrack): Lange Wellen der Bildhöhe werden Tiefe, kurze werden Höhe über dem Boden
- *    (Wunschhöhe). Nie unter dem Boden, nie aus der Bühne, an Kreuzungen getrennt (später Gezeichnetes liegt vorne),
- *    Fliehkräfte über die Tiefe weicher (je schneller der Zug dort, desto stärker).
+ *    (Wunschhöhe). Nie unter dem Boden, nie aus der Bühne, wo Stränge sich kreuzen oder nahekommen so weit getrennt,
+ *    dass der Zug durchpasst (später Gezeichnetes liegt vorne), Fliehkräfte über die Tiefe weicher (je schneller der
+ *    Zug dort, desto stärker).
  *  - Probefahrten (BrushRefiner): An der ersten Problemstelle bessert die Bahn nach (Fliehkraft weicher, Höhe halten
  *    statt kopfüber, Kuppe nach hinten, Linie innerhalb einer kleinen Toleranz runder). Was dann noch scheitert, liegt
  *    am Strich und bleibt so: Das ist das Spiel.
  */
 import type { Vec3 } from '@/core/math3';
+import { findCrossings } from './crossings';
 import { createNode, emptyPath, sampleTrack, type TrackPath, type TrackSamples } from './model';
 import { reduceNodes } from './reduceNodes';
 import { LANE_DEPTH, LANE_MAX, LANE_MIN, LANE_RISE, type StagePoint } from './stage';
@@ -27,9 +29,25 @@ const CUTOFF = 40;
 const LAMBDA = (CUTOFF / (2 * Math.PI)) ** 4;
 /** Gewicht der Fliehkraft (Tempo² · Krümmung) bei der Tiefenwahl */
 const KAPPA = 4;
-/** Abstand der Stränge an einer Kreuzung (3D) */
-const SEPARATION = 3.2;
-const SEP_DEPTH = SEPARATION / Math.sqrt(1 + C * C);
+/**
+ * Kreuzungsregel der Fahrt: Kommen sich zwei Bahnstellen in der Draufsicht näher als 1 m, muss eine 3,2 m über der
+ * anderen liegen. Die Tiefe hält sie mit Spiel ein (Linienpunkte liegen 1 m auseinander, die Knoten weichen etwas
+ * ab): seitlich mindestens PASS_SIDE auseinander oder in der Höhe mindestens PASS_OVER.
+ */
+const PASS_SIDE = 2.2;
+const PASS_OVER = 3.5;
+/** so viele Linienpunkte (je 1 m) auseinander sind zwei Stellen keine Nachbarn mehr (wie in der Fahrt) */
+const NEIGHBOR = 8;
+/** Paare, die auf beiden Strängen höchstens so weit (Linienpunkte) auseinanderliegen, bilden eine Engstelle */
+const CLUSTER = 12;
+/** zu nahe Paare in einer Engstelle, an der schon ein Paar festgehalten wird, kommen erst ab dieser Verletzung dazu */
+const NEAR_TOL = 0.1;
+/** höchstens so viele festgehaltene Paare je Engstelle */
+const CLUSTER_MAX = 8;
+/** bleibt ein festgehaltenes Paar um so viel (m) zu nah, kämpft es gegen andere Schranken: Engstelle aufgeben */
+const GIVE_UP = 0.5;
+/** Knoten-Toleranz (m) an Stellen, die einer anderen Stelle nahekommen (sonst bis 1,2 m auf Geraden) */
+const TIGHT_TOL = 0.12;
 const G = 9.81;
 const PIN_W = 1e4;
 /** so weit (m) um die Station bleibt die Bahn in deren Tiefe; danach wird die Wunschhöhe über STATION_RAMP m eingeblendet */
@@ -220,55 +238,119 @@ export function findLineCrossings(line: StagePoint[], closed: boolean): LineCros
 
 // ------------------------------------------------------------------ Tiefe
 
-/** vorkonditioniertes CG für das symmetrische System A·x = b */
-function pcg(apply: (x: Float64Array, out: Float64Array) => void, b: Float64Array, x: Float64Array, diag: Float64Array, maxIt = 2000): void {
-  const n = b.length;
-  const r = new Float64Array(n);
-  const zv = new Float64Array(n);
-  const p = new Float64Array(n);
-  const Ap = new Float64Array(n);
-  apply(x, Ap);
-  let bb = 0;
-  for (let i = 0; i < n; i++) {
-    r[i] = b[i] - Ap[i];
-    zv[i] = r[i] / diag[i];
-    p[i] = zv[i];
-    bb += b[i] * b[i];
+/**
+ * Symmetrische, positiv definite Bandmatrix mit Bandbreite 2, wie sie aus Wunschtiefe, Glättung zweiter Ordnung und
+ * festgehaltenen Stellen entsteht (d0 Diagonale, d1 und d2 die Einträge (i, i+1) und (i, i+2)). Zerlegt als L·D·Lᵀ
+ * und direkt gelöst: kein Iterieren, auch mit sehr steifen Schranken genau.
+ */
+class Band2 {
+  readonly d0: Float64Array;
+  readonly d1: Float64Array;
+  readonly d2: Float64Array;
+  private readonly D: Float64Array;
+  private readonly a1: Float64Array;
+  private readonly a2: Float64Array;
+
+  constructor(readonly n: number) {
+    this.d0 = new Float64Array(n);
+    this.d1 = new Float64Array(n);
+    this.d2 = new Float64Array(n);
+    this.D = new Float64Array(n);
+    this.a1 = new Float64Array(n);
+    this.a2 = new Float64Array(n);
   }
-  let rz = 0;
-  for (let i = 0; i < n; i++) rz += r[i] * zv[i];
-  const tol = 1e-12 * Math.max(1, bb);
-  for (let it = 0; it < maxIt; it++) {
-    apply(p, Ap);
-    let pAp = 0;
-    for (let i = 0; i < n; i++) pAp += p[i] * Ap[i];
-    if (Math.abs(pAp) < 1e-30) break;
-    const alpha = rz / pAp;
-    let rr = 0;
+
+  factor(): void {
+    const { n, d0, d1, d2, D, a1, a2 } = this;
     for (let i = 0; i < n; i++) {
-      x[i] += alpha * p[i];
-      r[i] -= alpha * Ap[i];
-      rr += r[i] * r[i];
+      let d = d0[i];
+      if (i >= 1) d -= a1[i - 1] * a1[i - 1] * D[i - 1];
+      if (i >= 2) d -= a2[i - 2] * a2[i - 2] * D[i - 2];
+      D[i] = d;
+      a1[i] = i + 1 < n ? (d1[i] - (i >= 1 ? a2[i - 1] * a1[i - 1] * D[i - 1] : 0)) / d : 0;
+      a2[i] = i + 2 < n ? d2[i] / d : 0;
     }
-    if (rr < tol) break;
-    let rz2 = 0;
-    for (let i = 0; i < n; i++) {
-      zv[i] = r[i] / diag[i];
-      rz2 += r[i] * zv[i];
-    }
-    const beta = rz2 / rz;
-    rz = rz2;
-    for (let i = 0; i < n; i++) p[i] = zv[i] + beta * p[i];
   }
+
+  /** x = B⁻¹·f (x darf f sein) */
+  solve(f: Float64Array, x: Float64Array): void {
+    const { n, D, a1, a2 } = this;
+    for (let i = 0; i < n; i++) x[i] = f[i] - (i >= 1 ? a1[i - 1] * x[i - 1] : 0) - (i >= 2 ? a2[i - 2] * x[i - 2] : 0);
+    for (let i = 0; i < n; i++) x[i] /= D[i];
+    for (let i = n - 1; i >= 0; i--) x[i] -= (i + 1 < n ? a1[i] * x[i + 1] : 0) + (i + 2 < n ? a2[i] * x[i + 2] : 0);
+  }
+}
+
+/** S·x = r für ein kleines dichtes symmetrisches System (Cholesky; etwas Regularisierung gegen abhängige Paare) */
+function solveDense(S: Float64Array, k: number, r: Float64Array): Float64Array {
+  let maxDiag = 0;
+  for (let i = 0; i < k; i++) maxDiag = Math.max(maxDiag, S[i * k + i]);
+  const eps = 1e-9 * maxDiag + 1e-300;
+  const L = new Float64Array(k * k);
+  for (let i = 0; i < k; i++) {
+    for (let j = 0; j <= i; j++) {
+      let s = S[i * k + j];
+      for (let m = 0; m < j; m++) s -= L[i * k + m] * L[j * k + m];
+      if (i === j) L[i * k + i] = Math.sqrt(Math.max(s, 0) + eps);
+      else L[i * k + j] = s / L[j * k + j];
+    }
+  }
+  const x = new Float64Array(k);
+  for (let i = 0; i < k; i++) {
+    let s = r[i];
+    for (let m = 0; m < i; m++) s -= L[i * k + m] * x[m];
+    x[i] = s / L[i * k + i];
+  }
+  for (let i = k - 1; i >= 0; i--) {
+    let s = x[i];
+    for (let m = i + 1; m < k; m++) s -= L[m * k + i] * x[m];
+    x[i] = s / L[i * k + i];
+  }
+  return x;
+}
+
+/**
+ * Zwei Linienpunkte, die sich auf dem Bild so nahe kommen, dass die Tiefe sie trennen muss: Für den Tiefenunterschied
+ * dz = z_j − z_i ist das offene Intervall (lo, hi) verboten, dort lägen sie in der Draufsicht näher als PASS_SIDE und
+ * in der Höhe näher als PASS_OVER beieinander.
+ */
+interface NearPair {
+  i: number;
+  j: number;
+  lo: number;
+  hi: number;
+}
+
+/** Paare von Stellen, die auf der Linie keine Nachbarn sind (bei einer Runde auch über die Station hinweg gezählt) */
+function nearPairs(line: StagePoint[], closed: boolean): NearPair[] {
+  // bei einer Runde ist der letzte Punkt die Station
+  const m = closed ? line.length - 1 : line.length;
+  const out: NearPair[] = [];
+  for (let i = 0; i < m; i++) {
+    for (let j = i + NEIGHBOR; j < m; j++) {
+      if (closed && m - (j - i) < NEIGHBOR) continue;
+      const dX = line[j].X - line[i].X;
+      if (Math.abs(dX) >= PASS_SIDE) continue;
+      const dY = line[j].Y - line[i].Y;
+      // seitlich zu nah: |dz| < w; in der Höhe zu nah: |dY − c·dz| < PASS_OVER
+      const w = Math.sqrt(PASS_SIDE * PASS_SIDE - dX * dX);
+      const lo = Math.max(-w, (dY - PASS_OVER) / C);
+      const hi = Math.min(w, (dY + PASS_OVER) / C);
+      if (lo < hi) out.push({ i, j, lo, hi });
+    }
+  }
+  return out;
 }
 
 /**
  * Tiefe je Linienpunkt: min Σ wH·(z − Ziel)² + Σ λ_i·(Δ²z)² + Σ wK·[(Y'' − c·z'')² + z''²]
  * mit Ziel = Tiefe, bei der die Bahn auf Wunschhöhe läge, λ für die Grenzwellenlänge, wK = Fliehkraft-Gewicht aus dem
- * geschätzten Tempo. Schranken (aktiv gesetzt, sobald verletzt): Boden, Bühne, untere Schranke (Nachbessern),
- * Kreuzungen. Die Station (Anfang) steht auf dem Boden, bei geschlossener Runde auch das Ende.
+ * geschätzten Tempo. Schranken, gesetzt sobald verletzt und losgelassen sobald sie nach außen ziehen: Boden, Bühne,
+ * untere Schranke (Nachbessern) als steife Federn, der Mindestabstand an Engstellen als exakte Bedingung je Paar
+ * (Kraft je Paar aus dem Gleichungssystem). Die Station (Anfang) steht auf dem Boden, bei geschlossener Runde auch das
+ * Ende. Dazu je Linienpunkt die Knoten-Toleranz (eng, wo die Bahn einer anderen Stelle nahekommt).
  */
-function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing[], wH: Float64Array, wMul: Float64Array, lower: Float64Array, calm: Float64Array, o: Opts): Float64Array {
+function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing[], wH: Float64Array, wMul: Float64Array, lower: Float64Array, calm: Float64Array, o: Opts): { z: Float64Array; tol: Float64Array } {
   const n = line.length;
   const z = new Float64Array(n);
   for (let i = 0; i < n; i++) z[i] = Math.max(Z_MIN, Math.min(Z_MAX, (line[i].Y - H_COMFORT) / C));
@@ -289,97 +371,208 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
   };
   bounds();
   const pins = new Map<number, number>();
+  const station = (i: number) => i === 0 || (closed && i === n - 1);
   const pinStation = () => {
     pins.set(0, upper[0]);
     if (closed) pins.set(n - 1, upper[0]);
   };
   pinStation();
   const wK = new Float64Array(n);
-  const active: Array<{ i: number; j: number; v: number }> = [];
-  const lam = new Float64Array(n);
-  // Schranken-Gewicht: deutlich steifer als der Rest des Systems (das Fliehkraft-Gewicht kann groß werden)
+  // Engstellen: je Paar die gewählte Seite (+1: j liegt hinten, dz ≥ hi; −1: j vorne, dz ≤ lo), ob es gerade auf dem
+  // Rand des verbotenen Bereichs gehalten wird (seit welcher Runde, mit welcher Kraft) oder aufgegeben ist
+  const near = nearPairs(line, closed);
+  const side = new Int8Array(near.length);
+  const held: number[] = [];
+  const isHeld = new Uint8Array(near.length);
+  const heldRound = new Int32Array(near.length);
+  const given = new Uint8Array(near.length);
+  let force: Float64Array = new Float64Array(0);
+  let roundNo = 0;
+  const edge = (p: number) => (side[p] > 0 ? near[p].hi : near[p].lo);
+  const B = new Band2(n);
+  // Schranken-Feder: deutlich steifer als der Rest des Systems (das Fliehkraft-Gewicht kann groß werden)
   let pinW = PIN_W;
-  const apply = (x: Float64Array, out: Float64Array) => {
-    for (let i = 0; i < n; i++) out[i] = wH[i] * x[i];
-    for (let i = 1; i < n - 1; i++) {
-      const d2 = lam[i] * (x[i - 1] - 2 * x[i] + x[i + 1]);
-      out[i - 1] += d2;
-      out[i] -= 2 * d2;
-      out[i + 1] += d2;
-    }
-    for (const [i] of pins) out[i] += pinW * x[i];
-    for (const c of active) {
-      const d = pinW * (x[c.j] - x[c.i]);
-      out[c.j] += d;
-      out[c.i] -= d;
-    }
-  };
   const solveOnce = () => {
-    for (let i = 1; i < n - 1; i++) lam[i] = LAMBDA + (1 + C * C) * wK[i];
+    const { d0, d1, d2 } = B;
+    d1.fill(0);
+    d2.fill(0);
     const b = new Float64Array(n);
-    const diag = new Float64Array(n);
     for (let i = 0; i < n; i++) {
+      d0[i] = wH[i];
       b[i] = wH[i] * target[i];
-      diag[i] = wH[i];
     }
     for (let i = 1; i < n - 1; i++) {
+      const l = LAMBDA + (1 + C * C) * wK[i];
+      d0[i - 1] += l;
+      d0[i] += 4 * l;
+      d0[i + 1] += l;
+      d1[i - 1] -= 2 * l;
+      d1[i] -= 2 * l;
+      d2[i - 1] += l;
       const q = C * wK[i] * ypp[i];
       b[i - 1] += q;
       b[i] -= 2 * q;
       b[i + 1] += q;
-      diag[i - 1] += lam[i];
-      diag[i] += 4 * lam[i];
-      diag[i + 1] += lam[i];
     }
     let maxD = 0;
-    for (let i = 0; i < n; i++) maxD = Math.max(maxD, diag[i]);
+    for (let i = 0; i < n; i++) maxD = Math.max(maxD, d0[i]);
     pinW = Math.max(PIN_W, 1e3 * maxD);
     for (const [i, v] of pins) {
+      d0[i] += pinW;
       b[i] += pinW * v;
-      diag[i] += pinW;
     }
-    for (const c of active) {
-      // z_j − z_i = −v (später vorne: v > 0)
-      b[c.j] -= pinW * c.v;
-      b[c.i] += pinW * c.v;
-      diag[c.j] += pinW;
-      diag[c.i] += pinW;
+    B.factor();
+    B.solve(b, z);
+    // gehaltene Paare exakt (z_j − z_i = Rand): z = z0 − Y·f mit Y = B⁻¹·U, (Uᵀ·Y)·f = Uᵀ·z0 − Rand
+    const k = held.length;
+    force = new Float64Array(k);
+    if (!k) return;
+    const Y: Float64Array[] = [];
+    const u = new Float64Array(n);
+    for (const p of held) {
+      u[near[p].j] = 1;
+      u[near[p].i] = -1;
+      const y = new Float64Array(n);
+      B.solve(u, y);
+      u[near[p].j] = 0;
+      u[near[p].i] = 0;
+      Y.push(y);
     }
-    pcg(apply, b, z, diag);
+    const S = new Float64Array(k * k);
+    const r = new Float64Array(k);
+    for (let a = 0; a < k; a++) {
+      const q = near[held[a]];
+      r[a] = z[q.j] - z[q.i] - edge(held[a]);
+      for (let c = 0; c <= a; c++) S[a * k + c] = S[c * k + a] = Y[c][q.j] - Y[c][q.i];
+    }
+    force = solveDense(S, k, r);
+    for (let a = 0; a < k; a++) {
+      const y = Y[a];
+      const f = force[a];
+      for (let i = 0; i < n; i++) z[i] -= f * y[i];
+    }
   };
-  const settle = () => {
-    for (let round = 0; round < 30; round++) {
+  const inCluster = (a: { i: number; j: number }, b: { i: number; j: number }) => Math.abs(a.i - b.i) <= CLUSTER && Math.abs(a.j - b.j) <= CLUSTER;
+  // Seite eines Paars: wie die Engstelle, in der schon ein Paar gehalten wird; sonst wie zuletzt; an einer Kreuzung wie
+  // dort gewählt; sonst die nähere. Geht sie wegen Boden, Bühne oder Station nicht, die andere.
+  const sideOf = (p: number, dz: number): number => {
+    const q = near[p];
+    for (const h of held) if (inCluster(q, near[h])) return side[h];
+    const lowAt = (i: number) => (station(i) ? upper[0] : low[i]);
+    const upAt = (i: number) => (station(i) ? upper[0] : upper[i]);
+    const fits = (s: number) => (s > 0 ? upAt(q.j) - lowAt(q.i) >= q.hi : lowAt(q.j) - upAt(q.i) <= q.lo);
+    let s = side[p];
+    if (!s) for (const c of crossings) if (c.laterFront !== undefined && inCluster(q, c)) s = c.laterFront ? -1 : 1;
+    if (!s) s = dz >= (q.lo + q.hi) / 2 ? 1 : -1;
+    return fits(s) || !fits(-s) ? s : -s;
+  };
+  const release = (a: number) => {
+    isHeld[held[a]] = 0;
+    held.splice(a, 1);
+  };
+  // gehaltene Paare, deren Kraft die Stränge zusammenzieht, loslassen (sie lägen von selbst weiter auseinander)
+  const releasePulling = (): number => {
+    let k = 0;
+    for (let a = held.length - 1; a >= 0; a--) {
+      if (side[held[a]] * force[a] > 1e-6 * pinW) {
+        release(a);
+        k++;
+      }
+    }
+    return k;
+  };
+  // Widersprüche (Knäuel aus vielen Strängen, Station, Bühnenrand): Ein gehaltenes Paar drückt eine festgehaltene
+  // Stelle weit über ihre Schranke. Diese Engstelle bleibt so, am Ende meldet sie sich als Kreuzung.
+  const giveUp = (): number => {
+    let k = 0;
+    for (let a = held.length - 1; a >= 0; a--) {
+      if (a >= held.length) continue;
+      const q = near[held[a]];
+      const over = (i: number) => {
+        const v = pins.get(i);
+        if (v === undefined) return 0;
+        return station(i) ? Math.abs(z[i] - v) : v === upper[i] ? z[i] - v : v - z[i];
+      };
+      if (Math.max(over(q.i), over(q.j)) <= GIVE_UP) continue;
+      for (let r = 0; r < near.length; r++) if (inCluster(near[r], q)) given[r] = 1;
+      for (let m = held.length - 1; m >= 0; m--) {
+        if (given[held[m]]) {
+          release(m);
+          k++;
+        }
+      }
+    }
+    return k;
+  };
+  // zu nahe Paare auf den Rand setzen. Je Runde und Engstelle kommt nur das am stärksten verletzte dazu, weitere erst,
+  // wenn sie danach noch deutlich zu nah sind (die Tiefe ist glatt, meist trägt ein Paar die ganze Engstelle)
+  const holdNew = (): number => {
+    const cand: Array<{ p: number; v: number }> = [];
+    for (let p = 0; p < near.length; p++) {
+      if (isHeld[p] || given[p]) continue;
+      const q = near[p];
+      const dz = z[q.j] - z[q.i];
+      if (dz <= q.lo + 1e-3 || dz >= q.hi - 1e-3) continue;
+      cand.push({ p, v: sideOf(p, dz) > 0 ? q.hi - dz : dz - q.lo });
+    }
+    cand.sort((a, b) => b.v - a.v);
+    let k = 0;
+    for (const { p, v } of cand) {
+      const q = near[p];
+      let inIt = 0;
+      let skip = false;
+      for (const h of held) {
+        if (!inCluster(q, near[h])) continue;
+        inIt++;
+        if (heldRound[h] === roundNo || v < NEAR_TOL || inIt >= CLUSTER_MAX) {
+          skip = true;
+          break;
+        }
+      }
+      if (skip) continue;
+      side[p] = sideOf(p, z[q.j] - z[q.i]);
+      held.push(p);
+      isHeld[p] = 1;
+      heldRound[p] = roundNo;
+      k++;
+    }
+    return k;
+  };
+  const settle = (withNear: boolean) => {
+    for (let round = 0; round < 40; round++) {
       solveOnce();
-      let added = 0;
+      roundNo++;
+      // Loslassen zuerst: Was nach außen zieht, verfälscht die Lösung, also danach keine Widersprüche suchen
+      let released = withNear ? releasePulling() : 0;
+      for (const [i, v] of pins) {
+        if (station(i) || upper[i] - low[i] < 1e-6) continue;
+        if (v === upper[i] ? z[i] < v - 1e-3 : z[i] > v + 1e-3) {
+          pins.delete(i);
+          released++;
+        }
+      }
+      let changed = released;
+      if (withNear && !released) changed += giveUp();
       for (let i = 0; i < n; i++) {
         if (pins.has(i)) continue;
         if (z[i] > upper[i] + 1e-3) {
           pins.set(i, upper[i]);
-          added++;
+          changed++;
         } else if (z[i] < low[i] - 1e-3) {
           pins.set(i, low[i]);
-          added++;
+          changed++;
         }
       }
-      for (const c of crossings) {
-        if (active.some((a) => a.i === c.i && a.j === c.j)) continue;
-        const v = c.laterFront ? SEP_DEPTH : -SEP_DEPTH;
-        if ((c.laterFront && z[c.j] > z[c.i] - SEP_DEPTH + 1e-3) || (!c.laterFront && z[c.j] < z[c.i] + SEP_DEPTH - 1e-3)) {
-          active.push({ i: c.i, j: c.j, v });
-          added++;
-        }
-      }
-      if (!added) break;
+      if (withNear) changed += holdNew();
+      if (!changed) break;
     }
   };
-  // erste Lösung ohne Kreuzungen und Fliehkraft: daraus die Reihenfolge an den Kreuzungen (später Gezeichnetes vorne,
+  // erste Lösung ohne Engstellen und Fliehkraft: daraus die Reihenfolge an den Kreuzungen (später Gezeichnetes vorne,
   // außer der frühere Strang liegt schon ganz vorne)
   const order = crossings.filter((c) => c.laterFront === undefined);
   if (order.length) {
-    const saved = crossings.splice(0, crossings.length);
-    settle();
-    crossings.push(...saved);
-    for (const c of order) c.laterFront = z[c.i] - SEP_DEPTH >= Z_MIN + 0.5 || z[c.i] + SEP_DEPTH > upper[c.j];
+    settle(false);
+    for (const c of order) c.laterFront = z[c.i] - PASS_SIDE >= Z_MIN + 0.5 || z[c.i] + PASS_SIDE > upper[c.j];
   }
   // Fliehkraft-Gewichte aus dem Tempo der jeweils letzten Lösung (Fallhöhe seit dem höchsten Punkt davor)
   for (let outer = 0; outer < 3; outer++) {
@@ -394,11 +587,18 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
     bounds();
     pins.clear();
     pinStation();
-    settle();
+    settle(true);
   }
-  // Reste der weichen Schranken abschneiden: nie unter den Boden, nie aus der Bühne
+  // Reste der Schranken-Federn abschneiden: nie unter den Boden, nie aus der Bühne
   for (let i = 0; i < n; i++) z[i] = Math.min(upper[i], Math.max(low[i], z[i]));
-  return z;
+  // Knoten-Toleranz: eng, wo zwei Stellen sich nahekommen (die Knoten dürfen den Abstand dort nicht auffressen)
+  const tol = new Float64Array(n).fill(Infinity);
+  for (const q of near) {
+    const dz = z[q.j] - z[q.i];
+    if (Math.hypot(line[q.j].X - line[q.i].X, dz) > PASS_SIDE + 0.6 && Math.abs(line[q.j].Y - line[q.i].Y - C * dz) > PASS_OVER + 0.6) continue;
+    for (const c of [q.i, q.j]) for (let k = Math.max(0, c - 1); k <= Math.min(n - 1, c + 1); k++) tol[k] = TIGHT_TOL;
+  }
+  return { z, tol };
 }
 
 // ------------------------------------------------------------------ Bahn
@@ -414,8 +614,8 @@ function worldPoints(line: StagePoint[], z: Float64Array, closed: boolean, o: Op
 }
 
 /** Knoten aus den Weltpunkten: so wenige wie nötig (Scheitel-Knoten, siehe reduceNodes) */
-export function pathFromPoints(pts: Vec3[], closed: boolean): TrackPath {
-  const segs = reduceNodes(pts, [], {}).segments;
+export function pathFromPoints(pts: Vec3[], closed: boolean, tolAt?: ArrayLike<number>): TrackPath {
+  const segs = reduceNodes(pts, [], { tolAt }).segments;
   const mk = (p: Vec3) => createNode(p.x, p.y, p.z / LANE_DEPTH);
   const nodes = segs.map((seg, i) => {
     const nd = mk(seg.p0);
@@ -443,9 +643,10 @@ export function pathFromPoints(pts: Vec3[], closed: boolean): TrackPath {
 }
 
 function replan(plan: BrushPlan, o: Opts): void {
-  plan.z = solveDepth(plan.line, plan.closed, plan.crossings, plan.wH, plan.wMul, plan.lower, plan.calm, o);
+  const { z, tol } = solveDepth(plan.line, plan.closed, plan.crossings, plan.wH, plan.wMul, plan.lower, plan.calm, o);
+  plan.z = z;
   plan.pts = worldPoints(plan.line, plan.z, plan.closed, o);
-  plan.path = pathFromPoints(plan.pts, plan.closed);
+  plan.path = pathFromPoints(plan.pts, plan.closed, tol);
 }
 
 /** Aus der gemalten Pinsellinie die Bahn: Linie aufbereiten, Kreuzungen, Tiefe, Knoten. null bei zu kurzem Strich. */
@@ -569,7 +770,8 @@ export interface ProbeSim {
   readonly failReason: string | null;
   readonly cars: ReadonlyArray<{ s: number; gLat: number }>;
 }
-/** Probefahrt ohne Entgleis-Grenze (die Querkraft wird je Ort mitgeschrieben und hier bewertet) */
+/** Probefahrt ohne Entgleis-Grenze (die Querkraft wird je Ort mitgeschrieben und hier bewertet) und ohne
+ *  Kreuzungsprüfung (die macht der Nachbesserer am Ende selbst) */
 export type ProbeFactory = (path: TrackPath, samples: TrackSamples) => ProbeSim;
 
 export interface AcceptedSpot {
@@ -785,6 +987,10 @@ export class BrushRefiner {
     this.stage = 'done';
     this.best = this.plan.path;
     this.sim = null;
+    // Kreuzungen auf gleicher Höhe, die die Tiefe nicht trennen konnte (Knäuel aus vielen Strängen): Dort endet die
+    // Fahrt. Die Probefahrten fahren durch, damit die Stellen dahinter auch nachgebessert werden.
+    const S = this.samples;
+    if (S) for (const c of findCrossings(S)) this.accepted.push({ s: c.s1, reason: 'crossing', f: this.lineIndex(Math.min(S.count - 1, Math.round(c.s1 / S.step))) });
   }
 }
 

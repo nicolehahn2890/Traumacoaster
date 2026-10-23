@@ -37,6 +37,11 @@ export class RubberBrush {
     return true;
   }
 
+  /** Die Linie wurde von außen gekürzt (Zurückziehen): die Pinselspitze sitzt wieder an ihrem Ende */
+  resetTip(): void {
+    this.tip = { ...this.points[this.points.length - 1] };
+  }
+
   /** Loslassen: die Linie holt bis zum Finger auf (in kleinen Schritten, damit die Linie gleichmäßig bleibt) */
   finish(): StagePoint[] {
     const d = Math.hypot(this.finger.X - this.tip.X, this.finger.Y - this.tip.Y);
@@ -60,10 +65,10 @@ export class RubberBrush {
    * Das Gummiband als weiche Kurve vom Linienende zum Finger: tritt in Richtung der Linie aus und biegt zum Finger.
    * Liefert Punkte (Linienende zuerst); bei schlaffem Band nur die gerade Verbindung.
    */
-  band(samples = 12): StagePoint[] {
+  band(samples = 12, finger: StagePoint = this.finger): StagePoint[] {
     const pts = this.points;
     const b = pts[pts.length - 1];
-    const f = this.finger;
+    const f = finger;
     const d = Math.hypot(f.X - b.X, f.Y - b.Y);
     if (d < 1e-6) return [b];
     // Austrittsrichtung: Richtung der letzten Linienmeter

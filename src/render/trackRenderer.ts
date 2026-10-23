@@ -12,6 +12,7 @@ import { frameWithBank, railBanks, stateAt } from '@/track/model';
 import type { Terrain } from '@/physics/terrain';
 import type { WorldDef } from '@/levels/types';
 import { laneScale, toStage, LANE_MIN, LANE_MAX, LANE_DEPTH } from '@/track/stage';
+import { findCrossings, type Crossing } from '@/track/crossings';
 import { hexNum, mix, railProfileTexture, shade } from './paint';
 import { atmosphere } from './terrainRenderer';
 import { MGraphics } from './mgraphics';
@@ -86,6 +87,8 @@ export class TrackRenderer {
   readonly layers: TrackLayers = { supports: new Map(), rails: new Map(), barriers: new Map(), coins: new Map() };
   private coinSprites: Graphics[] = [];
   private barriers: Barrier[] = [];
+  /** Kreuzungen auf gleicher Höhe: rote Marke an der oberen Schiene (dort fährt der Zug auf) */
+  private crossMarks: Crossing[] = [];
   /** Leuchtebenen je Spur (von der Weltansicht gesetzt): Leuchtkanten der Schienen und Lichter der Pfeiler */
   glowTargets: Map<number, Container> | null = null;
   private glowGraphics = new Map<number, Graphics>();
@@ -137,6 +140,7 @@ export class TrackRenderer {
     for (const g of this.glowGraphics.values()) g.clear();
     for (const g of this.supportGlowGraphics.values()) g.clear();
     this.barriers = [];
+    this.crossMarks = [];
   }
 
   /** Grafik in der Leuchtebene einer Spur (bei Bedarf anlegen); null ohne Leuchtebenen */
@@ -253,16 +257,37 @@ export class TrackRenderer {
       const st0 = stateAt(samples, 0);
       const f0 = frameWithBank(st0, 0);
       this.barriers.push({ x: st0.x - st0.t3x * 3, y: st0.y - st0.t3y * 3, z: st0.z - (st0.t3z * 3) / LANE_DEPTH, sx: f0.S.x, sy: f0.S.y, sz: f0.S.z });
-      this.updateBarriers(0);
     }
+    // Kreuzungen auf gleicher Höhe (auch in der Vorschau, damit man sie beim Zeichnen sieht)
+    this.crossMarks = findCrossings(samples);
+    this.updateBarriers(0);
     return portals;
+  }
+
+  /** Kreuzungen der letzten Zeichnung (für Hinweise) */
+  get crossings(): Crossing[] {
+    return this.crossMarks;
   }
 
   /** Absperrbänder zeichnen: zwei Pfosten (1,1 m), drei gelb-schwarze Bänder, die im Wind flattern */
   updateBarriers(time: number): void {
-    if (!this.barriers.length) return;
+    if (!this.barriers.length && !this.crossMarks.length) return;
     for (const g of this.layers.barriers.values()) g.clear();
     const ink = 0x2a1f3d;
+    // Kreuzung: rotes Schild mit ✕ über der oberen Schiene
+    for (const c of this.crossMarks) {
+      const lane = Math.round(c.z);
+      const g = this.layers.barriers.get(lane);
+      if (!g) continue;
+      const k = laneScale(lane);
+      const p = toStage(c.x, Math.max(c.y1, c.y2) + 1.6, c.z);
+      const r = 0.75 * k;
+      g.circle(p.X, p.Y, r).fill({ color: 0xff4d5e, alpha: 0.95 }).stroke({ width: 0.14 * k, color: ink });
+      const a = r * 0.45;
+      g.moveTo(p.X - a, p.Y - a).lineTo(p.X + a, p.Y + a).stroke({ width: 0.18 * k, color: 0xffffff, cap: 'round' });
+      g.moveTo(p.X - a, p.Y + a).lineTo(p.X + a, p.Y - a).stroke({ width: 0.18 * k, color: 0xffffff, cap: 'round' });
+    }
+    if (!this.barriers.length) return;
     for (const b of this.barriers) {
       const lane = Math.round(b.z);
       const g = this.layers.barriers.get(lane);

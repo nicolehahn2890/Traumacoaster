@@ -96,7 +96,7 @@ describe('Knotenreduktion mit Scheitel-Semantik', () => {
     }
   });
   it.each([
-    ['Oval', oval, 7],
+    ['Oval', oval, 8],
     ['Hügel', () => hill(15), 6],
     ['zwei Hügel', twoHills, 11],
     ['Looping', loop, 11],
@@ -105,7 +105,8 @@ describe('Knotenreduktion mit Scheitel-Semantik', () => {
     const neu = strokeToTrack(stroke);
     const alt = strokeToTrack(stroke, { fit: 'legacy' });
     expect(neu.path.nodes.length).toBeLessThanOrEqual(limit);
-    expect(neu.path.nodes.length).toBeLessThanOrEqual(alt.path.nodes.length + 1);
+    // Kehren mit Übergangsbögen brauchen je einen Knoten mehr als ein Halbkreis (Oval: zwei)
+    expect(neu.path.nodes.length).toBeLessThanOrEqual(alt.path.nodes.length + 2);
     // dieselbe Bahn: Loopings, Kehren, Spuren und Höhe wie beim alten Fit
     const sNeu = trackStats(neu.path, sampleTrack(neu.path));
     const sAlt = trackStats(alt.path, sampleTrack(alt.path));

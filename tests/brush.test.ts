@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RubberBrush } from '@/track/brush';
 import { BrushRefiner, planBrushTrack, type BrushPlan } from '@/track/brushTrack';
+import { findCrossings } from '@/track/crossings';
 import { sampleTrack } from '@/track/model';
 import { TrainSim } from '@/physics/trainSim';
 import { Terrain } from '@/physics/terrain';
@@ -43,7 +44,7 @@ function screenDeviation(plan: BrushPlan): number {
 }
 
 const probe = (path: Parameters<typeof sampleTrack>[0], samples: ReturnType<typeof sampleTrack>) =>
-  new TrainSim(samples, path, { cars: 2, carLength: 2.4, skin: 'skinSteel', frictionScale: 1, gravityScale: 1, startType: 'chainlift', coins: [], terrain: flat, allowTunnels: true, lateralLimit: Infinity });
+  new TrainSim(samples, path, { cars: 2, carLength: 2.4, skin: 'skinSteel', frictionScale: 1, gravityScale: 1, startType: 'chainlift', coins: [], terrain: flat, allowTunnels: true, lateralLimit: Infinity, checkCrossings: false });
 
 describe('Gummiband-Pinsel', () => {
   it('malt nichts, solange der Finger im Band zittert', () => {
@@ -96,6 +97,19 @@ describe('Pinsel-Bahn: Linie = Bahn, Tiefe frei gewählt', () => {
       if (c.laterFront) expect(b.z).toBeLessThan(a.z);
     }
     expect(screenDeviation(plan)).toBeLessThan(0.5);
+  });
+
+  it('hält die Kreuzungsregel der Fahrt ein, auch wo Stränge dicht nebeneinander laufen', () => {
+    // Acht mit zwei Kreuzungen
+    const eight = stroke([[0, 0], [14, 0.5], [26, 3], [34, 9], [32, 15], [24, 16], [18, 11], [20, 5], [28, 1], [40, 1.5], [50, 6], [48, 12], [40, 13], [36, 8], [42, 2], [56, 0.5], [70, 0.5]]);
+    // Rückweg knapp über dem Hinweg (auf dem Bild 1,5 m darüber)
+    const hairpin = stroke([[0, 0], [20, 0.5], [40, 1.5], [52, 3], [54, 5], [46, 6], [30, 3.5], [12, 2.5], [-4, 3], [-10, 8]]);
+    for (const s of [eight, hairpin]) {
+      const plan = planBrushTrack(s, { ground: () => 0 })!;
+      expect(findCrossings(sampleTrack(plan.path, 0.25))).toEqual([]);
+      expect(screenDeviation(plan)).toBeLessThan(0.5);
+    }
+    expect(planBrushTrack(eight, { ground: () => 0 })!.crossings.length).toBeGreaterThanOrEqual(2);
   });
 
   it('schließt die Runde, wenn der Strich an der Station endet', () => {
