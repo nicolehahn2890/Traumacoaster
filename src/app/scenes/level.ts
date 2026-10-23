@@ -13,7 +13,7 @@ import { clamp } from '@/core/math';
 import { bezier3, lerp3 } from '@/core/math3';
 import { LEVELS, getLevel, unlockedUpTo } from '@/levels/levels';
 import { WORLDS, worldOfLevel } from '@/levels/worlds';
-import type { ElementId, LevelDef, WorldDef } from '@/levels/types';
+import type { BeltLevel, ElementId, LevelDef, WorldDef } from '@/levels/types';
 import { goalLabel, ELEMENT_NAMES } from '@/levels/goalLabels';
 import { evaluate, type Evaluation, hasNegativeGoals } from '@/levels/evaluator';
 import { Terrain } from '@/physics/terrain';
@@ -261,6 +261,8 @@ export class LevelScene implements Scene {
 
   // UI
   private ui = new Container();
+  /** Bedienung, die beim Zeichnen zurücktritt (ausgeblendet, solange der Finger zeichnet): fast alles außer dem Hinweis */
+  private hud = new Container();
   private overlay = new Graphics();
   private ink = new Graphics();
   /** Leichter Schein auf der Bodenlinie der Spur, auf der gerade gezeichnet wird */
@@ -386,7 +388,8 @@ export class LevelScene implements Scene {
     this.view.overlay.addChild(this.laneGlow, this.spotLayer, this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
     this.laneHud.addChild(this.laneHudG);
-    this.ui.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.laneHud, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn, this.toast);
+    this.hud.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn);
+    this.ui.addChild(this.hud, this.laneHud, this.toast);
     this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn, ...this.laneBtns.map((l) => l.btn)];
     this.speedBtn.visible = false;
     this.modeBtn.setText(t(`strokeMode.btn.${this.reading}`));
@@ -672,6 +675,11 @@ export class LevelScene implements Scene {
         return;
       }
       if (this.mode !== 'draw') return;
+      // DEV: Gurt-Abzeichen antippen wählt die Gurtstufe
+      if (unlockAll() && this.beltBadge.visible && Math.hypot(p.x - this.beltBadge.x, p.y - (this.beltBadge.y + 10)) < 36) {
+        this.cycleDevBelt();
+        return;
+      }
       const chip = this.hitChip(p);
       if (chip) {
         chip.action();
@@ -950,7 +958,7 @@ export class LevelScene implements Scene {
       this.refreshLanePanel();
     };
     this.lanePanel.addChild(this.laneAutoBtn);
-    this.ui.addChild(this.lanePanel);
+    this.hud.addChild(this.lanePanel);
     this.uiButtons.push(...this.laneBtns.map((l) => l.btn), this.laneAutoBtn);
     this.refreshLanePanel();
   }
@@ -1056,7 +1064,8 @@ export class LevelScene implements Scene {
     this.sliderBar.on('pointerupoutside', () => (this.sliderDrag = false));
     this.lengthSlider.addChild(bg, title, this.sliderText, this.sliderBar);
     this.lengthSlider.visible = false;
-    this.ui.addChild(this.lengthPill, this.lengthSlider);
+    this.hud.addChild(this.lengthSlider);
+    this.ui.addChild(this.lengthPill);
     this.drawSlider();
     this.refreshLengthUI(true);
   }
@@ -1227,6 +1236,20 @@ export class LevelScene implements Scene {
     const e = this.stroke[this.stroke.length - 1];
     const d = Math.hypot(sp.X - e.X, sp.Y - e.Y);
     const snap = Math.max(8, 60 / this.view.camera.zoom);
+    // Pinsel: Ziel-Radius um die Station, sobald das Ende in seine Nähe kommt (darin abgesetzt schließt ein Tipp)
+    const reach = this.closeReach();
+    if (this.brush && d < 2.5 * reach) {
+      const inside = d <= reach;
+      const n = 28;
+      const spin = (this.time * 0.4) % ((2 * Math.PI) / n);
+      for (let k = 0; k < n; k++) {
+        const a0 = spin + (k * 2 * Math.PI) / n;
+        const a1 = a0 + (Math.PI / n) * 1.1;
+        g.moveTo(sp.X + Math.cos(a0) * reach, sp.Y + Math.sin(a0) * reach)
+          .arc(sp.X, sp.Y, reach, a0, a1)
+          .stroke({ width: (inside ? 0.26 : 0.18) * zs, color: 0xffffff, alpha: inside ? 0.85 : 0.4, cap: 'round' });
+      }
+    }
     if (d > snap || d < 0.5) return;
     const dash = 0.7 * zs;
     const period = dash + 0.5 * zs;
@@ -1600,6 +1623,27 @@ export class LevelScene implements Scene {
   }
 
   // ------------------------------------------------------------------ Pinsel: Linie = Bahn
+  /**
+   * Solange der Finger zeichnet, tritt die Bedienung zurück, damit sie dem Strich nicht im Weg ist: Knöpfe, Ziele,
+   * Titel, Hinweistext, Chips und Leisten blenden in rund 0,1 s aus und danach wieder ein. Es bleiben der Toast
+   * (Warnungen wie „Strecke aufgebraucht“), die Streckenanzeige, wenn ein Budget gilt, und die Spur-Anzeige außer beim
+   * Pinsel (in den anderen Lesarten zeigt sie beim Zeichnen die Spur).
+   */
+  private fadeHud(dt: number): void {
+    const drawing = this.mode === 'draw' && this.drag.kind === 'stroke' && !!this.stroke;
+    const k = Math.min(1, dt / 0.1);
+    const to = (o: Container, target: number) => (o.alpha += (target - o.alpha) * k);
+    to(this.hud, drawing ? 0 : 1);
+    this.hud.eventMode = drawing ? 'none' : 'passive';
+    to(this.lengthPill, drawing ? (this.budget ? 0.75 : 0) : 1);
+    to(this.laneHud, drawing && this.brushMode ? 0 : 1);
+  }
+
+  /** Ziel-Radius um die Station (Bühnen-Meter): Endet die Pinsel-Bahn darin, schließt ein Tipp auf die Station die Runde */
+  private closeReach(): number {
+    return Math.max(20, 150 / this.view.camera.zoom);
+  }
+
   private brushOptions() {
     return {
       ground: (x: number, z: number) => (this.allowTunnels ? this.terrain.groundHeight(x, z) : this.terrain.surfaceHeight(x, z)),
@@ -1813,6 +1857,12 @@ export class LevelScene implements Scene {
     plan.path.startType = this.path?.startType ?? 'chainlift';
     this.setPath(plan.path, true);
     this.startRefine(plan);
+    // offen, aber nah an der Station: Hinweis auf den Ziel-Radius
+    if (!plan.closed) {
+      const a = plan.line[0];
+      const b = plan.line[plan.line.length - 1];
+      if (Math.hypot(a.X - b.X, a.Y - b.Y) <= this.closeReach()) this.toast.show(t('closeOffer'), 2.2);
+    }
   }
 
   /**
@@ -1839,6 +1889,26 @@ export class LevelScene implements Scene {
     this.startRefine(plan);
     this.toast.show(t('crossingSwapped'), 1.4);
     if (!this.sandbox) storage.saveDraft(this.level.id, plan.path);
+  }
+
+  /**
+   * Rundenschluss auf Tipp: Das Ende der Pinsel-Bahn wird ohne Knick in die Station geführt, wie beim Loslassen nahe
+   * der Station, nur aus größerem Abstand (Ziel-Radius). Was vor dem Ende liegt, behält seine Tiefe.
+   */
+  private closeBrushTrack(): void {
+    const plan = this.brushPlan;
+    if (!plan || !this.path || isClosed(this.path)) return;
+    const keep = plan.z.length > 80 ? Array.from(plan.z.subarray(0, plan.z.length - 60)) : undefined;
+    const next = planBrushTrack(plan.line, { ...this.brushOptions(), closeReach: this.closeReach() }, keep);
+    if (!next || !next.closed || next.path.nodes.length < 2) {
+      this.toast.show(t('closeFailed'), 2);
+      return;
+    }
+    this.pushHistory();
+    next.path.startType = this.path.startType;
+    this.setPath(next.path, true);
+    this.startRefine(next);
+    this.toast.show(t('closeDone'), 1.4);
   }
 
   /** grober Fingerabdruck der Knoten: ändert sich die Bahn von Hand, passt der Pinsel-Plan nicht mehr */
@@ -2019,7 +2089,7 @@ export class LevelScene implements Scene {
     }
     const opts = simOptionsForLevel(this.level, this.path, this.terrain, this.skin, this.allowTunnels);
     const perCar = 2;
-    const belt = restraintFor(this.level, this.world);
+    const belt = this.belt();
     if (this.standCars.length !== opts.cars) {
       const riders = storage.ridersFor(opts.cars * perCar);
       this.view.buildTrain(opts.cars, riders, perCar);
@@ -2395,6 +2465,33 @@ export class LevelScene implements Scene {
         });
       });
     }
+    // Pinsel-Bahn offen und ihr Ende im Ziel-Radius: Tipp auf die Station schließt die Runde sauber
+    if (plan && !this.stroke && this.path.brush && !isClosed(this.path) && nodes.length > 1 && this.pathStamp(this.path) === this.brushPlanStamp) {
+      const a = toStage(nodes[0].x, nodes[0].y, nodes[0].z);
+      const end = nodes[nodes.length - 1];
+      const b = toStage(end.x, end.y, end.z);
+      const reach = this.closeReach();
+      if (Math.hypot(a.X - b.X, a.Y - b.Y) <= reach) {
+        const rpx = reach * this.view.camera.zoom;
+        const spin = (this.time * 0.4) % ((2 * Math.PI) / 36);
+        out.push({
+          x: sp.x, y: sp.y, r: 24, action: () => this.closeBrushTrack(),
+          draw: (g) => {
+            const ink = hexNum(INK);
+            for (let k = 0; k < 36; k++) {
+              const a0 = spin + (k * 2 * Math.PI) / 36;
+              g.moveTo(Math.cos(a0) * rpx, Math.sin(a0) * rpx).arc(0, 0, rpx, a0, a0 + Math.PI / 36).stroke({ width: 3, color: 0xffffff, alpha: 0.8, cap: 'round' });
+            }
+            g.circle(0, 0, 21).fill({ color: hexNum(PAPER), alpha: 0.95 }).stroke({ width: 3, color: ink });
+            // Pfeil im Kreis: zurück zum Anfang
+            g.moveTo(Math.cos(-0.6) * 10, Math.sin(-0.6) * 10).arc(0, 0, 10, -0.6, Math.PI * 1.35).stroke({ width: 3, color: ink, cap: 'round' });
+            const ax = Math.cos(-0.6) * 10;
+            const ay = Math.sin(-0.6) * 10;
+            g.moveTo(ax - 6, ay - 1).lineTo(ax, ay).lineTo(ax + 1, ay + 6).stroke({ width: 3, color: ink, cap: 'round', join: 'round' });
+          },
+        });
+      }
+    }
     if (this.unlocked.has('turn')) {
       nodes.forEach((n, i) => {
         if (n.kind !== 'turn') return;
@@ -2633,7 +2730,7 @@ export class LevelScene implements Scene {
     this.sim = new TrainSim(rideSamples, ridePath, opts);
     const perCar = 2;
     const riders = storage.ridersFor(opts.cars * perCar);
-    const belt = restraintFor(this.level, this.world);
+    const belt = this.belt();
     const negative = hasNegativeGoals(this.level);
     this.passengers = new PassengerSim({ cars: opts.cars, perCar, gravityScale: opts.gravityScale, terrain: this.terrain, belt });
     this.refreshBeltBadge(false);
@@ -2746,8 +2843,8 @@ export class LevelScene implements Scene {
     const btn = new Button('', { width: 78, round: true, color: riding ? '#d64545' : PINK, icon: riding ? iconStop : iconPlay });
     btn.position.copyFrom(old.position);
     btn.onTap = () => (this.mode === 'draw' ? this.startRide() : this.stopRide());
-    this.ui.addChild(btn);
-    this.ui.removeChild(old);
+    this.hud.addChild(btn);
+    this.hud.removeChild(old);
     old.destroy({ children: true });
     this.playBtn = btn;
     this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn, ...this.laneBtns.map((l) => l.btn)];
@@ -3136,6 +3233,7 @@ export class LevelScene implements Scene {
   update(dt: number): void {
     if (!this.view) return;
     this.time += dt;
+    this.fadeHud(dt);
     if (this.mode === 'draw') {
       if (this.refiner && !this.stroke) this.stepRefine(REFINE_SLICE_MS);
       else this.stepInspect();
@@ -3194,11 +3292,31 @@ export class LevelScene implements Scene {
 
   /** Gurt-Abzeichen neu zeichnen: Stufe des Levels (oder der Welt), rot durchgestrichen, wenn ein Gurt gerissen ist */
   private refreshBeltBadge(broken: boolean): void {
-    const level = restraintFor(this.level, this.world);
+    const level = this.belt();
+    const dev = unlockAll() && storage.settings.devBelt != null;
     this.beltIconG.clear();
     beltIcon(this.beltIconG, level, 30, broken);
-    this.beltText.text = t(`belt.${level}`);
-    this.beltBadge.visible = !this.sandbox || level > 0;
+    this.beltText.text = dev ? `${t(`belt.${level}`)} · DEV` : t(`belt.${level}`);
+    // im DEV-Modus immer sichtbar: Antippen wählt die Gurtstufe
+    this.beltBadge.visible = !this.sandbox || level > 0 || unlockAll();
+  }
+
+  /** Gurtstufe der Fahrt: im DEV-Modus die dort gewählte, sonst die des Levels (oder seiner Welt) */
+  private belt(): BeltLevel {
+    const dev = storage.settings.devBelt;
+    return unlockAll() && dev != null ? dev : restraintFor(this.level, this.world);
+  }
+
+  /** DEV: Gurtstufe durchschalten (wie im Level → ohne → Beckengurt → Bügel → Schulterbügel → Rennsitz → wie im Level) */
+  private cycleDevBelt(): void {
+    const cur = storage.settings.devBelt;
+    const next = cur == null ? 0 : cur >= 4 ? null : ((cur + 1) as BeltLevel);
+    storage.updateSettings({ devBelt: next });
+    const belt = this.belt();
+    for (const v of this.standViews) v.belt = belt;
+    this.refreshBeltBadge(false);
+    this.beltPop = 1;
+    this.toast.show(next == null ? t('belt.devDefault', { name: t(`belt.${belt}`) }) : t('belt.devSet', { name: t(`belt.${next}`) }), 1.8);
   }
 }
 

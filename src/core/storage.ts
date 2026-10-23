@@ -37,6 +37,8 @@ export interface Settings {
   trackBudget?: number;
   /** Lesart „Ebenen“: Rückkurve im Strich führt von selbst auf die nächste Ebene */
   lanesAuto?: boolean;
+  /** im Dev-Modus gewählte Gurtstufe (0 ohne bis 4 Rennsitz; null oder fehlt: die des Levels) */
+  devBelt?: 0 | 1 | 2 | 3 | 4 | null;
 }
 
 export interface SavedTrack {

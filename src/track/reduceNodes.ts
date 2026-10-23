@@ -49,6 +49,8 @@ export interface ReduceOptions {
    * was Knoten häuft). Knotenarten (Ereignis-Scheitel) gibt es dabei nicht.
    */
   even?: boolean;
+  /** geschlossene Runde (erster und letzter Punkt gleich): Die Tangente an der Naht reicht über sie hinweg */
+  closed?: boolean;
   /** Diagnose: je Abschnitt Fehler, Toleranz und Entscheidung */
   trace?: (msg: string) => void;
 }
@@ -172,6 +174,16 @@ function pointAtLength(pts: Vec3[], cum: Float64Array, s: number): Vec3 {
  * damit die ungleichen Punktabstände die Richtung nicht verfälschen: ein schiefer Sekantenpunkt knickt die Bahn
  * am Knoten um Bruchteile eines Grads, was der Wagen als Krümmungsspitze spürt). An den Enden einseitig.
  */
+/**
+ * Tangente an der Naht einer geschlossenen Runde: Sekante vom Punkt TANGENT_WINDOW vor dem Ende zum Punkt
+ * TANGENT_WINDOW nach dem Anfang (beide Enden bekommen dieselbe, sonst knickte die Bahn an der Station).
+ */
+function seamTangent(pts: Vec3[], cum: Float64Array): Vec3 {
+  const L = cum[pts.length - 1];
+  const t = normalize3(sub3(pointAtLength(pts, cum, TANGENT_WINDOW), pointAtLength(pts, cum, L - TANGENT_WINDOW)));
+  return len3(t) < 0.5 ? tangentAt(pts, 0, cum) : t;
+}
+
 export function tangentAt(pts: Vec3[], i: number, cum: Float64Array, window = TANGENT_WINDOW): Vec3 {
   const n = pts.length;
   const a = pointAtLength(pts, cum, cum[i] - window);
@@ -258,7 +270,7 @@ export function reduceNodes(pts: Vec3[], hints: ApexHint[] = [], opts: ReduceOpt
   const T = (i: number): Vec3 => {
     let t = tangents.get(i);
     if (!t) {
-      t = tangentAt(pts, i, cum);
+      t = opts.closed && (i === 0 || i === n - 1) ? seamTangent(pts, cum) : tangentAt(pts, i, cum);
       tangents.set(i, t);
     }
     return t;

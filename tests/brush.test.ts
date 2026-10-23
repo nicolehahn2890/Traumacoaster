@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RubberBrush } from '@/track/brush';
-import { BrushRefiner, findElements, findLineCrossings, planBrushTrack, type BrushPlan } from '@/track/brushTrack';
+import { BrushRefiner, dubinsPaths, findElements, findLineCrossings, planBrushTrack, prepareBrushLine, type BrushPlan } from '@/track/brushTrack';
 import { findCrossings } from '@/track/crossings';
 import { sampleTrack } from '@/track/model';
 import { TrainSim } from '@/physics/trainSim';
@@ -234,5 +234,74 @@ describe('Pinsel-Bahn: Loopings und gerade Hügel', () => {
     for (let i = 0; i <= 40; i++) line.push({ X: i, Y: i < 10 ? 0.5 : 0.5 + (i - 10) * 0.6 });
     const el = findElements(line, findLineCrossings(line, false));
     expect(el.hills).toEqual([{ a: expect.any(Number), top: 40, b: 40, open: true }]);
+  });
+});
+
+describe('Pinsel-Bahn: Rundenschluss', () => {
+  /** Winkel (Grad) zwischen ankommender und abfahrender Richtung am Stationsknoten */
+  const stationKink = (plan: BrushPlan): number => {
+    const s0 = plan.path.nodes[0];
+    const a = [-s0.inX, -s0.inY, -s0.inZ * LANE_DEPTH];
+    const o = [s0.outX, s0.outY, s0.outZ * LANE_DEPTH];
+    const c = (a[0] * o[0] + a[1] * o[1] + a[2] * o[2]) / (Math.hypot(a[0], a[1], a[2]) * Math.hypot(o[0], o[1], o[2]));
+    return (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI;
+  };
+  /** kleinster Bildradius des Rundenschlusses (ab seinem Anschluss an den Strich bis in die Station) */
+  const closureRadius = (points: StagePoint[], closeSnap: number, closeReach = 0): number => {
+    const prep = prepareBrushLine(points, closeSnap, closeReach)!;
+    const L = prep.line;
+    let k = 0;
+    for (let i = Math.max(1, (prep.closeFrom ?? L.length) - 3); i < L.length - 1; i++) {
+      const [p, q, r] = [L[i - 1], L[i], L[i + 1]];
+      const cr = Math.abs((q.X - p.X) * (r.Y - q.Y) - (q.Y - p.Y) * (r.X - q.X));
+      const den = Math.hypot(q.X - p.X, q.Y - p.Y) * Math.hypot(r.X - q.X, r.Y - q.Y) * Math.hypot(r.X - p.X, r.Y - p.Y);
+      if (den > 1e-12) k = Math.max(k, (2 * cr) / den);
+    }
+    return 1 / Math.max(k, 1e-9);
+  };
+
+  it('findet immer einen Dubins-Weg, der genau in der Zielrichtung ankommt', () => {
+    let seed = 3;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let k = 0; k < 300; k++) {
+      const a = { X: rnd() * 40 - 20, Y: rnd() * 40 - 20, th: rnd() * 6.28 };
+      const b = { X: rnd() * 40 - 20, Y: rnd() * 40 - 20, th: rnd() * 6.28 };
+      const paths = dubinsPaths(a, b, 6, 0.5);
+      expect(paths.length).toBeGreaterThan(0);
+      for (const p of paths) expect(Math.hypot(p[p.length - 1].X - b.X, p[p.length - 1].Y - b.Y)).toBeLessThan(0.15);
+    }
+  });
+
+  it('schließt eine Runde, die über die Station hinaus gezeichnet ist, ohne Knick und ohne enge Kurve', () => {
+    // Oval, das Ende läuft 1,5 m über den Anfang hinaus (wie oft von Hand)
+    const oval: StagePoint[] = [];
+    for (let x = 0; x <= 40; x += 0.3) oval.push({ X: x, Y: 0 });
+    for (let a = 0; a <= Math.PI; a += 0.04) oval.push({ X: 40 + 7 * Math.sin(a), Y: 7 - 7 * Math.cos(a) });
+    for (let x = 40; x >= -5; x -= 0.3) oval.push({ X: x, Y: 14 });
+    for (let a = 0; a <= Math.PI; a += 0.04) oval.push({ X: -5 - 7 * Math.sin(a), Y: 7 + 7 * Math.cos(a) });
+    for (let x = -5; x <= 1.5; x += 0.3) oval.push({ X: x, Y: 0 });
+    const plan = planBrushTrack(oval, { ground: () => 0 })!;
+    expect(plan.closed).toBe(true);
+    expect(stationKink(plan)).toBeLessThan(1);
+    expect(closureRadius(oval, 8)).toBeGreaterThan(4.5);
+    expect(findCrossings(sampleTrack(plan.path, 0.25))).toEqual([]);
+  });
+
+  it('wendet, wenn das Ende entgegen der Stationsrichtung ankommt, und kreuzt dabei nichts', () => {
+    // nach rechts hinaus, oben zurück und von rechts kommend knapp über der Station enden (Richtung entgegen)
+    const back = stroke([[0, 0], [20, 0], [40, 0], [50, 5], [40, 10], [20, 10], [8, 6], [4, 2.5]]);
+    const plan = planBrushTrack(back, { ground: () => 0, closeSnap: 8 })!;
+    expect(plan.closed).toBe(true);
+    expect(stationKink(plan)).toBeLessThan(1);
+    expect(closureRadius(back, 8)).toBeGreaterThan(4.5);
+  });
+
+  it('schließt auf Wunsch auch mit größerem Abstand (Tipp auf die Station)', () => {
+    const open = stroke([[0, 0], [20, 0], [40, 0], [50, 4], [44, 9], [30, 9.5], [10, 9.5], [-8, 9], [-16, 6]]);
+    expect(planBrushTrack(open, { ground: () => 0, closeSnap: 8 })!.closed).toBe(false);
+    const plan = planBrushTrack(open, { ground: () => 0, closeSnap: 8, closeReach: 25 })!;
+    expect(plan.closed).toBe(true);
+    expect(stationKink(plan)).toBeLessThan(1);
+    expect(closureRadius(open, 8, 25)).toBeGreaterThan(4.5);
   });
 });

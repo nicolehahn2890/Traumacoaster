@@ -91,6 +91,8 @@ export interface BrushOptions {
   clearance?: number;
   /** endet die Linie so nah an ihrem Anfang (Bühnen-Meter), schließt sich die Runde */
   closeSnap?: number;
+  /** Rundenschluss auf Wunsch (Tipp auf die Station): so weit darf das Ende dann von der Station weg sein */
+  closeReach?: number;
   /** so weit (Bühnen-Meter) darf die Linie beim Nachbessern nachgeben */
   tolerance?: number;
 }
@@ -99,6 +101,7 @@ interface Opts {
   ground: (x: number, z: number) => number;
   clearance: number;
   closeSnap: number;
+  closeReach: number;
   tolerance: number;
 }
 
@@ -106,6 +109,7 @@ const withDefaults = (o: BrushOptions): Opts => ({
   ground: o.ground ?? (() => 0),
   clearance: o.clearance ?? 0.8,
   closeSnap: o.closeSnap ?? 8,
+  closeReach: o.closeReach ?? 0,
   tolerance: o.tolerance ?? 1,
 });
 
@@ -115,6 +119,11 @@ export interface LineCrossing {
   j: number;
   /** liegt der später gezeichnete Strang vorne? */
   laterFront?: boolean;
+  /**
+   * Der spätere Strang ist der Rundenschluss (nicht gezeichnet): Statt „später vorne“ gilt die Seite, auf der er von
+   * selbst läge (die Tiefe der Station); sonst müsste er vor der Station die Seite wechseln.
+   */
+  natural?: boolean;
 }
 
 export interface BrushPlan {
@@ -205,15 +214,6 @@ function smoothLine(pts: StagePoint[], sigma: number, step: number): StagePoint[
   });
 }
 
-/** Richtung der Linie am Anfang (+1) oder Ende (−1), über rund zwei Meter */
-function endDirection(line: StagePoint[], atStart: boolean): StagePoint {
-  const n = line.length;
-  const a = atStart ? line[0] : line[Math.max(0, n - 3)];
-  const b = atStart ? line[Math.min(n - 1, 2)] : line[n - 1];
-  const l = Math.hypot(b.X - a.X, b.Y - a.Y) || 1;
-  return { X: (b.X - a.X) / l, Y: (b.Y - a.Y) / l };
-}
-
 /** Linienlänge (Bühnen-Meter) */
 export function lineLength(pts: StagePoint[]): number {
   let l = 0;
@@ -225,33 +225,269 @@ export function lineLength(pts: StagePoint[]): number {
  * Gemalte Pinsellinie aufbereiten: gleichmäßig abtasten, Fingerknicke wegglätten, auf 1 m Abstand bringen. Endet sie
  * nah an ihrem Anfang, wird die Runde mit einem weichen Bogen geschlossen.
  */
-export function prepareBrushLine(points: StagePoint[], closeSnap = 8): { line: StagePoint[]; closed: boolean } | null {
+export function prepareBrushLine(points: StagePoint[], closeSnap = 8, closeReach = 0): { line: StagePoint[]; closed: boolean; closeFrom?: number } | null {
   if (points.length < 2 || lineLength(points) < 6) return null;
-  let line = resampleLine(smoothLine(resampleLine(points, 0.25), 0.5, 0.25), STEP);
+  const line = resampleLine(smoothLine(resampleLine(points, 0.25), 0.5, 0.25), STEP);
   if (line.length < 7) return null;
   const a = line[0];
   const b = line[line.length - 1];
   const gap = Math.hypot(b.X - a.X, b.Y - a.Y);
-  if (gap > closeSnap || lineLength(line) < 40) return { line, closed: false };
-  // Rundenschluss: kubischer Bogen vom Ende (in seiner Richtung) in den Anfang (in dessen Richtung)
-  const te = endDirection(line, false);
-  const ts = endDirection(line, true);
-  const h = Math.max(1.5, gap / 3);
-  const p1 = { X: b.X + te.X * h, Y: b.Y + te.Y * h };
-  const p2 = { X: a.X - ts.X * h, Y: a.Y - ts.Y * h };
-  const m = Math.max(4, Math.ceil(gap * 2));
-  const conn: StagePoint[] = [];
+  if (gap > Math.max(closeSnap, closeReach) || lineLength(line) < 40) return { line, closed: false };
+  const ring = closeBrushLine(line);
+  return ring ? { line: ring.line, closed: true, closeFrom: ring.from } : { line, closed: false };
+}
+
+/** Rundenschluss: so lang läuft die Bahn vor der Station gerade in deren Richtung ein (Bühnen-Meter; kürzer, wenn
+ * der Strich schon fast richtig ankommt, dann wird nur sein Ende sanft eingebogen) */
+const CLOSE_ENTRIES = [3, 1.5];
+/** Bogenradien des Rundenschlusses auf dem Bild (Bühnen-Meter): weite bevorzugt, enge nur, wo weite kreuzen */
+const CLOSE_RADII = [6, 10, 16, 25];
+/** so weit darf der Rundenschluss vom Strichende zurückgreifen, um sauber einzufädeln (Meter Linie) */
+const CLOSE_BACK = 40;
+/**
+ * Liegt das Strichende auf dem Bild tiefer als die Station, liegt es weiter vorne (unter die Bodenlinie kann die Bahn
+ * nicht): Auf dem Anstieg zur Station wechselt sie die Tiefe. Damit das kein Haken wird, braucht der Anstieg Länge,
+ * etwa eine S-Kurve mit diesem Radius (Meter) über den doppelten Höhenunterschied.
+ */
+const CLOSE_DEPTH_R = 12;
+
+type Pose = { X: number; Y: number; th: number };
+
+const mod2pi = (a: number): number => a - 2 * Math.PI * Math.floor(a / (2 * Math.PI));
+
+/**
+ * Dubins-Wege von a nach b auf dem Bild: Bögen mit Radius R und Geraden, kürzeste Verbindung zweier Richtungen bei
+ * begrenzter Krümmung (sechs Arten, auch mit Wende). Je gültiger Art die Punkte im Abstand step (ohne a, mit b).
+ */
+export function dubinsPaths(a: Pose, b: Pose, R: number, step: number): StagePoint[][] {
+  const dx = (b.X - a.X) / R;
+  const dy = (b.Y - a.Y) / R;
+  const d = Math.hypot(dx, dy);
+  const theta = mod2pi(Math.atan2(dy, dx));
+  const al = mod2pi(a.th - theta);
+  const be = mod2pi(b.th - theta);
+  const sa = Math.sin(al);
+  const sb = Math.sin(be);
+  const ca = Math.cos(al);
+  const cb = Math.cos(be);
+  const cab = Math.cos(al - be);
+  const words: Array<[string, number, number, number]> = [];
+  let p2 = 2 + d * d - 2 * cab + 2 * d * (sa - sb);
+  if (p2 >= 0) {
+    const tmp = Math.atan2(cb - ca, d + sa - sb);
+    words.push(['LSL', mod2pi(-al + tmp), Math.sqrt(p2), mod2pi(be - tmp)]);
+  }
+  p2 = 2 + d * d - 2 * cab + 2 * d * (sb - sa);
+  if (p2 >= 0) {
+    const tmp = Math.atan2(ca - cb, d - sa + sb);
+    words.push(['RSR', mod2pi(al - tmp), Math.sqrt(p2), mod2pi(-be + tmp)]);
+  }
+  p2 = -2 + d * d + 2 * cab + 2 * d * (sa + sb);
+  if (p2 >= 0) {
+    const p = Math.sqrt(p2);
+    const tmp = Math.atan2(-ca - cb, d + sa + sb) - Math.atan2(-2, p);
+    words.push(['LSR', mod2pi(-al + tmp), p, mod2pi(-be + tmp)]);
+  }
+  p2 = d * d - 2 + 2 * cab - 2 * d * (sa + sb);
+  if (p2 >= 0) {
+    const p = Math.sqrt(p2);
+    const tmp = Math.atan2(ca + cb, d - sa - sb) - Math.atan2(2, p);
+    words.push(['RSL', mod2pi(al - tmp), p, mod2pi(be - tmp)]);
+  }
+  let c = (6 - d * d + 2 * cab + 2 * d * (sa - sb)) / 8;
+  if (Math.abs(c) <= 1) {
+    const p = mod2pi(2 * Math.PI - Math.acos(c));
+    const t = mod2pi(al - Math.atan2(ca - cb, d - sa + sb) + p / 2);
+    words.push(['RLR', t, p, mod2pi(al - be - t + p)]);
+  }
+  c = (6 - d * d + 2 * cab + 2 * d * (sb - sa)) / 8;
+  if (Math.abs(c) <= 1) {
+    const p = mod2pi(2 * Math.PI - Math.acos(c));
+    const t = mod2pi(-al - Math.atan2(ca - cb, d + sa - sb) + p / 2);
+    words.push(['LRL', t, p, mod2pi(be - al - t + p)]);
+  }
+  const out: StagePoint[][] = [];
+  for (const [w, ...params] of words) {
+    const pts: StagePoint[] = [];
+    let x = a.X;
+    let y = a.Y;
+    let th = a.th;
+    for (let k = 0; k < 3; k++) {
+      const len = params[k] * R;
+      const m = Math.max(1, Math.ceil(len / step));
+      const ds = len / m;
+      const turn = w[k] === 'L' ? 1 : w[k] === 'R' ? -1 : 0;
+      for (let i = 0; i < m; i++) {
+        if (!turn) {
+          x += Math.cos(th) * ds;
+          y += Math.sin(th) * ds;
+        } else {
+          const cx = x - turn * R * Math.sin(th);
+          const cy = y + turn * R * Math.cos(th);
+          th += (turn * ds) / R;
+          x = cx + turn * R * Math.sin(th);
+          y = cy - turn * R * Math.cos(th);
+        }
+        pts.push({ X: x, Y: y });
+      }
+    }
+    let dth = th - b.th;
+    dth -= Math.round(dth / (2 * Math.PI)) * 2 * Math.PI;
+    // nur Wege, die wirklich in b ankommen (die Formeln rechnen in Normlage, das prüft sie)
+    if (Math.hypot(x - b.X, y - b.Y) < 0.02 * R && Math.abs(dth) < 0.02) out.push(pts);
+  }
+  return out;
+}
+
+/**
+ * Weicher Übergang von a nach b: kubische Kurve mit den Richtungen der Posen und Henkeln h1, h2 (für kleine Versätze
+ * auf kurzem Weg, wo Kreisbögen fester Größe nicht hineinpassen). Punkte im Abstand von etwa step (ohne a, mit b) und
+ * die größte Krümmung (1/m).
+ */
+function easePath(a: Pose, b: Pose, h1: number, h2: number, step: number): { pts: StagePoint[]; kMax: number } {
+  const p1 = { X: a.X + Math.cos(a.th) * h1, Y: a.Y + Math.sin(a.th) * h1 };
+  const p2 = { X: b.X - Math.cos(b.th) * h2, Y: b.Y - Math.sin(b.th) * h2 };
+  const m = Math.max(4, Math.ceil((Math.hypot(b.X - a.X, b.Y - a.Y) + h1 + h2) / step));
+  const pts: StagePoint[] = [];
   for (let k = 1; k <= m; k++) {
     const t = k / m;
-    const mt = 1 - t;
-    conn.push({
-      X: mt * mt * mt * b.X + 3 * mt * mt * t * p1.X + 3 * mt * t * t * p2.X + t * t * t * a.X,
-      Y: mt * mt * mt * b.Y + 3 * mt * mt * t * p1.Y + 3 * mt * t * t * p2.Y + t * t * t * a.Y,
+    const u = 1 - t;
+    pts.push({
+      X: u * u * u * a.X + 3 * u * u * t * p1.X + 3 * u * t * t * p2.X + t * t * t * b.X,
+      Y: u * u * u * a.Y + 3 * u * u * t * p1.Y + 3 * u * t * t * p2.Y + t * t * t * b.Y,
     });
   }
-  line = resampleLine([...line, ...conn], STEP);
-  line[line.length - 1] = { ...a };
-  return { line, closed: true };
+  let kMax = 0;
+  const all = [{ X: a.X, Y: a.Y }, ...pts];
+  for (let k = 1; k < all.length - 1; k++) {
+    const p = all[k - 1];
+    const q = all[k];
+    const r = all[k + 1];
+    const cr = Math.abs((q.X - p.X) * (r.Y - q.Y) - (q.Y - p.Y) * (r.X - q.X));
+    const den = Math.hypot(q.X - p.X, q.Y - p.Y) * Math.hypot(r.X - q.X, r.Y - q.Y) * Math.hypot(r.X - p.X, r.Y - p.Y);
+    if (den > 1e-12) kMax = Math.max(kMax, (2 * cr) / den);
+  }
+  return { pts, kMax };
+}
+
+/** Schnitte des Wegs mit den Linienstücken from..to (Bounding-Box zuerst, die Linie hat 1 m Abstand) */
+function countCrossings(path: StagePoint[], line: StagePoint[], from: number, to: number): number {
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  for (const p of path) {
+    x0 = Math.min(x0, p.X);
+    x1 = Math.max(x1, p.X);
+    y0 = Math.min(y0, p.Y);
+    y1 = Math.max(y1, p.Y);
+  }
+  let k = 0;
+  for (let i = Math.max(0, from); i < Math.min(line.length - 1, to); i++) {
+    const c = line[i];
+    const e = line[i + 1];
+    if (Math.max(c.X, e.X) < x0 || Math.min(c.X, e.X) > x1 || Math.max(c.Y, e.Y) < y0 || Math.min(c.Y, e.Y) > y1) continue;
+    for (let j = 0; j < path.length - 1; j++) {
+      const a = path[j];
+      const b = path[j + 1];
+      const rx = b.X - a.X;
+      const ry = b.Y - a.Y;
+      const sx = e.X - c.X;
+      const sy = e.Y - c.Y;
+      const den = rx * sy - ry * sx;
+      if (Math.abs(den) < 1e-12) continue;
+      const t = ((c.X - a.X) * sy - (c.Y - a.Y) * sx) / den;
+      const u = ((c.X - a.X) * ry - (c.Y - a.Y) * rx) / den;
+      if (t >= 0 && t < 1 && u >= 0 && u < 1) k++;
+    }
+  }
+  return k;
+}
+
+/**
+ * Rundenschluss ohne Knick: Das Strichende wird auf einem Dubins-Weg (Bögen mit einem der CLOSE_RADII, auch mit Wende)
+ * oder einem weichen Übergang in eine gerade Einfahrt vor der Station geführt (CLOSE_ENTRIES), die in deren Richtung in
+ * die Station läuft.
+ * Angeschlossen wird auf den letzten CLOSE_BACK Metern der Linie: so spät wie möglich, mit kurzem, wenig drehendem
+ * Weg, der die übrige Linie nicht kreuzt (ein Überstand hinter der Station fällt so weg). Die Nähte werden leicht
+ * geglättet. from: erster Linienpunkt des Schlusses. null bei zu kurzer Linie.
+ */
+export function closeBrushLine(drawn: StagePoint[]): { line: StagePoint[]; from: number } | null {
+  if (drawn.length < 30) return null;
+  const P0 = drawn[0];
+  // Die Station liegt waagerecht in der Zeichenrichtung: Die Runde fährt 2 m gerade ab und kommt gerade an. Ein
+  // gleich steigender Anfang ginge nicht: Der Schluss käme in seiner Richtung von unten, also durch den Boden.
+  const ts = { X: Math.sign(drawn[Math.min(drawn.length - 1, 4)].X - P0.X) || 1, Y: 0 };
+  const thS = Math.atan2(ts.Y, ts.X);
+  const head: StagePoint[] = [];
+  for (let i = 0; i <= 6 && i < drawn.length; i++) {
+    const w = i <= 2 ? 1 : 1 - (i - 2) / 4;
+    const e = w * w * (3 - 2 * w);
+    head.push({ X: drawn[i].X + (P0.X + ts.X * i - drawn[i].X) * e, Y: drawn[i].Y + (P0.Y - drawn[i].Y) * e });
+  }
+  const line = resampleLine([...head, ...drawn.slice(head.length)], STEP);
+  const n = line.length;
+  // Ziele: Beginn der geraden Einfahrt (e Meter vor der Station) und die Punkte der Einfahrt bis zur Station
+  const goals = CLOSE_ENTRIES.map((e) => {
+    const entry: StagePoint[] = [];
+    if (e > 0) {
+      for (let d = e - 1; d > 1e-9; d -= 1) entry.push({ X: P0.X - ts.X * d, Y: P0.Y - ts.Y * d });
+      entry.push({ ...P0 });
+    }
+    return { pose: { X: P0.X - ts.X * e, Y: P0.Y - ts.Y * e, th: thS } as Pose, entry };
+  });
+  let best: { path: StagePoint[]; entry: StagePoint[]; j: number; cost: number } | null = null;
+  const minJ = Math.max(24, n - 1 - CLOSE_BACK);
+  for (let j = n - 1; j >= minJ; j--) {
+    // Richtung der Linie in j: Sekante ±2 m (nur rückwärts wäre sie in Bögen zu spät, der Anschluss knickte)
+    const A = line[j];
+    const B = line[Math.max(0, j - 2)];
+    const F = line[Math.min(n - 1, j + 2)];
+    const start: Pose = { X: A.X, Y: A.Y, th: Math.atan2(F.Y - B.Y, F.X - B.X) };
+    // Länge, die der Anstieg vom tiefer gezeichneten Ende zur Station mindestens braucht
+    const rise = Math.max(0, P0.Y - A.Y);
+    const needed = rise > 0 ? Math.sqrt(8 * CLOSE_DEPTH_R * rise) : 0;
+    for (const { pose: goal, entry } of goals) {
+      // Kandidaten: Dubins-Wege je Radius und weiche Übergänge (nur, wenn sie nicht enger als der kleinste Radius biegen)
+      const cands: Array<{ path: StagePoint[]; R: number }> = [];
+      for (const R of CLOSE_RADII) for (const path of dubinsPaths(start, goal, R, 0.5)) cands.push({ path, R });
+      const dist = Math.hypot(goal.X - A.X, goal.Y - A.Y);
+      if (dist >= 2) {
+        for (const lam of [0.33, 0.5]) {
+          const e = easePath(start, goal, lam * dist, lam * dist, 0.5);
+          if (e.kMax * CLOSE_RADII[0] <= 1) cands.push({ path: e.pts, R: 1 / Math.max(e.kMax, 1e-6) });
+        }
+      }
+      for (const { path, R } of cands) {
+        // Länge des Wegs, Drehung (Wenden kosten), weggelassene Meter Strich (zählen doppelt), Kreuzungen (fast verboten)
+        let turn = 0;
+        let prev = start.th;
+        for (let i = 0; i < path.length; i++) {
+          const q = i ? path[i - 1] : A;
+          const th = Math.atan2(path[i].Y - q.Y, path[i].X - q.X);
+          let dth = th - prev;
+          dth -= Math.round(dth / (2 * Math.PI)) * 2 * Math.PI;
+          turn += Math.abs(dth);
+          prev = th;
+        }
+        const crossings = countCrossings([...path, ...entry.slice(0, -1)], line, 2, j - 3);
+        const len = path.length * 0.5;
+        // je Radiant Drehung umso teurer, je enger der Bogen
+        const cost = len + 2 * (n - 1 - j) + turn * (4 + 200 / R) + 3 * Math.max(0, needed - len) + 200 * crossings;
+        if (!best || cost < best.cost) best = { path, entry, j, cost };
+      }
+    }
+  }
+  if (!best) return null;
+  let ring = resampleLine([...line.slice(0, best.j + 1), ...best.path, ...best.entry], STEP);
+  // Nähte glätten (Anschluss am Strich, Bögen an der Geraden), die Einfahrt und die Station bleiben, wie sie sind
+  const m = ring.length;
+  const keepFrom = m - 1 - Math.max(1, Math.round(best.entry.length));
+  const from = Math.max(1, best.j - 6);
+  const smooth = smoothLine(ring.slice(from, keepFrom + 1), 1.2, STEP);
+  ring = [...ring.slice(0, from), ...smooth, ...ring.slice(keepFrom + 1)];
+  ring[ring.length - 1] = { ...P0 };
+  return { line: ring, from };
 }
 
 /** Kreuzungen der Linie mit sich selbst (Strichpunkt-Paare, der spätere zuletzt) */
@@ -552,11 +788,14 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
   const pins = new Map<number, number>();
   // fest: die Station und was die Tiefe behalten soll (alte Bahn beim Fortsetzen, ruhiger Teil der Live-Vorschau)
   const isFixed = (i: number) => !!fixed && !Number.isNaN(fixed[i]);
-  const station = (i: number) => i === 0 || (closed && i === n - 1) || isFixed(i);
+  // Runde: Die Station liegt auf beiden Seiten gerade (die ersten und letzten 2 m behalten ihre Tiefe), sonst käme die
+  // Bahn mit anderer Tiefen-Steigung an, als sie abfährt: ein seitlicher Knick genau in der Station
+  const seam = (i: number) => closed && (i <= 2 || i >= n - 3);
+  const station = (i: number) => i === 0 || (closed && i === n - 1) || seam(i) || isFixed(i);
   const fixedAt = (i: number) => (isFixed(i) ? fixed![i] : upper[0]);
   const pinStation = () => {
     pins.set(0, fixedAt(0));
-    if (closed) pins.set(n - 1, fixedAt(0));
+    if (closed) for (const i of [1, 2, n - 3, n - 2, n - 1]) pins.set(i, isFixed(i) ? fixed![i] : fixedAt(0));
     if (fixed) for (let i = 0; i < n; i++) if (isFixed(i)) pins.set(i, fixed[i]);
   };
   pinStation();
@@ -771,7 +1010,7 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
   const order = crossings.filter((c) => c.laterFront === undefined);
   if (order.length) {
     settle(false);
-    for (const c of order) c.laterFront = z[c.i] - PASS_SIDE >= Z_MIN + 0.5 || z[c.i] + PASS_SIDE > upper[c.j];
+    for (const c of order) c.laterFront = c.natural ? z[c.j] <= z[c.i] : z[c.i] - PASS_SIDE >= Z_MIN + 0.5 || z[c.i] + PASS_SIDE > upper[c.j];
   }
   // Fliehkraft-Gewichte aus dem Tempo der jeweils letzten Lösung (Fallhöhe seit dem höchsten Punkt davor)
   for (let outer = 0; outer < 3; outer++) {
@@ -829,7 +1068,7 @@ function worldPoints(line: StagePoint[], z: Float64Array, closed: boolean, o: Op
 
 /** Knoten aus den Weltpunkten: so wenige wie nötig (Scheitel-Knoten, siehe reduceNodes) */
 export function pathFromPoints(pts: Vec3[], closed: boolean, tolAt?: ArrayLike<number>): TrackPath {
-  const segs = reduceNodes(pts, [], { tolAt, even: true }).segments;
+  const segs = reduceNodes(pts, [], { tolAt, even: true, closed }).segments;
   const mk = (p: Vec3) => createNode(p.x, p.y, p.z / LANE_DEPTH);
   const nodes = segs.map((seg, i) => {
     const nd = mk(seg.p0);
@@ -906,11 +1145,12 @@ function keptDepth(n: number, keepDepth?: ArrayLike<number>): Float64Array | nul
 export function planBrushTrack(points: StagePoint[], options: BrushOptions = {}, keepDepth?: ArrayLike<number>, shownPreview?: BrushPreview | null): BrushPlan | null {
   const shown = shownPreview?.z;
   const o = withDefaults(options);
-  const prep = prepareBrushLine(points, o.closeSnap);
+  const prep = prepareBrushLine(points, o.closeSnap, o.closeReach);
   if (!prep) return null;
   const n = prep.line.length;
   const { calm, wH } = depthWeights(prep.line, prep.closed);
   const crossings = findLineCrossings(prep.line, prep.closed);
+  if (prep.closeFrom !== undefined) for (const c of crossings) if (c.j >= prep.closeFrom) c.natural = true;
   const elements = findElements(prep.line, crossings);
   const wMul = new Float64Array(n).fill(1);
   const flat = new Float64Array(n).fill(1);
