@@ -313,17 +313,37 @@ describe('Gesten-Interpreter: Lesart „Ein Strich“', () => {
     expect(single.points.every((p) => Math.round(p.z) === 0 && p.mode === 'height')).toBe(true);
     expect(single.points[single.points.length - 1].y).toBeGreaterThan(2 * R - 1);
   });
-  it('macht aus einer Wende genau eine Kurve in die Nachbar-Ebene und landet nie', () => {
-    const stroke = [...param(40, (t) => [t * 30, 0.5]), ...param(16, (t) => [30 + 8 * Math.sin(Math.PI * t), 0.5 + 8 * (1 - Math.cos(Math.PI * t))]), ...param(40, (t) => [30 - t * 30, 16.5 - 16 * t])];
+  it('liest den Versatz des Rückwegs als Ebenen: 4 m höher = eine Ebene nach hinten, Höhe bleibt stetig', () => {
+    const stroke = [...param(40, (t) => [t * 30, 1]), ...param(16, (t) => [30 + 4 * Math.sin(Math.PI * t), 1 + 4.2 * (1 - Math.cos(Math.PI * t)) * 0.5]), ...param(40, (t) => [30 - t * 30, 5.2])];
     const r = strokeToTrack(stroke, { single: true, preview: true });
     const turns = r.events.filter((e) => e.kind === 'turn');
     expect(turns.length).toBe(1);
     expect(turns[0].radius).toBeCloseTo(4.2, 1);
     expect(turns[0].dir).toBe(1);
-    const tail = r.points.slice(-10);
-    for (const p of tail) {
+    const entryH = r.points[turns[0].index - 12].y;
+    const after = r.points.filter((p) => (p.s ?? 0) > 50);
+    expect(after.length).toBeGreaterThan(10);
+    for (const p of after) {
       expect(Math.round(p.z)).toBe(1);
       expect(p.mode).toBe('height');
+      expect(Math.abs(p.y - entryH)).toBeLessThan(1.0);
+    }
+  });
+  it('macht aus 8 m Versatz zwei Ebenen und aus einem tieferen Rückweg eine Kurve nach vorne ohne Anstieg', () => {
+    const two = [...param(40, (t) => [t * 30, 1]), ...param(20, (t) => [30 + 6 * Math.sin(Math.PI * t), 1 + 8.4 * (1 - Math.cos(Math.PI * t)) * 0.5]), ...param(40, (t) => [30 - t * 30, 9.4])];
+    const r2 = strokeToTrack(two, { single: true, preview: true });
+    expect(r2.events.filter((e) => e.kind === 'turn')[0].radius).toBeCloseTo(8.4, 1);
+    const R1 = laneRise(1);
+    const front = [...param(40, (t) => [t * 30, R1 + 1]), ...param(16, (t) => [30 + 4 * Math.sin(Math.PI * t), R1 + 1 - 4.2 * (1 - Math.cos(Math.PI * t)) * 0.5]), ...param(40, (t) => [30 - t * 30, 1])];
+    const r = strokeToTrack(front, { single: true, preview: true });
+    const turns = r.events.filter((e) => e.kind === 'turn');
+    expect(turns.length).toBe(1);
+    expect(turns[0].dir).toBe(-1);
+    const entryH = r.points[turns[0].index - 12].y;
+    const after = r.points.filter((p) => (p.s ?? 0) > 50);
+    for (const p of after) {
+      expect(Math.round(p.z)).toBe(0);
+      expect(Math.abs(p.y - entryH)).toBeLessThan(1.0);
     }
   });
 });

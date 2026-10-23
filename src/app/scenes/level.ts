@@ -93,8 +93,11 @@ const RETRACT_MIN = 1.0;
 /** Spurende: so lange (s) nach dem letzten Anstoßen bleibt die Tinte rot */
 const BLOCKED_SHOW = 0.6;
 /** Autoscroll beim Zeichnen: so nah (px) am Bildrand schiebt die Kamera, mit bis zu dieser Geschwindigkeit (px/s) */
-const AUTOSCROLL_PX = 70;
-const AUTOSCROLL_SPEED = 650;
+const AUTOSCROLL_PX = 120;
+const AUTOSCROLL_SPEED = 220;
+/** Strichspitze: dicker Punkt unter dem Finger (Radius px) und ein sich verjüngender Schweif (Länge px) entlang des Strichs */
+const TIP_RADIUS_PX = 13;
+const TIP_TAIL_PX = 110;
 /** Knotenwahl beim Zeichnen: Scheitel-Semantik (Standard) oder der alte Schneider-Fit zum Vergleich (?fit=legacy) */
 const FIT_MODE: 'apex' | 'legacy' = typeof location !== 'undefined' && new URLSearchParams(location.search).get('fit') === 'legacy' ? 'legacy' : 'apex';
 
@@ -874,6 +877,57 @@ export class LevelScene implements Scene {
     const color = blocked ? 0xff4d5e : this.strokeKind === 'overdraw' ? 0xffd23f : mode === 'height' ? 0xff5c8a : 0x7ee081;
     g.poly(seg, false).stroke({ width: 0.5, color: 0xffffff, alpha: 0.35, cap: 'round', join: 'round' });
     g.poly(seg, false).stroke({ width: 0.25, color, alpha: 0.55, cap: 'round', join: 'round' });
+    this.drawTip(color);
+  }
+
+  /**
+   * Strichspitze als Tropfen: ein dicker Punkt unter dem Finger (auf dem Handy verdeckt der Finger die dünne Linie)
+   * und von dort ein Schweif, der entlang der letzten Strichmeter dünner wird und sich mit der Kurve biegt.
+   */
+  private drawTip(color: number): void {
+    const s = this.stroke;
+    if (!s || s.length < 2) return;
+    const g = this.ink;
+    const zoom = this.view.camera.zoom;
+    const r0 = TIP_RADIUS_PX / zoom;
+    const tail = TIP_TAIL_PX / zoom;
+    const tip = s[s.length - 1];
+    // Punkte vom Finger rückwärts bis zur Schweiflänge, mit Abstand vom Finger
+    const pts: Array<{ X: number; Y: number; d: number }> = [{ X: tip.X, Y: tip.Y, d: 0 }];
+    let d = 0;
+    for (let i = s.length - 2; i >= 0 && d < tail; i--) {
+      const a = pts[pts.length - 1];
+      const step = Math.hypot(s[i].X - a.X, s[i].Y - a.Y);
+      if (step < 0.05) continue;
+      d += step;
+      if (d > tail) {
+        const f = (tail - (d - step)) / step;
+        pts.push({ X: a.X + (s[i].X - a.X) * f, Y: a.Y + (s[i].Y - a.Y) * f, d: tail });
+        break;
+      }
+      pts.push({ X: s[i].X, Y: s[i].Y, d });
+    }
+    g.circle(tip.X, tip.Y, r0).fill({ color, alpha: 0.92 });
+    if (pts.length < 2) return;
+    const width = (dd: number): number => Math.max(0.08 / zoom, r0 * Math.pow(1 - dd / tail, 1.6));
+    const left: number[] = [];
+    const right: number[] = [];
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const a = pts[Math.max(0, i - 1)];
+      const b = pts[Math.min(pts.length - 1, i + 1)];
+      let nx = -(b.Y - a.Y);
+      let ny = b.X - a.X;
+      const nl = Math.hypot(nx, ny) || 1;
+      nx /= nl;
+      ny /= nl;
+      const w = width(p.d);
+      left.push(p.X + nx * w, p.Y + ny * w);
+      right.push(p.X - nx * w, p.Y - ny * w);
+    }
+    const poly: number[] = [...left];
+    for (let i = right.length - 2; i >= 0; i -= 2) poly.push(right[i], right[i + 1]);
+    g.poly(poly, true).fill({ color, alpha: 0.92 });
   }
 
   /**
