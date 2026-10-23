@@ -48,6 +48,8 @@ export interface StrokeOptions {
   preview?: boolean;
   /** Bühnen-Meter am Anfang, die nicht umgeformt werden (Einlauf beim Fortsetzen) */
   lockLength?: number;
+  /** „Ein Strich“: alles Höhe, nur Wenden wechseln die Ebene (siehe gesture.ts) */
+  single?: boolean;
 }
 
 export interface StrokeResult {
@@ -237,6 +239,7 @@ const gestureOptions = (opts: StrokeOptions) => ({
   lockLength: opts.lockLength,
   closeAt: opts.closeAt,
   closeSnap: opts.closeSnap,
+  single: opts.single,
 });
 
 /** Die Lesart: Bühnenpunkte → (x, Höhe, Spur, Modus), siehe gesture.ts */

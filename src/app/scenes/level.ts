@@ -92,6 +92,9 @@ const RETRACT_REACH = 6;
 const RETRACT_MIN = 1.0;
 /** Spurende: so lange (s) nach dem letzten Anstoßen bleibt die Tinte rot */
 const BLOCKED_SHOW = 0.6;
+/** Autoscroll beim Zeichnen: so nah (px) am Bildrand schiebt die Kamera, mit bis zu dieser Geschwindigkeit (px/s) */
+const AUTOSCROLL_PX = 70;
+const AUTOSCROLL_SPEED = 650;
 /** Knotenwahl beim Zeichnen: Scheitel-Semantik (Standard) oder der alte Schneider-Fit zum Vergleich (?fit=legacy) */
 const FIT_MODE: 'apex' | 'legacy' = typeof location !== 'undefined' && new URLSearchParams(location.search).get('fit') === 'legacy' ? 'legacy' : 'apex';
 
@@ -132,6 +135,8 @@ export class LevelScene implements Scene {
   private strokeLane: { lane: number; mode: StrokeMode } | null = null;
   /** letzte Zeigerpositionen (Bühne) über rund einen Meter: Bewegungsrichtung für das Zurückziehen */
   private pointerTrail: StagePoint[] = [];
+  /** letzte Zeigerposition auf dem Bildschirm während eines Strichs (Autoscroll am Bildrand) */
+  private pointerScreen: Pt | null = null;
   /** Zurückziehen läuft (nach RETRACT_MIN auf der Linie zurück); davor zählt retractDist den Weg */
   private retracting = false;
   private retractDist = 0;
@@ -217,6 +222,8 @@ export class LevelScene implements Scene {
   private saveBtn = new Button('', { width: 48, round: true, color: '#7ee081', icon: iconSave });
   /** Dev-Modus: Bahntyp durchschalten */
   private skinBtn = new Button('DEV', { width: 150, height: 40, size: 15, color: '#2a1f3d' });
+  /** Umschalter der Lesart (Bühne / Ein Strich), zum Ausprobieren */
+  private modeBtn = new Button('', { width: 96, height: 36, size: 14, color: '#2a1f3d' });
   private shelf = new Container();
   private shelfOpen = false;
   private toast = new Toast();
@@ -271,9 +278,11 @@ export class LevelScene implements Scene {
     this.view.overlay.addChild(this.laneGlow, this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
     this.laneHud.addChild(this.laneHudG);
-    this.ui.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.laneHud, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.toast);
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn];
+    this.ui.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.laneHud, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn, this.toast);
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn];
     this.speedBtn.visible = false;
+    this.modeBtn.setText(t(`strokeMode.btn.${this.singleStroke ? 'single' : 'stage'}`));
+    this.modeBtn.onTap = () => this.toggleStrokeMode();
     this.skinBtn.visible = unlockAll();
     this.skinBtn.setText(`DEV · ${ELEMENT_NAMES[this.skin as ElementId] ?? this.skin}`);
     this.skinBtn.onTap = () => this.cycleDevSkin();
@@ -464,12 +473,8 @@ export class LevelScene implements Scene {
       const st = this.view.camera.toStage(p.x, p.y);
       switch (this.drag.kind) {
         case 'stroke':
-          if (this.stroke) {
-            const np = { X: st.X, Y: st.Y };
-            this.retractStroke(np);
-            this.stroke.push(np);
-            this.drawInk();
-          }
+          this.pointerScreen = { x: p.x, y: p.y };
+          this.appendStrokePoint(st);
           break;
         case 'trackPending': {
           const d = this.drag;
@@ -506,6 +511,7 @@ export class LevelScene implements Scene {
     H.dragEnd = (p) => {
       if (this.mode !== 'draw') return;
       const st = this.view.camera.toStage(p.x, p.y);
+      this.pointerScreen = null;
       switch (this.drag.kind) {
         case 'stroke': this.finishStroke(); break;
         case 'node': case 'handleIn': case 'handleOut': case 'depth': case 'roll': case 'segment': this.afterEdit(); break;
@@ -749,9 +755,52 @@ export class LevelScene implements Scene {
   }
 
   // ------------------------------------------------------------------ Strich → Bahn
+  /** Lesart „Ein Strich“ (Einstellung, Umschalter unten links) */
+  private get singleStroke(): boolean {
+    return storage.settings.strokeMode === 'single';
+  }
+  private toggleStrokeMode(): void {
+    const next = this.singleStroke ? 'stage' : 'single';
+    storage.updateSettings({ strokeMode: next });
+    this.modeBtn.setText(t(`strokeMode.btn.${next}`));
+    this.toast.show(t(`strokeMode.${next}`), 2.2);
+  }
+
+  /** Neuer Strichpunkt (Bühne) aus Zeigerbewegung oder Autoscroll: Zurückziehen prüfen, anhängen, Tinte */
+  private appendStrokePoint(st: StagePoint): void {
+    if (!this.stroke) return;
+    const np = { X: st.X, Y: st.Y };
+    this.retractStroke(np);
+    this.stroke.push(np);
+    this.drawInk();
+  }
+
+  /**
+   * Autoscroll: Liegt der Zeiger während eines Strichs nah am Bildrand, schiebt die Kamera in diese Richtung (je
+   * näher, desto schneller), und der Strich wächst unter dem stehenden Zeiger weiter, ohne dass man absetzen muss.
+   */
+  private autoscroll(dt: number): void {
+    const p = this.pointerScreen;
+    if (!p || this.drag.kind !== 'stroke' || !this.stroke || this.strokeKind === 'terrain') return;
+    const m = AUTOSCROLL_PX;
+    const edge = (v: number, size: number): number => (v < m ? -(m - v) / m : v > size - m ? (v - (size - m)) / m : 0);
+    const fx = clamp(edge(p.x, this.w), -1, 1);
+    const fy = clamp(edge(p.y, this.h), -1, 1);
+    if (!fx && !fy) return;
+    const cam = this.view.camera;
+    // panBy nimmt die Fingerbewegung: Zeiger am rechten Rand heißt Welt nach links schieben
+    cam.panBy(-fx * Math.abs(fx) * AUTOSCROLL_SPEED * dt, -fy * Math.abs(fy) * AUTOSCROLL_SPEED * dt);
+    cam.clampTo({ minX: -40, maxX: this.level.width + 40, minY: -30, maxY: 160 });
+    cam.snap();
+    const st = cam.toStage(p.x, p.y);
+    const last = this.stroke[this.stroke.length - 1];
+    if (Math.hypot(st.X - last.X, st.Y - last.Y) >= 0.15) this.appendStrokePoint(st);
+  }
+
   private strokeOptions() {
     const ground = (x: number, z: number) => (this.allowTunnels ? this.terrain.groundHeight(x, z) : this.terrain.surfaceHeight(x, z));
     return {
+      single: this.singleStroke,
       fit: FIT_MODE,
       groundHeight: ground,
       groundClearance: 0.8,
@@ -1754,6 +1803,7 @@ export class LevelScene implements Scene {
     this.hint.visible = false;
     this.shelfBtn.visible = false;
     this.speedBtn.visible = true;
+    this.modeBtn.visible = false;
     this.laneHud.visible = false;
     this.updateGoals();
   }
@@ -1785,6 +1835,7 @@ export class LevelScene implements Scene {
     this.timeScale = 1;
     this.speedText.text = '';
     this.speedBtn.visible = false;
+    this.modeBtn.visible = true;
     this.shelfBtn.visible = true;
     this.standCars = [];
     this.redrawTrack();
@@ -1803,7 +1854,7 @@ export class LevelScene implements Scene {
     this.ui.removeChild(old);
     old.destroy({ children: true });
     this.playBtn = btn;
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn];
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn];
     this.ui.addChild(this.toast);
   }
 
@@ -2156,6 +2207,7 @@ export class LevelScene implements Scene {
     this.clearBtn.position.set(w - 36, safeTop + 26);
     this.saveBtn.position.set(w - 92, safeTop + 26);
     this.skinBtn.position.set(88, h - 50);
+    this.modeBtn.position.set(62, h - (this.skinBtn.visible ? 96 : 50));
     if (portrait) {
       this.levelTitle.position.set(w / 2, safeTop + 72);
       this.goalsBar.position.set(w / 2, safeTop + 112);
@@ -2186,6 +2238,7 @@ export class LevelScene implements Scene {
     this.time += dt;
     if (this.mode === 'draw') {
       if (this.stroke) {
+        this.autoscroll(dt);
         this.previewTimer += dt;
         if (this.previewTimer > Math.max(0.012, 1.25 * this.previewCost)) {
           this.previewTimer = 0;

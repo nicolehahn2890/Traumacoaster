@@ -112,5 +112,9 @@
   "tutorial.l2": "Tippe die Bahn an und zieh an den Handles",
   "tutorial.l5": "Zeichne am Boden einen Bogen nach hinten (höher im Bild = weiter hinten)",
   "tutorial.l8": "Steil hoch und in der Luft eine Schleife zeichnen, die sich kreuzt",
-  "laneEnd": "Keine Ebene mehr in dieser Richtung"
+  "laneEnd": "Keine Ebene mehr in dieser Richtung",
+  "strokeMode.stage": "Lesart: Bühne (Boden = Tiefe, steil = Höhe)",
+  "strokeMode.single": "Lesart: Ein Strich (alles ist Höhe, nur Wenden wechseln die Ebene)",
+  "strokeMode.btn.stage": "Bühne",
+  "strokeMode.btn.single": "1 Strich"
 }

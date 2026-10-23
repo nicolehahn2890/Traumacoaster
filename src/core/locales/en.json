@@ -112,5 +112,9 @@
   "tutorial.l2": "Tap the track and drag the handles",
   "tutorial.l5": "Draw a flat arc towards the back on the ground (higher on screen = further back)",
   "tutorial.l8": "Climb steeply and draw a loop in the air that crosses itself",
-  "laneEnd": "No level left in that direction"
+  "laneEnd": "No level left in that direction",
+  "strokeMode.stage": "Reading: stage (floor = depth, steep = height)",
+  "strokeMode.single": "Reading: one stroke (everything is height, only U-turns change the level)",
+  "strokeMode.btn.stage": "Stage",
+  "strokeMode.btn.single": "1 stroke"
 }

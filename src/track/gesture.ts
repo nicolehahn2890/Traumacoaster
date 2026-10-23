@@ -63,6 +63,12 @@ export interface GestureOptions {
   /** Station auf der Bühne: endet der Strich dort (closeSnap), zielt die letzte Boden-Kehre auf die Spur der Station */
   closeAt?: { X: number; Y: number };
   closeSnap?: number;
+  /**
+   * „Ein Strich“: Die Bildhöhe ist immer Höhe über der Ebene, nie Tiefe. Es gibt keine Spurwechsel und keine Landung;
+   * nur eine Wende (x kehrt um) ist eine Kurve, und zwar genau in die Nachbar-Ebene (Rückweg höher = nach hinten,
+   * mindestens 1 m tiefer = nach vorne). Loopings wie gehabt.
+   */
+  single?: boolean;
 }
 
 /** Der Strich wollte eine Kehre in eine Richtung, in der keine Spur mehr ist: die Bahn bleibt am Scheitel stehen */
@@ -177,6 +183,8 @@ class Scanner {
   lockIdx = 0;
   allowLoops: boolean;
   preview: boolean;
+  /** „Ein Strich“: alles Höhe, Wenden eine Ebene weiter (siehe GestureOptions.single) */
+  single: boolean;
   /** Der Strich endet an der Station: Spur der Station, sonst null */
   closeLane: number | null = null;
   /** Kehre in eine Richtung ohne Spur: der Strich wird nur bis zum Scheitel gelesen */
@@ -200,6 +208,7 @@ class Scanner {
     this.clearance = opts.groundClearance ?? 0.6;
     this.allowLoops = opts.allowLoops !== false;
     this.preview = !!opts.preview;
+    this.single = !!opts.single;
     if (opts.lockLength) {
       let k = 0;
       while (k < n - 1 && this.cum[k] < opts.lockLength) k++;
@@ -210,10 +219,10 @@ class Scanner {
       if (d <= (opts.closeSnap ?? CLOSE_SNAP)) this.closeLane = nearestLane(opts.closeAt.Y);
     }
     const above = n > 0 && this.aboveStage(0);
-    this.mode = opts.startMode ?? (above ? 'height' : 'floor');
+    this.mode = this.single ? 'height' : opts.startMode ?? (above ? 'height' : 'floor');
     const startZ = opts.startZ ?? (above && !opts.startMode ? LANE_MAX : n ? this.nearest(0).lane : 0);
     // am Boden ganze Spuren (eine krumme Start-Tiefe blendet die Geometrie auf die Spur), in der Höhe bleibt die Tiefe, wie sie ist
-    this.lane = this.mode === 'floor' ? Math.max(LANE_MIN, Math.min(LANE_MAX, Math.round(startZ))) : startZ;
+    this.lane = this.mode === 'floor' || this.single ? Math.max(LANE_MIN, Math.min(LANE_MAX, Math.round(startZ))) : startZ;
     this.hMax = n ? (this.mode === 'height' ? this.absHeight(0, this.lane) : this.ground(this.X[0] / laneScale(this.lane), this.lane) + this.clearance) : 0;
   }
 
@@ -424,6 +433,7 @@ class Scanner {
       }
       yMax = Math.max(yMax, Y[i]);
       this.hMax = Math.max(this.hMax, this.absHeight(i, lane));
+      if (this.single) continue; // „Ein Strich“: keine Landung, die Ebene bleibt
       // Landung: flach auf einer Bodenlinie, nachdem der Strich herunterkam (oder lange flach dicht an der Linie)
       const flat = Math.abs(this.slope(i)) < LAND_ANGLE;
       const descending = Y[i] <= Y[i - 1] + 1e-6;
@@ -626,7 +636,7 @@ class Scanner {
     const yEntry = floorMode ? this.ground(X[apex] / laneScale(laneFrom), laneFrom) + this.clearance : this.absHeight(apex, laneFrom);
     const drawnR = floorMode ? 0 : this.drawnRadius(prev, apex, dirX, j);
     // Schluss-Kehre: der Strich endet an der Station, die Kehre liegt kurz davor → sie zielt auf die Spur der Station
-    const closing = floorMode && this.closeLane !== null && cum[n - 1] - cum[apex] <= CLOSE_U_REACH;
+    const closing = (floorMode || this.single) && this.closeLane !== null && cum[n - 1] - cum[apex] <= CLOSE_U_REACH;
     // Spurenzahl und Richtung des Halbkreises von einer Einfahrtsspur aus: so viele Spuren, wie der Rückweg entfernt
     // gezeichnet ist (Boden) bzw. wie die gezeichnete Weite hergibt (Höhe), mindestens eine, höchstens die Bühne.
     // Kein Tempo-Zuschlag: Eine enge Kehre nach einem Hügel bleibt eng, die Fahrt zeigt die Folgen.
@@ -634,7 +644,7 @@ class Scanner {
       if (closing && this.closeLane !== lf) return { laneTo: this.closeLane!, R: (Math.abs(this.closeLane! - lf) * LANE_DEPTH) / 2 };
       // Am Boden entscheidet die Spur, die der Rückweg erreicht; in der Höhe nur seine Bildhöhe (höher = hinten)
       let dirZ = floorMode && laneRead !== lf ? Math.sign(laneRead - lf) : yDir;
-      const drawnLanes = floorMode ? Math.abs(laneRead - lf) : lanesForRadius(drawnR);
+      const drawnLanes = this.single ? 1 : floorMode ? Math.abs(laneRead - lf) : lanesForRadius(drawnR);
       let lanes = Math.min(lanesForRadius(TURN_RADIUS_MAX), Math.max(1, drawnLanes));
       const room = (d: number) => Math.max(0, Math.round(d > 0 ? LANE_MAX - lf : lf - LANE_MIN));
       if (room(dirZ) === 0) {

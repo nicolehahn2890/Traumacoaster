@@ -303,3 +303,27 @@ describe('Gesten-Interpreter: Spurende, Kehre in Maushöhe, Höhe halten', () =>
     expect(r.points[r.points.length - 1].mode).toBe('floor');
   });
 });
+
+describe('Gesten-Interpreter: Lesart „Ein Strich“', () => {
+  it('liest eine sanfte Steigung als Hügel auf derselben Ebene, nicht als Spurwechsel', () => {
+    const stroke = [...param(30, (t) => [t * 20, 0]), ...param(40, (t) => [20 + t * 30, R * 2 * t]), ...param(30, (t) => [50 + t * 20, 2 * R])];
+    const stage = strokeToTrack(stroke);
+    const single = strokeToTrack(stroke, { single: true });
+    expect(trackStats(stage.path, sampleTrack(stage.path)).lanes).toBeGreaterThan(1);
+    expect(single.points.every((p) => Math.round(p.z) === 0 && p.mode === 'height')).toBe(true);
+    expect(single.points[single.points.length - 1].y).toBeGreaterThan(2 * R - 1);
+  });
+  it('macht aus einer Wende genau eine Kurve in die Nachbar-Ebene und landet nie', () => {
+    const stroke = [...param(40, (t) => [t * 30, 0.5]), ...param(16, (t) => [30 + 8 * Math.sin(Math.PI * t), 0.5 + 8 * (1 - Math.cos(Math.PI * t))]), ...param(40, (t) => [30 - t * 30, 16.5 - 16 * t])];
+    const r = strokeToTrack(stroke, { single: true, preview: true });
+    const turns = r.events.filter((e) => e.kind === 'turn');
+    expect(turns.length).toBe(1);
+    expect(turns[0].radius).toBeCloseTo(4.2, 1);
+    expect(turns[0].dir).toBe(1);
+    const tail = r.points.slice(-10);
+    for (const p of tail) {
+      expect(Math.round(p.z)).toBe(1);
+      expect(p.mode).toBe('height');
+    }
+  });
+});
