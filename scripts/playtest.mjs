@@ -96,7 +96,7 @@ page.setDefaultTimeout(20000);
 /** Level öffnen: frische Seite (about:blank dazwischen), auf die Szene warten statt auf „networkidle“ */
 const openLevel = async (lvl) => {
   await page.goto('about:blank');
-  await page.goto(`${BASE}?scene=start&fast=6&level=${lvl}`, { waitUntil: 'load' });
+  await page.goto(`${BASE}?scene=start&fast=6&level=${lvl}&stage`, { waitUntil: 'load' });
   for (let i = 0; i < 60; i++) {
     const ready = await page.evaluate(() => !!(window.tcGame?.current?.view?.camera && window.tcGame.current.mode === 'draw')).catch(() => false);
     if (ready) break;
@@ -121,7 +121,7 @@ const play = async (tag, shots = [4, 8, 12]) => {
   await page.screenshot({ path: `screenshots/playtest-${tag}-result.png` });
 };
 
-await page.goto(`${BASE}?scene=start&fast=6`, { waitUntil: 'networkidle' });
+await page.goto(`${BASE}?scene=start&fast=6&stage`, { waitUntil: 'networkidle' });
 await sleep(600);
 
 // 1) Hügel mit Zittern, offen lassen, Nahaufnahme der Bahn

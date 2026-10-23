@@ -7,3 +7,9 @@ screenshots/
 test-results/
 art-src/
 recordings/
+# Referenzbilder und Entwürfe nur lokal (fremde Bilder gehören nicht ins öffentliche Repository)
+refs/
+*.docx
+# persönliche Claude-Code-Einstellungen
+.claude/launch.json
+.claude/settings.local.json

@@ -23,15 +23,16 @@ export class Game {
 
   async init(): Promise<void> {
     setLanguage(storage.settings.language);
+    // Die Fläche ist #app: im Vollbild auf dem Handy der sichere Bereich ohne Kerbe und Home-Leiste (index.html)
+    const host = document.getElementById('app')!;
     await this.app.init({
-      resizeTo: window,
+      resizeTo: host,
       background: '#1b2a4a',
       antialias: true,
       resolution: Math.min(2, window.devicePixelRatio || 1),
       autoDensity: true,
       preference: 'webgl',
     });
-    const host = document.getElementById('app')!;
     host.appendChild(this.app.canvas);
     this.app.stage.addChild(this.root, this.fade);
     this.input = new InputManager(this.app.canvas);
@@ -70,6 +71,8 @@ export class Game {
     }
     this.onResize();
     window.addEventListener('orientationchange', () => setTimeout(() => this.onResize(), 150));
+    // Der sichere Bereich kann sich ohne Fenster-Resize ändern (Drehen in der Vollbild-App): die Fläche beobachten
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.app.queueResize()).observe(host);
   }
 
   private onResize(): void {

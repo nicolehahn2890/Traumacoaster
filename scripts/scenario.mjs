@@ -6,6 +6,7 @@
  *  4. Löschen-Knopf, Überzeichnen (Hügel in eine flache Bahn)
  *  7. Bearbeiten: Segment ziehen (Bahn durch den Finger, Knoten bleiben), Langdruck zeigt Profi-Handles
  * Screenshots nach screenshots/scenario-*.png. Nutzt einen vorbereiteten Spielstand (Welt 1 fast komplett).
+ * Läuft in der Lesart „Bühne“ (`&stage` in der Adresse), für die die Erwartungen geschrieben sind; Standard ist der Pinsel.
  */
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
@@ -118,11 +119,11 @@ const R = 4.2; // Bühnen-Meter pro Spur (Anhebung der Bodenlinie)
 let st = null;
 let r = null;
 const openLevel = async (extra = '') => {
-  await page.goto(`${BASE}?scene=start&fast=6&level=8&fx=1${extra}`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}?scene=start&fast=6&level=8&fx=1&stage${extra}`, { waitUntil: 'networkidle' });
   await sleep(1200);
 };
 
-await page.goto(`${BASE}?scene=start&fast=6`, { waitUntil: 'networkidle' });
+await page.goto(`${BASE}?scene=start&fast=6&stage`, { waitUntil: 'networkidle' });
 await sleep(800);
 
 // ---------------------------------------------------------------- 1. Oval am Boden

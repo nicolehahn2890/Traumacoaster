@@ -2,7 +2,7 @@
 
 **Leitbild:** Eyvind Earle × Rayman Legends. Flache, harte Silhouetten in drei Tönen, Punktraster auf den Schattenseiten, schwarze verzweigte Stämme mit farbigen Flecken, Hügel als parallele Bänder, Luftperspektive in klaren Farbstufen, dazu die Sattheit und das Leuchten von Rayman. Alles wirkt gemalt und aus einem Guss: Karte, Level, Zug, Fahrgäste, Oberfläche. Wild und abgefahren, aber lesbar: Die Bahn ist immer das Klarste im Bild.
 
-Referenzen liegen unter `refs/` (Earle: `refs/eyvind earle/`, Feedback-Auswahl in `feedback-2026-09-30/`; Rayman: `refs/rayman legends/`; Figuren: `refs/south park - terrence und phillip.png`).
+Referenzen liegen nur lokal unter `refs/` (fremde Bilder gehören nicht ins öffentliche Repository; bis 23.10.2026 waren sie eingecheckt): Earle in `refs/eyvind earle/` (Feedback-Auswahl in `feedback-2026-09-30/`), Rayman in `refs/rayman legends/`, Figuren in `refs/south park - terrence und phillip.png`.
 
 ## 1. Die sechs Regeln
 

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- App-Symbol: Bahn mit Looping auf Nachtblau (Quelle der PNGs in diesem Ordner) -->
+  <rect width="512" height="512" fill="#1b2a4a"/>
+  <circle cx="256" cy="256" r="196" fill="#ff5c8a"/>
+  <path d="M86 340 C 150 340, 170 300, 205 250 C 240 200, 300 170, 320 215 C 340 260, 280 290, 262 255 C 244 220, 300 175, 350 210 C 385 235, 400 300, 430 330" fill="none" stroke="#fff8ec" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="160" cy="330" r="14" fill="#1b2a4a"/>
+</svg>

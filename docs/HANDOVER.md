@@ -1,4 +1,4 @@
-# Übergabe – Trauma Coaster (Stand 21.10.2026)
+# Übergabe – Trauma Coaster (Stand 23.10.2026)
 
 Für die nächste Session (Florian oder wer auch immer weitermacht): Was fertig ist, was offen ist, wie du
 weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md`, die Technik in
@@ -6,27 +6,34 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
 
 ## 1. Wo wir stehen
 
-- **Branch (23.10.):** `claude/pinsel-spike` (ab `main`, nicht gepusht) führt `claude/nice-cannon-094fka` (Gesten v3,
-  Ein Strich, Kreuzungsprüfung) mit dem Pinsel-Spike zusammen: vier Lesarten zum Vergleich über den Knopf unten links
+- **`main` ist der Prototyp (23.10.):** Der Pinsel-Stand ist der neue Hauptzweig, lokal und auf GitHub gleich; jeder
+  Push auf `main` geht über `.github/workflows/deploy.yml` auf https://nicolehahn2890.github.io/Traumacoaster/. Die
+  alten `claude/*`-Branches waren vollständig enthalten und sind gelöscht. Aufgeräumt: Fremde Referenzbilder (Earle,
+  Rayman, South Park) und das Prompt-Dokument liegen nur noch lokal (`refs/`, `*.docx` sind ignoriert; in der
+  Git-Historie stehen sie noch). Neu: Auf dem Handy als Vollbild-App (Manifest, Symbole, Spielfläche im sicheren
+  Bereich ohne Kerbe und Home-Leiste, README „Auf dem Handy testen“). Die Browser-Szenarien laufen in der Lesart
+  „Bühne“ (`&stage`), für die sie geschrieben sind.
+- **Inhalt (23.10.):** Der Pinsel-Spike führt `claude/nice-cannon-094fka` (Gesten v3, Ein Strich, Kreuzungsprüfung)
+  mit dem Pinsel zusammen: vier Lesarten zum Vergleich über den Knopf unten links
   (Pinsel → Bühne → 1 Strich → Ebenen), Tiefe überall gerade nach hinten (`LANE_SCALE = 1`), Pinsel mit zäher Bahn,
   Schleppe und Live-Schienen, Kreuzungen per Tipp tauschbar, einrastende Tiefen, Ebenen-Lesart mit Ebenenleiste,
   Streckenanzeige mit Budget-Regler, Schwachstellen-Marker für alle Lesarten, neuer Autoscroll, Zeichen-Zoom auf dem
   Handy, Strich-Rekorder mit `npm run strokes:replay` (README, TECH.md 4b bis 4d). Danach: Pinsel mit Loopings
   (hohe Schleife) und geraden Hügeln, ruhigere Schienen-Schräglage mit dem Wagen darauf, weniger und gleichmäßiger
-  verteilte Knoten, ausgedünnte Stützen, Ebenen mit Weiterzeichnen auf der gewählten Ebene und Auto-Knopf. Offen: welche Lesart bleibt; Level,
-  Coins und Ziele für Pinsel und Ebenen; Leistung auf echten Handys.
-- **Branch (22.10.):** `claude/nice-cannon-094fka` trägt den Gesten-Interpreter v3 (Zeichnen stabil, feste Spuren, Spur-Anzeige; siehe `docs/PLAN.md`, M2/A8) und geht per Pull Request nach `main`. Davor: Alles liegt auf `main`. PR #1 (M1 bis M5/D3, Stand e00ec84) wurde am 21.10. gemerged, PR #2 (Spur-Filter
-  in Renderer-Auflösung, die halbe Auflösung machte die ganze Spur pixelig) ebenfalls, danach D4 und diese Übergabe.
-  Jeder Push auf `main` geht über `.github/workflows/deploy.yml` direkt auf GitHub Pages.
-  `claude/serene-pascal-43m0gq` ist damit abgeschlossen; neue Arbeit auf einem eigenen Branch ab `main`.
-- **Plan:** `docs/PLAN.md` (18 Anpassungen aus dem Spieltest, Pakete A–F, Meilensteine M1–M6). Unten im Plan
-  steht je Meilenstein der „Umsetzungsstand“ mit Dateien, Tests und Abweichungen.
+  verteilte Knoten, ausgedünnte Stützen, Ebenen mit Weiterzeichnen auf der gewählten Ebene und Auto-Knopf. Florian
+  gefällt der Pinsel am besten. Offen: welche Lesart bleibt; Level, Coins und Ziele für Pinsel und Ebenen; Leistung
+  auf echten Handys.
+- **Davor:** PR #1 (M1 bis M5/D3) und PR #2 (Spur-Filter) am 21.10. gemerged, PR #3 (D4 Pfeiler je Welt, Schienen
+  als Band-Mesh) danach; Gesten v3 (`docs/PLAN.md`, M2/A8) kam über den Pinsel-Spike nach `main`.
+- **Plan:** `docs/PLAN.md` (18 Anpassungen aus dem ersten Spieltest, Pakete A–F, Meilensteine M1–M6) ist der alte
+  Plan; unten steht je Meilenstein der „Umsetzungsstand“. Als Nächstes kommt ein neuer Plan für die erste Zone mit
+  finaler Grafik (Abschnitt 3).
 - **Fertig und gepusht:** M1 Fundament, M2 Zeichnen, M3 Fahrt und Scheitern, M4 Karte, D2 Textur-Kit,
   M5/D3 Shader-Grundlage (Commit e00ec84), M5/D4 Pfeiler je Welt und Schienen als Band-Mesh (letzter Commit).
-- **Offen, in dieser Reihenfolge:** D5 Terrain neu → D6 Wolken im Earle-Stil → E1 Tunnel-Workflow →
-  E2 Harmonie Stützen/Brücken/Wasser → M6 (F1 PWA, Capacitor 8, Haptik, Safe-Area, 120-Hz-Ticker, WebGPU-Flag,
-  Screenshot-Baselines; F2 Doku-Abschluss). Die Details je Paket stehen in `docs/PLAN.md`, Abschnitt
-  „Pakete im Detail“ (Paket D ab D5, Paket E, Paket F).
+- **Offen laut altem Plan:** D5 Terrain neu → D6 Wolken im Earle-Stil → E1 Tunnel-Workflow →
+  E2 Harmonie Stützen/Brücken/Wasser → M6 (F1 PWA, Capacitor 8, Haptik, 120-Hz-Ticker, WebGPU-Flag,
+  Screenshot-Baselines; F2 Doku-Abschluss; Vollbild-App und sicherer Bereich sind schon da). Die Details je Paket
+  stehen in `docs/PLAN.md`, Abschnitt „Pakete im Detail“. Der neue Plan ordnet das neu.
 
 ## 2. So fängst du an
 
@@ -34,20 +41,26 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
 git fetch origin
 git checkout -b <dein-branch> origin/main
 npm ci
-npm test                      # Vitest, 19 Dateien
+npm test                      # Vitest, 26 Dateien
 npm run build                 # Typecheck + Build
 npx playwright install chromium   # einmalig
-node scripts/scenario.mjs 1 2 # Playwright-Szenarien (Schritte wählbar, siehe unten); Screenshots nach screenshots/
-npm run dev                   # http://localhost:5173
+node scripts/scenario.mjs 1 2 # Playwright-Szenarien (Lesart Bühne, Schritte wählbar); Screenshots nach screenshots/
+npm run dev                   # http://localhost:5173, zeichnet jeden Strich in recordings/strokes.jsonl auf
+npm run strokes:replay        # aufgezeichnete Striche in allen vier Lesarten nachspielen
 ```
 
 Nützliche URL-Parameter im Spiel: `?scene=start&level=8` (direkt ins Level), `?fast=6` (Zeitraffer),
-`?fx=0` / `?fx=1` (Shader aus/an, sonst automatisch ab sechs CPU-Kernen), `?dev=1` (Overlay mit fps,
-Draw-Calls, Partikeln; Taste F schaltet die Effekte um).
+`?brush` / `?stage` / `?single` / `?lanes` (Lesart erzwingen), `?fx=0` / `?fx=1` (Shader aus/an, sonst automatisch
+ab sechs CPU-Kernen), `?dev=1` (Overlay mit fps, Draw-Calls, Partikeln; Taste F schaltet die Effekte um).
+Eigene automatische Tests im Dev-Server mit `TC_NO_RECORD=1`, damit sie die echten Aufnahmen nicht verfälschen.
 
-## 3. Nächstes Paket: D5 Terrain neu
+## 3. Nächster Schritt: Plan für die erste Zone
 
-Vorarbeit liegt bereit:
+Florian arbeitet mit GPT ein Grafiksystem aus (lokal unter `refs/Traumacoaster-Visuals/`, nicht im Repository) und
+will es zusammen mit seinen Testergebnissen prüfen lassen und daraus einen Plan für eine erste Zone mit allen
+Funktionen und finaler Grafik machen; die Level-Logik folgt aus den Elementen dieses Plans.
+
+Vorarbeit für das Terrain (Paket D5 des alten Plans) liegt bereit:
 - `src/render/geom.ts`: `insetPolygon` (parallele Konturbänder für Berge, Schleifen werden herausgeschnitten),
   `selfIntersects`, `signedArea`; Tests in `tests/geom.test.ts`.
 - `src/render/stripMesh.ts`: `buildStrip`/`StripMesh` (Textur entlang einer Polylinie, Batch-Modus).

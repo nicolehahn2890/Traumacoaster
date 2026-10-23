@@ -11,6 +11,8 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
+Online (jeder Push auf `main`, nach ein paar Minuten): https://nicolehahn2890.github.io/Traumacoaster/
+
 Mobile zuerst (Hoch- und Querformat), im Browser mit der Maus spielbar:
 
 | Aktion | Touch | Maus |
@@ -27,6 +29,15 @@ Mobile zuerst (Hoch- und Querformat), im Browser mit der Maus spielbar:
 | Undo / Redo | Zwei-Finger-Tipp / Drei-Finger-Tipp | Strg+Z / Strg+Y |
 | Fahrt | Play-Button, Tippen auf die Bühne stoppt | Leertaste |
 
+## Auf dem Handy testen (Vollbild, Hoch- und Querformat)
+
+Die Seite lässt sich als App auf den Home-Bildschirm legen und startet dann ohne Browserleisten im Vollbild; sie dreht mit dem Handy. Kerbe, Dynamic Island und Home-Leiste bleiben frei, die Spielfläche liegt im sicheren Bereich.
+
+- **iPhone/iPad:** https://nicolehahn2890.github.io/Traumacoaster/ in Safari öffnen → Teilen → „Zum Home-Bildschirm“ → vom Home-Bildschirm starten. Für das Querformat die Ausrichtungssperre im Kontrollzentrum ausschalten.
+- **Android (Chrome):** Seite öffnen → ⋮ → „App installieren“ bzw. „Zum Startbildschirm hinzufügen“.
+- Die App hat ihren eigenen Speicher: Fortschritt und Bahnen aus dem Browser sind dort nicht da und umgekehrt.
+- Nach einem Push die App schließen und neu öffnen (GitHub Pages braucht ein paar Minuten, der Build läuft unter „Actions“).
+
 ## Entwicklung
 
 ```
@@ -35,7 +46,8 @@ npm run build        # Typecheck + Build nach dist/
 npm run preview      # Build ansehen (Port 4173)
 npm run levels:doc   # docs/LEVELS.md aus den Level-Daten erzeugen
 npm run screenshots  # Playwright-Screenshots (Hoch-, Quer-, Desktop-Format) nach screenshots/
-npm run scenario     # Playwright-Szenario: Oval, Steilkurve, Looping, Löschen, Überzeichnen mit Fahrten
+npm run scenario     # Playwright-Szenario (Lesart Bühne): Oval, Steilkurve, Looping, Löschen, Überzeichnen mit Fahrten
+npm run strokes:replay  # aufgezeichnete Striche in allen vier Lesarten nachspielen
 ```
 
 `?scene=start` überspringt den Splash, `?scene=splash` zeigt ihn immer (im Spiel: Einstellungen → „Intro ansehen“), `?fast=4` beschleunigt die Spielzeit (Tests), Der Knopf **DEV** unten links auf der Karte (oder `VITE_UNLOCK_ALL=1 npm run dev`) schaltet alle Welten, Level, Elemente und Starttypen frei; im Level schaltet dann der Knopf unten links durch alle zehn Bahntypen.
@@ -47,7 +59,7 @@ npm run scenario     # Playwright-Szenario: Oval, Steilkurve, Looping, Löschen,
 
 Umgesetzt: Splash, Karte als Drehscheibe mit einer Miniatur pro Level (gebaute Bahn samt Zug) und fließendem Übergang ins Level (die Scheibe biegt sich gerade, zurück krümmt sich der Boden wieder), Bühnen-Zeichnen v2 (am Boden ist oben gleich hinten: flache Kurven; steil hoch ist Höhe: Hügel, Loopings über Kreuzungen, Steilkurven über Kehren in der Höhe; Absperrband am offenen Ende), 3D-Bahnmodell mit echter Bewegung in Kurven und Loopings, automatische Überhöhung, 3D-Handles (Tangente, Tiefe, Roll), Überzeichnen, Löschen-Knopf, Start-Chip (Kettenzug/Launch/Hydro/Pendel/Vertikallift), Element-Regal (Booster, Bremse, Splash, Launch-Block), Bergbauer, Zug-Physik mit g-Kräften, Entgleisen, Rückroller und Ausrollen auf ebener Strecke, Rapier-Ragdoll-Fahrgäste mit Rauswurf, Kamera-Fahrt, Ergebnis mit Sternen und Freischaltung, alle 150 Level als Daten mit Zielauswertung, Fortschritt lokal, Meine Bahnen (Speichern/Laden), Figuren-Editor.
 
-## Pinsel-Zeichnen (Spike, Branch `claude/pinsel-spike`)
+## Pinsel-Zeichnen (Standard)
 
 Vier Arten zu zeichnen zum Vergleich, umgeschaltet mit dem Knopf unten links: **Pinsel → Bühne → 1 Strich → Ebenen**. Die Wahl bleibt gespeichert; `?brush`, `?stage`, `?single` oder `?lanes` in der Adresse erzwingen eine. In allen läuft die Tiefe auf dem Bild gerade nach hinten, am Rand scrollt das Bild beim Zeichnen mit (schon mit Abstand zum Rand, umso schneller, je näher und je schneller du ziehst), Zurückziehen radiert.
 
