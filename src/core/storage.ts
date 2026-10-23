@@ -32,7 +32,11 @@ export interface Settings {
   /** Grafikeffekte (Shader): auto = nach Gerät, high = an, low = aus */
   fx: 'auto' | 'high' | 'low';
   /** Lesart des Strichs: 'stage' (Boden = Tiefe, steil = Höhe) oder 'single' (alles Höhe, nur Wenden wechseln die Ebene) */
-  strokeMode?: 'brush' | 'stage' | 'single';
+  strokeMode?: 'brush' | 'stage' | 'single' | 'lanes';
+  /** Streckenbudget zum Ausprobieren (Meter, 0 = unbegrenzt); ein Level mit trackBudget gibt seins vor */
+  trackBudget?: number;
+  /** Lesart „Ebenen“: Rückkurve im Strich führt von selbst auf die nächste Ebene */
+  lanesAuto?: boolean;
 }
 
 export interface SavedTrack {

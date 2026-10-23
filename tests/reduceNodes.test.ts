@@ -146,4 +146,25 @@ describe('Knotenreduktion mit Scheitel-Semantik', () => {
     expect(plain.segments.length).toBeLessThanOrEqual(snapped.segments.length + 1);
   });
 
+  it('verteilt mit even sparsam und gleichmäßig: nicht mehr Knoten, gleichmäßigere Abstände, in der Toleranz', () => {
+    // Bahn aus Geraden, Hügeln und einer Kurve in der Tiefe (3D), dicht wie die Pinsel-Linie
+    const pts: Vec3[] = [];
+    for (let i = 0; i <= 260; i++) {
+      const x = i;
+      pts.push({ x, y: 1 + 14 * Math.exp(-((x - 40) ** 2) / 120) + 7 * Math.exp(-((x - 120) ** 2) / 80), z: 6 * Math.tanh((x - 190) / 15) });
+    }
+    const spread = (idx: number[]) => {
+      const sp = idx.slice(1).map((v, i) => v - idx[i]);
+      const m = sp.reduce((a, b) => a + b, 0) / sp.length;
+      return Math.sqrt(sp.reduce((a, b) => a + (b - m) ** 2, 0) / sp.length) / m;
+    };
+    const plain = reduceNodes(pts);
+    const even = reduceNodes(pts, [], { even: true });
+    expect(even.segments.length).toBeLessThanOrEqual(plain.segments.length);
+    expect(spread(even.indices)).toBeLessThan(spread(plain.indices));
+    expect(maxDeviation(pts, even.segments)).toBeLessThan(1.25);
+    // ein Kreis braucht mindestens drei Segmente (keins dreht weiter als 120°)
+    const circle = arc(10, 0, 2 * Math.PI, 160);
+    expect(reduceNodes(circle, [], { even: true }).segments.length).toBeGreaterThanOrEqual(3);
+  });
 });

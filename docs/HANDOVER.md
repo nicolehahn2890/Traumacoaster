@@ -7,10 +7,14 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
 ## 1. Wo wir stehen
 
 - **Branch (23.10.):** `claude/pinsel-spike` (ab `main`, nicht gepusht) führt `claude/nice-cannon-094fka` (Gesten v3,
-  Ein Strich, Kreuzungsprüfung) mit dem Pinsel-Spike zusammen: drei Lesarten zum Vergleich über den Knopf unten links
-  (Pinsel → Bühne → 1 Strich), Tiefe überall gerade nach hinten (`LANE_SCALE = 1`), Zeichen-Zoom auf dem Handy,
-  Strich-Rekorder mit `npm run strokes:replay` (README, TECH.md 4b). Offen: welche Lesart bleibt; Level, Coins und
-  Ziele für die Pinsel-Bahn; Leistung auf echten Handys (große Kritzel planen bis ~0,15 s am Mac).
+  Ein Strich, Kreuzungsprüfung) mit dem Pinsel-Spike zusammen: vier Lesarten zum Vergleich über den Knopf unten links
+  (Pinsel → Bühne → 1 Strich → Ebenen), Tiefe überall gerade nach hinten (`LANE_SCALE = 1`), Pinsel mit zäher Bahn,
+  Schleppe und Live-Schienen, Kreuzungen per Tipp tauschbar, einrastende Tiefen, Ebenen-Lesart mit Ebenenleiste,
+  Streckenanzeige mit Budget-Regler, Schwachstellen-Marker für alle Lesarten, neuer Autoscroll, Zeichen-Zoom auf dem
+  Handy, Strich-Rekorder mit `npm run strokes:replay` (README, TECH.md 4b bis 4d). Danach: Pinsel mit Loopings
+  (hohe Schleife) und geraden Hügeln, ruhigere Schienen-Schräglage mit dem Wagen darauf, weniger und gleichmäßiger
+  verteilte Knoten, ausgedünnte Stützen, Ebenen mit Weiterzeichnen auf der gewählten Ebene und Auto-Knopf. Offen: welche Lesart bleibt; Level,
+  Coins und Ziele für Pinsel und Ebenen; Leistung auf echten Handys.
 - **Branch (22.10.):** `claude/nice-cannon-094fka` trägt den Gesten-Interpreter v3 (Zeichnen stabil, feste Spuren, Spur-Anzeige; siehe `docs/PLAN.md`, M2/A8) und geht per Pull Request nach `main`. Davor: Alles liegt auf `main`. PR #1 (M1 bis M5/D3, Stand e00ec84) wurde am 21.10. gemerged, PR #2 (Spur-Filter
   in Renderer-Auflösung, die halbe Auflösung machte die ganze Spur pixelig) ebenfalls, danach D4 und diese Übergabe.
   Jeder Push auf `main` geht über `.github/workflows/deploy.yml` direkt auf GitHub Pages.

@@ -1,7 +1,8 @@
 /**
  * Aufgezeichnete Striche nachspielen (Strich-Rekorder im Dev-Server, recordings/strokes.jsonl): jeder neue Strich
- * läuft durch alle drei Lesarten (Pinsel, Bühne, Ein Strich) und wird gefahren. Fortsetzen und Überzeichnen brauchen
- * die Bahn davor und laufen nur in der aufgezeichneten Lesart.
+ * läuft durch alle vier Lesarten (Pinsel, Bühne, Ein Strich, Ebenen) und wird gefahren. Fortsetzen und Überzeichnen
+ * brauchen die Bahn davor und laufen nur in der aufgezeichneten Lesart. Für „Ebenen“ gilt die beim Aufsetzen gewählte
+ * Ebene (ältere Aufnahmen: keine).
  *   npm run strokes:replay                      # alle Striche
  *   npm run strokes:replay -- --last 5          # die letzten fünf
  *   npm run strokes:replay -- datei.jsonl
@@ -13,18 +14,20 @@ import type { LevelDef } from '../src/levels/types';
 import { Terrain } from '../src/physics/terrain';
 import { SKIN_PHYSICS, TrainSim, simOptionsForLevel } from '../src/physics/trainSim';
 import { sampleTrack, type TrackPath } from '../src/track/model';
-import { extendTrack, strokeToTrack } from '../src/track/strokeToTrack';
+import { extendTrack, lanesTrack, strokeToTrack } from '../src/track/strokeToTrack';
 import { applyOverdraw } from '../src/track/overdraw';
 import { RubberBrush } from '../src/track/brush';
-import { BrushRefiner, joinLines, planBrushTrack, spliceLine, trackLine } from '../src/track/brushTrack';
+import { BrushRefiner, joinLines, planBrushTrack, spliceLine, trackLine, trackLineWithDepth } from '../src/track/brushTrack';
 import type { StagePoint } from '../src/track/stage';
 
-type Reading = 'brush' | 'stage' | 'single';
+type Reading = 'brush' | 'stage' | 'single' | 'lanes';
 interface Rec {
   at: string;
   level: number;
   reading: Reading;
   kind: 'new' | 'extend' | 'overdraw';
+  armed?: number | null;
+  auto?: boolean;
   zoom: number;
   screen: [number, number];
   points: Array<[number, number, number]>;
@@ -36,7 +39,7 @@ const args = process.argv.slice(2);
 const lastIdx = args.indexOf('--last');
 const last = lastIdx >= 0 ? Number(args[lastIdx + 1]) : 0;
 const file = args.find((a, i) => !a.startsWith('--') && (lastIdx < 0 || i !== lastIdx + 1)) ?? 'recordings/strokes.jsonl';
-const NAME: Record<Reading, string> = { brush: 'Pinsel', stage: 'Bühne', single: 'Ein Strich' };
+const NAME: Record<Reading, string> = { brush: 'Pinsel', stage: 'Bühne', single: 'Ein Strich', lanes: 'Ebenen' };
 const FAIL: Record<string, string> = { derail: 'entgleist', fall: 'Fahrgäste fallen', stall: 'bleibt stehen', eject: 'Rauswurf', water: 'Wasser', ejectSide: 'Rauswurf seitlich', openEnd: 'Absperrband (offenes Ende)', crossing: 'Kreuzung' };
 
 let recs: Rec[] = readFileSync(file, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l) as Rec);
@@ -66,12 +69,15 @@ function build(rec: Rec, reading: Reading, level: LevelDef, terrain: Terrain, sk
     const b = new RubberBrush(stroke[0], 22 / rec.zoom);
     for (const p of stroke.slice(1)) b.move(p);
     let line = b.finish();
-    if (before && rec.kind !== 'new') {
-      const base = trackLine(sampleTrack(before, 0.25));
-      line = rec.kind === 'extend' ? joinLines(base, line) : spliceLine(base, line, Math.max(2, 30 / rec.zoom));
-    }
+    let keep: Float64Array | undefined;
+    if (before && rec.kind === 'extend') {
+      // wie im Spiel: Die alte Bahn behält beim Fortsetzen ihre Tiefe
+      const base = trackLineWithDepth(sampleTrack(before, 0.25));
+      line = joinLines(base.line, line);
+      keep = base.z;
+    } else if (before && rec.kind === 'overdraw') line = spliceLine(trackLine(sampleTrack(before, 0.25)), line, Math.max(2, 30 / rec.zoom));
     const opts = { ground, clearance: 0.8, closeSnap, tolerance: Math.max(0.4, 8 / rec.zoom) };
-    const plan = planBrushTrack(line, opts);
+    const plan = planBrushTrack(line, opts, keep);
     if (!plan) return { path: null, note: 'zu kurz' };
     const limit = (SKIN_PHYSICS[skin] ?? SKIN_PHYSICS.skinWood).lateralLimit;
     const ref = new BrushRefiner(plan, opts, (path, samples) => new TrainSim(samples, path, { ...simOptionsForLevel(level, path, terrain, skin, true), lateralLimit: Infinity, checkCrossings: false }), limit);
@@ -80,6 +86,11 @@ function build(rec: Rec, reading: Reading, level: LevelDef, terrain: Terrain, sk
     return { path: ref.best, note: `${plan.crossings.length} Kreuzungen, ${ref.repaired} nachgebessert${spots.length ? `, hingenommen: ${spots.join(', ')}` : ''}` };
   }
   const opts = { groundHeight: ground, groundClearance: 0.8, maxHeight: level.maxHeight ?? 0, allowTurns: true, allowLoops: true, closeSnap, single: reading === 'single' };
+  if (reading === 'lanes' && rec.kind !== 'overdraw') {
+    const armed = rec.reading === 'lanes' ? (rec.armed ?? null) : null;
+    const auto = rec.reading === 'lanes' && !!rec.auto;
+    return { path: lanesTrack(rec.kind === 'extend' ? before : null, stroke, opts, armed, undefined, auto), note: [armed !== null ? `Ebene ${armed}` : '', auto ? 'Auto' : ''].filter(Boolean).join(', ') };
+  }
   if (before && rec.kind === 'extend') return { path: extendTrack(before, stroke, opts), note: '' };
   if (before && rec.kind === 'overdraw') return { path: applyOverdraw(before, stroke, { ...opts, snapDistance: 30 / rec.zoom }), note: '' };
   const r = strokeToTrack(stroke, opts);
@@ -99,14 +110,14 @@ function ride(path: TrackPath, level: LevelDef, terrain: Terrain, skin: string):
   return { ok: sim.failReason === 'openEnd', text: `${why} bei ${at} m, ${kmh} km/h, ${lat} g quer` };
 }
 
-const tally: Record<Reading, { ok: number; n: number }> = { brush: { ok: 0, n: 0 }, stage: { ok: 0, n: 0 }, single: { ok: 0, n: 0 } };
+const tally: Record<Reading, { ok: number; n: number }> = { brush: { ok: 0, n: 0 }, stage: { ok: 0, n: 0 }, single: { ok: 0, n: 0 }, lanes: { ok: 0, n: 0 } };
 recs.forEach((rec, k) => {
   const { level, skin } = levelOf(rec.level);
   const terrain = new Terrain(level);
   const kindText = rec.kind === 'new' ? 'neu' : rec.kind === 'extend' ? 'fortgesetzt' : 'überzeichnet';
   const secs = (rec.points[rec.points.length - 1][2] / 1000).toFixed(1);
   console.log(`\n#${k + 1} ${rec.at.slice(0, 16).replace('T', ' ')} · Level ${rec.level} · gezeichnet: ${NAME[rec.reading]} · ${kindText} · ${rec.points.length} Punkte in ${secs} s · Zoom ${rec.zoom}`);
-  const readings: Reading[] = rec.kind === 'new' ? ['brush', 'stage', 'single'] : [rec.reading];
+  const readings: Reading[] = rec.kind === 'new' ? ['brush', 'stage', 'single', 'lanes'] : [rec.reading];
   for (const reading of readings) {
     let line: string;
     try {
@@ -126,4 +137,4 @@ recs.forEach((rec, k) => {
   }
 });
 console.log('\nFahrt geschafft (offenes Ende zählt als geschafft):');
-for (const r of ['brush', 'stage', 'single'] as Reading[]) console.log(`  ${NAME[r].padEnd(10)}: ${tally[r].ok} von ${tally[r].n}`);
+for (const r of ['brush', 'stage', 'single', 'lanes'] as Reading[]) console.log(`  ${NAME[r].padEnd(10)}: ${tally[r].ok} von ${tally[r].n}`);

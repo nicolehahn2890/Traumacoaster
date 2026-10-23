@@ -44,6 +44,8 @@ export class Sky {
   private time = 0;
   private w = 800;
   private h = 600;
+  /** Parallaxe der Hügel (px), für die sie zuletzt gezeichnet wurden */
+  private hillsOx = 0;
 
   constructor(world: WorldDef, night = false) {
     this.world = world;
@@ -153,7 +155,12 @@ export class Sky {
     }
   }
 
-  private drawHills(): void {
+  /**
+   * Hügel-Silhouette über die ganze Breite. Die Parallaxe verschiebt nicht die Form (deren Rand stand sonst bei weitem
+   * Kamera- oder Kartenweg als senkrechte Kante im Bild), sondern die Stelle, an der das Rauschen abgelesen wird.
+   */
+  private drawHills(ox = this.hillsOx): void {
+    this.hillsOx = ox;
     const g = this.hills;
     g.clear();
     const base = mix(this.world.sky[1], this.world.ground[1], 0.35);
@@ -163,7 +170,8 @@ export class Sky {
       const baseY = this.h * (0.62 + layer * 0.06);
       pts.push(-50, this.h + 50);
       for (let x = -50; x <= this.w + 50; x += 12) {
-        const n = noise1(x * 0.004 + layer * 10 + this.world.id, layer + 2) * 60 + noise1(x * 0.015, layer + 9) * 18;
+        const u = x - ox;
+        const n = noise1(u * 0.004 + layer * 10 + this.world.id, layer + 2) * 60 + noise1(u * 0.015, layer + 9) * 18;
         pts.push(x, baseY + n - layer * 20);
       }
       pts.push(this.w + 50, this.h + 50);
@@ -190,8 +198,10 @@ export class Sky {
     }
     const par = (view as SkyView).parallax ?? 1;
     const px = view.x * par;
-    // Hügel-Silhouette wandert mit 1/10 der Kamera
-    this.hills.position.set(-px * view.zoom * 0.08, (view.y * view.zoom * 0.05) - this.h * 0.08);
+    // Hügel-Silhouette wandert mit 1/10 der Kamera (neu gezeichnet ab einem Pixel Versatz)
+    const ox = -px * view.zoom * 0.08;
+    if (Math.abs(ox - this.hillsOx) >= 1) this.drawHills(ox);
+    this.hills.position.set(0, view.y * view.zoom * 0.05 - this.h * 0.08);
     for (const c of this.clouds) {
       c.x += c.speed * dt * (1 - c.depth * 0.7);
       c.sprite.position.set(cloudScreenX(c.x, c.depth, view), cloudScreenY(c.y, c.depth, view));

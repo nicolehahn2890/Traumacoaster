@@ -14,6 +14,7 @@ import type { Vec3 } from '@/core/math3';
 import { findCrossings } from './crossings';
 import { createNode, emptyPath, sampleTrack, type TrackPath, type TrackSamples } from './model';
 import { reduceNodes } from './reduceNodes';
+import { previewNodes } from './strokeToTrack';
 import { LANE_DEPTH, LANE_MAX, LANE_MIN, LANE_RISE, type StagePoint } from './stage';
 
 /** Bildhöhe je Meter Tiefe */
@@ -48,6 +49,29 @@ const CLUSTER_MAX = 8;
 const GIVE_UP = 0.5;
 /** Knoten-Toleranz (m) an Stellen, die einer anderen Stelle nahekommen (sonst bis 1,2 m auf Geraden) */
 const TIGHT_TOL = 0.12;
+/**
+ * Einrastende Tiefen: Liegt die Bahn höchstens SNAP_RANGE vor oder hinter einer der fünf Bodenlinien (Spuren), zieht
+ * sie dorthin (Gewicht bis SNAP_W, quadratisch nach innen), aber nur, wo flach und gerade gezeichnet ist (steil ist
+ * Höhe, in Kringeln und Bögen entscheidet die Fahrt) und nicht an der Station. So liegt sie in der Draufsicht auf
+ * Spuren; dazwischen wechselt sie weich. Das Bild ändert das nicht (Höhe und Tiefe zusammen bleiben die Linie).
+ */
+const SNAP_W = 2;
+const SNAP_RANGE = 3;
+/**
+ * Elemente im Strich (findElements): Eine umlaufende Schleife, die mindestens LOOP_ASPECT mal so hoch wie breit ist
+ * und nach oben geht, wird ein senkrechter Looping; flachere bleiben Bodenschleifen (die Tiefe darf sie in die Fläche
+ * legen). Ein Hügel (mindestens HILL_RISE über beiden Füßen, ohne Umkehr in x, höchstens HILL_WIDE breit) bleibt
+ * gerade. Beide werden zur Rampe: Die Wunschtiefe läuft gerade von der Tiefe am einen Fuß zu der am anderen (statt
+ * mit der Bildhöhe nach hinten), die Tiefe ist steifer und die Fliehkraft biegt sie kaum. Der Lifthügel an der Station
+ * und ein Anstieg am Ende der Linie bleiben ganz auf der Tiefe ihres ersten Fußes.
+ */
+const LOOP_ASPECT = 0.9;
+const LOOP_TURN = (200 * Math.PI) / 180;
+const HILL_RISE = 5;
+const HILL_WIDE = 140;
+/** Steifigkeit der Tiefe (Vielfaches der Glättung) in einem Looping und in einem Hügel */
+const LOOP_FLAT = 30;
+const HILL_FLAT = 6;
 const G = 9.81;
 const PIN_W = 1e4;
 /** so weit (m) um die Station bleibt die Bahn in deren Tiefe; danach wird die Wunschhöhe über STATION_RAMP m eingeblendet */
@@ -112,6 +136,30 @@ export interface BrushPlan {
   lower: Float64Array;
   /** 1 an der Station (Tiefe bleibt die der Station), 0 auf freier Strecke */
   calm: Float64Array;
+  /** Tiefe, die bleibt (NaN = frei): beim Fortsetzen die alte Bahn */
+  fixed: Float64Array | null;
+  /** Tiefe, an der die Bahn weich hängt (NaN = keine), und wie stark: die zuletzt gezeigte Live-Vorschau */
+  hold: Float64Array | null;
+  holdW: Float64Array | null;
+  /** Steifigkeit der Tiefe je Linienpunkt (Vielfaches der Glättung): in Loopings und Hügeln höher */
+  flat: Float64Array;
+  /** Loopings und Hügel im Strich, und wo die Wunschtiefe deshalb gerade läuft */
+  elements: BrushElements;
+  ramps: Ramp[];
+}
+
+export interface BrushElements {
+  /** Schleifen: Linienpunkte der Kreuzung (Einfahrt i, Ausfahrt j); senkrecht = Looping, sonst Bodenschleife */
+  loops: Array<{ i: number; j: number; vertical: boolean }>;
+  /** Hügel: Fuß links, Kuppe, Fuß rechts (Linienpunkte); open: Die Linie endet im Anstieg */
+  hills: Array<{ a: number; top: number; b: number; open: boolean }>;
+}
+
+/** Bereich, in dem die Wunschtiefe gerade von der Tiefe bei a zu der bei b läuft (keep: bleibt auf der bei a) */
+interface Ramp {
+  a: number;
+  b: number;
+  keep: boolean;
 }
 
 // ------------------------------------------------------------------ Linie
@@ -236,6 +284,127 @@ export function findLineCrossings(line: StagePoint[], closed: boolean): LineCros
   return out;
 }
 
+/**
+ * Loopings, Bodenschleifen und Hügel im Strich (Linie mit 1 m Abstand, Kreuzungen aus findLineCrossings). Eine Schleife
+ * ist eine Kreuzung, zwischen deren Stellen die Linie einmal herum dreht (mindestens LOOP_TURN, 12 bis 160 m); hoch
+ * und nach oben gezeichnet ist sie ein Looping. Ein Hügel ist eine Kuppe mindestens HILL_RISE über beiden Füßen, ohne Umkehr in x
+ * und nicht in einem Looping; endet die Linie im Anstieg, zählt der Anstieg mit (die Vorschau sieht den Hügel so
+ * schon, bevor er wieder herunterkommt).
+ */
+export function findElements(line: StagePoint[], crossings: LineCrossing[]): BrushElements {
+  const n = line.length;
+  const out: BrushElements = { loops: [], hills: [] };
+  if (n < 4) return out;
+  const head = (k: number) => Math.atan2(line[k + 1].Y - line[k].Y, line[k + 1].X - line[k].X);
+  for (const c of crossings) {
+    if (c.j - c.i < 12 || c.j - c.i > 160) continue;
+    let turn = 0;
+    for (let k = c.i; k < Math.min(c.j, n - 2); k++) {
+      let d = head(k + 1) - head(k);
+      d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI;
+      turn += d;
+    }
+    if (Math.abs(turn) < LOOP_TURN) continue;
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    for (let k = c.i; k <= c.j; k++) {
+      x0 = Math.min(x0, line[k].X);
+      x1 = Math.max(x1, line[k].X);
+      y0 = Math.min(y0, line[k].Y);
+      y1 = Math.max(y1, line[k].Y);
+    }
+    const h = y1 - y0;
+    const vertical = h >= LOOP_ASPECT * (x1 - x0) && y1 - line[c.i].Y > 0.6 * h;
+    out.loops.push({ i: c.i, j: c.j, vertical });
+  }
+  const inLoop = (k: number) => out.loops.some((l) => l.vertical && k >= l.i - 4 && k <= l.j + 4);
+  // Täler und Kuppen der Reihe nach (Zickzack mit 1 m Hysterese in der Bildhöhe)
+  const Y = (k: number) => line[k].Y;
+  const ext: Array<{ k: number; max: boolean }> = [];
+  let mode = 0;
+  let hi = 0;
+  let lo = 0;
+  for (let k = 1; k < n; k++) {
+    if (mode >= 0 && Y(k) > Y(hi)) hi = k;
+    if (mode <= 0 && Y(k) < Y(lo)) lo = k;
+    if (mode === 0) {
+      if (Y(hi) - Y(lo) > 1) {
+        mode = lo < hi ? 1 : -1;
+        ext.push(lo < hi ? { k: lo, max: false } : { k: hi, max: true });
+      }
+    } else if (mode === 1 && Y(hi) - Y(k) > 1) {
+      ext.push({ k: hi, max: true });
+      mode = -1;
+      lo = k;
+    } else if (mode === -1 && Y(k) - Y(lo) > 1) {
+      ext.push({ k: lo, max: false });
+      mode = 1;
+      hi = k;
+    }
+  }
+  // die Linie endet im Anstieg (oder oben): das Ende zählt als vorläufige Kuppe
+  if (mode === 1) ext.push({ k: hi, max: true });
+  else if (mode === -1) ext.push({ k: lo, max: false });
+  for (let e = 0; e < ext.length; e++) {
+    if (!ext[e].max) continue;
+    const top = ext[e].k;
+    const open = e === ext.length - 1;
+    let a = e > 0 ? ext[e - 1].k : 0;
+    let b = open ? n - 1 : ext[e + 1].k;
+    if (Y(top) - Y(a) < HILL_RISE || (!open && Y(top) - Y(b) < HILL_RISE)) continue;
+    // Füße: wo der Anstieg beginnt und der Abstieg endet (ein langes Tal davor gehört nicht dazu)
+    const ya = Y(a);
+    for (let k = top; k > a; k--) {
+      if (Y(k) <= ya + 1) {
+        a = Math.max(a, k - 5);
+        break;
+      }
+    }
+    if (!open) {
+      const yb = Y(b);
+      for (let k = top; k < b; k++) {
+        if (Y(k) <= yb + 1) {
+          b = Math.min(b, k + 5);
+          break;
+        }
+      }
+    }
+    if (b - a > HILL_WIDE) continue;
+    // ohne Umkehr in x (sonst Kehre oder Schleife), nicht im Looping
+    const sx = Math.sign(line[Math.max(b, top)].X - line[a].X) || 1;
+    let ok = true;
+    for (let k = a; k < b && ok; k++) if ((line[k + 1].X - line[k].X) * sx < -0.2 || inLoop(k)) ok = false;
+    if (ok) out.hills.push({ a, top, b, open });
+  }
+  return out;
+}
+
+/** Elemente in die Tiefenwahl übertragen: Fliehkraft-Gewicht und Steifigkeit je Punkt, Rampen der Wunschtiefe */
+function applyElements(el: BrushElements, wMul: Float64Array, flat: Float64Array, calm: Float64Array): Ramp[] {
+  const n = wMul.length;
+  const ramps: Ramp[] = [];
+  for (const h of el.hills) {
+    for (let k = h.a; k <= h.b; k++) {
+      wMul[k] *= 0.3;
+      flat[k] = Math.max(flat[k], HILL_FLAT);
+    }
+    ramps.push({ a: h.a, b: h.b, keep: h.open || calm[h.a] > 0.5 });
+  }
+  for (const l of el.loops) {
+    if (!l.vertical) continue;
+    const a = Math.max(0, l.i - 4);
+    const b = Math.min(n - 1, l.j + 4);
+    for (let k = a; k <= b; k++) {
+      wMul[k] = 0;
+      flat[k] = Math.max(flat[k], LOOP_FLAT);
+    }
+    ramps.push({ a, b, keep: false });
+  }
+  return ramps;
+}
+
 // ------------------------------------------------------------------ Tiefe
 
 /**
@@ -322,13 +491,15 @@ interface NearPair {
 }
 
 /** Paare von Stellen, die auf der Linie keine Nachbarn sind (bei einer Runde auch über die Station hinweg gezählt) */
-function nearPairs(line: StagePoint[], closed: boolean): NearPair[] {
+function nearPairs(line: StagePoint[], closed: boolean, fixed: Float64Array | null = null): NearPair[] {
   // bei einer Runde ist der letzte Punkt die Station
   const m = closed ? line.length - 1 : line.length;
   const out: NearPair[] = [];
   for (let i = 0; i < m; i++) {
     for (let j = i + NEIGHBOR; j < m; j++) {
       if (closed && m - (j - i) < NEIGHBOR) continue;
+      // zwei feste Stellen kann die Tiefe nicht mehr trennen
+      if (fixed && !Number.isNaN(fixed[i]) && !Number.isNaN(fixed[j])) continue;
       const dX = line[j].X - line[i].X;
       if (Math.abs(dX) >= PASS_SIDE) continue;
       const dY = line[j].Y - line[i].Y;
@@ -350,7 +521,7 @@ function nearPairs(line: StagePoint[], closed: boolean): NearPair[] {
  * (Kraft je Paar aus dem Gleichungssystem). Die Station (Anfang) steht auf dem Boden, bei geschlossener Runde auch das
  * Ende. Dazu je Linienpunkt die Knoten-Toleranz (eng, wo die Bahn einer anderen Stelle nahekommt).
  */
-function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing[], wH: Float64Array, wMul: Float64Array, lower: Float64Array, calm: Float64Array, o: Opts): { z: Float64Array; tol: Float64Array } {
+function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing[], wH: Float64Array, wMul: Float64Array, lower: Float64Array, calm: Float64Array, o: Opts, fixed: Float64Array | null = null, hold: Float64Array | null = null, holdW: Float64Array | null = null, flat: Float64Array | null = null, ramps: Ramp[] = []): { z: Float64Array; tol: Float64Array } {
   const n = line.length;
   const z = new Float64Array(n);
   for (let i = 0; i < n; i++) z[i] = Math.max(Z_MIN, Math.min(Z_MAX, (line[i].Y - H_COMFORT) / C));
@@ -359,6 +530,7 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
   const low = new Float64Array(n);
   const ypp = new Float64Array(n);
   for (let i = 1; i < n - 1; i++) ypp[i] = line[i - 1].Y - 2 * line[i].Y + line[i + 1].Y;
+  let solved = false;
   const bounds = () => {
     for (let i = 0; i < n; i++) {
       const g = o.ground(line[i].X, z[i] / LANE_DEPTH);
@@ -368,19 +540,41 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
       low[i] = Math.min(upper[i], Math.max(Z_MIN, lower[i]));
     }
     for (let i = 0; i < n; i++) if (calm[i] > 0) target[i] = calm[i] * upper[0] + (1 - calm[i]) * target[i];
+    // Looping und Hügel: Wunschtiefe gerade von Fuß zu Fuß (Tiefe der letzten Lösung, vor der ersten die Wunschtiefe)
+    for (const r of ramps) {
+      const za = solved ? z[r.a] : target[r.a];
+      const zb = r.keep ? za : solved ? z[r.b] : target[r.b];
+      for (let i = r.a + 1; i < r.b; i++) target[i] = za + ((zb - za) * (i - r.a)) / (r.b - r.a);
+      if (r.keep) target[r.b] = za;
+    }
   };
   bounds();
   const pins = new Map<number, number>();
-  const station = (i: number) => i === 0 || (closed && i === n - 1);
+  // fest: die Station und was die Tiefe behalten soll (alte Bahn beim Fortsetzen, ruhiger Teil der Live-Vorschau)
+  const isFixed = (i: number) => !!fixed && !Number.isNaN(fixed[i]);
+  const station = (i: number) => i === 0 || (closed && i === n - 1) || isFixed(i);
+  const fixedAt = (i: number) => (isFixed(i) ? fixed![i] : upper[0]);
   const pinStation = () => {
-    pins.set(0, upper[0]);
-    if (closed) pins.set(n - 1, upper[0]);
+    pins.set(0, fixedAt(0));
+    if (closed) pins.set(n - 1, fixedAt(0));
+    if (fixed) for (let i = 0; i < n; i++) if (isFixed(i)) pins.set(i, fixed[i]);
   };
   pinStation();
   const wK = new Float64Array(n);
+  // Spur-Magnete (ab dem zweiten Durchgang aus der vorigen Lösung), nur wo die Linie über ±3 m kaum dreht
+  const magW = new Float64Array(n);
+  const magZ = new Float64Array(n);
+  const straight = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = line[Math.max(0, i - 3)];
+    const m = line[i];
+    const c = line[Math.min(n - 1, i + 3)];
+    const turn = Math.abs(Math.atan2((m.X - a.X) * (c.Y - m.Y) - (m.Y - a.Y) * (c.X - m.X), (m.X - a.X) * (c.X - m.X) + (m.Y - a.Y) * (c.Y - m.Y)));
+    straight[i] = Math.max(0, 1 - turn / ((25 * Math.PI) / 180));
+  }
   // Engstellen: je Paar die gewählte Seite (+1: j liegt hinten, dz ≥ hi; −1: j vorne, dz ≤ lo), ob es gerade auf dem
   // Rand des verbotenen Bereichs gehalten wird (seit welcher Runde, mit welcher Kraft) oder aufgegeben ist
-  const near = nearPairs(line, closed);
+  const near = nearPairs(line, closed, fixed);
   const side = new Int8Array(near.length);
   const held: number[] = [];
   const isHeld = new Uint8Array(near.length);
@@ -398,11 +592,15 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
     d2.fill(0);
     const b = new Float64Array(n);
     for (let i = 0; i < n; i++) {
-      d0[i] = wH[i];
-      b[i] = wH[i] * target[i];
+      d0[i] = wH[i] + magW[i];
+      b[i] = wH[i] * target[i] + magW[i] * magZ[i];
+      if (hold && holdW && !Number.isNaN(hold[i])) {
+        d0[i] += holdW[i];
+        b[i] += holdW[i] * hold[i];
+      }
     }
     for (let i = 1; i < n - 1; i++) {
-      const l = LAMBDA + (1 + C * C) * wK[i];
+      const l = LAMBDA * (flat ? flat[i] : 1) + (1 + C * C) * wK[i];
       d0[i - 1] += l;
       d0[i] += 4 * l;
       d0[i + 1] += l;
@@ -423,6 +621,7 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
     }
     B.factor();
     B.solve(b, z);
+    solved = true;
     // gehaltene Paare exakt (z_j − z_i = Rand): z = z0 − Y·f mit Y = B⁻¹·U, (Uᵀ·Y)·f = Uᵀ·z0 − Rand
     const k = held.length;
     force = new Float64Array(k);
@@ -458,8 +657,8 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
   const sideOf = (p: number, dz: number): number => {
     const q = near[p];
     for (const h of held) if (inCluster(q, near[h])) return side[h];
-    const lowAt = (i: number) => (station(i) ? upper[0] : low[i]);
-    const upAt = (i: number) => (station(i) ? upper[0] : upper[i]);
+    const lowAt = (i: number) => (station(i) ? fixedAt(i) : low[i]);
+    const upAt = (i: number) => (station(i) ? fixedAt(i) : upper[i]);
     const fits = (s: number) => (s > 0 ? upAt(q.j) - lowAt(q.i) >= q.hi : lowAt(q.j) - upAt(q.i) <= q.lo);
     let s = side[p];
     if (!s) for (const c of crossings) if (c.laterFront !== undefined && inCluster(q, c)) s = c.laterFront ? -1 : 1;
@@ -585,12 +784,27 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
     }
     // Boden an der neuen Tiefe; die Schranken bilden sich in settle neu
     bounds();
+    if (outer > 0) {
+      for (let i = 0; i < n; i++) {
+        magW[i] = 0;
+        if (station(i)) continue;
+        // nächste Spur, die Boden und Bühne zulassen
+        let k = Math.round(z[i] / LANE_DEPTH);
+        if (k * LANE_DEPTH > upper[i]) k = Math.floor(upper[i] / LANE_DEPTH);
+        if (k * LANE_DEPTH < low[i]) k = Math.ceil(low[i] / LANE_DEPTH);
+        const zl = k * LANE_DEPTH;
+        const d = Math.abs(z[i] - zl);
+        if (zl > upper[i] + 1e-9 || zl < low[i] - 1e-9 || d >= SNAP_RANGE) continue;
+        magW[i] = SNAP_W * (1 - d / SNAP_RANGE) ** 2 * Math.min(1, wH[i]) * (1 - calm[i]) * straight[i];
+        magZ[i] = zl;
+      }
+    }
     pins.clear();
     pinStation();
     settle(true);
   }
-  // Reste der Schranken-Federn abschneiden: nie unter den Boden, nie aus der Bühne
-  for (let i = 0; i < n; i++) z[i] = Math.min(upper[i], Math.max(low[i], z[i]));
+  // Reste der Schranken-Federn abschneiden: nie unter den Boden, nie aus der Bühne (Festes bleibt genau)
+  for (let i = 0; i < n; i++) z[i] = isFixed(i) ? fixed![i] : Math.min(upper[i], Math.max(low[i], z[i]));
   // Knoten-Toleranz: eng, wo zwei Stellen sich nahekommen (die Knoten dürfen den Abstand dort nicht auffressen)
   const tol = new Float64Array(n).fill(Infinity);
   for (const q of near) {
@@ -615,7 +829,7 @@ function worldPoints(line: StagePoint[], z: Float64Array, closed: boolean, o: Op
 
 /** Knoten aus den Weltpunkten: so wenige wie nötig (Scheitel-Knoten, siehe reduceNodes) */
 export function pathFromPoints(pts: Vec3[], closed: boolean, tolAt?: ArrayLike<number>): TrackPath {
-  const segs = reduceNodes(pts, [], { tolAt }).segments;
+  const segs = reduceNodes(pts, [], { tolAt, even: true }).segments;
   const mk = (p: Vec3) => createNode(p.x, p.y, p.z / LANE_DEPTH);
   const nodes = segs.map((seg, i) => {
     const nd = mk(seg.p0);
@@ -643,52 +857,161 @@ export function pathFromPoints(pts: Vec3[], closed: boolean, tolAt?: ArrayLike<n
 }
 
 function replan(plan: BrushPlan, o: Opts): void {
-  const { z, tol } = solveDepth(plan.line, plan.closed, plan.crossings, plan.wH, plan.wMul, plan.lower, plan.calm, o);
+  const { z, tol } = solveDepth(plan.line, plan.closed, plan.crossings, plan.wH, plan.wMul, plan.lower, plan.calm, o, plan.fixed, plan.hold, plan.holdW, plan.flat, plan.ramps);
   plan.z = z;
   plan.pts = worldPoints(plan.line, plan.z, plan.closed, o);
   plan.path = pathFromPoints(plan.pts, plan.closed, tol);
 }
 
-/** Aus der gemalten Pinsellinie die Bahn: Linie aufbereiten, Kreuzungen, Tiefe, Knoten. null bei zu kurzem Strich. */
-export function planBrushTrack(points: StagePoint[], options: BrushOptions = {}): BrushPlan | null {
-  const o = withDefaults(options);
-  const prep = prepareBrushLine(points, o.closeSnap);
-  if (!prep) return null;
-  const n = prep.line.length;
-  // An der Station zieht die Tiefe zur Tiefe der Station statt zur Wunschhöhe: Die Bahn bleibt dort am Boden und
-  // folgt der Bildhöhe, bis der Strich steigt. Sonst entstünde direkt nach der Station ein kleiner Buckel, an dem
-  // der Kettenzug schon endet.
+/**
+ * Gewichte der Tiefenwahl je Linienpunkt. An der Station zieht die Tiefe zur Tiefe der Station statt zur Wunschhöhe:
+ * Die Bahn bleibt dort am Boden und folgt der Bildhöhe, bis der Strich steigt (sonst entstünde direkt nach der Station
+ * ein kleiner Buckel, an dem der Kettenzug schon endet). Steil gezeichnet ist Höhe: Dort zieht die Wunschhöhe kaum
+ * (unter 15° voll, ab 40° fast nicht); ein steiler Strich wird so ein Anstieg, statt erst nach hinten zu wandern und
+ * dann umso steiler zu steigen.
+ */
+function depthWeights(line: StagePoint[], closed: boolean): { calm: Float64Array; wH: Float64Array } {
+  const n = line.length;
   const calm = new Float64Array(n);
   for (let i = 0; i < n; i++) {
-    const fromStation = Math.min(i, prep.closed ? n - 1 - i : Infinity) * STEP;
+    const fromStation = Math.min(i, closed ? n - 1 - i : Infinity) * STEP;
     calm[i] = 1 - Math.min(1, Math.max(0, (fromStation - STATION_CALM) / STATION_RAMP));
   }
-  // Steil gezeichnet ist Höhe: Dort zieht die Wunschhöhe kaum (unter 15° voll, ab 40° fast nicht). Ein steiler
-  // Strich wird so ein Anstieg, statt erst nach hinten zu wandern und dann umso steiler zu steigen.
   const wH = new Float64Array(n);
   for (let i = 0; i < n; i++) {
-    const a = prep.line[Math.max(0, i - 2)];
-    const b = prep.line[Math.min(n - 1, i + 2)];
+    const a = line[Math.max(0, i - 2)];
+    const b = line[Math.min(n - 1, i + 2)];
     const angle = Math.atan2(Math.abs(b.Y - a.Y), Math.abs(b.X - a.X) + 1e-9);
     wH[i] = Math.max(STEEP_WH, Math.min(1, (STEEP_TO - angle) / (STEEP_TO - STEEP_FROM)));
     // an der Station hält die Tiefe fest (die Glättung der Tiefe zöge sie sonst schon zum Rest der Bahn)
     wH[i] = Math.max(wH[i], CALM_WH * calm[i]);
   }
+  return { calm, wH };
+}
+
+/** feste Tiefe je Linienpunkt aus einer Tiefe je Meter vom Anfang (die letzten zwei bleiben frei: weicher Anschluss) */
+function keptDepth(n: number, keepDepth?: ArrayLike<number>): Float64Array | null {
+  if (!keepDepth || keepDepth.length < 3) return null;
+  const fixed = new Float64Array(n).fill(NaN);
+  for (let i = 0; i < Math.min(n - 2, keepDepth.length - 2); i++) fixed[i] = keepDepth[i];
+  return fixed;
+}
+
+/**
+ * Aus der gemalten Pinsellinie die Bahn: Linie aufbereiten, Kreuzungen, Tiefe, Knoten. null bei zu kurzem Strich.
+ * keepDepth: Tiefe je Meter vom Anfang an, die bleibt (Fortsetzen: Die alte Bahn ändert sich nicht). shownPreview:
+ * die zuletzt gezeigte Live-Vorschau; die Bahn hängt weich an ihrer Tiefe und übernimmt die Reihenfolge an ihren
+ * Kreuzungen, damit beim Loslassen nichts springt.
+ */
+export function planBrushTrack(points: StagePoint[], options: BrushOptions = {}, keepDepth?: ArrayLike<number>, shownPreview?: BrushPreview | null): BrushPlan | null {
+  const shown = shownPreview?.z;
+  const o = withDefaults(options);
+  const prep = prepareBrushLine(points, o.closeSnap);
+  if (!prep) return null;
+  const n = prep.line.length;
+  const { calm, wH } = depthWeights(prep.line, prep.closed);
+  const crossings = findLineCrossings(prep.line, prep.closed);
+  const elements = findElements(prep.line, crossings);
+  const wMul = new Float64Array(n).fill(1);
+  const flat = new Float64Array(n).fill(1);
+  const ramps = applyElements(elements, wMul, flat, calm);
+  let hold: Float64Array | null = null;
+  let holdW: Float64Array | null = null;
+  if (shown && shown.length > 3) {
+    hold = new Float64Array(n).fill(NaN);
+    holdW = new Float64Array(n);
+    for (let i = 0; i < Math.min(n, shown.length - 3); i++) {
+      hold[i] = shown[i];
+      // vor dem Rundenschluss ausblenden: das Ende muss in die Station
+      holdW[i] = PREVIEW_HOLD * (prep.closed ? Math.min(1, (n - 1 - i) / RING_FADE) : 1);
+    }
+  }
   const plan: BrushPlan = {
     drawn: prep.line.map((p) => ({ ...p })),
     line: prep.line,
     closed: prep.closed,
-    crossings: findLineCrossings(prep.line, prep.closed),
+    crossings,
     z: new Float64Array(n),
     pts: [],
     path: emptyPath(),
     wH,
     calm,
-    wMul: new Float64Array(n).fill(1),
+    wMul,
     lower: new Float64Array(n).fill(-Infinity),
+    fixed: keptDepth(n, keepDepth),
+    hold,
+    holdW,
+    flat,
+    elements,
+    ramps,
   };
+  keepOrder(plan.crossings, shownPreview?.crossings);
   replan(plan, o);
   return plan;
+}
+
+/**
+ * Reihenfolge an einer Kreuzung tauschen (der vordere Strang geht nach hinten) und die Tiefe neu wählen. Die Tiefe der
+ * Vorschau hält dann nicht mehr (sie hätte die alte Reihenfolge festgehalten). Danach am besten neu probefahren.
+ */
+export function swapCrossing(plan: BrushPlan, k: number, options: BrushOptions = {}): void {
+  const c = plan.crossings[k];
+  if (!c) return;
+  c.laterFront = !c.laterFront;
+  plan.hold = null;
+  plan.holdW = null;
+  replan(plan, withDefaults(options));
+}
+
+/** so viele Linienpunkte (je 1 m) am Ende bleiben in der Live-Vorschau frei; davor gilt die Tiefe der letzten Vorschau */
+const PREVIEW_FREE = 45;
+/**
+ * Gewicht, mit dem die fertige Bahn an der Tiefe der zuletzt gezeigten Vorschau hängt (so springt beim Loslassen
+ * nichts). Wo die Probefahrten nachbessern, lockert es sich; vor dem Rundenschluss blendet es über RING_FADE m aus.
+ */
+const PREVIEW_HOLD = 20;
+const RING_FADE = 40;
+
+export interface BrushPreview {
+  path: TrackPath;
+  /** Tiefe je Linienpunkt, für die nächste Vorschau */
+  z: Float64Array;
+  /** Kreuzungen mit der gewählten Reihenfolge (bleibt von Vorschau zu Vorschau und beim Loslassen gleich) */
+  crossings: LineCrossing[];
+}
+
+/** Reihenfolge an Kreuzungen übernehmen, die es schon gab (Linienpunkte höchstens 3 auseinander) */
+function keepOrder(crossings: LineCrossing[], from: LineCrossing[] | undefined): void {
+  if (!from) return;
+  for (const c of crossings) {
+    const o = from.find((q) => q.laterFront !== undefined && Math.abs(q.i - c.i) <= 3 && Math.abs(q.j - c.j) <= 3);
+    if (o) c.laterFront = o.laterFront;
+  }
+}
+
+/**
+ * Live-Vorschau beim Malen: dieselbe Tiefenwahl wie beim Loslassen, aber ruhig und schnell. Was mehr als PREVIEW_FREE
+ * Meter vor dem Linienende liegt, behält die Tiefe der letzten Vorschau (dort bewegt sich nichts mehr), Engstellen
+ * zählen nur, wo der freie Teil beteiligt ist, Knoten ohne Fit (alle 2,5 m), kein Rundenschluss (der kommt beim
+ * Loslassen). keepDepth wie bei planBrushTrack.
+ */
+export function previewBrushTrack(points: StagePoint[], options: BrushOptions, prev: BrushPreview | null, keepDepth?: ArrayLike<number>): BrushPreview | null {
+  const o = withDefaults(options);
+  const prep = prepareBrushLine(points, -1);
+  if (!prep) return null;
+  const n = prep.line.length;
+  const { calm, wH } = depthWeights(prep.line, false);
+  const fixed = keptDepth(n, keepDepth) ?? new Float64Array(n).fill(NaN);
+  if (prev) for (let i = 0; i < Math.min(n - PREVIEW_FREE, prev.z.length - 3); i++) if (Number.isNaN(fixed[i])) fixed[i] = prev.z[i];
+  const crossings = findLineCrossings(prep.line, false);
+  keepOrder(crossings, prev?.crossings);
+  const wMul = new Float64Array(n).fill(1);
+  const flat = new Float64Array(n).fill(1);
+  const ramps = applyElements(findElements(prep.line, crossings), wMul, flat, calm);
+  const { z } = solveDepth(prep.line, false, crossings, wH, wMul, new Float64Array(n).fill(-Infinity), calm, o, fixed, null, null, flat, ramps);
+  const nodes = previewNodes(worldPoints(prep.line, z, false, o), []);
+  if (nodes.length) nodes[0].kind = 'station';
+  return { path: { ...emptyPath(), nodes, closed: false, brush: true }, z, crossings };
 }
 
 /** Anfang und Ende einer Linie weich auf zwei Punkte gleiten lassen (je über blend Bühnen-Meter) */
@@ -753,6 +1076,33 @@ export function spliceLine(base: StagePoint[], add: StagePoint[], snap: number):
   return [...base.slice(0, from + 1), ...blendInto(mid, base[from], base[to]).slice(1, -1), ...base.slice(to)];
 }
 
+/** Bildschirmlinie einer vorhandenen Bahn (Bühne, 1 m Abstand) mit der Tiefe je Punkt (Meter), zum Fortsetzen */
+export function trackLineWithDepth(samples: TrackSamples): { line: StagePoint[]; z: Float64Array } {
+  const line: StagePoint[] = [];
+  const zs: number[] = [];
+  if (!samples.count) return { line, z: new Float64Array(0) };
+  const at = (i: number) => ({ X: samples.x[i], Y: samples.y[i] + C * samples.z[i] * LANE_DEPTH });
+  let prev = at(0);
+  line.push(prev);
+  zs.push(samples.z[0] * LANE_DEPTH);
+  let carry = 0;
+  for (let i = 1; i < samples.count; i++) {
+    const cur = at(i);
+    const d = Math.hypot(cur.X - prev.X, cur.Y - prev.Y);
+    if (d < 1e-9) continue;
+    let t = STEP - carry;
+    while (t <= d) {
+      const f = t / d;
+      line.push({ X: prev.X + (cur.X - prev.X) * f, Y: prev.Y + (cur.Y - prev.Y) * f });
+      zs.push((samples.z[i - 1] + (samples.z[i] - samples.z[i - 1]) * f) * LANE_DEPTH);
+      t += STEP;
+    }
+    carry = d - (t - STEP);
+    prev = cur;
+  }
+  return { line, z: Float64Array.from(zs) };
+}
+
 /** Bildschirmlinie einer vorhandenen Bahn (Bühne, 1 m Abstand), zum Fortsetzen und Überzeichnen */
 export function trackLine(samples: TrackSamples): StagePoint[] {
   const pts: StagePoint[] = [];
@@ -782,12 +1132,13 @@ export interface AcceptedSpot {
   f: number;
 }
 
-type Lever = 'soften' | 'flatten' | 'pushBack' | 'relax';
+type Lever = 'soften' | 'flatten' | 'pushBack' | 'relax' | 'unramp';
 
 /**
  * Nachbessern in Zeitscheiben: Tiefe lösen, Bahn bauen, Probefahrt; an der ersten Problemstelle einen Hebel
  * ansetzen und von vorn. Problemstellen: Querkraft über der Grenze, Fahrgäste fallen (kopfüber zu langsam),
- * Stillstand. Ein Hebel, der die Bahn auf langen Stücken verdreht (Wagen-Rahmen kippt), wird zurückgenommen.
+ * Stillstand. Ein Hebel, der die Bahn auf langen Stücken verdreht (Wagen-Rahmen kippt) oder neue Kreuzungen auf
+ * gleicher Höhe schafft, wird zurückgenommen.
  */
 export class BrushRefiner {
   readonly accepted: AcceptedSpot[] = [];
@@ -803,8 +1154,10 @@ export class BrushRefiner {
   /** Steuergrößen geändert: vor der nächsten Probefahrt neu planen */
   private dirty = false;
   private baseInverted = -1;
+  /** Kreuzungen auf gleicher Höhe der ersten Bahn: Ein Hebel, der neue schafft, wird zurückgenommen */
+  private baseCrossings = -1;
   private tries = new Map<number, number>();
-  private snapshot: { wH: Float64Array; wMul: Float64Array; lower: Float64Array; line: StagePoint[]; key: number; skipTo: number } | null = null;
+  private snapshot: { lever: Lever; wH: Float64Array; wMul: Float64Array; lower: Float64Array; holdW: Float64Array | null; flat: Float64Array; ramps: Ramp[]; line: StagePoint[]; key: number; skipTo: number } | null = null;
   /** zuletzt gebaute Bahn, die die Probefahrt bestanden hat oder deren Problemstellen hingenommen sind */
   best: TrackPath;
 
@@ -839,12 +1192,23 @@ export class BrushRefiner {
     const samples = sampleTrack(this.plan.path, 0.25);
     const inv = this.inverted(samples);
     if (this.baseInverted < 0) this.baseInverted = inv;
-    if (this.snapshot && inv > this.baseInverted + 0.05) {
-      // der Hebel hat die Bahn verdreht: zurücknehmen, an dieser Stelle ist er verbraucht
+    const cross = findCrossings(samples).length;
+    if (this.baseCrossings < 0) this.baseCrossings = cross;
+    // Ein gerader Hügel, der wieder nach hinten darf, ist die Bahn ohne Hügel-Erkennung: Verdrehte Stellen, die dabei
+    // auftauchen (Haken über Kopf), hätte sie auch so gehabt. Sie werden ab da der Maßstab.
+    const freed = this.snapshot?.lever === 'unramp';
+    // die Tiefenwahl kann bei sehr ungleichen Gewichten numerisch scheitern: dann wie ein verdrehender Hebel
+    const broken = !this.plan.z.every(Number.isFinite);
+    if (this.snapshot && ((inv > this.baseInverted + 0.05 && !freed) || cross > this.baseCrossings || broken)) {
+      // der Hebel hat die Bahn verdreht oder Stränge aufeinandergeschoben: zurücknehmen, an dieser Stelle ist er
+      // verbraucht
       const s = this.snapshot;
       this.plan.wH = s.wH;
       this.plan.wMul = s.wMul;
       this.plan.lower = s.lower;
+      this.plan.holdW = s.holdW;
+      this.plan.flat = s.flat;
+      this.plan.ramps = s.ramps;
       this.plan.line = s.line;
       this.tries.set(s.key, Math.max(this.tries.get(s.key) ?? 0, s.skipTo));
       this.repaired--;
@@ -852,6 +1216,7 @@ export class BrushRefiner {
       this.dirty = true;
       return;
     }
+    if (freed) this.baseInverted = Math.max(this.baseInverted, inv);
     this.snapshot = null;
     this.samples = samples;
     this.lat = new Float64Array(samples.count);
@@ -932,7 +1297,7 @@ export class BrushRefiner {
     const key = Math.round(f / 12);
     const k = (this.tries.get(key) ?? 0) + 1;
     this.tries.set(key, k);
-    const lever = this.pickLever(prob.reason, k);
+    const lever = this.pickLever(prob.reason, k, f);
     if (!lever || this.steps >= this.maxSteps) {
       // liegt am Strich: hinnehmen. Bei Querkraft fährt die Probefahrt weiter, sonst endet sie hier.
       this.accepted.push({ s: this.samples!.s[prob.idx], reason: prob.reason, f });
@@ -940,7 +1305,7 @@ export class BrushRefiner {
       return;
     }
     const p = this.plan;
-    this.snapshot = { wH: Float64Array.from(p.wH), wMul: Float64Array.from(p.wMul), lower: Float64Array.from(p.lower), line: p.line.map((q) => ({ ...q })), key, skipTo: lever === 'soften' || lever === 'flatten' ? 3 : 6 };
+    this.snapshot = { lever, wH: Float64Array.from(p.wH), wMul: Float64Array.from(p.wMul), lower: Float64Array.from(p.lower), holdW: p.holdW ? Float64Array.from(p.holdW) : null, flat: Float64Array.from(p.flat), ramps: p.ramps.slice(), line: p.line.map((q) => ({ ...q })), key, skipTo: lever === 'unramp' ? 1 : lever === 'soften' || lever === 'flatten' ? 3 : 6 };
     this.apply(lever, f);
     this.repaired++;
     this.steps++;
@@ -948,8 +1313,17 @@ export class BrushRefiner {
     this.stage = 'build';
   }
 
-  private pickLever(reason: string, k: number): Lever | null {
-    if (reason === 'stall') return k <= 4 ? 'pushBack' : null;
+  /** gerader Hügel, den der Zug an Linienpunkt f hinauffährt (Index in plan.ramps, −1 = keiner) */
+  private hillAt(f: number): number {
+    const p = this.plan;
+    return p.ramps.findIndex((r) => p.elements.hills.some((h) => h.a === r.a && h.b === r.b) && f >= r.a - 10 && f <= r.b);
+  }
+
+  private pickLever(reason: string, k: number, f = -1): Lever | null {
+    // im Looping hilft kein Hebel, ohne ihn plattzudrücken: Er bleibt, wie gezeichnet (zu langsam ist Spiel)
+    if (this.plan.elements.loops.some((l) => l.vertical && f >= l.i - 4 && f <= l.j + 4)) return null;
+    // gerade nur, wenn es passt: Kommt der Zug nicht hinauf, darf der Hügel zuerst wieder nach hinten
+    if (reason === 'stall') return k === 1 && this.hillAt(f) >= 0 ? 'unramp' : k <= 5 ? 'pushBack' : null;
     if (reason === 'fall') return k <= 3 ? 'flatten' : k <= 6 ? 'relax' : null;
     if (reason === 'derail') return k <= 4 ? 'soften' : k <= 7 ? 'relax' : null;
     return null;
@@ -958,13 +1332,16 @@ export class BrushRefiner {
   private apply(lever: Lever, f: number): void {
     const p = this.plan;
     const n = p.line.length;
+    const loops = p.elements.loops.filter((l) => l.vertical);
     const range = (half: number, fn: (i: number) => void) => {
-      for (let i = Math.max(1, f - half); i <= Math.min(n - 2, f + half); i++) fn(i);
+      for (let i = Math.max(1, f - half); i <= Math.min(n - 2, f + half); i++) if (!loops.some((l) => i >= l.i - 4 && i <= l.j + 4)) fn(i);
     };
+    // wo nachgebessert wird, hängt die Bahn nicht mehr an der Vorschau
+    if (p.holdW) range(40, (i) => (p.holdW![i] = 0));
     if (lever === 'soften') {
       // Fliehkraft hier stärker gewichten und die Wunschhöhe lockern: die Tiefe darf die Kurve weiten
       range(25, (i) => {
-        p.wMul[i] *= 8;
+        p.wMul[i] = Math.min(p.wMul[i] * 8, 1000);
         p.wH[i] = Math.max(0.05, p.wH[i] * 0.3);
       });
     } else if (lever === 'flatten') {
@@ -973,6 +1350,13 @@ export class BrushRefiner {
         p.wH[i] = Math.min(400, p.wH[i] * 8);
         p.wMul[i] *= 0.2;
       });
+    } else if (lever === 'unramp') {
+      const r = p.ramps[this.hillAt(f)];
+      p.ramps = p.ramps.filter((q) => q !== r);
+      for (let i = r.a; i <= r.b; i++) {
+        p.wMul[i] /= 0.3;
+        p.flat[i] = 1;
+      }
     } else if (lever === 'pushBack') {
       // Zug bleibt hängen: die Kuppe davor nach hinten legen (= tiefer)
       let crest = f;

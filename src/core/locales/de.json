@@ -120,5 +120,22 @@
   "strokeMode.stage": "Lesart: Bühne (Boden = Tiefe, steil = Höhe)",
   "strokeMode.single": "Lesart: Ein Strich (alles ist Höhe, nur Wenden wechseln die Ebene)",
   "strokeMode.btn.stage": "Bühne",
-  "strokeMode.btn.single": "1 Strich"
+  "strokeMode.btn.single": "1 Strich",
+  "crossingSwapped": "Kreuzung getauscht",
+  "strokeMode.lanes": "Lesart: Ebenen (gezeichnet wird auf der Ebene links, Kurven nur über eine neue Ebene)",
+  "strokeMode.btn.lanes": "Ebenen",
+  "lanes.back": "HINTEN",
+  "lanes.front": "VORNE",
+  "lanes.pick": "Für eine Kurve erst links eine andere Ebene wählen",
+  "lanes.armed": "Nächster Strich auf Ebene {n}",
+  "length.budget": "Strecke zur Verfügung",
+  "length.unlimited": "unbegrenzt",
+  "length.only": "Strecke {n} m",
+  "length.ofBudget": "Strecke {n} / {b} m",
+  "length.used": "Strecke aufgebraucht ({n} m): zurückziehen gibt wieder frei",
+  "length.levelBudget": "Dieses Level gibt {n} m Strecke vor",
+  "crossingNoSwap": "So herum treffen sich die Stränge: Die Kreuzung bleibt, wie sie ist",
+  "lanes.auto": "Auto",
+  "lanes.autoOn": "Auto an: Eine Rückkurve führt von selbst auf die nächste Ebene",
+  "lanes.autoOff": "Auto aus: Kurven nur über die Ebenenwahl"
 }

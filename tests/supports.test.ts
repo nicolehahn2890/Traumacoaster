@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TrackSamples } from '@/track/model';
-import { footOffsets, planSupports, supportKindFor, SUPPORT_KINDS, SUPPORT_MIN_HEIGHT, type SupportKind, type TerrainLike } from '@/render/supports/supportStyle';
+import { footOffsets, planSupports, supportKindFor, SUPPORT_KINDS, SUPPORT_MIN_HEIGHT, SUPPORT_THIN, type SupportKind, type TerrainLike } from '@/render/supports/supportStyle';
 
 /** Abtastung einer Bahn aus (x, y, z, upy)-Punkten im Abstand 0,5 m (nur die Felder, die der Planer liest) */
 function samplesOf(pts: Array<[number, number, number, number?]>): TrackSamples {
@@ -23,12 +23,12 @@ function samplesOf(pts: Array<[number, number, number, number?]>): TrackSamples 
 const flat: TerrainLike = { groundHeight: () => 0, mountainHeight: () => 0, insideMountain: () => false };
 
 describe('Pfeiler-Planer', () => {
-  it('setzt alle spacing Meter einen Pfeiler, nicht unter der Mindesthöhe', () => {
+  it('setzt alle spacing · SUPPORT_THIN Meter einen Pfeiler, nicht unter der Mindesthöhe', () => {
     const pts: Array<[number, number, number, number?]> = [];
     for (let i = 0; i <= 80; i++) pts.push([i * 0.5, 6, 0]);
     const plans = planSupports(samplesOf(pts), flat, 2.6, 'trestle');
-    expect(plans.length).toBeGreaterThanOrEqual(13);
-    for (let i = 1; i < plans.length; i++) expect(plans[i].x - plans[i - 1].x).toBeGreaterThanOrEqual(2.6 - 1e-9);
+    expect(plans.length).toBeGreaterThanOrEqual(Math.floor(40 / (2.6 * SUPPORT_THIN)));
+    for (let i = 1; i < plans.length; i++) expect(plans[i].x - plans[i - 1].x).toBeGreaterThanOrEqual(2.6 * SUPPORT_THIN - 1e-9);
     for (const p of plans) {
       expect(p.h).toBeCloseTo(6, 9);
       expect(p.ground).toBe(0);
@@ -37,6 +37,17 @@ describe('Pfeiler-Planer', () => {
     }
     const low = planSupports(samplesOf(pts.map(([x, , z]) => [x, SUPPORT_MIN_HEIGHT - 0.1, z])), flat, 2.6, 'trestle');
     expect(low).toHaveLength(0);
+  });
+  it('setzt in einer Spirale keine Pfeiler durch die tiefere Bahn und keine dicht nebeneinander', () => {
+    // hin auf 3 m Höhe, zurück auf 9 m Höhe genau darüber (wie in einer Schneckennudel)
+    const pts: Array<[number, number, number, number?]> = [];
+    for (let i = 0; i <= 80; i++) pts.push([i * 0.5, 3, 0]);
+    for (let i = 0; i <= 20; i++) pts.push([40 + 4 * Math.sin((i / 20) * Math.PI), 3 + 6 * (i / 20), 0]);
+    for (let i = 0; i <= 80; i++) pts.push([40 - i * 0.5, 9, 0]);
+    const plans = planSupports(samplesOf(pts), flat, 2.6, 'tree');
+    // oben über der unteren Bahn (x unter 38) steht keiner: er ginge durch die untere hindurch
+    expect(plans.filter((p) => p.y > 8 && p.x < 38)).toEqual([]);
+    for (let a = 0; a < plans.length; a++) for (let b = a + 1; b < plans.length; b++) expect(Math.hypot(plans[a].x - plans[b].x, (plans[a].z - plans[b].z) * 8.4)).toBeGreaterThan(2.5);
   });
   it('lässt kopfüber liegende Abschnitte und Bergtunnel aus, steht auf Berg und Hügel', () => {
     const pts: Array<[number, number, number, number?]> = [];

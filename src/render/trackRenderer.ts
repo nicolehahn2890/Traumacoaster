@@ -7,6 +7,7 @@
  * jeder als eigener Container am Fuß, der nach dem Zeichnen vom Boden hochwächst.
  */
 import { Container, Graphics, Texture } from 'pixi.js';
+import type { Vec3 } from '@/core/math3';
 import type { TrackPath, TrackSamples } from '@/track/model';
 import { frameWithBank, railBanks, stateAt } from '@/track/model';
 import type { Terrain } from '@/physics/terrain';
@@ -105,6 +106,9 @@ export class TrackRenderer {
   private supportNodes: Array<{ c: Container; k: number }> = [];
   private supportGlows: Array<SupportGlow & { lane: number; X: number; Y: number; k: number }> = [];
   private glowsDrawn = false;
+  /** Bahn und Schräglage der Schienen der letzten Zeichnung: Der Wagen fährt mit derselben Schräglage (railFrame) */
+  private railSamples: TrackSamples | null = null;
+  private railBank: Float64Array = new Float64Array(0);
 
   constructor(world: WorldDef) {
     this.world = world;
@@ -126,6 +130,7 @@ export class TrackRenderer {
   }
 
   clear(): void {
+    this.railSamples = null;
     for (const c of this.layers.supports.values()) {
       for (const child of c.removeChildren()) child.destroy({ children: true });
     }
@@ -186,6 +191,18 @@ export class TrackRenderer {
     return railProfileTexture(`${skin}_${lane}_${sky}_${grain ? 'g' : 'p'}`, rail, light, ink, grain, 3 + lane);
   }
 
+  /** Rahmen (vorwärts, oben, seitlich) auf den Schienen bei Bahnlänge s, mit ihrer Schräglage; null ohne Bahn */
+  railFrame(s: number): { T: Vec3; U: Vec3; S: Vec3; bank: number } | null {
+    const sm = this.railSamples;
+    if (!sm || sm.count < 2) return null;
+    const L = sm.length;
+    const u = (sm.closed ? ((s % L) + L) % L : Math.max(0, Math.min(L, s))) / sm.step;
+    const i = Math.min(sm.count - 1, Math.floor(u));
+    const j = sm.closed ? (i + 1) % sm.count : Math.min(sm.count - 1, i + 1);
+    const t = Math.min(1, u - i);
+    return frameWithBank(stateAt(sm, s), this.railBank[i] * (1 - t) + this.railBank[j] * t);
+  }
+
   draw(path: TrackPath, samples: TrackSamples, skin: string, terrain: Terrain, allowTunnels: boolean, preview = false): TunnelPortal[] {
     this.clear();
     const portals: TunnelPortal[] = [];
@@ -201,6 +218,8 @@ export class TrackRenderer {
     const R = new Float64Array(n * 2);
     const C = new Float64Array(n * 2);
     const banks = railBanks(samples, (i) => designSpeed(samples, i, maxY));
+    this.railSamples = samples;
+    this.railBank = banks;
     for (let i = 0; i < n; i++) {
       const st = stateAt(samples, samples.s[i]);
       const fr = frameWithBank(st, banks[i]);

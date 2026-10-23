@@ -70,6 +70,11 @@ export interface GestureOptions {
    * mindestens 1 m tiefer = nach vorne). Loopings wie gehabt.
    */
   single?: boolean;
+  /**
+   * Lesart „Ebenen“ (mit single): Eine Wende im Strich ist keine Kurve, die Bahn bleibt am Scheitel stehen
+   * (BlockedInfo.dir 0). Kurven entstehen dort nur über die Ebenenwahl am Bahnende; der Rundenschluss bleibt.
+   */
+  noTurns?: boolean;
 }
 
 /** Der Strich wollte eine Kehre in eine Richtung, in der keine Spur mehr ist: die Bahn bleibt am Scheitel stehen */
@@ -77,7 +82,7 @@ export interface BlockedInfo {
   /** Scheitel (Bühnenkoordinaten des vorbereiteten Strichs) und seine Bogenlänge */
   at: Vec2;
   s: number;
-  /** gewünschte Richtung in die Tiefe (+1 hinten, −1 vorne) */
+  /** gewünschte Richtung in die Tiefe (+1 hinten, −1 vorne; 0: Wende ohne gewählte Ebene, Lesart „Ebenen“) */
   dir: number;
   lane: number;
 }
@@ -157,6 +162,11 @@ type HeightSection = { kind: 'height'; i0: number; i1: number; lane: number; dir
 type TurnSection = { kind: 'turn'; i0: number; i1: number; apex: number; laneFrom: number; laneTo: number; dirX: number; floor: boolean; R: number; thetaEnd: number };
 type LoopSection = { kind: 'loop'; i0: number; i1: number; lane: number; sign: number; R: number; dir: number };
 type Section = FloorSection | HeightSection | TurnSection | LoopSection;
+/**
+ * Den Abschnitt ab from weiterlesen (nach einem Haken oder Zickzack, siehe scanTurn). fresh: Der Scheitel davor zählt
+ * nicht mehr, die Umkehr wird ab from neu gemessen.
+ */
+type Resume = { sec: FloorSection | HeightSection; from: number; fresh?: boolean };
 
 const wrapAngle = (a: number): number => {
   while (a > Math.PI) a -= 2 * Math.PI;
@@ -185,6 +195,8 @@ class Scanner {
   preview: boolean;
   /** „Ein Strich“: alles Höhe, Wenden eine Ebene weiter (siehe GestureOptions.single) */
   single: boolean;
+  /** „Ebenen“: Wenden sind keine Kurven (siehe GestureOptions.noTurns) */
+  noTurns: boolean;
   /** Der Strich endet an der Station: Spur der Station, sonst null */
   closeLane: number | null = null;
   /** Kehre in eine Richtung ohne Spur: der Strich wird nur bis zum Scheitel gelesen */
@@ -209,6 +221,7 @@ class Scanner {
     this.allowLoops = opts.allowLoops !== false;
     this.preview = !!opts.preview;
     this.single = !!opts.single;
+    this.noTurns = !!opts.noTurns;
     if (opts.lockLength) {
       let k = 0;
       while (k < n - 1 && this.cum[k] < opts.lockLength) k++;
@@ -322,17 +335,43 @@ class Scanner {
     return lane;
   }
 
+  /**
+   * Abschnitt lesen, bis er endet. Haken und Zickzack (scanTurn) lesen ihn weiter: in dieser Schleife statt als
+   * Rekursion, sonst bräuchte ein langer Strich voller Haken einen Stapelrahmen je Umkehr.
+   */
+  private scanSection(start: Resume): number {
+    let r: number | Resume = start;
+    while (typeof r !== 'number') {
+      const next: Resume = r;
+      r = next.sec.kind === 'floor' ? this.scanFloorSection(next.sec, next.from, next.fresh) : this.scanHeightSection(next.sec, next.from, next.fresh);
+    }
+    return r;
+  }
+
+  /** Scheitel des Abschnitts vor from in Laufrichtung (fresh: from selbst, die Umkehr davor zählt nicht mehr) */
+  private extremeBefore(sec: FloorSection | HeightSection, from: number, fresh = false): { extIdx: number; extX: number } {
+    const { X } = this;
+    if (fresh) return { extIdx: from, extX: X[from] };
+    let extIdx = sec.i0;
+    let extX = X[sec.i0];
+    for (let k = sec.i0 + 1; k < from; k++) {
+      if (sec.dir === 0 || (X[k] - extX) * sec.dir >= 0) {
+        extX = X[k];
+        extIdx = k;
+      }
+    }
+    return { extIdx, extX };
+  }
+
   /** Boden-Abschnitt ab i0 bis zum nächsten Anstieg oder zur nächsten Kehre */
   private scanFloor(i0: number): number {
-    return this.scanFloorSection({ kind: 'floor', i0, i1: this.n - 1, lane: this.lane, dir: this.dir, switches: [] }, i0 + 1);
+    return this.scanSection({ sec: { kind: 'floor', i0, i1: this.n - 1, lane: this.lane, dir: this.dir, switches: [] }, from: i0 + 1 });
   }
-  private scanFloorSection(sec: FloorSection, from: number): number {
+  private scanFloorSection(sec: FloorSection, from: number, fresh = false): number | Resume {
     const { n, X, Y, cum } = this;
     const i0 = sec.i0;
     let dir = sec.dir;
-    let extIdx = i0;
-    let extX = X[i0];
-    for (let k = i0 + 1; k < from; k++) if (dir === 0 || (X[k] - extX) * dir >= 0) { extX = X[k]; extIdx = k; }
+    let { extIdx, extX } = this.extremeBefore(sec, from, fresh);
     let pendingSwitch: { i: number; lane: number } | null = null;
     let climb: { foot: number; decideAt: number; ramp: boolean } | null = null;
     const commitClimb = (): number => {
@@ -398,17 +437,15 @@ class Scanner {
 
   /** Höhen-Abschnitt ab i0 bis zur Landung oder zur nächsten Kehre */
   private scanHeight(i0: number): number {
-    return this.scanHeightSection({ kind: 'height', i0, i1: this.n - 1, lane: this.lane, dir: this.dir, landLane: null, rawFrom: this.n }, i0 + 1);
+    return this.scanSection({ sec: { kind: 'height', i0, i1: this.n - 1, lane: this.lane, dir: this.dir, landLane: null, rawFrom: this.n }, from: i0 + 1 });
   }
-  private scanHeightSection(sec: HeightSection, from: number): number {
+  private scanHeightSection(sec: HeightSection, from: number, fresh = false): number | Resume {
     const { n, X, Y, cum } = this;
     const i0 = sec.i0;
     const lane = sec.lane;
     sec.rawFrom = n;
     let dir = sec.dir;
-    let extIdx = i0;
-    let extX = X[i0];
-    for (let k = i0 + 1; k < from; k++) if (dir === 0 || (X[k] - extX) * dir >= 0) { extX = X[k]; extIdx = k; }
+    let { extIdx, extX } = this.extremeBefore(sec, from, fresh);
     let yMax = Y[i0];
     let otherSince = -1;
     let otherLane = lane;
@@ -474,9 +511,10 @@ class Scanner {
   /**
    * Umkehr von x am Scheitel apex (Rückweg schon ≥ TURN_DETECT). Liest weiter, bis klar ist, was gemeint ist:
    * ein Looping (Drehung ≥ 300° in der Höhe, auch vom Boden aus), oder eine Kehre (Rückweg ≥ 5 m und gerade).
-   * prev ist der Abschnitt davor (schon abgelegt); er wird bis zur Kurveneinfahrt gekürzt.
+   * prev ist der Abschnitt davor (schon abgelegt); er wird bis zur Kurveneinfahrt gekürzt. War die Umkehr keine
+   * (Haken, Zickzack), liest scanSection den Abschnitt weiter (Rückgabe Resume).
    */
-  private scanTurn(prev: FloorSection | HeightSection, apex: number, dirX: number, i: number): number {
+  private scanTurn(prev: FloorSection | HeightSection, apex: number, dirX: number, i: number): number | Resume {
     const { n, X, cum, ang, theta } = this;
     const forward = (m: number): number => Math.cos(ang[Math.max(0, Math.min(n - 1, m))]) * dirX;
     // Beginn der Beuge: zuletzt klar vorwärts
@@ -494,7 +532,7 @@ class Scanner {
         // Haken: der Strich läuft wieder über den Scheitel hinaus; die Umkehr war keine Kehre, der Abschnitt geht weiter
         this.sections.pop();
         prev.i1 = n - 1;
-        return prev.kind === 'floor' ? this.scanFloorSection(prev, j) : this.scanHeightSection(prev, j);
+        return { sec: prev, from: j };
       }
       const turning = Math.abs(theta[j] - theta[bend]);
       if (turning >= LOOP_TURN && cum[j] - cum[bend] >= LOOP_MIN_PERIMETER && this.loopShaped(bend, j, floorMode)) {
@@ -525,7 +563,10 @@ class Scanner {
           // geht weiter (x bleibt monoton, der kurze Rücklauf fällt weg)
           prev.i1 = n - 1;
           const resume = -turnEnd - 1;
-          return prev.kind === 'floor' ? this.scanFloorSection(prev, resume) : this.scanHeightSection(prev, resume);
+          // Erkannt gleich dort, wo diese Umkehr gelesen wird (der Strich lief auf derselben Linie zurück und wieder vor,
+          // noch weit hinter dem Scheitel): Weiterlesen ab hier fände dieselbe Umkehr wieder, ohne Ende. Dann zählt der
+          // alte Scheitel nicht mehr.
+          return { sec: prev, from: resume, fresh: resume <= i };
         }
       }
     }
@@ -650,6 +691,7 @@ class Scanner {
     // Kein Tempo-Zuschlag: Eine enge Kehre nach einem Hügel bleibt eng, die Fahrt zeigt die Folgen.
     const pick = (lf: number): { laneTo: number; R: number } | { blocked: number } => {
       if (closing && this.closeLane !== lf) return { laneTo: this.closeLane!, R: (Math.abs(this.closeLane! - lf) * LANE_DEPTH) / 2 };
+      if (this.noTurns) return { blocked: 0 };
       // Am Boden entscheidet die Spur, die der Rückweg erreicht; in der Höhe nur seine Bildhöhe (höher = hinten)
       let dirZ = this.single ? singleDir : floorMode && laneRead !== lf ? Math.sign(laneRead - lf) : yDir;
       const drawnLanes = this.single ? singleLanes : floorMode ? Math.abs(laneRead - lf) : lanesForRadius(drawnR);

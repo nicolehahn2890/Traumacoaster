@@ -98,3 +98,40 @@ export class RubberBrush {
     return out;
   }
 }
+
+/** Polylinie gleichmäßig abtasten (Abstand step, Enden bleiben) */
+export function resamplePolyline(pts: StagePoint[], step: number): StagePoint[] {
+  if (pts.length < 2 || step <= 0) return pts.map((p) => ({ ...p }));
+  const out: StagePoint[] = [{ ...pts[0] }];
+  let carry = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    const d = Math.hypot(b.X - a.X, b.Y - a.Y);
+    if (d < 1e-9) continue;
+    let t = step - carry;
+    while (t <= d) {
+      out.push({ X: a.X + ((b.X - a.X) * t) / d, Y: a.Y + ((b.Y - a.Y) * t) / d });
+      t += step;
+    }
+    carry = d - (t - step);
+  }
+  const last = pts[pts.length - 1];
+  const o = out[out.length - 1];
+  if (Math.hypot(o.X - last.X, o.Y - last.Y) > step * 0.3) out.push({ ...last });
+  else out[out.length - 1] = { ...last };
+  return out;
+}
+
+/** Ecken abrunden (Chaikin, ein Durchgang; Anfang und Ende bleiben, wo sie sind) */
+export function chaikin(pts: StagePoint[]): StagePoint[] {
+  if (pts.length < 3) return pts.map((p) => ({ ...p }));
+  const out: StagePoint[] = [{ ...pts[0] }];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    out.push({ X: 0.75 * a.X + 0.25 * b.X, Y: 0.75 * a.Y + 0.25 * b.Y }, { X: 0.25 * a.X + 0.75 * b.X, Y: 0.25 * a.Y + 0.75 * b.Y });
+  }
+  out.push({ ...pts[pts.length - 1] });
+  return out;
+}

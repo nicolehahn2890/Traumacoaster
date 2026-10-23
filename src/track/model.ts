@@ -5,6 +5,7 @@
  */
 import type { Vec3 } from '@/core/math3';
 import { bezier3, bezier3d1, bezier3d2, cross3, dot3, normalize3, sub3, len3 } from '@/core/math3';
+import { clamp } from '@/core/math';
 import { LANE_DEPTH } from './stage';
 import { findCrossings } from './crossings';
 
@@ -289,7 +290,12 @@ export function sampleTrack(path: TrackPath, step = 0.25): TrackSamples {
     out.kbx[i] = sx - d * out.t3x[i]; out.kby[i] = sy - d * out.t3y[i]; out.kbz[i] = sz - d * out.t3z[i];
   }
 
-  // 4) Oben-Vektor: Parallel-Transport, bei waagerechter Bahn zur Welt-Senkrechten zurückgezogen
+  // 4) Oben-Vektor: Parallel-Transport, bei waagerechter Bahn zur Welt-Senkrechten zurückgedreht. Kopfüber bleibt
+  // der Wagen nur, wo der Transport ihn kopfüber bringt und die Bahn sich nach unten krümmt (oben im Looping: Die
+  // Mitte liegt darunter). Sonst dreht er auf flacher Strecke zurück auf die Räder, höchstens ROLL_BACK je Meter.
+  // (Früher folgte die Richtung dem Transport: Auf verdrehten 3D-Wegen, etwa einem kleinen Kringel der Pinsel-Bahn,
+  // blieb der Zug danach auf ebener Strecke kopfüber liegen.)
+  const ROLL_BACK = (24 * Math.PI) / 180;
   let ux = 0;
   let uy = 1;
   let uz = 0;
@@ -311,15 +317,32 @@ export function sampleTrack(path: TrackPath, step = 0.25): TrackSamples {
     const pl = Math.hypot(px, py, pz);
     if (pl > 1e-6) {
       px /= pl; py /= pl; pz /= pl;
-      const sgn = ux * px + uy * py + uz * pz >= 0 ? 1 : -1;
+      const cur = ux * px + uy * py + uz * pz >= 0 ? 1 : -1;
+      const sgn = cur < 0 && out.k3y[i] < -0.02 ? -1 : 1;
       const w = Math.pow(Math.max(0, 1 - Math.abs(ty) * 1.3), 2) * 0.35;
-      ux = ux * (1 - w) + sgn * px * w;
-      uy = uy * (1 - w) + sgn * py * w;
-      uz = uz * (1 - w) + sgn * pz * w;
-      d = ux * tx + uy * ty + uz * tz;
-      ux -= d * tx; uy -= d * ty; uz -= d * tz;
-      l = Math.hypot(ux, uy, uz) || 1;
-      ux /= l; uy /= l; uz /= l;
+      if (w > 0) {
+        // um die Tangente zur Zielrichtung drehen (Anteil w des Winkels): Drehen statt Mischen, so kommt auch ein
+        // ganz verdrehter Rahmen zurück (gemischt hebt sich ein entgegengesetzter Vektor nur auf)
+        const qx = sgn * px;
+        const qy = sgn * py;
+        const qz = sgn * pz;
+        const cx = uy * qz - uz * qy;
+        const cy = uz * qx - ux * qz;
+        const cz = ux * qy - uy * qx;
+        const lim = ROLL_BACK * step;
+        const phi = clamp(Math.atan2(cx * tx + cy * ty + cz * tz, ux * qx + uy * qy + uz * qz) * w, -lim, lim);
+        const cs = Math.cos(phi);
+        const sn = Math.sin(phi);
+        // Rodrigues um T (u steht senkrecht auf T): u' = u·cos + (T × u)·sin
+        const rx = ty * uz - tz * uy;
+        const ry = tz * ux - tx * uz;
+        const rz = tx * uy - ty * ux;
+        ux = ux * cs + rx * sn;
+        uy = uy * cs + ry * sn;
+        uz = uz * cs + rz * sn;
+        l = Math.hypot(ux, uy, uz) || 1;
+        ux /= l; uy /= l; uz /= l;
+      }
     }
     out.upx[i] = ux; out.upy[i] = uy; out.upz[i] = uz;
   }
@@ -430,39 +453,58 @@ export function frameWithBank(st: TrackState, angle: number): { T: Vec3; U: Vec3
 }
 
 /**
- * Schräglage der Schienen je Abtastpunkt für die Darstellung: aus der weit geglätteten Krümmung und danach noch
- * einmal entlang der Bahn gemittelt (Dreieck ±RAIL_ROLL_SMOOTH), damit die Schienen auch an harten Stellen
- * (enge Kehre bei hohem Tempo) weich rollen statt sich zu verknoten. speed(i) liefert das Auslegungstempo.
+ * Schräglage der Schienen je Abtastpunkt für die Darstellung (der Wagen fährt darauf mit): aus der weit geglätteten
+ * Krümmung, dann als glatte Kurve mit wenig Rollen (Ausgleich zwischen Abweichung von dieser Schräglage und
+ * Rollrate, Länge RAIL_ROLL_SMOOTH). Kurze Haken und S-Kurven in der Tiefe mitteln sich weg, statt die Schienen
+ * hin und her zu drehen; lange Bögen erreichen ihre Schräglage. Manuelle Schräglagen bleiben genau. speed(i)
+ * liefert das Auslegungstempo.
  */
 export function railBanks(samples: TrackSamples, speed: (i: number) => number): Float64Array {
   const n = samples.count;
   const raw = new Float64Array(n);
-  for (let i = 0; i < n; i++) raw[i] = bankAt(stateAt(samples, samples.s[i]), speed(i), 9.81, true).angle;
-  const out = new Float64Array(n);
-  const w = Math.max(1, Math.round(RAIL_ROLL_SMOOTH / samples.step));
+  const w = new Float64Array(n);
   for (let i = 0; i < n; i++) {
-    // manuelle Schräglage bleibt, wie sie eingestellt ist
-    if (!Number.isNaN(samples.roll[i])) {
-      out[i] = raw[i];
-      continue;
-    }
-    let sum = 0;
-    let wsum = 0;
-    for (let k = -w; k <= w; k++) {
-      let j = i + k;
-      if (samples.closed) j = ((j % n) + n) % n;
-      else if (j < 0 || j >= n) continue;
-      const wk = w + 1 - Math.abs(k);
-      sum += raw[j] * wk;
-      wsum += wk;
-    }
-    out[i] = sum / wsum;
+    raw[i] = bankAt(stateAt(samples, samples.s[i]), speed(i), 9.81, true).angle;
+    w[i] = Number.isNaN(samples.roll[i]) ? 1 : 1e6;
   }
-  return out;
+  return smoothRoll(raw, w, samples.closed, (RAIL_ROLL_SMOOTH / samples.step) ** 2);
 }
 
-/** Halbe Breite (Meter), über die die Schräglage der Schienen zusätzlich gemittelt wird */
-export const RAIL_ROLL_SMOOTH = 6;
+/** Länge (Meter), über die die Schräglage der Schienen ausgeglichen wird (siehe railBanks) */
+export const RAIL_ROLL_SMOOTH = 9;
+
+/**
+ * Glatte Folge b zu Werten a: min Σ w·(b − a)² + mu·Σ (b[i+1] − b[i])² (tridiagonal, Thomas-Verfahren). Geschlossen:
+ * mit einem Polster aus dem Umlauf auf beiden Seiten gelöst, das weit genug ist, dass die Enden nicht mehr wirken.
+ */
+function smoothRoll(a: Float64Array, w: Float64Array, closed: boolean, mu: number): Float64Array {
+  const n = a.length;
+  if (n < 3) return Float64Array.from(a);
+  const pad = closed ? Math.min(n, Math.ceil(8 * Math.sqrt(mu))) : 0;
+  const m = n + 2 * pad;
+  const at = (k: number) => (((k - pad) % n) + n) % n;
+  const diag = new Float64Array(m);
+  const rhs = new Float64Array(m);
+  for (let k = 0; k < m; k++) {
+    const i = at(k);
+    diag[k] = w[i] + (k > 0 ? mu : 0) + (k < m - 1 ? mu : 0);
+    rhs[k] = w[i] * a[i];
+  }
+  // Nebendiagonale überall −mu: vorwärts eliminieren, rückwärts einsetzen
+  const c = new Float64Array(m);
+  const d = new Float64Array(m);
+  c[0] = -mu / diag[0];
+  d[0] = rhs[0] / diag[0];
+  for (let k = 1; k < m; k++) {
+    const piv = diag[k] + mu * c[k - 1];
+    c[k] = -mu / piv;
+    d[k] = (rhs[k] + mu * d[k - 1]) / piv;
+  }
+  const b = new Float64Array(m);
+  b[m - 1] = d[m - 1];
+  for (let k = m - 2; k >= 0; k--) b[k] = d[k] - c[k] * b[k + 1];
+  return b.slice(pad, pad + n);
+}
 
 export interface TrackStats {
   length: number;

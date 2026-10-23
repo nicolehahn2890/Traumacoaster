@@ -13,6 +13,14 @@ export class MGraphics extends Graphics {
     super();
     this.scale.set(1 / U);
   }
+  /**
+   * Größe setzen wie mit scale (1 = wie beschrieben). Nie scale direkt setzen: Das hebt die interne 1/U auf, und
+   * die Form wird hundertmal so groß (so geschehen mit den Pupillen beim Schreck und den Lidern beim Blinzeln).
+   */
+  setSize(sx: number, sy = sx): this {
+    this.scale.set(sx / U, sy / U);
+    return this;
+  }
   override circle(x: number, y: number, r: number): this {
     return super.circle(x * U, y * U, r * U);
   }

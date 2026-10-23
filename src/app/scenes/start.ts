@@ -176,6 +176,8 @@ export class StartScene implements Scene {
     this.cur = startId - 1;
     const startWorld = WORLDS[LEVELS[this.cur].world - 1];
     this.skyR = new Sky(startWorld, isNightWorld(startWorld));
+    // resize lief schon vor enter (da gab es den Himmel noch nicht): sonst bliebe er 64 px schmal
+    this.skyR.resize(this.w, this.h);
     this.shownWorld = startWorld.id - 1;
     if (this.from) this.skyR.importState(this.from.skyState);
     this.paper = new TilingSprite({ texture: art(ART_NAMES.paper(), paperTexture), width: this.w, height: this.h });

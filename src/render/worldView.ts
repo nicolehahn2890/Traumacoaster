@@ -109,8 +109,9 @@ export class WorldView {
     this.trainR.build(cars, riders, perCar);
   }
 
-  updateTrain(cars: CarState[], passengers: PassengerView[], dt: number): void {
-    this.trainR.update(cars, passengers, dt);
+  /** onRails: Der Zug fährt auf der Bahn (nicht im Flug nach einem Fehlschlag); die Wagen liegen dann auf den Schienen */
+  updateTrain(cars: CarState[], passengers: PassengerView[], dt: number, onRails = true): void {
+    this.trainR.update(cars, passengers, dt, onRails ? (s) => this.trackR.railFrame(s) : undefined);
   }
 
   /** Effekte an/aus (Dev-Overlay, Einstellung): Spur-Filter und Leuchtebenen */
@@ -148,7 +149,7 @@ export class WorldView {
 
   /** Stehender Zug (Zeichenmodus): Pose setzen und Cut-out-Clips fortschreiben */
   updateStandingTrain(cars: CarState[], passengers: PassengerView[], dt: number): void {
-    this.trainR.update(cars, passengers, dt);
+    this.trainR.update(cars, passengers, dt, (s) => this.trackR.railFrame(s));
     this.trainR.idleUpdate(dt);
   }
 

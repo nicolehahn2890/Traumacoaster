@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RubberBrush } from '@/track/brush';
-import { BrushRefiner, planBrushTrack, type BrushPlan } from '@/track/brushTrack';
+import { BrushRefiner, findElements, findLineCrossings, planBrushTrack, type BrushPlan } from '@/track/brushTrack';
 import { findCrossings } from '@/track/crossings';
 import { sampleTrack } from '@/track/model';
 import { TrainSim } from '@/physics/trainSim';
@@ -157,5 +157,82 @@ describe('Pinsel-Bahn: Linie = Bahn, Tiefe frei gewählt', () => {
     // die Linie gibt beim Nachbessern höchstens die Toleranz nach
     for (let i = 0; i < plan.line.length; i++) expect(Math.hypot(plan.line[i].X - plan.drawn[i].X, plan.line[i].Y - plan.drawn[i].Y)).toBeLessThanOrEqual(1 + 1e-6);
     expect(Math.max(...Array.from(plan.z, Math.abs))).toBeLessThanOrEqual(2 * LANE_DEPTH + 1e-6);
+  });
+});
+
+describe('Pinsel-Bahn: Loopings und gerade Hügel', () => {
+  /** Lifthügel, dann eine Schleife (x = 60 + a·t + b·sin t, Höhe c·(1 − cos t)), dann flach weiter */
+  function withLoop(a: number, b: number, c: number, lift = 22): StagePoint[] {
+    const pts = stroke([[0, 0], [8, 0.4], [16, lift * 0.5], [22, lift], [28, lift], [36, lift * 0.4], [44, 1], [52, 0.5], [60, 0.5]]);
+    for (let t = 0.05; t <= 2 * Math.PI; t += 0.02) pts.push({ X: 60 + a * t + b * Math.sin(t), Y: 0.5 + c * (1 - Math.cos(t)) });
+    const end = 60 + a * 2 * Math.PI;
+    for (let x = end + 0.3; x <= end + 30; x += 0.3) pts.push({ X: x, Y: 0.5 });
+    return pts;
+  }
+  const refine = (plan: BrushPlan) => {
+    const ref = new BrushRefiner(plan, { ground: () => 0 }, probe, 3.0);
+    for (let i = 0; i < 400 && !ref.run(50); i++);
+    return ref;
+  };
+
+  it('macht aus einer hohen Schleife einen senkrechten Looping, aus einer flachen eine Bodenschleife', () => {
+    const tall = planBrushTrack(withLoop(1.5, 5, 8), { ground: () => 0 })!;
+    expect(tall.elements.loops.map((l) => l.vertical)).toEqual([true]);
+    const flatLoop = planBrushTrack(withLoop(4, 12, 2.2), { ground: () => 0 })!;
+    expect(flatLoop.elements.loops.map((l) => l.vertical)).toEqual([false]);
+    // Looping: Die Tiefe bleibt fast gleich, nur so weit versetzt, dass Ein- und Ausfahrt aneinander vorbeikommen
+    const l = tall.elements.loops[0];
+    const z = Array.from(tall.z.slice(l.i, l.j + 1));
+    expect(Math.max(...z) - Math.min(...z)).toBeLessThan(3.5);
+    expect(Math.abs(tall.z[l.j] - tall.z[l.i])).toBeGreaterThan(2);
+    // der Zug fährt über Kopf durch und kommt heil heraus
+    const ref = refine(tall);
+    expect(ref.accepted).toEqual([]);
+    const s = sampleTrack(ref.best, 0.25);
+    expect(Array.from(s.upy).some((u) => u < -0.9)).toBe(true);
+  });
+
+  it('lässt einen Looping stehen, auch wenn der Schwung nicht reicht (der Strich entscheidet)', () => {
+    const plan = planBrushTrack(withLoop(1.5, 5, 8, 9), { ground: () => 0 })!;
+    expect(plan.elements.loops[0]?.vertical).toBe(true);
+    const ref = refine(plan);
+    expect(ref.accepted.length).toBeGreaterThan(0);
+    const s = sampleTrack(ref.best, 0.25);
+    expect(Array.from(s.upy).some((u) => u < -0.9)).toBe(true);
+  });
+
+  it('baut Hügel gerade: Die Kuppe weicht nicht nach hinten aus', () => {
+    const two = stroke([[0, 0], [8, 0.4], [16, 10], [22, 20], [28, 20], [36, 8], [44, 1], [52, 0.5], [60, 6], [66, 12], [72, 12], [78, 6], [86, 1], [100, 1]]);
+    const plan = planBrushTrack(two, { ground: () => 0 })!;
+    expect(plan.elements.hills.length).toBe(2);
+    for (const h of plan.elements.hills) {
+      // Tiefe über dem Hügel: höchstens wenig neben der Geraden zwischen den Füßen
+      for (let i = h.a; i <= h.b; i++) {
+        const t = (i - h.a) / (h.b - h.a);
+        expect(Math.abs(plan.z[i] - (plan.z[h.a] + (plan.z[h.b] - plan.z[h.a]) * t))).toBeLessThan(1.5);
+      }
+    }
+    // der Lifthügel an der Station bleibt ganz auf ihrer Tiefe
+    const lift = plan.elements.hills[0];
+    for (let i = lift.a; i <= lift.top; i++) expect(Math.abs(plan.z[i] - plan.z[lift.a])).toBeLessThan(0.6);
+  });
+
+  it('legt einen Hügel doch nach hinten, wenn der Zug sonst nicht hinaufkommt', () => {
+    // kleiner Lifthügel (8 m), dann ein Hügel, der gerade 12 m hoch wäre
+    const steps = stroke([[0, 0], [6, 0.4], [12, 8], [16, 8], [22, 1], [32, 0.5], [40, 6], [46, 12], [52, 12], [58, 6], [66, 1], [80, 1]]);
+    const plan = planBrushTrack(steps, { ground: () => 0 })!;
+    expect(plan.elements.hills.length).toBe(2);
+    const second = plan.elements.hills[1];
+    const before = plan.pts[second.top].y;
+    const ref = refine(plan);
+    expect(ref.accepted).toEqual([]);
+    expect(plan.pts[second.top].y).toBeLessThan(before - 1);
+  });
+
+  it('erkennt Elemente auch an der Linie allein (Vorschau: Anstieg am Ende zählt als Hügel)', () => {
+    const line: StagePoint[] = [];
+    for (let i = 0; i <= 40; i++) line.push({ X: i, Y: i < 10 ? 0.5 : 0.5 + (i - 10) * 0.6 });
+    const el = findElements(line, findLineCrossings(line, false));
+    expect(el.hills).toEqual([{ a: expect.any(Number), top: 40, b: 40, open: true }]);
   });
 });

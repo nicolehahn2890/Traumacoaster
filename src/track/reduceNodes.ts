@@ -43,6 +43,12 @@ export interface ReduceOptions {
    * Für die Bearbeitung genügt das Ziehen am Segment; wer einen Knoten auf der Kuppe will, setzt ihn per Doppeltipp.
    */
   snapApex?: boolean;
+  /**
+   * Knoten sparsam und gleichmäßig (Pinsel-Bahn): die kleinste Zahl von Segmenten, die in der Toleranz bleiben, und
+   * unter allen solchen Verteilungen die mit den gleichmäßigsten Längen (statt am Ort des größten Fehlers zu teilen,
+   * was Knoten häuft). Knotenarten (Ereignis-Scheitel) gibt es dabei nicht.
+   */
+  even?: boolean;
   /** Diagnose: je Abschnitt Fehler, Toleranz und Entscheidung */
   trace?: (msg: string) => void;
 }
@@ -62,6 +68,11 @@ const SNAP = 3; // Meter: so weit darf eine Teilung auf einen Scheitel einrasten
 // Newton-Nachbesserung nur unter dem Vierfachen der Toleranz (Schneider). Ohne diese Grenze zwingt Newton lange
 // Segmente in die Toleranz, die in Kurven enger biegen als die Punktfolge: im Tal nach einem 30-m-Drop 5,0 g statt 4,2 g.
 const NEWTON_BELOW = 4;
+/** Meter: längstes Segment der gleichmäßigen Verteilung (even) */
+const EVEN_SPAN = 90;
+/** größte Drehung der Richtung in einem Segment der gleichmäßigen Verteilung: Ein Kubik-Segment mit festen
+ * Tangenten biegt über mehr als einen Viertelkreis enger als die Punktfolge (der Wagen spürt die Spitze) */
+const EVEN_TURN = (120 * Math.PI) / 180;
 const PROMINENCE = 0.25; // ein Scheitel muss sein Umfeld um 25 % überragen (sonst ist es ein gleichmäßiger Bogen)
 const PROMINENCE_ABS = 0.008; // … und um mindestens 0,008/m (sonst ist es Zittern auf einer weiten Kurve)
 
@@ -291,9 +302,98 @@ export function reduceNodes(pts: Vec3[], hints: ApexHint[] = [], opts: ReduceOpt
     fitRec(a, m, depth + 1);
     fitRec(m, b, depth + 1);
   };
+  if (opts.even) {
+    // Segmente, die doch nicht passen (ein Teilstück eines passenden Stücks passt nicht immer), wie oben teilen
+    for (const [a, b] of evenSplits(pts, cum, prof, T, opts)) fitRec(a, b, 0);
+    outIdx.push(n - 1);
+    return { segments, kinds: outIdx.map(() => 'normal'), indices: outIdx };
+  }
   // Ereignis-Scheitel (Looping, Kehre) sind gesetzte Knoten: sie tragen die Knotenart
   const forced = [0, ...[...kinds.keys()].filter((i) => i > 0 && i < n - 1).sort((a, b) => a - b), n - 1];
   for (let k = 0; k < forced.length - 1; k++) if (forced[k + 1] > forced[k]) fitRec(forced[k], forced[k + 1], 0);
   outIdx.push(n - 1);
   return { segments, kinds: outIdx.map((i) => kinds.get(i) ?? 'normal'), indices: outIdx };
+}
+
+/**
+ * Knotenstellen für opts.even: Reichweite je Punkt (das weiteste Ende, bis zu dem ein Segment noch in der Toleranz
+ * bleibt; gesucht ab der Reichweite des Vorgängers, sie wächst fast immer mit), daraus die kleinste Segmentzahl K
+ * (von vorn immer so weit wie möglich) und dann die Verteilung mit K Segmenten, deren Längen am wenigsten vom
+ * Mittel abweichen (dynamische Programmierung über die Reichweiten).
+ */
+function evenSplits(pts: Vec3[], cum: Float64Array, prof: Float64Array, T: (i: number) => Vec3, opts: ReduceOptions): Array<[number, number]> {
+  const n = pts.length;
+  // Drehung der Richtung, aufsummiert von Punkt zu Punkt
+  const turn = new Float64Array(n);
+  for (let i = 1; i < n - 1; i++) {
+    const u = sub3(pts[i], pts[i - 1]);
+    const v = sub3(pts[i + 1], pts[i]);
+    const lu = len3(u);
+    const lv = len3(v);
+    const c = lu > 1e-9 && lv > 1e-9 ? (u.x * v.x + u.y * v.y + u.z * v.z) / (lu * lv) : 1;
+    turn[i + 1] = turn[i] + Math.acos(Math.max(-1, Math.min(1, c)));
+  }
+  turn[1] = turn[1] || 0;
+  const fits = (a: number, b: number): boolean => {
+    if (b - a < 2) return true;
+    if (cum[b] - cum[a] > EVEN_SPAN || turn[b] - turn[a] > EVEN_TURN) return false;
+    let maxK = 0;
+    for (let i = a; i <= b; i++) if (prof[i] > maxK) maxK = prof[i];
+    let tol = toleranceFor(maxK, opts);
+    if (opts.tolAt) for (let i = a; i <= b; i++) tol = Math.min(tol, opts.tolAt[i]);
+    return fitCubicWithTangents(pts, a, b, T(a), scale3(T(b), -1), tol, 6, NEWTON_BELOW).maxError <= tol;
+  };
+  const reach = new Int32Array(n);
+  for (let a = 0; a < n - 1; a++) {
+    // lo passt (ein Schritt passt immer), hi ist das erste bekannte Ende, das nicht mehr passt (−1: keins)
+    let lo = a + 1;
+    let hi = -1;
+    let t = Math.min(n - 1, Math.max(a + 2, a > 0 ? reach[a - 1] : 0));
+    for (let step = 2; ; step *= 2) {
+      if (!fits(a, t)) {
+        hi = t;
+        break;
+      }
+      lo = t;
+      if (t === n - 1) break;
+      t = Math.min(n - 1, t + step);
+    }
+    if (hi >= 0) {
+      while (hi - lo > 1) {
+        const m = (lo + hi) >> 1;
+        if (fits(a, m)) lo = m;
+        else hi = m;
+      }
+    }
+    reach[a] = lo;
+  }
+  const greedy = [0];
+  while (greedy[greedy.length - 1] < n - 1) greedy.push(reach[greedy[greedy.length - 1]]);
+  const K = greedy.length - 1;
+  const mean = cum[n - 1] / Math.max(1, K);
+  let cost = new Float64Array(n).fill(Infinity);
+  cost[0] = 0;
+  const from: Int32Array[] = [];
+  for (let k = 0; k < K; k++) {
+    const next = new Float64Array(n).fill(Infinity);
+    const fr = new Int32Array(n).fill(-1);
+    for (let a = 0; a < n - 1; a++) {
+      if (cost[a] === Infinity) continue;
+      for (let b = a + 1; b <= reach[a]; b++) {
+        const c = cost[a] + (cum[b] - cum[a] - mean) ** 2;
+        if (c < next[b]) {
+          next[b] = c;
+          fr[b] = a;
+        }
+      }
+    }
+    from.push(fr);
+    cost = next;
+  }
+  let idx = [n - 1];
+  for (let k = K - 1; k >= 0 && idx[0] >= 0; k--) idx.unshift(from[k][idx[0]]);
+  if (idx[0] !== 0) idx = greedy;
+  const out: Array<[number, number]> = [];
+  for (let k = 0; k < idx.length - 1; k++) out.push([idx[k], idx[k + 1]]);
+  return out;
 }

@@ -4,6 +4,7 @@
  * nach Sichtbarkeit sortiert (Maler-Algorithmus). Fahrgäste sitzen als Billboards im Wagen-System.
  */
 import { Container, Graphics, Matrix } from 'pixi.js';
+import type { Vec3 } from '@/core/math3';
 import type { CarState } from '@/physics/trainSim';
 import type { PassengerView } from '@/physics/passengers';
 import { CAR } from '@/physics/passengers';
@@ -234,11 +235,17 @@ export class TrainRenderer {
     }
   }
 
-  update(cars: CarState[], passengers: PassengerView[], dt: number): void {
+  /**
+   * Wagen und Fahrgäste zeichnen. rail: Rahmen der Schienen bei Bahnlänge s (Wagen auf der Bahn); der Wagen liegt dann
+   * mit der Schräglage der Schienen auf, statt der Kraftrichtung seiner Physik zu folgen (die zuckt an jedem Haken).
+   */
+  update(cars: CarState[], passengers: PassengerView[], dt: number, rail?: (s: number) => { T: Vec3; U: Vec3; S: Vec3; bank: number } | null): void {
     for (let c = 0; c < this.cars.length; c++) {
       const view = this.cars[c];
-      const st = cars[c];
-      if (!st) continue;
+      const car = cars[c];
+      if (!car) continue;
+      const fr = rail?.(car.s);
+      const st = fr ? { ...car, tx: fr.T.x, ty: fr.T.y, tz: fr.T.z, upx: fr.U.x, upy: fr.U.y, upz: fr.U.z, sx: fr.S.x, sy: fr.S.y, sz: fr.S.z, bank: fr.bank } : car;
       const lane = Math.round(st.z);
       if (lane !== view.lane) {
         view.lane = lane;

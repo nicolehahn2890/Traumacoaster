@@ -120,5 +120,22 @@
   "strokeMode.stage": "Reading: stage (floor = depth, steep = height)",
   "strokeMode.single": "Reading: one stroke (everything is height, only U-turns change the level)",
   "strokeMode.btn.stage": "Stage",
-  "strokeMode.btn.single": "1 stroke"
+  "strokeMode.btn.single": "1 stroke",
+  "crossingSwapped": "Crossing swapped",
+  "strokeMode.lanes": "Reading: planes (you draw on the plane chosen on the left, turns only via a new plane)",
+  "strokeMode.btn.lanes": "Planes",
+  "lanes.back": "BACK",
+  "lanes.front": "FRONT",
+  "lanes.pick": "For a turn, pick another plane on the left first",
+  "lanes.armed": "Next stroke on plane {n}",
+  "length.budget": "Track available",
+  "length.unlimited": "unlimited",
+  "length.only": "Track {n} m",
+  "length.ofBudget": "Track {n} / {b} m",
+  "length.used": "Track used up ({n} m): pull back to free some",
+  "length.levelBudget": "This level allows {n} m of track",
+  "crossingNoSwap": "That way the tracks would touch: the crossing stays as it is",
+  "lanes.auto": "Auto",
+  "lanes.autoOn": "Auto on: a turn-back leads to the next plane by itself",
+  "lanes.autoOff": "Auto off: turns only via choosing a plane"
 }

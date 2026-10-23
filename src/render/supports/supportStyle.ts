@@ -83,17 +83,40 @@ export function footOffsets(kind: SupportKind, h: number): number[] {
   }
 }
 
+/** Stützen stehen weiter auseinander als die Schienenstile vorgeben (die Bahn soll sichtbar bleiben) */
+export const SUPPORT_THIN = 1.7;
+/** Draufsicht-Abstand (m), unter dem eine Stütze ein anderes Bahnstück durchstoßen würde bzw. zu dicht steht */
+const PIERCE_DIST = 1.8;
+const CROWD_DIST = 2.6;
+const LANE_M = 8.4;
+
 /**
- * Fußpunkte entlang der Bahn: alle `spacing` Meter einer, nicht kopfüber (upy < 0,35), nicht im Berg,
- * nicht unter SUPPORT_MIN_HEIGHT. Deterministisch über den Abtastindex als Seed.
+ * Fußpunkte entlang der Bahn: alle `spacing` · SUPPORT_THIN Meter einer, nicht kopfüber (upy < 0,35), nicht im Berg,
+ * nicht unter SUPPORT_MIN_HEIGHT. Wo sich die Bahn übereinanderlegt (Spirale, Kreuzung, Kringel), keine Stütze durch
+ * ein tieferes Bahnstück hindurch und keine zweite dicht neben einer schon gesetzten eines anderen Bahnstücks: So
+ * bleibt die Bahn auch in einer Schneckennudel sichtbar. Deterministisch über den Abtastindex als Seed.
  */
 export function planSupports(samples: TrackSamples, terrain: TerrainLike, spacing: number, kind: SupportKind): SupportPlan[] {
   const out: SupportPlan[] = [];
+  const step = spacing * SUPPORT_THIN;
+  const n = samples.count;
+  const L = samples.length;
+  // ein anderes Bahnstück (mindestens 10 m entfernt auf der Bahn) liegt unter diesem Punkt: die Stütze ginge hindurch
+  const pierces = (i: number, x: number, y: number, z: number, ground: number): boolean => {
+    for (let j = 0; j < n; j += 2) {
+      let ds = Math.abs(samples.s[j] - samples.s[i]);
+      if (samples.closed) ds = Math.min(ds, L - ds);
+      if (ds < 10) continue;
+      const yj = samples.y[j];
+      if (yj >= y - 0.5 || yj <= ground + 0.3) continue;
+      if (Math.hypot(samples.x[j] - x, (samples.z[j] - z) * LANE_M) < PIERCE_DIST) return true;
+    }
+    return false;
+  };
   let nextS = 0;
-  for (let i = 0; i < samples.count; i++) {
+  for (let i = 0; i < n; i++) {
     const s = samples.s[i];
     if (s < nextS) continue;
-    nextS = s + spacing;
     const x = samples.x[i];
     const y = samples.y[i];
     const z = samples.z[i];
@@ -102,6 +125,12 @@ export function planSupports(samples: TrackSamples, terrain: TerrainLike, spacin
     const ground = terrain.groundHeight(x, z) + terrain.mountainHeight(x, z);
     const h = y - ground;
     if (h < SUPPORT_MIN_HEIGHT) continue;
+    // nächster Versuch nach einem Meter, wenn diese Stelle frei bleiben muss (die Lücke wird nicht doppelt so groß)
+    if (out.some((p) => Math.hypot(p.x - x, (p.z - z) * LANE_M) < CROWD_DIST) || pierces(i, x, y, z, ground)) {
+      nextS = s + 1;
+      continue;
+    }
+    nextS = s + step;
     out.push({ x, y, z, lane: Math.round(z), ground, h, seed: i, kind });
   }
   return out;

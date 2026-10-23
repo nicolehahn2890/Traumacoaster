@@ -126,7 +126,10 @@ export class Game {
     this.scene = next;
     this.root.addChild(next.container);
     next.resize(this.width, this.height);
-    void next.enter(this);
+    // nach enter noch einmal: Was eine Szene erst in enter anlegt (Himmel, Hintergründe), bekommt so die Größe
+    void Promise.resolve(next.enter(this)).then(() => {
+      if (this.scene === next) next.resize(this.width, this.height);
+    });
   }
 
   private tick(dt: number): void {

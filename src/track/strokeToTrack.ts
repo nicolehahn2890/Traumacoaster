@@ -50,6 +50,8 @@ export interface StrokeOptions {
   lockLength?: number;
   /** „Ein Strich“: alles Höhe, nur Wenden wechseln die Ebene (siehe gesture.ts) */
   single?: boolean;
+  /** „Ebenen“: Wenden im Strich sind keine Kurven (siehe gesture.ts, lanesTrack) */
+  noTurns?: boolean;
 }
 
 export interface StrokeResult {
@@ -245,6 +247,7 @@ const gestureOptions = (opts: StrokeOptions) => ({
   closeAt: opts.closeAt,
   closeSnap: opts.closeSnap,
   single: opts.single,
+  noTurns: opts.noTurns,
 });
 
 /** Die Lesart: Bühnenpunkte → (x, Höhe, Spur, Modus), siehe gesture.ts */
@@ -506,7 +509,7 @@ export function densePolyline(points: InterpretedPoint[], opts: StrokeOptions, e
  * (Catmull-Rom). Kein Fit, also nichts, was von Vorschau zu Vorschau anders einrastet; die Scheitel der Ereignisse
  * bekommen ihre Knotenart (Looping-Ring in der Vorschau).
  */
-function previewNodes(pts: Vec3[], hints: ApexHint[]): TrackNode[] {
+export function previewNodes(pts: Vec3[], hints: ApexHint[]): TrackNode[] {
   const n = pts.length;
   if (n < 2) return [];
   const cum = new Float64Array(n);
@@ -799,6 +802,102 @@ export function extendTrack(path: TrackPath, stroke: StagePoint[], opts: StrokeO
   result.closed = false;
   if (!opts.preview) closePath(result);
   return result;
+}
+
+/** Lesart „Ebenen“: Länge eines Spurwechsels je Ebene (Meter), wie am Boden der Bühnen-Lesart */
+const LANE_SWITCH_LEN = 16;
+/** Handle-Länge für einen Viertelkreis als kubisches Segment */
+const QUARTER = (4 / 3) * Math.tan(Math.PI / 8);
+
+/** Strich so verschieben, dass er bei to beginnt; der Versatz klingt weich über max(LEAD_IN, 1,5 · Versatz) Meter ab */
+function startAt(stroke: StagePoint[], to: StagePoint): StagePoint[] {
+  const ox = to.X - stroke[0].X;
+  const oy = to.Y - stroke[0].Y;
+  const d = Math.hypot(ox, oy);
+  if (d < 1e-6) return stroke;
+  const blend = Math.max(LEAD_IN, 1.5 * d);
+  let s = 0;
+  return stroke.map((p, i) => {
+    if (i) s += Math.hypot(p.X - stroke[i - 1].X, p.Y - stroke[i - 1].Y);
+    const f = 1 - smoothstep(Math.min(1, s / blend));
+    return { X: p.X + ox * f, Y: p.Y + oy * f };
+  });
+}
+
+/**
+ * Lesart „Ebenen“ (aus dem Bahnbau-Labor): Gezeichnet wird immer auf einer Ebene, die links am Rand gewählt wird. Der
+ * Strich ist die Seitenansicht auf ihr (Bildhöhe über ihrer Bodenlinie = Höhe, ein Kreis = Looping). Kurven entstehen
+ * nur über die Ebenenwahl am Bahnende: Zeigt der neue Strich zurück, führt ein flacher Halbkreis auf die gewählte
+ * Ebene, zeigt er weiter vorwärts, ein Spurwechsel (16 m je Ebene). Eine Wende im Strich selbst bleibt am Scheitel
+ * stehen (BlockedInfo.dir 0). Ohne Bahn steht die Station auf der gewählten Ebene (sonst auf Ebene 0). Jeder Strich
+ * setzt eine offene Bahn fort, wo er auch beginnt (sein Anfang wird weich an das Bahnende gezogen).
+ * auto: Eine Rückkurve im Strich führt von selbst auf die nächste Ebene, wie bei „1 Strich“ (Rückweg im Bild höher =
+ * nach hinten, tiefer = nach vorne; am Rand der Bühne die Warnung „Keine Ebene mehr in dieser Richtung“). Eine
+ * gewählte Ebene geht vor.
+ * out.connector: ein Halbkreis oder Spurwechsel wurde angesetzt (die gewählte Ebene ist damit verbraucht).
+ */
+export function lanesTrack(path: TrackPath | null, stroke: StagePoint[], opts: StrokeOptions, armed: number | null, out?: { points?: InterpretedPoint[]; blocked?: BlockedInfo; connector?: boolean }, auto = false): TrackPath | null {
+  const read: StrokeOptions = { ...opts, single: true, noTurns: !auto };
+  if (!path || path.nodes.length < 2) {
+    const r = strokeToTrack(stroke, { ...read, startZ: armed ?? 0, startMode: 'height' });
+    if (out) {
+      out.points = r.points;
+      out.blocked = r.blocked;
+    }
+    return r.path.nodes.length >= 2 ? r.path : null;
+  }
+  if (isClosed(path) || stroke.length < 2) return null;
+  const end = path.nodes[path.nodes.length - 1];
+  const zEnd = Math.round(end.z);
+  const stageOf = (n: TrackNode): StagePoint => toStage(n.x, n.y, n.z);
+  if (armed === null || armed === zEnd) return extendTrack(path, startAt(stroke, stageOf(end)), read, out);
+  // Fahrtrichtung am Ende und Richtung des neuen Strichs über die ersten 3 Meter (in x)
+  const pe = nodePos(end);
+  let arr = normalize3(sub3(pe, nodeIn(end)));
+  if (len3(arr) < 0.5) arr = normalize3(sub3(pe, nodePos(path.nodes[path.nodes.length - 2])));
+  const dirE = Math.sign(arr.x) || 1;
+  let k = 1;
+  while (k < stroke.length - 1 && Math.hypot(stroke[k].X - stroke[0].X, stroke[k].Y - stroke[0].Y) < 3) k++;
+  const dirS = Math.sign(stroke[k].X - stroke[0].X) || dirE;
+  const sgn = armed > zEnd ? 1 : -1;
+  const conn: TrackNode[] = [];
+  let h: number;
+  let rest = stroke;
+  if (dirS !== dirE) {
+    // Strich zeigt zurück: flacher Halbkreis auf die gewählte Ebene (Radius = halber Abstand der Ebenen)
+    const R = (Math.abs(armed - zEnd) * LANE_DEPTH) / 2;
+    h = QUARTER * R;
+    const apex = createNode(pe.x + dirE * R, pe.y, (end.z + armed) / 2, 'turn');
+    apex.inZ = (-sgn * h) / LANE_DEPTH;
+    apex.outZ = (sgn * h) / LANE_DEPTH;
+    const back = createNode(pe.x, pe.y, armed);
+    back.inX = dirE * h;
+    back.outX = -dirE * h;
+    conn.push(apex, back);
+  } else {
+    // Strich zeigt weiter vorwärts: Spurwechsel als S-Kurve auf Endhöhe
+    const L = LANE_SWITCH_LEN * Math.abs(armed - zEnd);
+    h = L / 3;
+    const next = createNode(pe.x + dirE * L, pe.y, armed);
+    next.inX = -dirE * h;
+    next.outX = dirE * h;
+    conn.push(next);
+    // der Spurwechsel ersetzt die ersten L Meter des Strichs (er liegt flach auf Endhöhe)
+    let cut = 0;
+    while (cut < stroke.length - 1 && (stroke[cut].X - pe.x) * dirE < L) cut++;
+    rest = stroke.slice(cut);
+  }
+  const withConn: TrackPath = { ...path, nodes: path.nodes.map((n) => ({ ...n })), elements: path.elements.map((e) => ({ ...e })), templates: { ...path.templates } };
+  // das bisherige Ende fährt in Ankunftsrichtung weiter (glatt) in die Verbindung hinein
+  const last = withConn.nodes[withConn.nodes.length - 1];
+  last.outX = arr.x * h;
+  last.outY = arr.y * h;
+  last.outZ = (arr.z * h) / LANE_DEPTH;
+  withConn.nodes.push(...conn);
+  withConn.closed = false;
+  if (out) out.connector = true;
+  if (rest.length < 2) return withConn;
+  return extendTrack(withConn, startAt(rest, stageOf(conn[conn.length - 1])), read, out) ?? withConn;
 }
 
 /** Halbkreis-Kehre in der x/z-Ebene (3D-Knoten mit Handles). dir = ±1 in x. */

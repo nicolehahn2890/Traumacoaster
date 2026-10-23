@@ -19,8 +19,8 @@ export type MouthKind = 'closed' | 'open' | 'grin';
 export class CharacterSprite {
   readonly container = new Container();
   readonly parts: Record<PartName, Container>;
-  private pupils: Graphics[] = [];
-  private eyeLids: Graphics[] = [];
+  private pupils: MGraphics[] = [];
+  private eyeLids: MGraphics[] = [];
   private mouth = new MGraphics();
   private def: CharacterDef;
   private blinkT = 2 + Math.random() * 4;
@@ -188,7 +188,7 @@ export class CharacterSprite {
         const lid = new MGraphics();
         lid.ellipse(0, 0, e.r * 0.9, e.r * 1.05).fill(face);
         lid.position.set(e.x, e.y);
-        lid.scale.y = 0;
+        lid.setSize(1, 0);
         this.headInner.addChild(lid);
         this.eyeLids.push(lid);
       }
@@ -349,8 +349,8 @@ export class CharacterSprite {
     if (kind === this.eyeMode) return;
     this.eyeMode = kind;
     const scale = kind === 'bead' ? 1.5 : kind === 'big' ? 1.9 : 1;
-    for (const p of this.pupils) p.scale.set(scale);
-    for (const l of this.eyeLids) l.scale.y = kind === 'line' ? 1 : 0;
+    for (const p of this.pupils) p.setSize(scale);
+    for (const l of this.eyeLids) l.setSize(1, kind === 'line' ? 1 : 0);
   }
   setMouth(kind: MouthKind | null): void {
     if (kind === this.mouthMode) return;
@@ -478,13 +478,13 @@ export class CharacterSprite {
       this.blinkT = 2 + Math.random() * 4;
     }
     if (this.eyeMode === 'line') {
-      for (const l of this.eyeLids) l.scale.y = 1;
+      for (const l of this.eyeLids) l.setSize(1, 1);
     } else if (this.blinkPhase > 0) {
       this.blinkPhase -= dt;
       const f = Math.sin((this.blinkPhase / 0.18) * Math.PI);
-      for (const l of this.eyeLids) l.scale.y = 0.01 * f;
+      for (const l of this.eyeLids) l.setSize(1, f);
     } else {
-      for (const l of this.eyeLids) l.scale.y = 0;
+      for (const l of this.eyeLids) l.setSize(1, 0);
     }
     const px = clamp(-feltFwd / 9.81, -1, 1) * 0.022;
     const py = clamp(-(feltUp - 9.81) / 9.81, -1, 1) * 0.022;
