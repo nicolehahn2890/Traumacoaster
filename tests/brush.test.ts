@@ -237,6 +237,47 @@ describe('Pinsel-Bahn: Loopings und gerade Hügel', () => {
   });
 });
 
+describe('Pinsel-Bahn: Wenden fahren flach', () => {
+  /** Neigung (Grad) der Bahn am Scheitel jeder Wende (x kehrt um) und die tiefste Aufwärtsrichtung der ganzen Bahn */
+  const turns = (plan: BrushPlan): { pitch: number[]; minUp: number } => {
+    const s = sampleTrack(plan.path, 0.25);
+    const pitch: number[] = [];
+    for (let i = 1; i < s.count - 1; i++) {
+      if (Math.sign(s.x[i] - s.x[i - 1]) === Math.sign(s.x[i + 1] - s.x[i])) continue;
+      pitch.push((Math.asin(Math.min(1, Math.abs(s.t3y[i]))) * 180) / Math.PI);
+      i += 8;
+    }
+    return { pitch, minUp: Math.min(...Array.from(s.upy)) };
+  };
+
+  it('legt eine Wende kurz vor der Station flach in die Tiefe, statt senkrecht zu kippen', () => {
+    // kleines Oval: Die linke Wende liegt direkt vor der Station (früher senkrecht, der Zug fuhr dort kopfüber)
+    const oval = stroke([[0, 0], [15, 0], [30, 0], [34, 3], [30, 6], [15, 6], [0, 6], [-5, 3], [-2, 0.3], [0, 0]]);
+    const plan = planBrushTrack(oval, { ground: () => 0 })!;
+    expect(plan.closed).toBe(true);
+    const { pitch, minUp } = turns(plan);
+    expect(pitch.length).toBe(2);
+    for (const p of pitch) expect(p).toBeLessThan(20);
+    expect(minUp).toBeGreaterThan(0.5);
+  });
+
+  it('kippt auch am hinteren Bühnenrand nicht', () => {
+    // Zickzack nach oben: Die dritte Wende liegt ganz hinten, dort ist kaum noch Tiefe übrig
+    const zigzag = stroke([[0, 0], [30, 0], [36, 3], [30, 6], [5, 6], [-1, 9], [5, 12], [30, 12], [36, 15], [30, 18], [10, 18]]);
+    const { pitch, minUp } = turns(planBrushTrack(zigzag, { ground: () => 0 })!);
+    expect(pitch.length).toBe(3);
+    for (const p of pitch) expect(p).toBeLessThan(20);
+    expect(minUp).toBeGreaterThan(0.5);
+  });
+
+  it('schließt eine Runde, die falsch herum ankommt, ohne Kopfüber vor der Station', () => {
+    const back = stroke([[0, 0], [20, 0], [40, 0], [50, 5], [40, 10], [20, 10], [8, 6], [4, 2.5]]);
+    const plan = planBrushTrack(back, { ground: () => 0, closeSnap: 8 })!;
+    expect(plan.closed).toBe(true);
+    expect(turns(plan).minUp).toBeGreaterThan(0.5);
+  });
+});
+
 describe('Pinsel-Bahn: Rundenschluss', () => {
   /** Winkel (Grad) zwischen ankommender und abfahrender Richtung am Stationsknoten */
   const stationKink = (plan: BrushPlan): number => {
@@ -258,6 +299,20 @@ describe('Pinsel-Bahn: Rundenschluss', () => {
       if (den > 1e-12) k = Math.max(k, (2 * cr) / den);
     }
     return 1 / Math.max(k, 1e-9);
+  };
+  /** Länge des Rundenschlusses und sein größter Abstand vom Strichende und von der Lücke zur Station */
+  const closureSpread = (points: StagePoint[], closeSnap: number, closeReach = 0): { length: number; away: number } => {
+    const prep = prepareBrushLine(points, closeSnap, closeReach)!;
+    const open = prepareBrushLine(points, -1)!.line;
+    const part = prep.line.slice(prep.closeFrom! - 1);
+    const end = open[open.length - 1];
+    const ref = open.slice(prep.closeFrom! - 1);
+    for (let u = 0; u <= 1; u += 0.05) ref.push({ X: end.X + (open[0].X - end.X) * u, Y: end.Y + (open[0].Y - end.Y) * u });
+    let away = 0;
+    for (const p of part) away = Math.max(away, Math.min(...ref.map((q) => Math.hypot(p.X - q.X, p.Y - q.Y))));
+    let length = 0;
+    for (let i = 1; i < part.length; i++) length += Math.hypot(part[i].X - part[i - 1].X, part[i].Y - part[i - 1].Y);
+    return { length, away };
   };
 
   it('findet immer einen Dubins-Weg, der genau in der Zielrichtung ankommt', () => {
@@ -287,13 +342,42 @@ describe('Pinsel-Bahn: Rundenschluss', () => {
     expect(findCrossings(sampleTrack(plan.path, 0.25))).toEqual([]);
   });
 
-  it('wendet, wenn das Ende entgegen der Stationsrichtung ankommt, und kreuzt dabei nichts', () => {
+  it('wendet, wenn das Ende entgegen der Stationsrichtung ankommt, kompakt und ohne Kreuzung', () => {
     // nach rechts hinaus, oben zurück und von rechts kommend knapp über der Station enden (Richtung entgegen)
     const back = stroke([[0, 0], [20, 0], [40, 0], [50, 5], [40, 10], [20, 10], [8, 6], [4, 2.5]]);
     const plan = planBrushTrack(back, { ground: () => 0, closeSnap: 8 })!;
     expect(plan.closed).toBe(true);
     expect(stationKink(plan)).toBeLessThan(1);
-    expect(closureRadius(back, 8)).toBeGreaterThan(4.5);
+    expect(closureRadius(back, 8)).toBeGreaterThan(3.5);
+    expect(findCrossings(sampleTrack(plan.path, 0.25))).toEqual([]);
+    // früher ein Bogen von 68 m, 20 m über dem Strich
+    const { length, away } = closureSpread(back, 8);
+    expect(length).toBeLessThan(40);
+    expect(away).toBeLessThan(10);
+  });
+
+  it('macht keinen Riesenbogen, wenn das Ende knapp unter der Station falsch herum ankommt', () => {
+    // unten zurück, knapp rechts unter der Station enden: Platz für eine Wende ist nur links davon
+    const under = stroke([[0, 0], [20, 0], [40, 0], [48, -4], [40, -8], [20, -8], [6, -3], [3, -2.5]]);
+    const plan = planBrushTrack(under, { ground: () => 0, closeSnap: 8 })!;
+    expect(plan.closed).toBe(true);
+    expect(stationKink(plan)).toBeLessThan(1);
+    expect(closureRadius(under, 8)).toBeGreaterThan(3.5);
+    expect(findCrossings(sampleTrack(plan.path, 0.25))).toEqual([]);
+    // früher 70 m Kreis, bis 20 m vom Strich weg
+    const { length, away } = closureSpread(under, 8);
+    expect(length).toBeLessThan(40);
+    expect(away).toBeLessThan(10);
+  });
+
+  it('biegt ein Ende, das fast richtig ankommt, nur ein, statt es zu ersetzen', () => {
+    // oben zurück, links herum und von oben in die Station, 1 m drüber hinaus (der Bogen ist enger als 6 m)
+    const hook = stroke([[0, 0], [20, 0], [40, 0], [48, 5], [40, 10], [20, 10], [-6, 10], [-11, 6], [-7, 3], [-3, 2], [1, 1]]);
+    const plan = planBrushTrack(hook, { ground: () => 0, closeSnap: 8 })!;
+    expect(plan.closed).toBe(true);
+    expect(stationKink(plan)).toBeLessThan(1);
+    // der Schluss folgt dem gezeichneten Bogen
+    expect(closureSpread(hook, 8).away).toBeLessThan(2.5);
   });
 
   it('schließt auf Wunsch auch mit größerem Abstand (Tipp auf die Station)', () => {
@@ -302,6 +386,7 @@ describe('Pinsel-Bahn: Rundenschluss', () => {
     const plan = planBrushTrack(open, { ground: () => 0, closeSnap: 8, closeReach: 25 })!;
     expect(plan.closed).toBe(true);
     expect(stationKink(plan)).toBeLessThan(1);
-    expect(closureRadius(open, 8, 25)).toBeGreaterThan(4.5);
+    expect(closureRadius(open, 8, 25)).toBeGreaterThan(3.5);
+    expect(closureSpread(open, 8, 25).away).toBeLessThan(10);
   });
 });
