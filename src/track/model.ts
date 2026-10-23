@@ -57,6 +57,8 @@ export interface TrackPath {
   closed?: boolean;
   /** Protokoll des Rundenschlusses (nur bei geschlossener Bahn), siehe PathClosure */
   closure?: PathClosure;
+  /** mit dem Pinsel gezeichnet (src/track/brushTrack.ts): Linie = Bahn, kein Rundenschluss der Bühnen-Lesart */
+  brush?: boolean;
 }
 
 export function cloneClosure(c: PathClosure | undefined): PathClosure | undefined {
@@ -78,6 +80,7 @@ export function clonePath(p: TrackPath): TrackPath {
   const out: TrackPath = { nodes: p.nodes.map((n) => ({ ...n })), elements: p.elements.map((e) => ({ ...e })), startType: p.startType, templates: { ...p.templates }, closed: p.closed !== false };
   const closure = cloneClosure(p.closure);
   if (closure) out.closure = closure;
+  if (p.brush) out.brush = true;
   return out;
 }
 

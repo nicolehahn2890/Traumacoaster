@@ -111,6 +111,8 @@ export interface TrainSimOptions {
   coins: CoinSpec[];
   terrain: Terrain;
   allowTunnels: boolean;
+  /** Entgleis-Grenze statt der des Schienentyps (Probefahrten der Pinsel-Bahn: Infinity, die Querkraft wird mitgeschrieben) */
+  lateralLimit?: number;
 }
 
 const STATION_PUSH = 2.0; // m/s: rollt auf ebener Strecke gut 10 m aus und bleibt stehen
@@ -118,6 +120,8 @@ const LIFT_SPEED = 6.0; // zügiger Kettenzug, damit der Start nicht zäh wirkt
 const VERTICAL_LIFT_SPEED = 5.5;
 const LIFT_SEARCH = 30; // m: so weit nach der Station darf der Anstieg beginnen
 const LIFT_MIN_SLOPE = 0.06;
+/** m: so tief muss die Bahn nach einem Gipfel fallen, damit der Lift dort endet (Absätze unterwegs zählen nicht) */
+const LIFT_DIP = 1.5;
 const LAUNCH_LENGTH = 26;
 const LAUNCH_ACCEL = 12;
 /** Offenes Ende (Absperrband): ab diesem Tempo blockieren die Räder auf den letzten Metern und der Zug fliegt ab, darunter kippt er */
@@ -189,27 +193,38 @@ export class TrainSim {
     for (const c of this.cars) this.prevCars.push({ ...c });
   }
 
-  /** Anstieg nahe der Station suchen: Lift von dessen Beginn bis zum ersten Scheitel */
+  /**
+   * Anstieg nahe der Station suchen (Beginn höchstens LIFT_SEARCH nach der Station): Die Kette zieht ab der Station
+   * (Förderräder bis zum Anstieg) bis zum Gipfel des ersten großen Anstiegs. Kleine Absätze und Wellen unterwegs
+   * (weniger als LIFT_DIP tief) sind kein Gipfel; der Lift endet am höchsten Punkt, sobald die Bahn danach deutlich fällt.
+   */
   private findLift(): void {
     const sm = this.samples;
     let start = -1;
+    let top = -1;
     for (let i = 1; i < sm.count; i++) {
-      if (sm.s[i] > LIFT_SEARCH && start < 0) break;
-      if (start < 0 && sm.t3y[i] > LIFT_MIN_SLOPE) start = i;
-      if (start >= 0 && sm.t3y[i] <= 0 && sm.s[i] - sm.s[start] > 1) {
-        this.liftStart = sm.s[start];
-        this.liftEnd = sm.s[i];
+      if (start < 0) {
+        if (sm.s[i] > LIFT_SEARCH) break;
+        if (sm.t3y[i] > LIFT_MIN_SLOPE) start = top = i;
+        continue;
+      }
+      if (sm.y[i] >= sm.y[top]) top = i;
+      else if (sm.y[top] - sm.y[i] > LIFT_DIP && sm.s[top] - sm.s[start] > 1) {
+        // die Förderräder der Station bringen den Zug zur Kette: Lift ab der Station
+        this.liftStart = 0;
+        this.liftEnd = sm.s[top];
         return;
       }
     }
     if (start >= 0) {
-      this.liftStart = sm.s[start];
-      this.liftEnd = sm.length * 0.5;
+      this.liftStart = 0;
+      this.liftEnd = top > start && sm.s[top] - sm.s[start] > 1 ? sm.s[top] : sm.length * 0.5;
     }
   }
 
   get skinPhysics(): SkinPhysics {
-    return SKIN_PHYSICS[this.opts.skin] ?? SKIN_PHYSICS.skinWood;
+    const base = SKIN_PHYSICS[this.opts.skin] ?? SKIN_PHYSICS.skinWood;
+    return this.opts.lateralLimit === undefined ? base : { ...base, lateralLimit: this.opts.lateralLimit };
   }
   get finished(): boolean {
     return this.phase === 'done' || this.phase === 'failed' || this.phase === 'flying';

@@ -21,11 +21,11 @@ export const LANE_COUNT = 5;
  */
 export const LANE_DEPTH = 8.4;
 /**
- * Perspektivische Skalierung pro Spur. Bewusst dezent: Je stärker hinten verkleinert wird, desto schiefer
- * wird eine auf dem Bildschirm gezeichnete Bodenkurve in der Welt (die hintere Hälfte wird gestreckt) und
- * desto enger werden ihre Radien beim Übergang nach hinten.
+ * Skalierung pro Spur. 1 = keine Verkleinerung nach hinten: Die Tiefe läuft auf dem Bild gerade nach oben, überall
+ * im Level gleich (Pinsel-Zeichnen, Linie = Bahn). Mit 0,94 rückte alles nach hinten Fahrende zum linken
+ * Levelrand (x = 0): „gerade nach hinten“ lief bei 60 m schon 42°, bei 120 m 61° schräg über das Bild.
  */
-export const LANE_SCALE = 0.94;
+export const LANE_SCALE = 1;
 /** Anhebung der Bodenlinie pro Spur in Bühnen-Metern */
 export const LANE_RISE = 4.2;
 

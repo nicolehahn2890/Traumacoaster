@@ -160,7 +160,13 @@ export class InputManager {
         this.dragging = true;
         this.handlers.dragStart?.(ptr.start, ptr.id);
       }
-      if (this.dragging) this.handlers.dragMove?.(p, ptr.id);
+      if (this.dragging) {
+        // alle Zwischenpunkte seit dem letzten Bild: Touch tastet oft mit 120–240 Hz ab, pointermove kommt nur einmal
+        // je Bild (bei schnellem Zeichnen sonst nur alle paar Millimeter ein Punkt)
+        const list = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
+        if (list.length > 1) for (const ce of list) this.handlers.dragMove?.(this.pos(ce), ptr.id);
+        else this.handlers.dragMove?.(p, ptr.id);
+      }
     }
   };
 

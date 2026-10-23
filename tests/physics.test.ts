@@ -209,9 +209,8 @@ describe('Zug-Simulation', () => {
       ...param(50, (t) => [40 - t * 40, 2 * R]),
       ...param(40, (t) => [-W * Math.sin(Math.PI * t), R + R * Math.cos(Math.PI * t)]),
     ];
-    const space = simFor(stroke, { skin: 'skinSpace', cars: 2 }).sim;
-    run(space);
-    expect(space.phase).toBe('done'); // die Weltraum-Bahn verträgt 3,5 g quer
+    // Ohne Verkleinerung nach hinten (LANE_SCALE 1) wird diese Kehre der Bühnen-Lesart rund 4 g eng; früher hielt die
+    // Weltraum-Bahn (3,5 g) sie noch, das gilt seitdem nicht mehr
     const wood = simFor(stroke, { skin: 'skinWood', cars: 2 }).sim;
     let maxV = 0;
     for (let i = 0; i < 60 * 60 && wood.phase !== 'flying'; i++) {
