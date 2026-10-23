@@ -6,7 +6,9 @@
  *  4. Löschen-Knopf, Überzeichnen (Hügel in eine flache Bahn)
  *  7. Bearbeiten: Segment ziehen (Bahn durch den Finger, Knoten bleiben), Langdruck zeigt Profi-Handles
  * Screenshots nach screenshots/scenario-*.png. Nutzt einen vorbereiteten Spielstand (Welt 1 fast komplett).
- * Läuft in der Lesart „Bühne“ (`&stage` in der Adresse), für die die Erwartungen geschrieben sind; Standard ist der Pinsel.
+ * Läuft in der Lesart „Bühne“ (`&stage` in der Adresse), für die die Erwartungen geschrieben sind (Standard ist der
+ * Pinsel), und ohne Autoscroll (`&scroll=0`): Die Striche liegen in festen Bildschirmkoordinaten, ein mitlaufendes Bild
+ * verzerrte sie.
  */
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
@@ -119,11 +121,11 @@ const R = 4.2; // Bühnen-Meter pro Spur (Anhebung der Bodenlinie)
 let st = null;
 let r = null;
 const openLevel = async (extra = '') => {
-  await page.goto(`${BASE}?scene=start&fast=6&level=8&fx=1&stage${extra}`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}?scene=start&fast=6&level=8&fx=1&stage&scroll=0${extra}`, { waitUntil: 'networkidle' });
   await sleep(1200);
 };
 
-await page.goto(`${BASE}?scene=start&fast=6&stage`, { waitUntil: 'networkidle' });
+await page.goto(`${BASE}?scene=start&fast=6&stage&scroll=0`, { waitUntil: 'networkidle' });
 await sleep(800);
 
 // ---------------------------------------------------------------- 1. Oval am Boden
@@ -251,6 +253,9 @@ check(st.loops === 0, `Überzeichnen: kein Looping (ist ${st.loops})`);
 const barrierW = await page.evaluate(() => window.tcGame.current.view.trackR.layers.barriers.get(0).getLocalBounds().width);
 check(barrierW > 1, `Absperrband am offenen Ende gezeichnet (Breite ${barrierW.toFixed(1)} m)`);
 await page.screenshot({ path: 'screenshots/scenario-5-barrier.png' });
+// Fahrgäste anschnallen: Ohne Gurt fliegt auf der Kuppe je nach Takt manchmal einer heraus, dann endet die Fahrt mit
+// „Rauswurf“ statt am Absperrband (der Test schwankte); hier geht es nur um das offene Ende
+await page.evaluate(() => { window.tcGame.current.level.restraint = 4; });
 r = await ride('5-openend', 5);
 console.log('ride result', r);
 check(r.st.sim?.fail === 'openEnd', `Offenes Ende: Fahrt endet mit openEnd (ist ${r.st.sim?.phase}/${r.st.sim?.fail})`);

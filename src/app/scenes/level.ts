@@ -124,6 +124,8 @@ const STROKE_MODE_URL: StrokeReading | null = (() => {
   return q.has('brush') ? 'brush' : q.has('stage') ? 'stage' : q.has('single') ? 'single' : q.has('lanes') ? 'lanes' : null;
 })();
 const STROKE_MODES: StrokeReading[] = ['brush', 'stage', 'single', 'lanes'];
+/** ?scroll=0: kein Autoscroll beim Zeichnen (automatische Tests zeichnen in festen Bildschirmkoordinaten) */
+const AUTOSCROLL = typeof location === 'undefined' || new URLSearchParams(location.search).get('scroll') !== '0';
 /** Zeichen-Zoom auf dem Handy: mindestens so viele Pixel pro Bühnen-Meter (eine Spur rund 5 mm); der Rest des Levels
  *  über Autoscroll am Rand oder Wischen, Doppeltipp auf freie Fläche wechselt zur Übersicht */
 const DRAW_ZOOM_MIN = 7;
@@ -1135,7 +1137,7 @@ export class LevelScene implements Scene {
    */
   private autoscroll(dt: number): void {
     const p = this.pointerScreen;
-    if (!p || this.drag.kind !== 'stroke' || !this.stroke || this.strokeKind === 'terrain') {
+    if (!AUTOSCROLL || !p || this.drag.kind !== 'stroke' || !this.stroke || this.strokeKind === 'terrain') {
       this.scrollV = { x: 0, y: 0 };
       this.scrollFrom = null;
       return;

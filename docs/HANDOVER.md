@@ -12,7 +12,10 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Rayman, South Park) und das Prompt-Dokument liegen nur noch lokal (`refs/`, `*.docx` sind ignoriert; in der
   Git-Historie stehen sie noch). Neu: Auf dem Handy als Vollbild-App (Manifest, Symbole, Spielfläche im sicheren
   Bereich ohne Kerbe und Home-Leiste, README „Auf dem Handy testen“). Die Browser-Szenarien laufen in der Lesart
-  „Bühne“ (`&stage`), für die sie geschrieben sind.
+  „Bühne“ (`&stage`), für die sie geschrieben sind, und ohne Autoscroll (`&scroll=0`): Der neue Autoscroll setzt schon
+  in 30 % Abstand vom Rand ein und verzerrte die in festen Bildschirmkoordinaten gezeichneten Striche. Im Szenario 5
+  sind die Fahrgäste vor der Fahrt ans offene Ende angeschnallt (ohne Gurt flog je nach Takt einer heraus, der Test
+  schwankte). Alle 9 Szenarien grün (65 Prüfungen).
 - **Inhalt (23.10.):** Der Pinsel-Spike führt `claude/nice-cannon-094fka` (Gesten v3, Ein Strich, Kreuzungsprüfung)
   mit dem Pinsel zusammen: vier Lesarten zum Vergleich über den Knopf unten links
   (Pinsel → Bühne → 1 Strich → Ebenen), Tiefe überall gerade nach hinten (`LANE_SCALE = 1`), Pinsel mit zäher Bahn,
@@ -50,7 +53,8 @@ npm run strokes:replay        # aufgezeichnete Striche in allen vier Lesarten na
 ```
 
 Nützliche URL-Parameter im Spiel: `?scene=start&level=8` (direkt ins Level), `?fast=6` (Zeitraffer),
-`?brush` / `?stage` / `?single` / `?lanes` (Lesart erzwingen), `?fx=0` / `?fx=1` (Shader aus/an, sonst automatisch
+`?brush` / `?stage` / `?single` / `?lanes` (Lesart erzwingen), `?scroll=0` (kein Autoscroll beim Zeichnen, für
+Skripte), `?fx=0` / `?fx=1` (Shader aus/an, sonst automatisch
 ab sechs CPU-Kernen), `?dev=1` (Overlay mit fps, Draw-Calls, Partikeln; Taste F schaltet die Effekte um).
 Eigene automatische Tests im Dev-Server mit `TC_NO_RECORD=1`, damit sie die echten Aufnahmen nicht verfälschen.
 
