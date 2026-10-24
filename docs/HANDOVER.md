@@ -24,7 +24,10 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Map, Neon, Holz: etwa 50–60 fps.
   Schritt 1 der Richtlinie gebaut: Perspektive hinter `?persp=1` (TECH.md 4e), Strich als Strahl, Tests in
   `tests/projection.test.ts`, Replay mit `--persp`. Eigene Browser-Tests im Dev-Server nur mit `TC_NO_RECORD=1`, sonst
-  landen sie in Florians Aufnahmen.
+  landen sie in Florians Aufnahmen. Florians Handy-Test fand Risse an Spurgrenzen und Griffe neben der Schiene;
+  behoben in 15aa4e1 (jedes Schienenstück gegen seine eigene Spur korrigiert, Overlays folgen der Kamera).
+  Abends: Florians Klarstellungen und Fragen gegen den Stand geprüft und die Übergabe für die Plan-Session
+  geschrieben, `docs/UEBERGABE-PLAN.md` (Abschnitt 3 unten).
 
 - **`main` ist der Prototyp (23.10.):** Der Pinsel-Stand ist der neue Hauptzweig, lokal und auf GitHub gleich; jeder
   Push auf `main` geht über `.github/workflows/deploy.yml` auf https://nicolehahn2890.github.io/Traumacoaster/. Die
@@ -78,13 +81,22 @@ Skripte), `?fx=0` / `?fx=1` (Shader aus/an, sonst automatisch
 ab sechs CPU-Kernen), `?dev=1` (Overlay mit fps, Draw-Calls, Partikeln; Taste F schaltet die Effekte um).
 Eigene automatische Tests im Dev-Server mit `TC_NO_RECORD=1`, damit sie die echten Aufnahmen nicht verfälschen.
 
-## 3. Nächster Schritt: Plan für die erste Zone
+## 3. Nächster Schritt: der große Plan für die erste Zone
 
-Florian arbeitet mit GPT ein Grafiksystem aus (lokal unter `refs/Traumacoaster-Visuals/`, nicht im Repository) und
-will es zusammen mit seinen Testergebnissen prüfen lassen und daraus einen Plan für eine erste Zone mit allen
-Funktionen und finaler Grafik machen; die Level-Logik folgt aus den Elementen dieses Plans.
+Die Eingabe für die Plan-Session ist `docs/UEBERGABE-PLAN.md`: wofür der Plan gilt (Zone Alpen im finalen Look mit
+allen Achterbahn-Features und Levelzielen plus die Systeme für weitere Zonen), die Prüfung aller 16 Klarstellungen
+und 11 Fragen vom 24.10. (entschieden, gebaut, offen für den Plan, offen bei Florian), die neun Entscheidungen,
+die bei Florian liegen (Bildwinkel, Zeichengrößen, Referenzen einfrieren, Wagen 2D oder 3D, Bug-Liste,
+Figurenbogen, was weg darf, welche Teile erzeugt werden, der Katalog der Zielarten fürs ganze Spiel), die Gliederung
+des Plans in zwölf Pakete, die Leseliste und die Arbeitsregeln. Die Plan-Session baut nichts, sie schreibt. Ergebnis
+der Plan-Session: `docs/GROSSER-PLAN.md`; `docs/PLAN.md` bleibt als Archiv. Die Technik steht in
+`docs/RICHTLINIE.md` und wird im Plan nicht neu verhandelt.
 
-Vorarbeit für das Terrain (Paket D5 des alten Plans) liegt bereit:
+GPTs Grafiksystem liegt lokal unter `refs/traumacoaster-gpt explore/` (nicht im Repository: Visuals, Elemente-Bogen,
+Figuren-Versuche, Karten-Moodboards, Parallaxentest, Umsetzungsplan als PDF, Art-Direction-Vorschlag, Bildprompts).
+
+Vorarbeit für das Terrain aus dem alten Plan (Paket D5, noch für den Pixi-Renderer gedacht; die Richtlinie ersetzt
+den Weg, die Geometrie-Helfer bleiben nutzbar):
 - `src/render/geom.ts`: `insetPolygon` (parallele Konturbänder für Berge, Schleifen werden herausgeschnitten),
   `selfIntersects`, `signedArea`; Tests in `tests/geom.test.ts`.
 - `src/render/stripMesh.ts`: `buildStrip`/`StripMesh` (Textur entlang einer Polylinie, Batch-Modus).
