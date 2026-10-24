@@ -17,21 +17,21 @@ hier nicht neu verhandelt (wo Florian sie anders sieht, wird es dort geklärt un
 | 8a | Teile und Elemente | **bestätigt**: Elementkatalog als Platzhalter-Satz, Ablauf Platzhalter → Auftrag → Grafik; die Grafikliste folgt aus der Basiszone, Referenzen in Paket 0 | 24.10.2026 |
 | 6 | Figuren, Schlange, Fahrgäste | **bestätigt**: Rig mit klappendem Oberschädel, zwei Ansichten, Visuals als Stilvorlage, Schlange mit Freiraum, Editor bleibt und wächst, zwei je Wagen gemischt | 24.10.2026 |
 | 5 | Untergrund, Tunnel, Baustellen | **bestätigt**: Fels fest, Baustellen in zwei Varianten, Freilegung auf zwei Wegen, Autoscroll als Schalter zum Ausprobieren, Graben in Stufen (Vorbehalt), Wasser mit Schaltern | 24.10.2026 |
-| 0 | Art Direction v2 (Look) | Runde 4 läuft (Fragen gestellt am 24.10.) | – |
-| 7 | Werkzeuge und Bedienung | Runde 4 läuft (Fragen gestellt am 24.10.) | – |
+| 0 | Art Direction v2 (Look) | **bestätigt**: alle Visuals als Pool (Stil 04 und 09, Maßstab 15 und 16), zehn Regeln vorläufig bis zur Stilprobe, keine Konturen, Punktraster gemalt plus Funkeln-Shader, Alpen als erster Look, Stilprobe als Tor, UI im Baustellen-Brutalismus | 24.10.2026 |
+| 7 | Werkzeuge und Bedienung | **bestätigt**: 18 Grad, Richtlinien-Größen, drei Lesarten, Spur-Filter und 150 Level weg, Bug-Backlog, HUD in der Sprache der UI, Kreuzungstausch raus, kein Terrain-Zeichnen, „Boden formen“ später im Sandkasten | 24.10.2026 |
 | 1 | Weltrenderer (Technik, Richtlinie Schritt 2) | Technik gesetzt; Einordnung in die Etappen in Runde 5 | – |
-| 8b | Asset-Pipeline und Aufträge | Runde 5 | – |
-| 9 | Produktion vieler Level | Runde 5 (nach Florians Zuschnitt erst nach der kompletten Zone) | – |
+| 8b | Asset-Pipeline und Aufträge | Runde 5 läuft (Fragen gestellt am 24.10.) | – |
+| 9 | Produktion vieler Level | Runde 5 läuft (Fragen gestellt am 24.10.); Inhalt erst nach der Basiszone | – |
 | 10 | Etappen und Abnahmen | Runde 5 | – |
 | 11 | Risiken und Grenzen | Runde 5 | – |
-| 12 | Karte und Morph (neu auf Florians Wunsch, 24.10.) | erst der saubere Morph vom Rad ins Level, dann die genaue Animation; Fragen in Runde 5 | – |
+| 12 | Karte und Morph (neu auf Florians Wunsch, 24.10.) | Runde 5 läuft (Fragen gestellt am 24.10.) | – |
 
 Runde 1 (24.10.): offene Einladung, Zone und Level, Levelziele; Pakete Z, 2 und 4 am selben Abend bestätigt. Florians
 Antworten stehen je Paket unter „Florians Vorgaben“; die Vorschläge darunter sind die Antwort der Session darauf, und
 was Florian bestätigt hat, trägt das Datum. Runde 2 (24.10.): Achterbahn-Features und Teileliste; Florians Antworten haben die Zone zur **Basiszone** gemacht
 (Abschnitt Z); Pakete 3 und 8a am selben Abend bestätigt. Runde 3 (24.10.): Figuren und Schlange, Untergrund und Tunnel; Pakete 6 und 5 am selben Abend bestätigt. Runde 4
-(24.10.): Look und Werkzeuge. Runde 5: Karte und Morph, Pipeline, Produktion. Danach Etappen und Risiken als Vorschlag
-aus allem Bestätigten.
+(24.10.): Look und Werkzeuge; Pakete 0 und 7 am selben Abend bestätigt. Runde 5 (24.10.): Karte und Morph, Pipeline,
+Produktion. Danach Etappen, Risiken und die Einordnung des Weltrenderers als Vorschlag aus allem Bestätigten.
 
 ## Z. Ziel und Zuschnitt des Plans (Florians Vorgabe, 24.10.)
 
@@ -741,10 +741,88 @@ entschieden.
 - **Aus den bestätigten Paketen:** Platzhalter zuerst, Grafiken ersetzen sie (8a); Looks je Fortschrittsstufe (2);
   Figuren nach den Visuals (6); Stützen-Werkstatt gegen Florians Studien (3).
 
-Fragen der Runde 4 (24.10.): Referenzen einfrieren, Konturen, Punktraster, erster Look auf der Basiszone und Stilprobe,
-UI-Stil.
+### Florians Vorgaben (Runde 4)
 
-Status: Runde 4 läuft.
+- **Referenzen:** Alle Bilder unter `refs/traumacoaster-gpt explore/visuals/` dienen mehr oder weniger als Maßstab.
+  Straßenkarussell (09) und Ornamentwald/Smaragdhain (04) gefallen als Bild und im Stil am besten; Alpenkurve (15) und
+  Glutgrund (16) treffen Maßstab und Detailgrad besser. Die Synthese müssen wir herausfinden.
+- **Keine Konturen.**
+- Punktraster nur gemalt; zusätzlich wäre ein Shader schön, der an manchen Stellen das **Funkeln animiert**.
+- Alpen als erster Look: ja, mit irgendetwas müssen wir anfangen.
+- UI: ein Vorschlag in **total verrücktem, extremem Neo-Brutalismus** mit vielen eigenen Formen und Effekten.
+
+### Vorschlag 0.1: Referenzen und Regeln (vorläufig bis zur Stilprobe)
+
+**Eingefrorener Pool (Entscheidung 3):** alle Visuals im Ordner; darin zwei Rollen: **Stil-Leitbilder** 04 und 09
+(Formen, Farbrhythmus, Humor der Architektur), **Maßstab-Leitbilder** 15 und 16 (Detailgrad je Bildschirm, ruhige
+Flächen hinter der Bahn, Größe von Bahn und Wagen im Bild). Für Bahn und Station vorläufig Florians Bahnstudien, für
+Figuren die Visuals (Paket 6). Die endgültige Synthese ist das Ergebnis der Stilprobe (0.2), nicht ihre Vorgabe.
+
+**Zehn Regeln als Entwurf** (sie ersetzen `docs/ART.md`, sobald die Stilprobe steht; bis dahin gelten sie als
+Arbeitsregeln für Platzhalter-Ersatz und Aufträge):
+
+1. **Keine Konturen.** Weder um Landschaft noch um Figuren noch um die Bahn. Lesbarkeit kommt aus Farbwert,
+   Helligkeit und Materialkontrast (Florian, 24.10.).
+2. **Wenige große Formen je Bild.** Earle gibt die großen Flächen und den Farbrhythmus, Rayman das weiche lokale
+   Volumen und die Staffelung; keine Mikrodetails, die auf dem Handy unter drei Pixel fallen.
+3. **Die Bahn ist die klarste Form.** Sie hebt sich durch Helligkeit vom Grund ab (warme Schiene auf kühlem Grund oder
+   umgekehrt), die Landschaft hinter der Bahn ist ruhig (Bild 15 und 16).
+4. **Punktraster nur gemalt**, an Kronenkanten und Schattenrändern wie in Bild 04, nie als Filter; dazu ein
+   **Funkeln-Shader** auf markierten Stellen (0.3).
+5. **Licht von hinten oben links**, die Schatten fallen nach vorn auf den Boden (Richtlinie 5); die Kulissen tragen ihr
+   Licht gemalt, das Richtungslicht dient nur dem Schatten.
+6. **Farbrollen je Tiefe:** Ferne hell und entsättigt, Mitte satt, Vordergrund dunkel und kontrastreich; eine
+   Akzentfarbe je Zone; Tag, Abend, Nacht als Presets je Fortschrittsstufe (Richtlinie 6).
+7. **Formen:** S-Kurven, Fächer, Pilz- und Schirmkronen, organische Portale, geriefte Stämme; Stützen gemalt wie
+   Florians Studien (Paket 3).
+8. **Figuren** wie die Visuals, etwas flacher schattiert, riesige Augen, klappender Oberschädel (Paket 6).
+9. **Umfärbbar:** Teile in neutraler Palette oder mit Farbmaske, Zone und Stimmung kommen aus dem Shader (Richtlinie 9).
+10. **UI als eigene Welt:** hart, flach, laut (0.4), bewusst gegen die weiche Landschaft gesetzt; die Welt bleibt ohne
+    Konturen, die UI darf welche haben.
+
+### Vorschlag 0.2: Erster Look und Stilprobe
+
+Erster Look: **Alpen**, Frühling am Tag, Abend und Nacht als Fortschrittsstufen (Richtlinie, Florian: „mit irgendetwas
+müssen wir anfangen“). **Stilprobe:** ein Feld der Basiszone, in dem die ersten echten Teile die Platzhalter ersetzen:
+drei Dreiteiler (Baum mit Fenster, Fels mit Tunnel, Portal), Bahn eines Typs mit Stützen aus der Werkstatt, Station mit
+Häuschen, eine Figur in der Schlange und im Wagen, ein Coin-Satz, dazu Licht, Schatten, Nebel, Funkeln. Abnahme: ein
+Standbild im Hochformat vom Handy neben Bild 15 und 04, Florians Freigabe. Erst danach entstehen Teile in Menge
+(Paket 8b), und aus der Stilprobe wird das Regelwerk (0.1) endgültig.
+
+### Vorschlag 0.3: Funkeln-Shader
+
+Animiertes Funkeln an markierten Stellen (Schnee, Wasser, Kristalle, Tau auf Kronen, Coins, Laternen): je Teil ein
+Maskenkanal oder eine kleine Punktwolke, der Shader lässt Punkte zeit- und blickabhängig aufblitzen (Richtlinie 6:
+Hash je Zelle, Größe mit der Entfernung, auf Masken begrenzt). Kosten gering (ein Draw Call für die Punktwolke);
+Messung auf dem Handy, bevor es bleibt.
+
+### Vorschlag 0.4: UI im Neo-Brutalismus, Arbeitstitel „Baustellen-Brutalismus“
+
+Die Welt hat keine Konturen, die UI bekommt sie umso härter. Die Idee: Die ganze Bedienung sieht aus wie das
+Baustellen-Inventar der Zone, hart aufgeklebt auf das gemalte Bild.
+
+- **Material:** flache Flächen in Schwarz, Kreide-Weiß, Warn-Gelb, Signal-Pink und einem Elektro-Blau; dicke schwarze
+  Ränder (vier bis sechs Pixel); harte, unscharfe Versatz-Schatten in einer zweiten Farbe statt weicher Schatten;
+  Schrift sehr fett, eng, Versalien, leicht gedreht.
+- **Eigene Formen:** keine zwei Elemente gleich: Zielchips als gezackter Stern (Looping), abgerissener Zettel (Höhe),
+  Sechseck (Airtime), Ring (Coins); Knöpfe als schiefe Blöcke; das Streckenbudget als **Absperrband** (gelb-schwarze
+  Streifen), das sich mit jedem Meter aufrollt; die Kettenzuglinie beim Zeichnen als gestricheltes Band mit
+  Höhenmarke; der Startart-Knopf als Hebel am Vorgabestück; „Testfahrt“ als riesiger schiefer Block mit Schraffur.
+- **Effekte:** Drücken lässt den Versatz-Schatten zusammenfallen; Ziele werden mit Drehung eingestempelt und kippen
+  bei Erfüllung die Farbe (Gelb zu Grün); „geht nicht weiter“ (Fels, Feld, Budget, Schlange) kommt als roter
+  Stempel „STOP“ mit kurzem Rütteln; Entgleisen als gezackter „KRACH“-Burst; Sterne als schwarze Sticker mit
+  gelbem Rand; Konfetti aus schwarz umrandeten Quadraten.
+- **Grenzen:** Trefferflächen mindestens 56 bis 60 Pixel (Richtlinie 7), Texte mindestens 18 Pixel, nichts im
+  Zeichenraum außer den Griffen und der Kettenzuglinie; die wilde Form sitzt an den Rändern.
+- Ein erster Entwurf als Bild wurde Florian am 24.10. gezeigt (Hochformat-HUD); die endgültige UI entsteht als Teil der
+  Stilprobe.
+
+### Rückfragen zu Paket 0 (Runde 4b)
+
+1. Zehn Regeln als vorläufiges Regelwerk bis zur Stilprobe: einverstanden? **Ja (24.10.).**
+2. Baustellen-Brutalismus als Richtung für die UI: weiter ausarbeiten, oder noch verrückter? **Weiter so (24.10.).**
+
+**Status: bestätigt am 24.10.2026**; die zehn Regeln bleiben vorläufig, bis die Stilprobe sie bestätigt oder ändert.
 
 ## Paket 7: Werkzeuge und Bedienung
 
@@ -769,7 +847,66 @@ Status: Runde 4 läuft.
 
 Fragen der Runde 4 (24.10.): Bildwinkel, Zeichengrößen, Bug-Liste, was weg darf, HUD und Werkzeuge im Feld.
 
-Status: Runde 4 läuft.
+**Entscheidung 1, bestätigt am 24.10.2026: Bildwinkel 18 Grad als Standard der Perspektive**, Zoom als Kamerafahrt
+(wie am 24.10. entschieden). Die Adresse `?persp=1&fov=18` ist damit der Spielstand, bis der Weltrenderer die
+Perspektive übernimmt.
+
+### Florians Vorgaben (Runde 4)
+
+- Bildwinkel 18 Grad (bestätigt, oben). Zeichengrößen: erst einmal die Empfehlung der Richtlinie.
+- **Bug-Liste vom Testtag:** Die Bahn kann stabiler laufen, der Wagen entgleist an manchen Stellen zu schnell, vor
+  allem in horizontalen Kurven; Kreuzung umdrehen braucht er wohl nicht; weiter feilen an der Strichintelligenz;
+  visuelles Feedback, wenn es nicht weitergeht; Bahnende sauberer; zu viele unnötige Schleifen; Bedienung der
+  Neigung; zu viele Punkte werden gesetzt.
+- Was weg darf: ja (drei Lesarten, Spur-Filter, 150 Level als Inhalt).
+- HUD: klingt erst einmal gut; für die Visualisierung etwas Besonderes (0.4).
+- Terrain: kein Terrain-Zeichnen; vielleicht lässt sich das Terrain leicht formen; später in „Eigene Bahnen“ soll der
+  Spieler mehr Einfluss haben.
+
+### Vorschlag 7.1: Festgelegte Werte
+
+Perspektive 18 Grad, Zoom als Kamerafahrt; Zeichengrößen als Standard: Linie 15 px, Tropfen-Radius 26 px, Gummiband
+30 px, Zeichen-Zoom 11 px/m, Trefferzonen 56 bis 60 px, Anschluss 60 px; nachjustiert wird nach Florians Handy-Test in
+der Basiszone, die Adressparameter bleiben zum Vergleichen.
+
+### Vorschlag 7.2: Was weg darf (Entscheidung 7, bestätigt)
+
+Die Lesarten Bühne, Ein Strich und Ebenen, der Spur-Filter (Punktraster als Filter) und die 150 spurbasierten Level
+als Inhalt fallen mit dem Umbau auf den Weltrenderer; die Level-Daten bleiben als Vorrat für Rezepte (Paket 9), die
+Aufnahmen und Tests der Lesarten bleiben, soweit sie den Pinsel prüfen. Der Lesart-Knopf unten links verschwindet.
+
+### Vorschlag 7.3: Bug-Backlog aus dem Testtag (Entscheidung 5)
+
+| Befund (Florian) | Einordnung | Paket | Vorschlag |
+|---|---|---|---|
+| Bahn kann stabiler laufen; Wagen entgleist zu schnell, vor allem in horizontalen Kurven | Physik und Regeln | 4 (Humor und Scheitern), 3 | Seitengrenzen je Bahntyp anheben, automatische Schräglage in Kurven, Warnung vor sicherem Entgleisen durch die Vorab-Fahrt; Entgleisen bleibt selten und groß |
+| Kreuzung umdrehen nicht nötig | Werkzeug | 7 | Kreuzungs-Tausch per Tipp entfällt; Kreuzungen entstehen aus dem Strich |
+| Strichintelligenz weiter feilen; zu viele unnötige Schleifen; zu viele Punkte | Pinsel-Pipeline | 7, 1 | Knotenwahl mit größerer Toleranz, Schleifen nur bei klarer Drehung, Glättung der Enden; Prüfung gegen die Aufnahmen (`npm run strokes:replay`) |
+| Bahnende sauberer | Pinsel-Pipeline | 7 | Endstück mit sauberem Auslauf, Anschluss an die Station mit Vorschau |
+| Visuelles Feedback, wenn es nicht weitergeht | HUD | 7, 0 | Stempel „STOP“ mit Grund (Fels, Feld, Budget, Schlange) und Rütteln (0.4) |
+| Bedienung der Neigung | Werkzeug | 7 | Schräglage automatisch aus Tempo und Kurve; Handgriff nur im Bogenmenü als Ausnahme |
+
+Die Punkte werden in den Etappen (Paket 10) eingeplant; Entgleis-Einstellungen gehören zu den Humor-Regeln (4.7).
+
+### Vorschlag 7.4: HUD und Werkzeuge im Feld
+
+Ziele als höchstens drei Chips oben; „Testfahrt“ groß unten; Startart als Hebel am Vorgabestück; Undo per
+Zwei-Finger-Tipp und Knopf; Löschen über das Bogenmenü am Segment; Budget als Absperrband; Zoom-Reset als Knopf und
+Doppeltipp; Werkzeuge erscheinen nur, wenn das Level sie erlaubt; Kettenzuglinie beim Zeichnen; die Vorab-Fahrt zeigt
+Flugbahn (Schanze), Tempo (Durchbruch) und sicheres Entgleisen. Gestaltung in der Sprache von 0.4.
+
+### Vorschlag 7.5: Terrain
+
+In Leveln zeichnet der Spieler kein Terrain; Berge und Boden kommen aus der Zone. Als Daten je Level ein Schalter
+**„Boden formen“** (Radius, Höhe), mit dem der Spieler Hügel leicht anheben oder senken darf, wo die Zone es erlaubt;
+gebaut nach der Basiszone, zuerst für „Eigene Bahnen“ (Sandkasten, GDD 12), wo der Spieler mehr Einfluss bekommt.
+
+### Rückfragen zu Paket 7 (Runde 4b)
+
+1. Kreuzungs-Tausch wirklich entfernen (auch für spätere Zonen)? **Ja (24.10.).**
+2. „Boden formen“ als Schalter je Level, zuerst im Sandkasten: einverstanden? **Ja (24.10.).**
+
+**Status: bestätigt am 24.10.2026.**
 
 ## Paket 12: Karte und Morph (neu, 24.10.)
 
@@ -779,11 +916,78 @@ gemeinsamer Himmel und aufklappende Spurstreifen (alter Plan M4, `src/app/mapTra
 Florians Vorgabe K16 (Radlayout, Level als Miniaturen mit Symbolen und Animationen, Boden morpht, Bäume und Felsen
 werden einanimiert, keine Sprünge, nichts wird einfach eingeblendet); Richtlinie 10: mit der 3D-Welt wird der Morph
 einfacher, weil der Boden als Mesh gebogen wird und Bäume und Felsen echte Objekte sind. Konzepte liegen unter
-`refs/traumacoaster-gpt explore/moodboards_map/`. Fragen dazu in Runde 4 (zusammen mit dem Look): Was heißt „sauber“
-für dich beim Morph vom Rad ins Level, was darf der erste Schritt weglassen, und welche Rolle spielt die Karte für
-den Zonenfortschritt (Fortschrittsstufe über die Levelnummer).
+`refs/traumacoaster-gpt explore/moodboards_map/`.
 
-Status: aufgenommen, noch nicht besprochen.
+### Bisheriger Stand (Gedächtnisstütze für Runde 5)
+
+- **Heute im Spiel:** Karte als Drehscheibe mit Glücksrad-Physik (freies Ausrollen, Rasten, Haptik), gemeinsamer Himmel
+  zwischen Karte und Level, Übergang über drei Standbilder (Himmel, Welt, UI), die Welt als gebogene Fläche von
+  Krümmung auf flach (1,55 s hinein, 1,35 s heraus), Spurstreifen klappen gestaffelt auf, das Level-Bild blendet
+  später ein; Miniaturen der gebauten Bahnen auf den Spots; Play mittig.
+- **Florians Vorgaben (K16):** Radlayout fest; Level als kleine Achterbahn-Miniaturen mit Symbolen und Animationen; der
+  Morph von der runden Welt zur organischen Levelansicht muss sauber sein: der Boden morpht, Bäume und Felsen werden
+  einanimiert, keine Sprünge, nichts wird einfach eingeblendet. Runde 1: zuerst muss der Morph sauber sein, dann die
+  genaue Animation.
+- **Richtlinie 10:** Mit der 3D-Welt wird der Morph einfacher und schöner: der Boden wird als Mesh im Vertex-Shader
+  gebogen, Bäume und Felsen sind echte Objekte, die einanimiert werden, statt gebogener Standbilder.
+- **GPT-Konzept:** die Karte bleibt eine frontal betrachtete, drehbare Scheibe; Level wachsen radial am Rand; ein
+  offenes Level ist eine große Skulptur (Samen, Felstrompete, Sternknospe), nach Erfolg die eigene Bahn als
+  Miniatur; die Auswahl rastet an einem festen Fokuspunkt oben; auf dem Handy ein größerer Ausschnitt des Bogens mit
+  fester Auswahlkarte unten (Visuals 05, 07, 08).
+
+Fragen der Runde 5 (24.10.): Was „sauber“ heißt und was der erste Schritt weglassen darf; Miniaturen und Skulpturen;
+eine Zone je Rad oder alle Zonen in Sektoren.
+
+Status: Runde 5 läuft.
+
+## Paket 8b: Asset-Pipeline und Aufträge
+
+### Bisheriger Stand (Gedächtnisstütze für Runde 5)
+
+- **Richtlinie 9:** ein Teil je Bild, transparent erzeugt (das Bildwerkzeug kann transparente Hintergründe; im Batch
+  halb so teuer; rund 200 Teile mittlerer Qualität etwa 5 bis 11 Dollar); Freistellen nur zum Nachputzen; Metadaten je
+  Teil (Maßstab in Metern, Fußpunkt, Tiefenrolle, Öffnungsvolumen, Fundamentflächen, Anschlusspunkte, Palettenfamilie,
+  Wachstumsstufe); umfärbbar durch neutrale Palette oder RGB-Masken (5 bis 15 Minuten je Teil); Meshy und Tripo nur
+  für Wagen und Prüfkörper; beschnittene Kanten im Katalog vermerken.
+- **Speicher (Richtlinie 2 und 12):** eine 2048er-Textur belegt 16 MiB; KTX2 von Anfang an, Atlanten, Kulissen auf
+  Inhaltsgrenzen geschnitten; Labor-Umwandlung: 34 Teile, 2,2 MB WebP, hart freigestellt.
+- **Heute im Repository:** `scripts/art-prep.mjs` (Chroma-Key, Zuschnitt, kachelbar, WebP, Manifest),
+  `scripts/art-kit.json` (Name, Größe, Regel, Prompt je Kachel), `docs/ART-PROMPTS.md` daraus erzeugt; Quellbilder
+  liegen nicht im Repository (lokal, Archiv in einer Figma-Datei); Drop-in über das Manifest; Labor-Assets mit
+  `manifest.json` (Breite, Höhe, Seitenverhältnis, Größe).
+- **GPT-Pipeline (Umsetzungsplan 14):** Master-Komposition festlegen, zusammengehörige Körper gemeinsam erzeugen,
+  transparenten Master sichern (Prompt, Referenzen, Lichtregel, Version), Teile ableiten, Semantik zeichnen, im
+  kleinsten Zielmaßstab prüfen, drei Testszenen, erst dann katalogisieren. `doc/Bildprompts.md` hat den Stil-Vorspann.
+- **Aus den bestätigten Paketen:** Platzhalter zuerst, Grafiken ersetzen sie über ihren Namen (8a); Florian malt
+  Figurenteile farbig, die Session legt Masken an (6); Wagen über GPT und Meshy mit gemalter Textur (3); Funkeln über
+  einen Maskenkanal (0); die Stilprobe braucht den ersten Satz echter Teile (0).
+
+Fragen der Runde 5 (24.10.): Werkzeugweg (wer erzeugt wo), Namensschema, erster Auftrag für die Stilprobe.
+
+Status: Runde 5 läuft.
+
+## Paket 9: Produktion vieler Level
+
+### Bisheriger Stand (Gedächtnisstütze für Runde 5)
+
+- **Florians Vorgaben:** erst eine Zone fertig, dann schnell breit fächern mit wenig händischem Grafikaufwand (K10);
+  mit kleinem Team automatisiert viele Zonen und Level (Erwartungen); Runde 1: 15 bis 20 Level je Zone, von sehr
+  einfach bis Physikrätsel, Level als leere Ausschnitte der Zone; die genauen Level kommen nach Mechanik und Look.
+- **Richtlinie 10:** Rezepte statt Illustrationen (etwa zwölf Kompositionsrezepte je Zone mal Zielvarianten), Seed plus
+  Generator- und Assetversion gespeichert, je Level eine gespeicherte Lösungsbahn als Test.
+- **GPT-Umsetzungsplan 13:** Variation aus Komposition, Höhenprofil, Kamerarahmen, Bahnaufgabe, Raumverbindungen und
+  Entwicklungsstufe; sechs bis acht Layout-Grammatiken (Wiesental, Seebalkon, Einzelbaum, Doppelbaum, Felsfenster,
+  Wasserfallschlucht, Kathedralgrotte, Bergring); Elemente mit zwei bis vier Entwicklungszuständen; die Beispiel-Lösung
+  prüft nur die Erreichbarkeit, Spieler dürfen anders bauen.
+- **GDD 10:** ein neues Ding pro Level, Rhythmus aus Lern-, Kombinations-, Sonder- und Finale-Leveln, Ziele als
+  sichtbare Zahlen, Terrain als Anlass. Risiko aus dem GDD: 150 Level balancieren; ein automatischer Lösbarkeits-Test
+  fehlt bis heute (Befund vom Testtag: Ziele, die nie erfüllbar sind).
+- **Heute:** 150 Level als Daten (bleiben Vorrat, Paket 7), Zielauswertung, kein Prüfer.
+
+Fragen der Runde 5 (24.10.): wie Level später entstehen (von Hand, Vorschlag-Generator, automatisch), der Prüfer, die
+zweite Zone als Nachweis.
+
+Status: Runde 5 läuft.
 
 ## Quellen der Recherche zu Paket 4
 
