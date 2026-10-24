@@ -11,6 +11,7 @@ import { storage } from '@/core/storage';
 import { Button, label, INK, PAPER, paintRect, iconBack, iconPlus, iconTrash } from '@/ui/widgets';
 import { CharacterSprite } from '@/render/characterSprite';
 import { CutoutAnimator } from '@/render/cutoutAnimator';
+import { safeArea } from '@/platform/safeArea';
 import {
   type CharacterDef, randomCharacter, HAIR_STYLES, HEAD_SHAPES, EYE_STYLES, BROW_STYLES, GLASSES_STYLES, BEARD_STYLES, MOUTH_STYLES, HAT_STYLES,
   TOP_STYLES, LOGO_STYLES, PANTS_STYLES, SHOE_STYLES, SKIN_TONES, HAIR_COLORS, PALETTE,
@@ -232,8 +233,9 @@ export class EditorScene implements Scene {
     this.previewBg.clear();
     paintRect(this.previewBg, previewX - scale * 0.9, previewY - scale * 0.95, scale * 1.8, scale * 1.9, '#ffffff', INK, 30, 2, 0.75);
     this.nameLabel.position.set(previewX, previewY + scale * 0.85);
-    this.title.position.set(w / 2, 40);
-    this.backBtn.position.set(36, 40);
+    const safe = safeArea();
+    this.title.position.set(w / 2, 40 + safe.top);
+    this.backBtn.position.set(safe.left + 36, 40 + safe.top);
     // Tabs
     const tabX0 = portrait ? 12 : w * 0.52;
     const tabY0 = portrait ? h * 0.3 + scale * 1.0 + 20 : 90;

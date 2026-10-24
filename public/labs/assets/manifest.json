@@ -1,0 +1,206 @@
+{
+ "sky_pearl": {
+  "w": 1024,
+  "h": 576,
+  "aspect": 0.5625,
+  "kb": 6
+ },
+ "peak_swiss": {
+  "w": 1024,
+  "h": 521,
+  "aspect": 0.5088,
+  "kb": 59
+ },
+ "snow_ridge": {
+  "w": 1536,
+  "h": 426,
+  "aspect": 0.2773,
+  "kb": 73
+ },
+ "foothill": {
+  "w": 1024,
+  "h": 310,
+  "aspect": 0.3027,
+  "kb": 33
+ },
+ "forest_distance": {
+  "w": 1536,
+  "h": 373,
+  "aspect": 0.2428,
+  "kb": 81
+ },
+ "lake_field": {
+  "w": 1536,
+  "h": 512,
+  "aspect": 0.3333,
+  "kb": 58
+ },
+ "cloud_ribbon": {
+  "w": 1024,
+  "h": 357,
+  "aspect": 0.3486,
+  "kb": 40
+ },
+ "cloud_a": {
+  "w": 768,
+  "h": 247,
+  "aspect": 0.3216,
+  "kb": 27
+ },
+ "meadow_mass": {
+  "w": 1536,
+  "h": 527,
+  "aspect": 0.3431,
+  "kb": 70
+ },
+ "meadow_swoop": {
+  "w": 1536,
+  "h": 495,
+  "aspect": 0.3223,
+  "kb": 77
+ },
+ "grand_arch": {
+  "w": 1524,
+  "h": 871,
+  "aspect": 0.5715,
+  "kb": 122
+ },
+ "mountain_window": {
+  "w": 1536,
+  "h": 677,
+  "aspect": 0.4408,
+  "kb": 108
+ },
+ "tree_double": {
+  "w": 1024,
+  "h": 831,
+  "aspect": 0.8115,
+  "kb": 160
+ },
+ "tree_silver": {
+  "w": 1024,
+  "h": 1121,
+  "aspect": 1.0947,
+  "kb": 265
+ },
+ "portal_soil": {
+  "w": 1509,
+  "h": 985,
+  "aspect": 0.6528,
+  "kb": 162
+ },
+ "cave_fill_cobalt": {
+  "w": 1024,
+  "h": 683,
+  "aspect": 0.667,
+  "kb": 67
+ },
+ "cave_fill_amber": {
+  "w": 1024,
+  "h": 683,
+  "aspect": 0.667,
+  "kb": 56
+ },
+ "cave_terrace": {
+  "w": 1024,
+  "h": 459,
+  "aspect": 0.4482,
+  "kb": 59
+ },
+ "bush_fan": {
+  "w": 768,
+  "h": 409,
+  "aspect": 0.5326,
+  "kb": 70
+ },
+ "bush_lime": {
+  "w": 768,
+  "h": 301,
+  "aspect": 0.3919,
+  "kb": 37
+ },
+ "plant_fan": {
+  "w": 512,
+  "h": 366,
+  "aspect": 0.7148,
+  "kb": 33
+ },
+ "grass_cap": {
+  "w": 1024,
+  "h": 145,
+  "aspect": 0.1416,
+  "kb": 21
+ },
+ "lake_pool": {
+  "w": 1024,
+  "h": 371,
+  "aspect": 0.3623,
+  "kb": 76
+ },
+ "water_curtain": {
+  "w": 768,
+  "h": 470,
+  "aspect": 0.612,
+  "kb": 58
+ },
+ "waterfall_long": {
+  "w": 512,
+  "h": 768,
+  "aspect": 1.5,
+  "kb": 90
+ },
+ "station_canopy": {
+  "w": 768,
+  "h": 422,
+  "aspect": 0.5495,
+  "kb": 44
+ },
+ "car_steel": {
+  "w": 384,
+  "h": 215,
+  "aspect": 0.5599,
+  "kb": 19
+ },
+ "car_wood": {
+  "w": 384,
+  "h": 316,
+  "aspect": 0.8229,
+  "kb": 22
+ },
+ "car_road": {
+  "w": 384,
+  "h": 207,
+  "aspect": 0.5391,
+  "kb": 20
+ },
+ "car_hanging": {
+  "w": 384,
+  "h": 396,
+  "aspect": 1.0313,
+  "kb": 28
+ },
+ "tunnel_stone": {
+  "w": 512,
+  "h": 321,
+  "aspect": 0.627,
+  "kb": 25
+ },
+ "fog_cream": {
+  "w": 1024,
+  "h": 270,
+  "aspect": 0.2637,
+  "kb": 80
+ },
+ "light_shaft": {
+  "w": 512,
+  "h": 341,
+  "aspect": 0.666,
+  "kb": 33
+ },
+ "secret_crystal": {
+  "w": 384,
+  "h": 290,
+  "aspect": 0.7552,
+  "kb": 23
+ }
+}

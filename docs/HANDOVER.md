@@ -6,6 +6,16 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
 
 ## 1. Wo wir stehen
 
+- **24.10.: Richtlinie und Tiefen-Labor.** Florians Klarstellungen und Fragen stehen in
+  `docs/research/2026-10-24-klarstellungen-und-fragen.md`, die Antwort mit Messungen und Entscheidung in
+  `docs/RICHTLINIE.md` (Kurzfassung: Weltrenderer zu Three.js mit geneigter Perspektivkamera, Pixi bleibt fürs HUD;
+  Tiefenpuffer statt Masken; eine Shadow Map; Umfärben per Shader; Untergrund als Baustelle + Freilegung; größere
+  Zeichenwerkzeuge auf dem Handy). Das Labor `public/labs/tiefe.html` (Three.js vom CDN, Assets in
+  `public/labs/assets/`) zeigt dieselbe Szene als Bühne und als 3D-Welt; `node scripts/lab-stills.mjs` erzeugt
+  Standbilder nach `docs/research/labs/`. Außerdem umgesetzt: Vollbild auf dem Handy (Bühne unter Kerbe und
+  Home-Leiste, Bedienelemente weichen über `src/platform/safeArea.ts` aus) und Pinselgrößen per Adresse
+  (`?tip=&line=&band=&dzoom=`). Noch nicht auf einem echten Handy geprüft.
+
 - **`main` ist der Prototyp (23.10.):** Der Pinsel-Stand ist der neue Hauptzweig, lokal und auf GitHub gleich; jeder
   Push auf `main` geht über `.github/workflows/deploy.yml` auf https://nicolehahn2890.github.io/Traumacoaster/. Die
   alten `claude/*`-Branches waren vollständig enthalten und sind gelöscht. Aufgeräumt: Fremde Referenzbilder (Earle,

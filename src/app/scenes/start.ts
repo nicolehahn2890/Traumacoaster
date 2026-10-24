@@ -34,6 +34,7 @@ import { SplashScene } from './splash';
 import { clamp, lerp, smoothstep } from '@/core/math';
 import { WheelPhysics } from '../wheelPhysics';
 import { haptics } from '@/platform/haptics';
+import { safeArea } from '@/platform/safeArea';
 import { drawProp } from '@/render/props';
 
 /** Ein Level auf der Scheibe */
@@ -941,18 +942,20 @@ export class StartScene implements Scene {
       this.paper.height = h;
     }
     const portrait = h > w;
+    // Vollbild: Bedienelemente weichen Kerbe und Home-Leiste aus, die Scheibe liegt darunter
+    const safe = safeArea();
     // Texte oben kompakt, „Spielen“ in beiden Formaten mittig unter der Scheibe
-    this.title.position.set(w / 2, portrait ? 96 : 30);
+    this.title.position.set(w / 2, (portrait ? 96 : 30) + safe.top);
     this.title.style.fontSize = portrait ? 36 : 26;
-    this.worldName.position.set(w / 2, portrait ? 140 : 58);
+    this.worldName.position.set(w / 2, (portrait ? 140 : 58) + safe.top);
     this.worldName.style.fontSize = portrait ? 26 : 20;
     this.worldInfo.position.set(w / 2, this.worldName.y + (portrait ? 30 : 22));
     this.worldInfo.style.fontSize = portrait ? 17 : 14;
-    this.playBtn.position.set(w / 2, portrait ? h - 70 : h - 46);
-    this.tracksBtn.position.set(w - (portrait ? 105 : 115), 44);
-    this.gearBtn.position.set(44, 44);
-    this.peopleBtn.position.set(110, 44);
-    this.devBtn.position.set(40, h - 40);
+    this.playBtn.position.set(w / 2, (portrait ? h - 70 : h - 46) - safe.bottom);
+    this.tracksBtn.position.set(w - safe.right - (portrait ? 105 : 115), 44 + safe.top);
+    this.gearBtn.position.set(safe.left + 44, 44 + safe.top);
+    this.peopleBtn.position.set(safe.left + 110, 44 + safe.top);
+    this.devBtn.position.set(safe.left + 40, h - safe.bottom - 40);
     this.toast.position.set(w / 2, h * 0.5);
     this.settingsOpen?.position.set(w / 2, h / 2);
     if (!this.spots.length) return;

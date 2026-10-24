@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>Tiefen-Labor</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #10141c; overflow: hidden; font: 13px/1.35 -apple-system, "Nunito", system-ui, sans-serif; color: #f3eee4; }
+  body { touch-action: none; -webkit-user-select: none; user-select: none; }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #ov { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #hud { position: fixed; left: max(8px, env(safe-area-inset-left)); top: max(8px, env(safe-area-inset-top)); display: flex; flex-direction: column; gap: 6px; max-width: min(92vw, 420px); pointer-events: none; }
+  #hud > * { pointer-events: auto; }
+  .row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .lbl { opacity: .7; min-width: 62px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  button, select { font: inherit; border: 0; border-radius: 999px; padding: 7px 11px; background: rgba(20,24,34,.82); color: #f3eee4; backdrop-filter: blur(6px); }
+  button.on { background: #ff5c8a; color: #fff; }
+  button:active { transform: scale(.96); }
+  input[type=range] { width: 120px; }
+  #stats { font: 12px ui-monospace, Menlo, monospace; background: rgba(20,24,34,.82); border-radius: 10px; padding: 6px 9px; white-space: pre; }
+  #panel { display: none; background: rgba(20,24,34,.9); border-radius: 12px; padding: 8px 10px; font: 11px ui-monospace, Menlo, monospace; white-space: pre; max-height: 46vh; overflow: auto; }
+  #toggle { position: fixed; right: max(8px, env(safe-area-inset-right)); top: max(8px, env(safe-area-inset-top)); }
+  .hide #hud { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<canvas id="ov"></canvas>
+<button id="toggle">☰</button>
+<div id="hud">
+  <div id="stats">…</div>
+  <div class="row"><span class="lbl">Kamera</span>
+    <button data-cam="ortho" class="on">Bühne (ortho)</button>
+    <button data-cam="persp">Perspektive</button>
+    <label>FOV <input id="fov" type="range" min="4" max="50" value="22" /> <span id="fovv">22°</span></label>
+    <button id="lens" class="on">Zoom = Linse</button>
+  </div>
+  <div class="row"><span class="lbl">Zoom</span>
+    <input id="zoom" type="range" min="4" max="28" step="0.5" value="8" /> <span id="zoomv">8 px/m</span>
+    <button id="stretch" class="on">Höhe wie Bühne</button>
+  </div>
+  <div class="row"><span class="lbl">Schatten</span>
+    <button data-shadow="off">aus</button>
+    <button data-shadow="map" class="on">Shadow Map</button>
+    <button data-shadow="fake">Fake 2D</button>
+  </div>
+  <div class="row"><span class="lbl">Look</span>
+    <button data-look="spring" class="on">Frühling</button>
+    <button data-look="dusk">Abend</button>
+    <button data-look="night">Nacht</button>
+    <button data-look="neon">Neon</button>
+    <button data-look="lava">Vulkan</button>
+  </div>
+  <div class="row"><span class="lbl">Effekte</span>
+    <button id="fog" class="on">Nebel</button>
+    <button id="sparkle" class="on">Glitzern</button>
+    <button id="water" class="on">Wasser</button>
+    <button id="lines">Strich-Overlay</button>
+    <button id="ride" class="on">Fahrt</button>
+  </div>
+  <div class="row"><span class="lbl">Test</span>
+    <button id="reveal">Höhle freilegen</button>
+    <button id="stress">+40 Ebenen</button>
+    <button id="measure">Messen</button>
+    <button id="reset">Ansicht</button>
+  </div>
+  <div id="panel"></div>
+</div>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// ------------------------------------------------------------------ Konstanten (wie im Spiel)
+const LANE = 8.4;                 // Tiefenabstand zweier Spuren in Metern
+const TILT = Math.atan(0.5);      // Bühne: Y = y + 0,5·Tiefe  ⇔  Kamera um 26,57° nach unten geneigt
+const COS = Math.cos(TILT), SIN = Math.sin(TILT);
+const Zl = (lane) => -lane * LANE; // Spur → Welt-Z (hinten = negativ)
+const W = { x0: -60, x1: 240 };    // Levelbreite
+
+const canvas = document.getElementById('c');
+const ov = document.getElementById('ov');
+const octx = ov.getContext('2d');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+
+// ------------------------------------------------------------------ Zustand
+const S = {
+  cam: 'ortho', fov: 22, zoom: 8, stretch: true, lens: true, shadow: 'map', look: 'spring',
+  fog: true, sparkle: true, water: true, lines: false, ride: true,
+  cx: 92, cy: 9, t: 0, reveal: 0, revealing: false, train: 0.12,
+};
+const dpr = () => renderer.getPixelRatio();
+let vw = 1, vh = 1;
+
+// ------------------------------------------------------------------ Kameras
+const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 4000);
+const persp = new THREE.PerspectiveCamera(22, 1, 1, 4000);
+function camera() { return S.cam === 'ortho' ? ortho : persp; }
+/** Kamera auf das Ziel (cx, cy) in der Spur-0-Ebene richten; Zoom = Pixel je Meter in dieser Ebene */
+function placeCamera() {
+  const target = new THREE.Vector3(S.cx, S.cy, 0);
+  const wM = vw / S.zoom, hM = vh / S.zoom;
+  // Vertikale Streckung 1/cos: senkrechte Meter erscheinen genauso lang wie waagerechte (exakt die Bühnenprojektion)
+  const vs = S.stretch ? 1 / COS : 1;
+  if (S.cam === 'ortho') {
+    ortho.left = -wM / 2; ortho.right = wM / 2; ortho.top = hM / 2 / vs; ortho.bottom = -hM / 2 / vs;
+    S.D = 300;
+    ortho.position.set(S.cx, S.cy + S.D * SIN, S.D * COS);
+    ortho.lookAt(target);
+    ortho.updateProjectionMatrix();
+  } else {
+    // Zoom als Linse: Kameraabstand fest (aus FOV-Regler bei 7 px/m), beim Zoomen ändert sich nur der Bildwinkel;
+    // die Perspektivstärke bleibt in jedem Zoom gleich. Zoom als Kamerafahrt: FOV fest, die Kamera fährt heran,
+    // nah gezoomt wird die Perspektive stärker.
+    const fovRef = THREE.MathUtils.degToRad(S.fov);
+    const D = S.lens ? (vh / 7 / 2) / Math.tan(fovRef / 2) : (hM / 2) / Math.tan(fovRef / 2);
+    const fovEff = S.lens ? 2 * Math.atan((hM / 2) / D) : fovRef;
+    S.D = D;
+    persp.fov = THREE.MathUtils.radToDeg(fovEff); persp.aspect = vw / vh;
+    persp.near = Math.max(0.5, D * 0.05); persp.far = D * 6 + 2000;
+    persp.position.set(S.cx, S.cy + D * SIN, D * COS);
+    persp.lookAt(target);
+    persp.updateProjectionMatrix();
+    if (vs !== 1) {
+      persp.projectionMatrix.premultiply(new THREE.Matrix4().makeScale(1, vs, 1));
+      persp.projectionMatrixInverse.copy(persp.projectionMatrix).invert();
+    }
+  }
+  if (scene.fog) { scene.fog.near = S.D + 24; scene.fog.far = S.D + 140; }
+  // Matrizen sofort aktualisieren, damit Messungen (worldToScreen) ohne Render stimmen
+  const cam = camera();
+  cam.updateMatrixWorld(true);
+  cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
+}
+/** Bühnenprojektion wie im Spiel (Vergleichsmaßstab): Welt → Bildschirm-Pixel */
+function stageToScreen(x, y, z) {
+  const X = x, Y = y + 0.5 * (-z);
+  return { x: (X - S.cx) * S.zoom + vw / 2, y: vh / 2 - (Y - S.cy) * S.zoom };
+}
+const _v = new THREE.Vector3();
+function worldToScreen(x, y, z) {
+  _v.set(x, y, z).project(camera());
+  return { x: (_v.x + 1) / 2 * vw, y: (1 - _v.y) / 2 * vh };
+}
+
+// ------------------------------------------------------------------ Texturen
+const loader = new THREE.TextureLoader();
+const TEX = {};
+function tex(name) {
+  if (TEX[name]) return TEX[name];
+  const t = loader.load(`assets/${name}.webp`, (tt) => { tt.needsUpdate = true; });
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  TEX[name] = t;
+  return t;
+}
+const loadAll = (names) => Promise.all(names.map((n) => new Promise((res) => loader.load(`assets/${n}.webp`, (t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; TEX[n] = t; res(t); }))));
+
+// ------------------------------------------------------------------ Umfärbe-Shader (für alle gemalten Flächen)
+const grade = {
+  uHue: { value: 0 }, uSat: { value: 1 }, uBright: { value: 1 }, uGradeMix: { value: 0 },
+  uGradeA: { value: new THREE.Color('#1a1f3a') }, uGradeB: { value: new THREE.Color('#5a6aa0') }, uGradeC: { value: new THREE.Color('#fff2c8') },
+  uTint: { value: new THREE.Color('#ffffff') },
+  uReveal: { value: 0 }, uRevealC: { value: new THREE.Vector3(90, -14, 21) }, uRevealR: { value: 60 },
+  uCave: { value: new THREE.Vector3(55, 125, -28.5) },
+  uTime: { value: 0 },
+};
+const GLSL_COMMON = `
+uniform float uHue, uSat, uBright, uGradeMix, uReveal, uRevealR, uTime;
+uniform vec3 uGradeA, uGradeB, uGradeC, uTint, uRevealC, uCave;
+varying vec3 vWorldPos;
+vec3 hueShift(vec3 c, float a) {
+  const vec3 k = vec3(0.57735);
+  float cosA = cos(a), sinA = sin(a);
+  return c * cosA + cross(k, c) * sinA + k * dot(k, c) * (1.0 - cosA);
+}
+float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y); }
+vec3 recolor(vec3 c) {
+  c = hueShift(c, uHue);
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  c = mix(vec3(l), c, uSat);
+  vec3 g = l < 0.5 ? mix(uGradeA, uGradeB, l * 2.0) : mix(uGradeB, uGradeC, (l - 0.5) * 2.0);
+  c = mix(c, g, uGradeMix);
+  return c * uBright * uTint;
+}
+`;
+/** Lambert-Material mit Umfärben, optional mit Höhlen-Auflösung (dissolve) */
+function painted(map, opts = {}) {
+  const m = new THREE.MeshLambertMaterial({ map, transparent: !!map, alphaTest: map ? 0.08 : 0, side: THREE.DoubleSide, color: opts.color ?? 0xffffff, depthWrite: true });
+  m.customProgramCacheKey = () => 'painted' + (opts.dissolve ? '-d' : '');
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, grade);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + GLSL_COMMON)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        diffuseColor.rgb = recolor(diffuseColor.rgb);
+        ${opts.dissolve ? `
+        float dd = distance(vWorldPos, uRevealC);
+        float nn = vnoise(vWorldPos.xy * 0.35 + vWorldPos.z * 0.1) * 0.8 + vnoise(vWorldPos.xy * 1.3) * 0.2;
+        float edge = uRevealR * uReveal * (0.55 + 0.9 * nn);
+        // nur innerhalb des Höhlenraums (x-Bereich, nicht unter dem Höhlenboden) freilegen
+        bool inBox = vWorldPos.x > uCave.x && vWorldPos.x < uCave.y && vWorldPos.y > uCave.z;
+        if (inBox && dd < edge) discard;
+        if (inBox && uReveal > 0.0 && dd < edge + 1.6) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.75, 0.35), 0.8 * (1.0 - (dd - edge) / 1.6));` : ''}`);
+  };
+  if (map) {
+    const d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.5 });
+    if (opts.dissolve) {
+      d.onBeforeCompile = (sh) => {
+        Object.assign(sh.uniforms, grade);
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
+          .replace('#include <project_vertex>', '#include <project_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + GLSL_COMMON)
+          .replace('#include <map_fragment>', `#include <map_fragment>
+          float dd = distance(vWorldPos, uRevealC);
+          float nn = vnoise(vWorldPos.xy * 0.35 + vWorldPos.z * 0.1) * 0.8 + vnoise(vWorldPos.xy * 1.3) * 0.2;
+          bool inBox = vWorldPos.x > uCave.x && vWorldPos.x < uCave.y && vWorldPos.y > uCave.z;
+          if (inBox && dd < uRevealR * uReveal * (0.55 + 0.9 * nn)) discard;`);
+      };
+    }
+    m.userData.depth = d;
+  }
+  return m;
+}
+
+// ------------------------------------------------------------------ Szenenaufbau
+const billboards = [];   // {mesh, name, lane}
+const fakeShadows = [];  // Fake-2D-Schatten (Meshes auf dem Boden)
+/** Senkrecht stehende gemalte Fläche: Fuß bei (x, y0) auf Tiefe z, Breite w Meter */
+function billboard(name, x, y0, z, w, opts = {}) {
+  const t = TEX[name];
+  const img = t.image;
+  const h = w * (img.height / img.width);
+  const m = painted(t, opts);
+  const geo = new THREE.PlaneGeometry(w, h);
+  const mesh = new THREE.Mesh(geo, m);
+  mesh.position.set(x, y0 + h / 2 - (opts.sink ?? 0), z);
+  if (opts.flip) mesh.scale.x = -1;
+  mesh.castShadow = opts.shadow !== false;
+  mesh.receiveShadow = true;
+  mesh.customDepthMaterial = m.userData.depth;
+  mesh.renderOrder = opts.order ?? 0;
+  scene.add(mesh);
+  billboards.push({ mesh, name, w, h, x, y0, z });
+  if (opts.fake) {
+    // Fake-2D-Schatten: dieselbe Silhouette flach auf den Boden gelegt, nach vorn (zum Betrachter) und rechts
+    // gestreckt; ein Draw Call, keine Shadow Map
+    const sm = new THREE.MeshBasicMaterial({ color: 0x0a1020, alphaMap: t, transparent: true, opacity: 0.32, depthWrite: false });
+    const len = 0.45;
+    const sg = new THREE.PlaneGeometry(w, h);
+    sg.applyMatrix4(new THREE.Matrix4().makeShear(0, 0, 0.5, 0, 0, 0)); // x ← x + 0,5·y: Schatten lehnt nach rechts
+    const shadow = new THREE.Mesh(sg, sm);
+    shadow.rotation.x = Math.PI / 2;                      // lokale Höhe → Welt-Z (nach vorn)
+    shadow.scale.set(1, len, 1);
+    shadow.position.set(x, 0.05, z + (h * len) / 2);
+    shadow.renderOrder = 1;
+    shadow.visible = false;
+    scene.add(shadow);
+    fakeShadows.push(shadow);
+  }
+  return mesh;
+}
+
+/** Boden-Textur (drei Töne, Earle-Bänder) prozedural */
+function groundTexture(tones, dots) {
+  const c = document.createElement('canvas'); c.width = c.height = 512;
+  const g = c.getContext('2d');
+  g.fillStyle = tones[1]; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 9; i++) {
+    g.fillStyle = tones[i % 2 === 0 ? 0 : 2];
+    g.beginPath();
+    const y = i * 60 + 10;
+    g.moveTo(0, y);
+    for (let x = 0; x <= 512; x += 32) g.lineTo(x, y + Math.sin(x * 0.02 + i) * 9 + Math.sin(x * 0.07 + i * 3) * 3);
+    g.lineTo(512, y + 30); g.lineTo(0, y + 30); g.closePath(); g.fill();
+  }
+  g.fillStyle = dots;
+  for (let i = 0; i < 700; i++) { const x = Math.random() * 512, y = Math.random() * 512; g.beginPath(); g.arc(x, y, 1 + Math.random() * 1.6, 0, 6.3); g.fill(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+function strataTexture() {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 512;
+  const g = c.getContext('2d');
+  const tones = ['#6b4a35', '#8a5f42', '#5a3b2a', '#9a6e4b'];
+  for (let i = 0; i < 14; i++) {
+    g.fillStyle = tones[i % 4]; g.beginPath(); const y = i * 40;
+    g.moveTo(0, y); for (let x = 0; x <= 512; x += 32) g.lineTo(x, y + Math.sin(x * 0.03 + i) * 10); g.lineTo(512, 600); g.lineTo(0, 600); g.closePath(); g.fill();
+  }
+  g.fillStyle = 'rgba(30,18,10,.5)';
+  for (let i = 0; i < 300; i++) { g.beginPath(); g.ellipse(Math.random() * 512, Math.random() * 512, 2 + Math.random() * 5, 1 + Math.random() * 2, 0, 0, 6.3); g.fill(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+
+// Höhle (Ausschnitt): x 55…125, Tiefe von Z = −3 (Rückwand) bis zur Vorderkante Z = +21, Boden bei y = −28
+const CAVE = { x0: 55, x1: 125, zb: -3, zf: Zl(-2.5), floor: -28 };
+
+let groundMat, cutMat, trackGroup, trainCars = [], sparkles, fogPlane, waterMesh, mirrorMesh, lanterns = [], glows = [], dust, supportsGroup, fakeSupportShadows;
+let dirLight, ambient, hemi, skyMesh, curve, curveLength, supportList = [];
+
+function buildScene() {
+  // Licht
+  // Licht von hinten oben links: Schatten fallen nach vorn auf den Boden (sichtbar), die gemalten Flächen
+  // bleiben fast nur vom Umgebungslicht bestimmt (ihre Beleuchtung ist schon gemalt)
+  ambient = new THREE.AmbientLight(0xffffff, 0.92);
+  hemi = new THREE.HemisphereLight(0xdfefff, 0x6a7a40, 0.15);
+  dirLight = new THREE.DirectionalLight(0xfff2d0, 0.22);
+  dirLight.position.set(20, 150, -110);
+  dirLight.target.position.set(90, 0, 0);
+  dirLight.castShadow = true;
+  dirLight.shadow.mapSize.set(2048, 2048);
+  const sc = dirLight.shadow.camera;
+  sc.left = -170; sc.right = 170; sc.top = 120; sc.bottom = -120; sc.near = 20; sc.far = 600;
+  dirLight.shadow.bias = -0.0008; dirLight.shadow.normalBias = 0.6;
+  scene.add(ambient, hemi, dirLight, dirLight.target);
+  // Schattenfänger: nur der Schatten wird gezeichnet (unabhängig von der Lichtstärke), auf Boden und Höhlenboden
+  const catcher = (w, d, x, y, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.ShadowMaterial({ color: 0x0a1a30, opacity: 0.38, transparent: true, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); m.receiveShadow = true; m.renderOrder = 1; scene.add(m); return m; };
+  catcher(W.x1 - W.x0, Zl(-2.5) - Zl(2.6), (W.x0 + W.x1) / 2, 0.03, (Zl(-2.5) + Zl(2.6)) / 2);
+
+  // Himmel: große Fläche hinten. In der geneigten Ortho-Sicht gibt es keinen Horizont (Fernes steigt im Bild
+  // unbegrenzt nach oben), darum liegen die Fernen hier dicht hinter der Bühne wie 2D-Kulissen; in der
+  // Perspektive bekommen sie trotzdem eigene Parallaxe.
+  const sky = painted(TEX.sky_pearl, { shadow: false });
+  skyMesh = new THREE.Mesh(new THREE.PlaneGeometry(1600, 900), sky);
+  skyMesh.position.set(90, 200, -120); skyMesh.receiveShadow = false; scene.add(skyMesh);
+
+  // Ferne: Schneegrat, Wolken, Vorberge, Wald, See
+  billboard('snow_ridge', 110, 4, -62, 300, { shadow: false });
+  billboard('cloud_ribbon', 170, 50, -66, 110, { shadow: false });
+  billboard('cloud_a', -30, 62, -64, 70, { shadow: false });
+  billboard('peak_swiss', 40, 3, -52, 120, { shadow: false });
+  billboard('foothill', -14, 1.5, -46, 160, { shadow: false });   // linke Bildkante des Elements ist beschnitten: außerhalb des Bilds
+  billboard('forest_distance', 70, 0.5, -41, 240, { shadow: false });
+  // See: waagerechte Fläche zwischen Ferne und Bühne (nur im 3D-Bild wirklich flach)
+  waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(340, 16), waterMaterial());
+  waterMesh.rotation.x = -Math.PI / 2; waterMesh.position.set(100, -0.3, -30); waterMesh.receiveShadow = true; scene.add(waterMesh);
+
+  // Boden mit Loch für den Höhlenausschnitt
+  const shape = new THREE.Shape();
+  shape.moveTo(W.x0, -Zl(-2.5)); shape.lineTo(W.x1, -Zl(-2.5)); shape.lineTo(W.x1, -Zl(2.6)); shape.lineTo(W.x0, -Zl(2.6)); shape.closePath();
+  const hole = new THREE.Path();
+  hole.moveTo(CAVE.x0, -CAVE.zb); hole.lineTo(CAVE.x1, -CAVE.zb); hole.lineTo(CAVE.x1, -CAVE.zf); hole.lineTo(CAVE.x0, -CAVE.zf); hole.closePath();
+  shape.holes.push(hole);
+  const gGeo = new THREE.ShapeGeometry(shape, 1);
+  gGeo.rotateX(-Math.PI / 2); // Shape-y → −Z (Shape-y = −Z, siehe oben)
+  const gTex = groundTexture(['#9ad24a', '#7cc242', '#5ea535'], 'rgba(255,245,170,.55)');
+  gTex.repeat.set(1 / 22, 1 / 22);
+  groundMat = painted(gTex);
+  const ground = new THREE.Mesh(gGeo, groundMat);
+  ground.receiveShadow = true; ground.castShadow = false; scene.add(ground);
+  // Deckel über der Höhle (löst sich beim Freilegen auf)
+  const lid = new THREE.Mesh(new THREE.PlaneGeometry(CAVE.x1 - CAVE.x0, CAVE.zf - CAVE.zb), painted(gTex, { dissolve: true }));
+  lid.material.map = gTex; lid.rotation.x = -Math.PI / 2; lid.position.set((CAVE.x0 + CAVE.x1) / 2, 0.01, (CAVE.zb + CAVE.zf) / 2);
+  lid.receiveShadow = true; lid.customDepthMaterial = lid.material.userData.depth; scene.add(lid);
+  // Texturkoordinaten in Welt-Metern wie beim Boden (die Kachel wiederholt sich alle 22 m), sonst entsteht ein heller Fleck
+  lid.geometry.attributes.uv.array.forEach((v, i, a) => { a[i] = i % 2 === 0 ? CAVE.x0 + v * (CAVE.x1 - CAVE.x0) : -CAVE.zf + v * (CAVE.zf - CAVE.zb); });
+  lid.geometry.attributes.uv.needsUpdate = true;
+
+  // Vorderer Erdschnitt (Ameisenfarm): Fläche an der Vorderkante, mit Auflösung über der Höhle
+  const sTex = strataTexture(); sTex.repeat.set(300 / 90, 48 / 90);
+  cutMat = painted(sTex, { dissolve: true });
+  const cut = new THREE.Mesh(new THREE.PlaneGeometry(W.x1 - W.x0, 48), cutMat);
+  cut.position.set((W.x0 + W.x1) / 2, -24, CAVE.zf); cut.receiveShadow = true; cut.castShadow = true; cut.customDepthMaterial = cutMat.userData.depth; scene.add(cut);
+  // Höhle: Rückwand, Boden, Seitenwände
+  // Höhlenwände enden genau an der Bodenlinie und an der Vorderkante, sonst ragen dünne Kanten durch Boden und Erdschnitt
+  const caveBack = new THREE.Mesh(new THREE.PlaneGeometry(CAVE.x1 - CAVE.x0 + 8, 29), painted(TEX.cave_fill_cobalt));
+  caveBack.position.set((CAVE.x0 + CAVE.x1) / 2, CAVE.floor + 14.5 - 0.1, CAVE.zb - 0.5); caveBack.receiveShadow = true; scene.add(caveBack);
+  const caveFloor = new THREE.Mesh(new THREE.PlaneGeometry(CAVE.x1 - CAVE.x0, CAVE.zf - CAVE.zb - 0.2), painted(TEX.cave_terrace));
+  caveFloor.rotation.x = -Math.PI / 2; caveFloor.position.set((CAVE.x0 + CAVE.x1) / 2, CAVE.floor, (CAVE.zb + CAVE.zf) / 2 - 0.1); caveFloor.receiveShadow = true; scene.add(caveFloor);
+  for (const sx of [CAVE.x0, CAVE.x1]) {
+    const side = new THREE.Mesh(new THREE.PlaneGeometry(CAVE.zf - CAVE.zb - 0.2, 28.4), painted(TEX.cave_fill_amber));
+    side.rotation.y = Math.PI / 2; side.position.set(sx, CAVE.floor + 14.2 - 0.1, (CAVE.zb + CAVE.zf) / 2 - 0.1); side.receiveShadow = true; scene.add(side);
+  }
+  billboard('secret_crystal', 70, CAVE.floor, 4, 8);
+  billboard('plant_fan', 112, CAVE.floor, 8, 7);
+
+  // Bühne: Spuren +2 … −2 (hinten → vorn)
+  billboard('meadow_mass', 60, -1, Zl(2.4), 190, { sink: 0 });
+  billboard('tree_silver', 28, -0.5, Zl(2.2), 34, { fake: true });
+  billboard('mountain_window', 150, -0.5, Zl(1.5), 70, { fake: true });     // Felsfenster: Bahn auf Spur +2 fährt dahinter hindurch
+  billboard('water_curtain', 176, -0.5, Zl(1.45), 20, { shadow: false, order: 2 });
+  billboard('tree_double', 175, -0.5, Zl(-0.6), 40, { fake: true });
+  billboard('grand_arch', 90, -0.5, Zl(-1.0), 72, { fake: true });          // großer Bogen vor Spur 0: Bahn im Fenster sichtbar
+  billboard('station_canopy', 14, 1.6, Zl(0.35), 16, { fake: true });
+  billboard('bush_fan', 40, -0.5, Zl(-1.7), 28, { fake: true });
+  billboard('bush_lime', 130, -0.5, Zl(-2.0), 26, { fake: true });
+  billboard('grass_cap', 0, -1, Zl(-2.45), 80, { shadow: false });
+  billboard('grass_cap', 200, -1, Zl(-2.5), 80, { shadow: false, flip: true });
+
+  // Nebelband (Noise-Shader) und Lichtschächte
+  fogPlane = new THREE.Mesh(new THREE.PlaneGeometry(420, 26), fogMaterial());
+  fogPlane.position.set(90, 8, -40); scene.add(fogPlane);
+
+  buildTrack();
+  buildTrain();
+  buildSparkles();
+  buildLanterns();
+  applyLook();
+  applyShadow();
+}
+
+// ------------------------------------------------------------------ Bahn
+function buildTrack() {
+  // (x, Höhe, Spur): Station → Hügel → hinter dem Bogen → Looping → nach hinten → durch das Felsfenster → nach vorn → Untergrund → Station
+  const K = [
+    [6, 2, 0], [18, 2, 0], [30, 6, 0], [42, 18, 0], [54, 6, 0], [68, 4, 0], [84, 8, 0], [100, 9, 0], [116, 4, 0],
+    [128, 2, 0], [138, 7, 0], [141, 16, 0], [134, 24, 0], [126, 16, 0], [129, 6, 0], [140, 2, 0], [156, 3, 0],
+    [172, 6, 0.6], [186, 10, 1.4], [192, 12, 2], [180, 12, 2], [160, 11, 2], [140, 11, 2], [122, 10, 2], [104, 6, 2], [86, 4, 2], [66, 3, 2],
+    [46, 3, 1.6], [34, 2, 1], [26, 1, 0.5], [40, -1, 0.2], [56, -4, 0], [74, -10, 0], [92, -16, 0.2], [108, -12, 0.3], [116, -4, 0.3], [106, 3, 0.2],
+    [90, 3, 0], [70, 2, 0], [50, 2, 0], [28, 2, 0], [14, 2, 0],
+  ];
+  const pts = K.map(([x, y, l]) => new THREE.Vector3(x, y, Zl(l)));
+  curve = new THREE.CatmullRomCurve3(pts, true, 'centripetal', 0.5);
+  curveLength = curve.getLength();
+  trackGroup = new THREE.Group();
+  const n = 900;
+  const P = [], T = [], Sd = [];
+  const up = new THREE.Vector3(0, 1, 0);
+  let prevSide = new THREE.Vector3(0, 0, 1);
+  for (let i = 0; i <= n; i++) {
+    const t = (i % n) / n;
+    const p = curve.getPointAt(t); const tan = curve.getTangentAt(t).normalize();
+    let side = new THREE.Vector3().crossVectors(tan, up);
+    if (side.length() < 0.2) side.copy(prevSide); else side.normalize();
+    if (side.dot(prevSide) < 0) side.negate();
+    prevSide = side;
+    P.push(p); T.push(tan); Sd.push(side);
+  }
+  const GAUGE = 0.55, R = 0.28;
+  const railMat = new THREE.MeshLambertMaterial({ color: 0xf5e6b8 });
+  const inkMat = new THREE.MeshLambertMaterial({ color: 0x1e2a3a });
+  const spineMat = new THREE.MeshLambertMaterial({ color: 0x3a6f9a });
+  for (const s of [-1, 1]) {
+    const rp = P.map((p, i) => p.clone().addScaledVector(Sd[i], GAUGE * s));
+    const rc = new THREE.CatmullRomCurve3(rp.slice(0, n), true, 'centripetal', 0.5);
+    const tube = new THREE.Mesh(new THREE.TubeGeometry(rc, n, R, 6, true), railMat);
+    tube.castShadow = true; tube.receiveShadow = true; trackGroup.add(tube);
+    const ink = new THREE.Mesh(new THREE.TubeGeometry(rc, n, R * 1.55, 6, true), inkMat);
+    ink.position.y = -0.1; ink.castShadow = false; trackGroup.add(ink);
+  }
+  const spineTube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(P.slice(0, n).map((p) => p.clone().setY(p.y - 0.5)), true, 'centripetal', 0.5), n, 0.28, 6, true), spineMat);
+  spineTube.castShadow = true; trackGroup.add(spineTube);
+  // Schwellen
+  const tieGeo = new THREE.BoxGeometry(0.22, 0.12, 2 * GAUGE + 0.5);
+  const ties = new THREE.InstancedMesh(tieGeo, inkMat, Math.ceil(curveLength / 1.6));
+  const m4 = new THREE.Matrix4(); const q = new THREE.Quaternion(); const basis = new THREE.Matrix4();
+  let ti = 0;
+  for (let s = 0; s < curveLength; s += 1.6) {
+    const t = s / curveLength; const i = Math.round(t * n);
+    const p = P[i], tan = T[i], side = Sd[i];
+    const nrm = new THREE.Vector3().crossVectors(side, tan).normalize();
+    basis.makeBasis(tan, nrm, side); q.setFromRotationMatrix(basis);
+    m4.compose(p.clone().addScaledVector(nrm, -0.25), q, new THREE.Vector3(1, 1, 1));
+    ties.setMatrixAt(ti++, m4);
+  }
+  ties.count = ti; ties.castShadow = true; trackGroup.add(ties);
+  scene.add(trackGroup);
+  // Stützen: alle 6 m, senkrecht bis zum Boden (Höhlenboden im Ausschnitt), nicht wenn die Bahn kopfüber liegt
+  supportsGroup = new THREE.Group(); fakeSupportShadows = new THREE.Group(); fakeSupportShadows.visible = false;
+  const postMat = new THREE.MeshLambertMaterial({ color: 0x24303f });
+  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x0a1020, transparent: true, opacity: 0.3, depthWrite: false });
+  supportList = [];
+  for (let s = 3; s < curveLength; s += 6) {
+    const t = s / curveLength; const i = Math.round(t * n);
+    const p = P[i], tan = T[i], side = Sd[i];
+    const nrm = new THREE.Vector3().crossVectors(side, tan);
+    if (nrm.y < 0.3) continue; // kopfüber oder steil: keine Stütze
+    const inCave = p.x > CAVE.x0 && p.x < CAVE.x1 && p.z > CAVE.zb;
+    const groundY = p.y < 0 || inCave && p.y < 0 ? CAVE.floor : 0;
+    if (p.y < 0 && !inCave) continue;
+    const h = p.y - 0.6 - groundY;
+    if (h < 1) continue;
+    const lean = Math.sin(s * 0.7) * 0.08;
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.42, h, 7), postMat);
+    post.position.set(p.x + lean * h / 2, groundY + h / 2, p.z); post.rotation.z = lean;
+    post.castShadow = true; post.receiveShadow = true; supportsGroup.add(post);
+    if (h > 6) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.18, 0.18), postMat);
+      bar.position.set(p.x, groundY + h * 0.45, p.z + 0.3); bar.rotation.z = 0.5; bar.castShadow = true; supportsGroup.add(bar);
+    }
+    supportList.push({ x: p.x, z: p.z, h, groundY });
+    // Fake-2D-Schatten: Parallelogramm vom Fuß nach vorn rechts (Lichtrichtung), flach auf dem Boden
+    const fx = p.x, fz = p.z, L = h * 0.42, dx = h * 0.5;
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.Float32BufferAttribute([fx - 0.3, 0, fz, fx + 0.3, 0, fz, fx + dx + 0.25, 0, fz + L, fx + dx - 0.25, 0, fz + L], 3));
+    sg.setIndex([0, 1, 2, 0, 2, 3]); sg.computeVertexNormals();
+    const sh = new THREE.Mesh(sg, shadowMat);
+    sh.position.y = groundY + 0.06; sh.renderOrder = 1;
+    fakeSupportShadows.add(sh);
+  }
+  scene.add(supportsGroup, fakeSupportShadows);
+}
+
+function buildTrain() {
+  const names = ['car_steel', 'car_steel', 'car_steel'];
+  trainCars = names.map((nm, i) => {
+    const m = painted(TEX[nm]);
+    const t = TEX[nm]; const w = 3.2; const h = w * t.image.height / t.image.width;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), m);
+    mesh.castShadow = true; mesh.customDepthMaterial = m.userData.depth; mesh.renderOrder = 3; mesh.userData.h = h;
+    scene.add(mesh); return mesh;
+  });
+}
+function updateTrain(dt) {
+  if (S.ride) S.train = (S.train + dt * 14 / curveLength) % 1;
+  trainCars.forEach((car, i) => {
+    const t = ((S.train - i * 3.6 / curveLength) % 1 + 1) % 1;
+    const p = curve.getPointAt(t); const tan = curve.getTangentAt(t);
+    car.position.set(p.x, p.y + car.userData.h * 0.42, p.z + 0.6);
+    const left = tan.x < 0;
+    car.scale.x = left ? -1 : 1;
+    car.rotation.z = Math.atan2(tan.y, tan.x) + (left ? Math.PI : 0);
+  });
+}
+
+// ------------------------------------------------------------------ Effekte
+function fogMaterial() {
+  return new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    uniforms: { uTime: grade.uTime, uColor: { value: new THREE.Color('#fff6dc') }, uAlpha: { value: 0.55 } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `uniform float uTime, uAlpha; uniform vec3 uColor; varying vec2 vUv;
+      float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*.1031); p3 += dot(p3,p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
+      float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hash12(i),hash12(i+vec2(1,0)),f.x),mix(hash12(i+vec2(0,1)),hash12(i+vec2(1,1)),f.x),f.y); }
+      float fbm(vec2 p){ float a=0.5, s=0.0; for(int i=0;i<4;i++){ s+=a*vnoise(p); p=p*2.03+vec2(1.7,9.2); a*=0.5; } return s; }
+      void main(){
+        vec2 p = vec2(vUv.x*14.0 + uTime*0.03, vUv.y*2.2);
+        float n = fbm(p + fbm(p*0.7 - uTime*0.02)*1.2);
+        float band = smoothstep(0.0,0.25,vUv.y) * smoothstep(1.0,0.45,vUv.y);
+        float a = smoothstep(0.38,0.75,n) * band * uAlpha;
+        gl_FragColor = vec4(uColor, a);
+      }`,
+  });
+}
+function waterMaterial() {
+  const t = TEX.lake_pool; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    uniforms: { uTime: grade.uTime, uMap: { value: t }, uTint: grade.uTint, uBright: grade.uBright, uHue: grade.uHue, uSat: grade.uSat, uGradeMix: grade.uGradeMix, uGradeA: grade.uGradeA, uGradeB: grade.uGradeB, uGradeC: grade.uGradeC, uOn: { value: 1 } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `uniform float uTime, uOn, uBright, uHue, uSat, uGradeMix; uniform sampler2D uMap; uniform vec3 uTint, uGradeA, uGradeB, uGradeC; varying vec2 vUv;
+      float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*.1031); p3 += dot(p3,p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
+      float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hash12(i),hash12(i+vec2(1,0)),f.x),mix(hash12(i+vec2(0,1)),hash12(i+vec2(1,1)),f.x),f.y); }
+      vec3 hueShift(vec3 c, float a){ const vec3 k=vec3(0.57735); float ca=cos(a), sa=sin(a); return c*ca+cross(k,c)*sa+k*dot(k,c)*(1.0-ca); }
+      void main(){
+        vec2 uv = vec2(vUv.x*3.0, vUv.y*0.9);
+        float w = uOn * 0.012;
+        vec2 d = vec2(vnoise(uv*9.0+uTime*0.35), vnoise(uv*9.0-uTime*0.27+4.0)) - 0.5;
+        vec3 c = texture2D(uMap, uv + d*w).rgb;
+        float spark = smoothstep(0.93, 1.0, vnoise(uv*60.0 + vec2(uTime*0.9, -uTime*0.6)));
+        c += uOn * spark * 0.6;
+        c = hueShift(c, uHue); float l = dot(c, vec3(0.299,0.587,0.114)); c = mix(vec3(l), c, uSat);
+        vec3 g = l<0.5 ? mix(uGradeA,uGradeB,l*2.0) : mix(uGradeB,uGradeC,(l-0.5)*2.0); c = mix(c, g, uGradeMix);
+        gl_FragColor = vec4(c*uBright*uTint, 0.92);
+      }`,
+  });
+}
+function buildSparkles() {
+  const N = 400; const pos = new Float32Array(N * 3); const ph = new Float32Array(N);
+  for (let i = 0; i < N; i++) { pos[i * 3] = 10 + Math.random() * 190; pos[i * 3 + 1] = Math.random() * 30; pos[i * 3 + 2] = Zl(2.4) + Math.random() * 38; ph[i] = Math.random() * 6.28; }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('phase', new THREE.BufferAttribute(ph, 1));
+  const m = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { uTime: grade.uTime, uPx: { value: dpr() }, uColor: { value: new THREE.Color('#fff4c0') } },
+    vertexShader: `attribute float phase; varying float vA; uniform float uTime, uPx; void main(){ vA = pow(max(0.0, sin(uTime*1.7+phase)), 8.0); vec4 mv = modelViewMatrix*vec4(position,1.0); gl_Position = projectionMatrix*mv; gl_PointSize = (3.0 + 3.0*vA) * uPx; }`,
+    fragmentShader: `varying float vA; uniform vec3 uColor; void main(){ float d = length(gl_PointCoord-0.5); float a = smoothstep(0.5,0.1,d)*vA; gl_FragColor = vec4(uColor, a); }`,
+  });
+  sparkles = new THREE.Points(g, m); scene.add(sparkles);
+  // Staub für die Freilegung
+  const D = 160; const dp = new Float32Array(D * 3); const dv = new Float32Array(D * 3);
+  for (let i = 0; i < D; i++) { const a = Math.random() * 6.28; dp[i * 3] = 90; dp[i * 3 + 1] = -12; dp[i * 3 + 2] = 21; dv[i * 3] = Math.cos(a) * (6 + Math.random() * 18); dv[i * 3 + 1] = Math.sin(a) * (6 + Math.random() * 14); dv[i * 3 + 2] = Math.random() * 8; }
+  const dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.BufferAttribute(dp, 3));
+  dust = new THREE.Points(dg, new THREE.PointsMaterial({ color: 0x7a5a3a, size: 1.4, transparent: true, opacity: 0.9, depthWrite: false }));
+  dust.userData = { v: dv, life: 0 }; dust.visible = false; scene.add(dust);
+}
+function buildLanterns() {
+  const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); const r = g.createRadialGradient(64, 64, 0, 64, 64, 64); r.addColorStop(0, 'rgba(255,230,160,1)'); r.addColorStop(0.3, 'rgba(255,200,120,.5)'); r.addColorStop(1, 'rgba(255,180,100,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+  for (const [x, y, z] of [[22, 7, Zl(0.3)], [84, 7, Zl(-0.9)], [146, 9, Zl(1.6)], [62, -12, 8]]) {
+    const l = new THREE.PointLight(0xffc070, 0, 40, 2); l.position.set(x, y, z); scene.add(l); lanterns.push(l);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
+    sp.position.set(x, y, z + 0.5); sp.scale.set(14, 14, 1); scene.add(sp); glows.push(sp);
+  }
+}
+
+// ------------------------------------------------------------------ Looks (nur Uniforms und Lichter, keine neuen Grafiken)
+const LOOKS = {
+  spring: { hue: 0, sat: 1, bright: 1, gradeMix: 0, tint: '#ffffff', amb: 0.92, dir: 0.22, dirColor: '#fff2d0', fog: '#fff6dc', fogA: 0.5, bg: '#9fd8ff', lantern: 0, sparkle: '#fff4c0' },
+  dusk: { hue: -0.12, sat: 1.15, bright: 0.95, gradeMix: 0.35, A: '#2a1a3e', B: '#c25a4a', C: '#ffd9a0', tint: '#ffe6d0', amb: 0.78, dir: 0.2, dirColor: '#ffb070', fog: '#ffb080', fogA: 0.55, bg: '#ff9a6a', lantern: 25, sparkle: '#ffd9a0' },
+  night: { hue: 0.1, sat: 0.72, bright: 0.58, gradeMix: 0.5, A: '#0a0f2a', B: '#2c4680', C: '#b4d2ff', tint: '#c0ccff', amb: 0.5, dir: 0.12, dirColor: '#8fa8ff', fog: '#6a8aff', fogA: 0.45, bg: '#0a1030', lantern: 110, sparkle: '#cfe4ff' },
+  neon: { hue: 2.4, sat: 1.5, bright: 0.8, gradeMix: 0.5, A: '#140428', B: '#8a1aa0', C: '#5cf0ff', tint: '#ffffff', amb: 0.55, dir: 0.12, dirColor: '#ff5cf0', fog: '#ff3cc8', fogA: 0.6, bg: '#120626', lantern: 80, sparkle: '#7cf6ff' },
+  lava: { hue: -0.6, sat: 1.1, bright: 0.85, gradeMix: 0.6, A: '#1a0808', B: '#9a3a1a', C: '#ffd080', tint: '#ffd6b0', amb: 0.7, dir: 0.2, dirColor: '#ff8a3a', fog: '#ff7a2a', fogA: 0.55, bg: '#3a1210', lantern: 55, sparkle: '#ffb060' },
+};
+function applyLook() {
+  const L = LOOKS[S.look];
+  grade.uHue.value = L.hue; grade.uSat.value = L.sat; grade.uBright.value = L.bright; grade.uGradeMix.value = L.gradeMix;
+  if (L.A) { grade.uGradeA.value.set(L.A); grade.uGradeB.value.set(L.B); grade.uGradeC.value.set(L.C); }
+  grade.uTint.value.set(L.tint);
+  ambient.intensity = L.amb; dirLight.intensity = L.dir; dirLight.color.set(L.dirColor); hemi.intensity = L.amb * 0.2;
+  fogPlane.material.uniforms.uColor.value.set(L.fog); fogPlane.material.uniforms.uAlpha.value = L.fogA;
+  scene.background = new THREE.Color(L.bg);
+  // Nebelweiten relativ zum Kameraabstand (placeCamera setzt S.D); Luftperspektive beginnt hinter der Bühne
+  scene.fog = S.fog ? new THREE.Fog(new THREE.Color(L.fog).lerp(new THREE.Color(L.bg), 0.4), (S.D || 300) + 24, (S.D || 300) + 140) : null;
+  lanterns.forEach((l) => { l.intensity = L.lantern; });
+  glows.forEach((g) => { g.material.opacity = L.lantern > 0 ? 0.9 : 0; });
+  sparkles.material.uniforms.uColor.value.set(L.sparkle);
+  skyMesh.visible = S.look === 'spring' || S.look === 'dusk';
+}
+function applyShadow() {
+  const map = S.shadow === 'map';
+  renderer.shadowMap.enabled = map; dirLight.castShadow = map;
+  scene.traverse((o) => { if (o.material && o.material.needsUpdate !== undefined) o.material.needsUpdate = true; });
+  fakeShadows.forEach((m) => { m.visible = S.shadow === 'fake'; });
+  fakeSupportShadows.visible = S.shadow === 'fake';
+}
+
+// ------------------------------------------------------------------ Freilegen der Höhle
+function startReveal() {
+  if (S.reveal >= 1) { S.reveal = 0; grade.uReveal.value = 0; document.getElementById('reveal').textContent = 'Höhle freilegen'; return; }
+  S.revealing = true; S.revealT = 0;
+  S.camFrom = { cx: S.cx, cy: S.cy, zoom: S.zoom }; S.camTo = { cx: 90, cy: -6, zoom: Math.max(4, S.zoom * 0.72) };
+  dust.visible = true; dust.userData.life = 0;
+  const p = dust.geometry.attributes.position.array; for (let i = 0; i < p.length; i += 3) { p[i] = 90; p[i + 1] = -12 + Math.random() * 8; p[i + 2] = 21; }
+}
+function stepReveal(dt) {
+  if (!S.revealing) return;
+  S.revealT += dt;
+  const a = Math.min(1, S.revealT / 1.1);
+  const e = a * a * (3 - 2 * a);
+  S.cx = S.camFrom.cx + (S.camTo.cx - S.camFrom.cx) * e; S.cy = S.camFrom.cy + (S.camTo.cy - S.camFrom.cy) * e; S.zoom = S.camFrom.zoom + (S.camTo.zoom - S.camFrom.zoom) * e;
+  const r = Math.max(0, Math.min(1, (S.revealT - 0.7) / 2.2));
+  S.reveal = r * r * (3 - 2 * r); grade.uReveal.value = S.reveal;
+  if (S.revealT > 0.7) {
+    const p = dust.geometry.attributes.position.array, v = dust.userData.v;
+    for (let i = 0; i < p.length; i += 3) { p[i] += v[i] * dt; p[i + 1] += (v[i + 1] - 9 * (S.revealT - 0.7)) * dt; p[i + 2] += v[i + 2] * dt; }
+    dust.geometry.attributes.position.needsUpdate = true; dust.material.opacity = Math.max(0, 1 - (S.revealT - 0.7) / 1.8);
+  }
+  if (S.revealT > 3.2) { S.revealing = false; dust.visible = false; document.getElementById('reveal').textContent = 'Höhle schließen'; }
+  syncUI();
+}
+
+// ------------------------------------------------------------------ Messung: Abweichung vom gezeichneten Strich und Maßstab je Spur
+function measure() {
+  const saveCam = S.cam, saveStretch = S.stretch;
+  const out = [];
+  const samples = [];
+  for (let i = 0; i < 400; i++) { const p = curve.getPointAt(i / 400); samples.push(p); }
+  for (const cam of ['ortho', 'persp']) {
+    for (const stretch of [true, false]) {
+      S.cam = cam; S.stretch = stretch; placeCamera();
+      let maxD = 0, sum = 0;
+      for (const p of samples) { const a = worldToScreen(p.x, p.y, p.z), b = stageToScreen(p.x, p.y, p.z); const d = Math.hypot(a.x - b.x, a.y - b.y); maxD = Math.max(maxD, d); sum += d; }
+      // Maßstab je Spur: ein waagerechter und ein senkrechter Meter bei (cx, cy) auf jeder Spur
+      const scales = [];
+      for (let lane = -2; lane <= 2; lane++) {
+        const z = Zl(lane); const o = worldToScreen(S.cx, S.cy, z), ox = worldToScreen(S.cx + 1, S.cy, z), oy = worldToScreen(S.cx, S.cy + 1, z);
+        scales.push(`${lane >= 0 ? '+' : ''}${lane}: ${(Math.hypot(ox.x - o.x, ox.y - o.y)).toFixed(2)}/${(Math.hypot(oy.x - o.x, oy.y - o.y)).toFixed(2)}`);
+      }
+      // Parallaxe: Bildversatz je Ebene bei 20 m Kamerafahrt relativ zur Spur-0-Ebene
+      const par = [];
+      const px = S.cx, py = S.cy;
+      for (const [name, z] of [['Spur+2', Zl(2)], ['Spur-2', Zl(-2)], ['Wald', -41], ['Berge', -62]]) {
+        const a = worldToScreen(px, py, z); S.cx += 20; placeCamera(); const b = worldToScreen(px, py, z); S.cx -= 20; placeCamera();
+        par.push(`${name} ${((1 - (a.x - b.x) / (20 * S.zoom)) * 100).toFixed(0)}%`);
+      }
+      out.push(`${cam === 'ortho' ? 'Bühne/ortho' : `Perspektive ${S.fov}°`}${stretch ? '' : ' (ohne Streckung)'}\n  Abweichung vom Strich: Ø ${(sum / samples.length).toFixed(1)} px, max ${maxD.toFixed(1)} px bei ${S.zoom} px/m\n  px je Meter (waag./senkr.) ${scales.join('  ')}\n  Parallaxe (langsamer als Spur 0): ${par.join(', ')}`);
+    }
+  }
+  S.cam = saveCam; S.stretch = saveStretch; placeCamera();
+  const txt = out.join('\n\n');
+  const panel = document.getElementById('panel'); panel.style.display = 'block'; panel.textContent = txt;
+  console.log(txt);
+  window.labResult = txt;
+  return txt;
+}
+window.labMeasure = measure;
+
+// ------------------------------------------------------------------ Stresstest: viele zusätzliche halbtransparente Ebenen
+let stressCount = 0;
+function stress() {
+  const names = ['bush_fan', 'bush_lime', 'tree_double', 'plant_fan', 'cloud_a'];
+  for (let i = 0; i < 40; i++) {
+    const nm = names[i % names.length];
+    billboard(nm, 10 + Math.random() * 180, -0.5, Zl(2.3) - Math.random() * 60, 30 + Math.random() * 40, { shadow: false });
+  }
+  stressCount += 40; document.getElementById('stress').textContent = `+40 Ebenen (${stressCount})`;
+  applyShadow();
+}
+
+// ------------------------------------------------------------------ Overlay: der „gezeichnete Strich“ (Bühnenprojektion) über dem 3D-Bild
+function drawOverlay() {
+  octx.clearRect(0, 0, ov.width, ov.height);
+  if (!S.lines) return;
+  const k = dpr();
+  octx.save(); octx.scale(k, k);
+  octx.lineWidth = 2.5; octx.setLineDash([8, 6]); octx.strokeStyle = 'rgba(255,255,255,.9)';
+  octx.beginPath();
+  for (let i = 0; i <= 500; i++) { const p = curve.getPointAt((i % 500) / 500); const s = stageToScreen(p.x, p.y, p.z); i ? octx.lineTo(s.x, s.y) : octx.moveTo(s.x, s.y); }
+  octx.stroke();
+  octx.setLineDash([]); octx.strokeStyle = 'rgba(255,92,138,.9)';
+  octx.beginPath();
+  for (let i = 0; i <= 500; i++) { const p = curve.getPointAt((i % 500) / 500); const s = worldToScreen(p.x, p.y, p.z); i ? octx.lineTo(s.x, s.y) : octx.moveTo(s.x, s.y); }
+  octx.stroke();
+  octx.font = '12px sans-serif'; octx.fillStyle = '#fff'; octx.fillText('weiß gestrichelt: Strich (Bühne) · pink: 3D-Bahn im aktuellen Bild', 12, vh - 14);
+  octx.restore();
+}
+
+// ------------------------------------------------------------------ Eingabe: ziehen, zoomen (Maus, Finger, Pinch)
+const pointers = new Map(); let pinch0 = 0, zoom0 = 0;
+canvas.addEventListener('pointerdown', (e) => { pointers.set(e.pointerId, { x: e.clientX, y: e.clientY }); canvas.setPointerCapture(e.pointerId); if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); zoom0 = S.zoom; } });
+canvas.addEventListener('pointermove', (e) => {
+  const p = pointers.get(e.pointerId); if (!p) return;
+  if (pointers.size === 1 && !S.revealing) { S.cx -= (e.clientX - p.x) / S.zoom; S.cy += (e.clientY - p.y) / S.zoom; }
+  p.x = e.clientX; p.y = e.clientY;
+  if (pointers.size === 2) { const [a, b] = [...pointers.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); S.zoom = Math.max(3, Math.min(40, zoom0 * d / pinch0)); syncUI(); }
+});
+const up = (e) => { pointers.delete(e.pointerId); };
+canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('wheel', (e) => { e.preventDefault(); S.zoom = Math.max(3, Math.min(40, S.zoom * (e.deltaY > 0 ? 0.92 : 1.08))); syncUI(); }, { passive: false });
+
+// ------------------------------------------------------------------ HUD
+const $ = (id) => document.getElementById(id);
+function setOn(group, value) { document.querySelectorAll(`[data-${group}]`).forEach((b) => b.classList.toggle('on', b.dataset[group] === value)); }
+document.querySelectorAll('[data-cam]').forEach((b) => b.addEventListener('click', () => { S.cam = b.dataset.cam; setOn('cam', S.cam); }));
+document.querySelectorAll('[data-shadow]').forEach((b) => b.addEventListener('click', () => { S.shadow = b.dataset.shadow; setOn('shadow', S.shadow); applyShadow(); }));
+document.querySelectorAll('[data-look]').forEach((b) => b.addEventListener('click', () => { S.look = b.dataset.look; setOn('look', S.look); applyLook(); }));
+$('fov').addEventListener('input', (e) => { S.fov = +e.target.value; $('fovv').textContent = S.fov + '°'; });
+$('zoom').addEventListener('input', (e) => { S.zoom = +e.target.value; $('zoomv').textContent = S.zoom + ' px/m'; });
+const toggleBtn = (id, key, fn) => $(id).addEventListener('click', () => { S[key] = !S[key]; $(id).classList.toggle('on', S[key]); fn && fn(); });
+toggleBtn('stretch', 'stretch');
+toggleBtn('lens', 'lens', () => { $('lens').textContent = S.lens ? 'Zoom = Linse' : 'Zoom = Kamerafahrt'; });
+toggleBtn('fog', 'fog', () => { fogPlane.visible = S.fog; applyLook(); });
+toggleBtn('sparkle', 'sparkle', () => { sparkles.visible = S.sparkle; });
+toggleBtn('water', 'water', () => { waterMesh.material.uniforms.uOn.value = S.water ? 1 : 0; });
+toggleBtn('lines', 'lines');
+toggleBtn('ride', 'ride');
+$('reveal').addEventListener('click', startReveal);
+$('stress').addEventListener('click', stress);
+$('measure').addEventListener('click', measure);
+const homeView = () => { S.cx = 92; S.cy = 7; S.zoom = Math.max(6, Math.min(12, vw / 150)); syncUI(); };
+$('reset').addEventListener('click', homeView);
+$('toggle').addEventListener('click', () => document.body.classList.toggle('hide'));
+function syncUI() { $('zoom').value = S.zoom; $('zoomv').textContent = S.zoom.toFixed(1) + ' px/m'; }
+
+// ------------------------------------------------------------------ Größe, Schleife, Statistik
+function resize() {
+  vw = window.innerWidth; vh = window.innerHeight;
+  renderer.setSize(vw, vh, false);
+  ov.width = Math.round(vw * dpr()); ov.height = Math.round(vh * dpr()); ov.style.width = vw + 'px'; ov.style.height = vh + 'px';
+}
+window.addEventListener('resize', resize);
+let last = performance.now(), frames = 0, acc = 0, fps = 0, msAvg = 0;
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  S.t += dt; grade.uTime.value = S.t;
+  stepReveal(dt);
+  updateTrain(dt);
+  fogPlane.position.x = 90 + Math.sin(S.t * 0.05) * 6;
+  placeCamera();
+  const t0 = performance.now();
+  renderer.render(scene, camera());
+  const ms = performance.now() - t0;
+  drawOverlay();
+  frames++; acc += dt; msAvg = msAvg * 0.95 + ms * 0.05;
+  if (acc >= 0.5) { fps = frames / acc; frames = 0; acc = 0; if (window.lab) { window.lab.fps = fps; window.lab.ms = msAvg; }
+    const r = renderer.info.render;
+    $('stats').textContent = `${fps.toFixed(0)} fps · render ${msAvg.toFixed(1)} ms (JS) · ${r.calls} draw calls · ${(r.triangles / 1000).toFixed(0)}k tris\n${S.cam === 'ortho' ? 'Bühne (ortho)' : 'Perspektive ' + S.fov + '°'} · ${S.zoom.toFixed(1)} px/m · Schatten ${S.shadow} · ${vw}×${vh} @${dpr()}`;
+  }
+  requestAnimationFrame(loop);
+}
+
+const NAMES = ['sky_pearl', 'peak_swiss', 'snow_ridge', 'foothill', 'forest_distance', 'lake_field', 'cloud_ribbon', 'cloud_a', 'meadow_mass', 'grand_arch', 'mountain_window', 'tree_double', 'tree_silver', 'cave_fill_cobalt', 'cave_fill_amber', 'cave_terrace', 'bush_fan', 'bush_lime', 'plant_fan', 'grass_cap', 'lake_pool', 'water_curtain', 'station_canopy', 'car_steel', 'light_shaft', 'secret_crystal'];
+/** Zustand aus der Adresse, z. B. ?cam=persp&fov=18&look=night&shadow=fake&reveal=1&hud=0&zoom=8&cx=90&cy=6 */
+function applyParams() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('cam')) { S.cam = q.get('cam') === 'persp' ? 'persp' : 'ortho'; setOn('cam', S.cam); }
+  if (q.get('fov')) { S.fov = +q.get('fov'); $('fov').value = S.fov; $('fovv').textContent = S.fov + '°'; }
+  if (q.get('look') && LOOKS[q.get('look')]) { S.look = q.get('look'); setOn('look', S.look); }
+  if (q.get('shadow')) { S.shadow = q.get('shadow'); setOn('shadow', S.shadow); }
+  for (const k of ['fog', 'sparkle', 'water', 'lines', 'ride', 'stretch', 'lens']) if (q.has(k)) { S[k] = q.get(k) !== '0'; $(k).classList.toggle('on', S[k]); }
+  $('lens').textContent = S.lens ? 'Zoom = Linse' : 'Zoom = Kamerafahrt';
+  if (q.get('zoom')) S.zoom = +q.get('zoom');
+  if (q.get('cx')) S.cx = +q.get('cx');
+  if (q.get('cy')) S.cy = +q.get('cy');
+  if (q.get('reveal') === '1') { S.reveal = 1; grade.uReveal.value = 1; $('reveal').textContent = 'Höhle schließen'; }
+  if (q.get('hud') === '0') document.body.classList.add('hide');
+  if (q.get('stress')) for (let i = 0; i < +q.get('stress'); i++) stress();
+  fogPlane.visible = S.fog; sparkles.visible = S.sparkle; waterMesh.material.uniforms.uOn.value = S.water ? 1 : 0;
+  syncUI(); applyLook(); applyShadow();
+}
+
+resize();
+loadAll(NAMES).then(() => {
+  buildScene();
+  homeView();
+  applyParams();
+  window.lab = { S, scene, renderer, camera, measure, stress, startReveal, applyLook, applyShadow, placeCamera, worldToScreen, stageToScreen, syncUI, setOn, fps: 0, ms: 0 };
+  requestAnimationFrame(loop);
+});
+</script>
+</body>
+</html>

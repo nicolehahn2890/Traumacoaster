@@ -2,7 +2,7 @@
 
 2.5D-Physik-Achterbahnspiel von illudiy: Die Bahn wird mit einem Fingerstrich gezeichnet, ein Zug mit nicht angeschnallten Fahrgästen fährt physikalisch korrekt darüber. 150 Level in 10 Welten, Sandbox „Meine Bahnen“, Figuren-Editor. Handgemalter Look, inspiriert von Rayman Legends.
 
-**Dokumente:** [Gamedesign-Dokument](docs/GDD.md) · [Alle 150 Level](docs/LEVELS.md) · [Technik](docs/TECH.md) · [Recherche](docs/research/)
+**Dokumente:** [Richtlinie Technik und Look](docs/RICHTLINIE.md) · [Gamedesign-Dokument](docs/GDD.md) · [Alle 150 Level](docs/LEVELS.md) · [Technik](docs/TECH.md) · [Recherche](docs/research/)
 
 ## Spielen
 
@@ -31,7 +31,7 @@ Mobile zuerst (Hoch- und Querformat), im Browser mit der Maus spielbar:
 
 ## Auf dem Handy testen (Vollbild, Hoch- und Querformat)
 
-Die Seite lässt sich als App auf den Home-Bildschirm legen und startet dann ohne Browserleisten im Vollbild; sie dreht mit dem Handy. Kerbe, Dynamic Island und Home-Leiste bleiben frei, die Spielfläche liegt im sicheren Bereich.
+Die Seite lässt sich als App auf den Home-Bildschirm legen und startet dann ohne Browserleisten im Vollbild; sie dreht mit dem Handy. Die Spielfläche füllt den ganzen Bildschirm, auch unter Kerbe, Dynamic Island und Home-Leiste; nur Knöpfe und Anzeigen weichen diesen Rändern aus. Nach Änderungen an der Startseite die App vom Home-Bildschirm entfernen und neu hinzufügen (iOS merkt sich die alte Einstellung).
 
 - **iPhone/iPad:** https://nicolehahn2890.github.io/Traumacoaster/ in Safari öffnen → Teilen → „Zum Home-Bildschirm“ → vom Home-Bildschirm starten. Für das Querformat die Ausrichtungssperre im Kontrollzentrum ausschalten.
 - **Android (Chrome):** Seite öffnen → ⋮ → „App installieren“ bzw. „Zum Startbildschirm hinzufügen“.
@@ -48,7 +48,12 @@ npm run levels:doc   # docs/LEVELS.md aus den Level-Daten erzeugen
 npm run screenshots  # Playwright-Screenshots (Hoch-, Quer-, Desktop-Format) nach screenshots/
 npm run scenario     # Playwright-Szenario (Lesart Bühne): Oval, Steilkurve, Looping, Löschen, Überzeichnen mit Fahrten
 npm run strokes:replay  # aufgezeichnete Striche in allen vier Lesarten nachspielen
+node scripts/lab-stills.mjs  # Standbilder und Messwerte des Tiefen-Labors (Dev-Server muss laufen)
 ```
+
+**Tiefen-Labor** (`public/labs/tiefe.html`, lokal unter `/labs/tiefe.html`, online unter `/Traumacoaster/labs/tiefe.html`): dieselbe Szene aus gemalten Elementen als heutige Bühne und als 3D-Welt mit Perspektive, Schatten, Nebel, Umfärben und Höhlenfreilegung; Grundlage der Entscheidung in `docs/RICHTLINIE.md`.
+
+Größen zum Ausprobieren auf dem Handy per Adresse: `?tip=26` (Tropfen unter dem Finger), `?line=15` (gemalte Linie), `?band=30` (Gummiband), `?dzoom=11` (Zeichen-Zoom in px/m).
 
 `?scene=start` überspringt den Splash, `?scene=splash` zeigt ihn immer (im Spiel: Einstellungen → „Intro ansehen“), `?fast=4` beschleunigt die Spielzeit (Tests), Der Knopf **DEV** unten links auf der Karte (oder `VITE_UNLOCK_ALL=1 npm run dev`) schaltet alle Welten, Level, Elemente und Starttypen frei; im Level schaltet dann der Knopf unten links durch alle zehn Bahntypen.
 

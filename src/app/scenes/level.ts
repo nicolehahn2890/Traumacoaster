@@ -34,6 +34,7 @@ import { BrushRefiner, joinLines, lineLength, planBrushTrack, previewBrushTrack,
 import { TrackInspector, type WeakSpot } from '@/track/inspect';
 import { findCrossings } from '@/track/crossings';
 import { MeasureOverlay } from '@/render/measureOverlay';
+import { safeArea } from '@/platform/safeArea';
 import { applyOverdraw, nearestOnTrack } from '@/track/overdraw';
 import { cutIndexNear, retractIndex } from '@/track/strokeBuffer';
 import { laneRise, laneScale, nearestLane, toStage, toWorld, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
@@ -112,8 +113,17 @@ const SCROLL_AWAY = 60;
 const SCROLL_RESPONSE = 7;
 /** Autoscroll erst, wenn der Finger seit dem Aufsetzen so weit (px) gezogen hat */
 const SCROLL_AFTER = 12;
+/**
+ * Größen zum Ausprobieren auf dem Handy per Adresse: ?tip=24 (Tropfen unter dem Finger), ?line=14 (gemalte Linie),
+ * ?band=30 (Gummiband), ?dzoom=10 (Zeichen-Zoom in px/m), ?tipr=18 (Strichspitze der anderen Lesarten)
+ */
+const urlNum = (key: string, fallback: number): number => {
+  if (typeof location === 'undefined') return fallback;
+  const v = Number(new URLSearchParams(location.search).get(key));
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+};
 /** Strichspitze: dicker Punkt unter dem Finger (Radius px) und ein sich verjüngender Schweif (Länge px) entlang des Strichs */
-const TIP_RADIUS_PX = 13;
+const TIP_RADIUS_PX = urlNum('tipr', 13);
 const TIP_TAIL_PX = 110;
 /** Knotenwahl beim Zeichnen: Scheitel-Semantik (Standard) oder der alte Schneider-Fit zum Vergleich (?fit=legacy) */
 const FIT_MODE: 'apex' | 'legacy' = typeof location !== 'undefined' && new URLSearchParams(location.search).get('fit') === 'legacy' ? 'legacy' : 'apex';
@@ -128,15 +138,15 @@ const STROKE_MODES: StrokeReading[] = ['brush', 'stage', 'single', 'lanes'];
 const AUTOSCROLL = typeof location === 'undefined' || new URLSearchParams(location.search).get('scroll') !== '0';
 /** Zeichen-Zoom auf dem Handy: mindestens so viele Pixel pro Bühnen-Meter (eine Spur rund 5 mm); der Rest des Levels
  *  über Autoscroll am Rand oder Wischen, Doppeltipp auf freie Fläche wechselt zur Übersicht */
-const DRAW_ZOOM_MIN = 7;
+const DRAW_ZOOM_MIN = urlNum('dzoom', 7);
 /** Zeichen-Zoom nur, wenn die kürzere Bildschirmseite schmaler ist (Handys) */
 const DRAW_ZOOM_SCREEN = 600;
 /** Gummiband zwischen Finger und Linienende (Bildschirm-Pixel) */
-const BAND_PX = 22;
+const BAND_PX = urlNum('band', 22);
 /** Tropfen unter dem Finger (Radius, Bildschirm-Pixel) */
-const TIP_PX = 17;
+const TIP_PX = urlNum('tip', 17);
 /** Breite der gemalten Linie (Bildschirm-Pixel, mindestens 0,6 Bühnen-Meter) */
-const BRUSH_LINE_PX = 9;
+const BRUSH_LINE_PX = urlNum('line', 9);
 /**
  * Pinsel wie mit einem sehr langen Pinsel mit biegsamer Spitze: Die gemalte Bahn folgt der Gummiband-Spitze zäh
  * (Zeitkonstante in s, also umso weiter hinterher, je schneller der Finger zieht), höchstens BRUSH_TAIL_PX. Der
@@ -3193,19 +3203,24 @@ export class LevelScene implements Scene {
     if (!this.view) return;
     this.view.resize(w, h);
     const portrait = h > w;
-    const safeTop = 14;
-    this.backBtn.position.set(36, safeTop + 26);
-    this.undoBtn.position.set(96, safeTop + 26);
-    this.redoBtn.position.set(152, safeTop + 26);
-    this.clearBtn.position.set(w - 36, safeTop + 26);
-    this.saveBtn.position.set(w - 92, safeTop + 26);
-    this.skinBtn.position.set(88, h - 50);
-    this.modeBtn.position.set(62, h - (this.skinBtn.visible ? 96 : 50));
-    this.lanePanel.position.set(36, h * 0.52);
+    // Vollbild: Die Bühne liegt unter Kerbe und Home-Leiste, die Bedienelemente weichen dem sicheren Bereich aus
+    const safe = safeArea();
+    const L = safe.left;
+    const R = safe.right;
+    const B = safe.bottom;
+    const safeTop = Math.max(14, safe.top + 6);
+    this.backBtn.position.set(L + 36, safeTop + 26);
+    this.undoBtn.position.set(L + 96, safeTop + 26);
+    this.redoBtn.position.set(L + 152, safeTop + 26);
+    this.clearBtn.position.set(w - R - 36, safeTop + 26);
+    this.saveBtn.position.set(w - R - 92, safeTop + 26);
+    this.skinBtn.position.set(L + 88, h - B - 50);
+    this.modeBtn.position.set(L + 62, h - B - (this.skinBtn.visible ? 96 : 50));
+    this.lanePanel.position.set(L + 36, h * 0.52);
     // schmaler Bildschirm: über der Höhe des Play-Knopfs (sonst stieße die Anzeige an ihn)
-    const pillY = h - (this.skinBtn.visible ? 142 : w < 520 ? 150 : 96);
-    this.lengthPill.position.set(12, pillY);
-    this.lengthSlider.position.set(12, pillY - 64);
+    const pillY = h - B - (this.skinBtn.visible ? 142 : w < 520 ? 150 : 96);
+    this.lengthPill.position.set(L + 12, pillY);
+    this.lengthSlider.position.set(L + 12, pillY - 64);
     if (portrait) {
       this.levelTitle.position.set(w / 2, safeTop + 72);
       this.goalsBar.position.set(w / 2, safeTop + 112);
@@ -3213,15 +3228,15 @@ export class LevelScene implements Scene {
       this.levelTitle.position.set(w / 2, safeTop + 12);
       this.goalsBar.position.set(w / 2, safeTop + 56);
     }
-    this.beltBadge.position.set(w - 64, safeTop + 78);
+    this.beltBadge.position.set(w - R - 64, safeTop + 78);
     this.sticker.position.set(w / 2, h * 0.36);
-    this.playBtn.position.set(w / 2, h - (portrait ? 64 : 56));
-    this.shelfBtn.position.set(w - 46, h - 50);
-    this.speedBtn.position.set(w - 46, h - 50);
-    this.laneHud.position.set(w - 46, h - 120);
-    this.shelf.position.set(w - 10, h - 120);
+    this.playBtn.position.set(w / 2, h - B - (portrait ? 64 : 56));
+    this.shelfBtn.position.set(w - R - 46, h - B - 50);
+    this.speedBtn.position.set(w - R - 46, h - B - 50);
+    this.laneHud.position.set(w - R - 46, h - B - 120);
+    this.shelf.position.set(w - R - 10, h - B - 120);
     this.placeHint();
-    this.speedText.position.set(w / 2, h - (portrait ? 120 : 108));
+    this.speedText.position.set(w / 2, h - B - (portrait ? 120 : 108));
     this.toast.position.set(w / 2, h * 0.42);
     this.resultPanel?.position.set(w / 2, h / 2);
     if (this.mode === 'draw') {

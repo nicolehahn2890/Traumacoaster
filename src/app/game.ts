@@ -7,6 +7,7 @@ import { InputManager } from '@/core/input';
 import type { Scene } from './scene';
 import { storage } from '@/core/storage';
 import { setLanguage } from '@/core/i18n';
+import { readSafeArea } from '@/platform/safeArea';
 
 export class Game {
   readonly app = new Application();
@@ -23,7 +24,7 @@ export class Game {
 
   async init(): Promise<void> {
     setLanguage(storage.settings.language);
-    // Die Fläche ist #app: im Vollbild auf dem Handy der sichere Bereich ohne Kerbe und Home-Leiste (index.html)
+    // Die Fläche ist #app: der ganze Bildschirm; die Szenen halten ihre Bedienelemente im sicheren Bereich (safeArea)
     const host = document.getElementById('app')!;
     await this.app.init({
       resizeTo: host,
@@ -78,6 +79,7 @@ export class Game {
   private onResize(): void {
     this.width = this.app.screen.width;
     this.height = this.app.screen.height;
+    readSafeArea();
     this.scene?.resize(this.width, this.height);
     this.fade.clear();
     this.fade.rect(0, 0, this.width, this.height).fill(0x1b2a4a);

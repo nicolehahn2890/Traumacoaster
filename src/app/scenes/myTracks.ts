@@ -10,6 +10,7 @@ import { storage } from '@/core/storage';
 import { unlockAll } from '@/core/dev';
 import { Button, label, INK, PAPER, paintRect, iconBack, iconTrash } from '@/ui/widgets';
 import { WORLDS } from '@/levels/worlds';
+import { safeArea } from '@/platform/safeArea';
 import { skyTexture, hexNum, shade } from '@/render/paint';
 import { Sprite } from 'pixi.js';
 import { LevelScene } from './level';
@@ -159,8 +160,9 @@ export class MyTracksScene implements Scene {
     this.h = h;
     this.sky.width = w;
     this.sky.height = h;
-    this.title.position.set(w / 2, 50);
-    this.backBtn.position.set(36, 40);
+    const safe = safeArea();
+    this.title.position.set(w / 2, 50 + safe.top);
+    this.backBtn.position.set(safe.left + 36, 40 + safe.top);
     this.layout();
   }
   update(): void {}
