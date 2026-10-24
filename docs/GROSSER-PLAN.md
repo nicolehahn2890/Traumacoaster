@@ -1,0 +1,389 @@
+# Trauma Coaster – der große Plan (Entwurf in Abstimmung)
+
+Stand 24.10.2026, abends. **Dieser Plan entsteht Paket für Paket mit Florian.** Nichts hier gilt als entschieden,
+was in der Tabelle unten nicht als „bestätigt am …“ steht; alles andere ist Vorschlag mit Optionen und Empfehlung,
+auf das Florian antwortet. Eingabe war `docs/UEBERGABE-PLAN.md`; die Technik steht in `docs/RICHTLINIE.md` und wird
+hier nicht neu verhandelt (wo Florian sie anders sieht, wird es dort geklärt und hier vermerkt). Der alte Plan
+`docs/PLAN.md` bleibt als Archiv.
+
+## A. Stand der Abstimmung
+
+| Paket | Inhalt | Stand | bestätigt am |
+|---|---|---|---|
+| Z | Ziel und Zuschnitt des Plans | Florians Vorgabe vom 24.10.; mit Paket 2 und 4 bestätigt (Karte und Morph als Paket 12 ergänzt) | 24.10.2026 |
+| 2 | Zonen-Baukasten: Editor, Zone und Level als Daten | **bestätigt**: Editor im Spiel (A), Fortschritt über Levelnummer, Untergrund gedeckelt bis freigespielt; Datenmodell als Arbeitsgrundlage, wird in Paket 3 und 5 ergänzt | 24.10.2026 |
+| 4 | Levelziele, Sterne, Humor | **bestätigt**: Zielarten-Katalog v1, fünf Umgebungselemente, Schanze, Magnet-Coins, Fangen, Bild im Bild als 2D-Kabine, Sterne A plus C, Rauswurf ohne Fangen = Sternverlust plus Zielart „Alle an Bord“ | 24.10.2026 |
+| 3 | Achterbahn-Features: Bahntypen, Aufwertungen, Startarten, Station, Stützen | Runde 2 läuft (Fragen gestellt am 24.10.) | – |
+| 8a | Teile und Elemente (welche Grafiken, welche 3D-Körper) | Runde 2 läuft (Fragen gestellt am 24.10.) | – |
+| 6 | Figuren, Schlange, Fahrgäste | Fragen in Runde 3 | – |
+| 5 | Untergrund, Tunnel, Baustellen | Fragen in Runde 3 | – |
+| 0 | Art Direction v2 (Look) | Fragen in Runde 4 | – |
+| 7 | Werkzeuge und Bedienung | Fragen in Runde 4 | – |
+| 1 | Weltrenderer (Technik, Richtlinie Schritt 2) | Technik gesetzt; Einordnung in die Etappen in Runde 5 | – |
+| 8b | Asset-Pipeline und Aufträge | Runde 5 | – |
+| 9 | Produktion vieler Level | Runde 5 (nach Florians Zuschnitt erst nach der kompletten Zone) | – |
+| 10 | Etappen und Abnahmen | Runde 5 | – |
+| 11 | Risiken und Grenzen | Runde 5 | – |
+| 12 | Karte und Morph (neu auf Florians Wunsch, 24.10.) | erst der saubere Morph vom Rad ins Level, dann die genaue Animation; Fragen in Runde 4 | – |
+
+Runde 1 (24.10.): offene Einladung, Zone und Level, Levelziele; Pakete Z, 2 und 4 am selben Abend bestätigt. Florians
+Antworten stehen je Paket unter „Florians Vorgaben“; die Vorschläge darunter sind die Antwort der Session darauf, und
+was Florian bestätigt hat, trägt das Datum. Runde 2 (24.10.): Achterbahn-Features und Teileliste.
+
+## Z. Ziel und Zuschnitt des Plans (Florians Vorgabe, 24.10.)
+
+Zur Bestätigung so formuliert:
+
+- Der Plan führt zu **Look und Werkzeugen**, nicht zu fertigen Leveln: am Ende steht **ein Zonenerstellungssystem**,
+  das wir weiterbenutzen (Editor, Datenmodell, Elementkatalog, Shader, Bahnsysteme), und **eine komplette Zone, in
+  der alles funktioniert, was später im Spiel vorkommt**.
+- Die genauen Level, die Anzahl je Zone (Florians Richtwert: 15–20, von sehr einfach bis Physikrätsel) und der
+  Gesamtumfang werden **erst festgelegt, wenn Spielmechanik und Look sitzen**.
+- Der Stil ist im Groben festgelegt; die Visuals unter `refs/traumacoaster-gpt explore/visuals/` zeigen ihn am
+  besten, aber nur in Ausschnitten (Regelwerk daraus: Paket 0).
+- Wir bauen den Editor zusammen: zuerst mit einfachen Formen, die wir dann durch Grafiken und 3D-Modelle ersetzen und
+  dabei Shader und Elemente ausarbeiten.
+- **Karte und Morph sind wieder im Plan** (Florian, 24.10.): zuerst muss der Morph vom Glücksrad ins Level sauber sein,
+  dann wird die genaue Animation erarbeitet (Paket 12). Nicht im Plan: Audio, Store-Builds, weitere Zonen als Inhalt.
+
+Folge für die Übergabe: Abschnitt 1 der `docs/UEBERGABE-PLAN.md` („erste Zone mit allen Leveln und Levelzielen“) ist
+damit enger gefasst; der Levelzielkatalog bleibt Teil des Plans, die konkreten Level nicht.
+
+## Paket 2: Zonen-Baukasten – Editor, Zone und Level als Daten
+
+### Florians Vorgaben (Runde 1)
+
+- Eine Zone ist quasi ein riesiges Level; in verschiedenen Ausschnitten entstehen verschiedene Level. Mal baut man an
+  ganz neuen Orten der Zone, mal am gleichen Ort mit vergrößertem Ausschnitt, bei Nacht, mit der Möglichkeit, Tunnel
+  zu machen, oder mit einem gewachsenen Element.
+- Jedes Level ist leer. Es fühlt sich an wie andere Casual-Spiele: Level für Level voran, manche sehr schnell, manche
+  knifflig und lang; auch kurze Bahnen sollen zu kniffligen Problemen führen.
+- Jede Bahn entsteht in einem festgelegten Feld, über das man nicht hinausscrollen kann; beim Herauszoomen ist
+  höchstens dieses Feld zu sehen, also maximal die ganze Bahn.
+- Ein Bahntyp je Zone, der aufgewertet wird: besserer Gurt, schönere Wagen, Booster, Splash, Bremse, Launch-Arten,
+  Kettenzug. In der ersten Version mehrere Typen zum Vergleich: Holzbahn, Stahlbahn, Autobahn, Schwebebahn.
+- Stützen müssen richtig in die Umgebung integriert sein: mehrere Versionen je Bahntyp, auch in die Decke oder
+  horizontal in einen Fels, besondere Holzkonstruktionen. Beispiele: `refs/traumacoaster-gpt explore/bahn und strecke/`
+  (zehn Bahnen mit Gleisen, Pfeilern a–c, Station, Eingang mit Schlange, Wagen in drei Detailgraden, dazu
+  Einzelstudien: Wandkonsole, fliegender Ausleger, schiefer Doppelbock, Fachwerkbrücke, Doppelportal, Beton-S, Fahrwerk).
+- Wie Zonen vorgegeben werden und ob es einen Editor gibt, ist Florians Frage; die Antwort ist der Vorschlag unten.
+- Baustellen und Tunnel: noch offen (Paket 5); das Ziel ist immer, die Bahn komplett zu bauen.
+
+### Vorschlag 2.1: Begriffe und Datenmodell
+
+Bisheriger Stand: Level sind Daten (`src/levels/types.ts`: Ziele, Freischaltungen, Breite, Höhenlimit, Terrain,
+Coins, Startarten, Fahrgäste, Wagen, Streckenbudget, Physik, Gurt); Richtlinie 10 beschreibt Zone als Szene in
+Chunks und Level als Ausschnitt mit Kameragrenzen, Absperrband, Werkzeugen, Startarten, Grabzonen, Landmarkenstufe.
+Daraus, mit Florians Vorgaben:
+
+**Zone** (eine Datei je Zone, zum Beispiel `zones/alpen/zone.json`, vom Editor geschrieben):
+- Maße: Breite, Höhe über dem Boden, Tiefe unter dem Boden (Untergrund), Spuren wie heute (fünf, 8,4 m Abstand).
+- Bahntyp der Zone (einer) und seine Aufwertungsstufen (siehe 2.4).
+- Boden: Höhenprofil je Spur, Wasserflächen, Erdschnitt.
+- Elemente: Instanzen aus dem Elementkatalog (Typ, Variante, Position x/y/Tiefe, Spiegelung, Maßstab) mit
+  **Wachstumsstufen** (ein Element kann je Fortschrittsstufe anders aussehen: höherer Baum, zweites Fenster).
+- Untergrund: Höhlenräume (Kästen mit Rückwand, Boden, Seiten), Baustellen- und Tunnel-Anschlüsse, Grabzonen (falls
+  Paket 5 sie vorsieht).
+- Stationsanker (mehrere je Zone), Schlangenbereiche, Coin-Gruppen, interaktive Elemente (Paket 4), Lichtquellen,
+  Nebelbänder, Partikelquellen.
+- Looks je Fortschrittsstufe (Tag, Abend, Nacht als Shader-Presets, Richtlinie 6).
+
+**Level** (Liste in der Zone; jedes Level ist leer, keine Bahn bleibt stehen):
+- **Feld**: Rechteck in Zonenkoordinaten (x von … bis, Höhe bis, Tiefe bis). Kamera scrollt nicht darüber hinaus
+  (Begrenzung mit weichem Rückstoß), die Zoom-Grenze ist „Feld passt ins Bild“, an den Rändern Absperrband.
+- Stationsanker und Richtung (Bahnstart vorgegeben und etwas länger, Paket 3).
+- **Fortschrittsstufe** der Zone (steuert Look, Wachstum der Elemente, Untergrund offen, Nacht, Tunnel erlaubt).
+- **Aufwertungsstufe der Bahn** (Gurt, Wagen, Kettenzugstärke, Launch-Arten, Booster/Bremse/Splash verfügbar).
+- Grenzen: Streckenbudget, Höhenlimit (Florian: in den meisten Leveln begrenzt).
+- Ziele (höchstens drei, Paket 4), aktive interaktive Elemente, Coins, Baustellen und Tunnel aktiv, erlaubte Werkzeuge.
+- Beispiel-Lösungsbahn (für den automatischen Test, Richtlinie 10).
+
+**Fortschrittsstufe**: ganze Zahl je Zone (0 … n). Jedes Level nennt seine Stufe. So sind „derselbe Ort, größeres
+Feld, bei Nacht, mit gewachsenem Baum“ nur Daten: zwei Level, gleicher Ort, verschiedene Felder und Stufen. Was die
+Stufe auslöst, ist eine Rückfrage (Levelnummer oder Sterne, siehe Paket 4).
+
+**Elementkatalog** (Typen, keine Grafiken; die Grafiken kommen in Paket 8a): einfache Kulisse; Dreiteiler (Rückwand,
+Innenraum, Vorderlippe mit Öffnung, Richtlinie 3); Säule oder Stamm mit unsichtbarem Tiefenvolumen; Fundamentfläche
+(wo Stützen stehen dürfen); Höhlenkasten; Wasserfläche und Wasserfall; Portal und Tunnelmund; Station; Baustelle;
+Lichtquelle; Partikelquelle; Nebelband; Schlangenbereich; Deko ohne Funktion; interaktives Element (Rad, Klappe,
+Glocke, Schalter, Paket 4); Coin-Gruppe; Feldrand.
+
+### Vorschlag 2.2: Der Editor
+
+Heute gibt es keinen Editor; Level sind Code (`src/levels/levels.ts`), das Tiefen-Labor ist eine feste Szene.
+Optionen:
+
+| Option | Was | Für | Gegen |
+|---|---|---|---|
+| **A: Editor im Spiel** (im Browser am Mac, hinter einem Schalter, gleiche Engine wie das Spiel) | Platzhalter setzen und verschieben, Tiefe und Metadaten wählen, Felder aufziehen, Testfahrt sofort, Speichern als Zonendatei | genau das, was auf dem Handy zu sehen ist; kein Export; Florian bedient ihn selbst; Platzhalter werden später per Namen durch Grafiken ersetzt | Bedienoberfläche muss gebaut werden (Pixi-HUD vorhanden) |
+| B: 3D-Programm als Editor (Flächen und Kästen mit Eigenschaften, Export) | mächtige Transformationen, Kameravorschau | fertige Werkzeuge | Werkzeugwechsel, Exportpipeline, Metadaten umständlich, Handy-Kontrolle erst nach Export |
+| C: Zonendatei von Hand (Daten plus Hot-Reload) | schnellster Start für Sessions | kein Bau nötig | für Florian nicht benutzbar, kein Gefühl für Maße |
+| D: 2D-Leveleditor (Kacheln, Ebenen) | bekannt | fertig | unsere Zone ist 3D aus Flächen; Tiefe, Fundamente, Öffnungen passen nicht |
+
+**Empfehlung: A**, in drei Ausbaustufen, jede mit Tor. **Bestätigt am 24.10.2026: Option A, Florian bedient den Editor selbst am Mac.**
+
+1. **Klötzchen-Editor** (gehört zur Etappe Weltrenderer): Platzhalter (Fläche, Kasten, Zylinder, Höhlenkasten, Wasser,
+   Station, Baustelle, Coin-Gruppe) setzen, ziehen, in der Tiefe verschieben, Metadaten setzen (Fundament, Öffnung,
+   Anschlüsse, Wachstumsstufe), Level-Felder aufziehen, Fortschritts- und Aufwertungsstufe wählen, Ziele eintragen,
+   Testfahrt aus dem Editor, Speichern und Laden. Bedienung mit Maus und Trackpad am Mac; auf dem Handy nur spielen.
+   Tor: Florian baut selbst einen Testausschnitt mit Station, einem Hügel, einem Fenster-Element und einer Baustelle;
+   das Handy zeigt denselben Stand; der Export lädt deterministisch (Test rendert ein Standbild).
+2. **Grafik-Slots**: jeder Platzhalter trägt einen Asset-Namen; liegt die Grafik oder das Modell vor, ersetzt es den
+   Klotz (wie heute die Kacheln über das Manifest). Dreiteiler-Schnitt, Fundament-Polygon und Öffnung werden im
+   Editor über das Bild nachgezeichnet. Tor: die ersten drei Alpen-Dreiteiler aus Paket 8a sitzen im Editor und
+   tragen die Bahn und ihre Stützen (Richtlinie 12.4).
+3. **Zonenwerkzeuge**: Varianten und Wachstum je Fortschrittsstufe, Look-Presets je Stufe, Untergrund-Freilegung,
+   Schlangenbereiche, interaktive Elemente, später Rezepte und Generator (Paket 9). Tor: die Alpen-Zone als Datei mit
+   mehreren Feldern in mehreren Stufen, komplett spielbar.
+
+### Vorschlag 2.3: Feld und Kamera
+
+Feld als Rechteck mit weicher Kamerabegrenzung (Recherche C, Abschnitt E: Kamera-Clamp plus Rückstoßzone,
+einfache Grenzen lesen sich besser als unregelmäßige), Zoom-Grenze „Feld passt ins Bild“, Absperrband an den
+Feldrändern wie heute an offenen Bahnenden, Autoscroll beim Zeichnen nur innerhalb des Feldes. Hochformat:
+Felder sind eher hoch als breit (Untergrund zählt mit), Querformat eher breit; der Editor zeigt beide Rahmen.
+
+**Untergrund vor dem Freispielen (Florians Antwort, 24.10.):** Er darf schon Platz einnehmen, soll aber nicht richtig
+sichtbar sein, solange er nicht freigespielt ist. Umsetzung als Regel: Vor dem Freispielen zeigt das Feld unten nur den
+geschlossenen Erdschnitt (geschichtete Erde ohne Räume, etwas dunkler, höchstens ein Fünftel der Feldhöhe); mit der
+Fortschrittsstufe wächst das Feld nach unten, und die Räume werden mit der Freilegung aus dem Labor sichtbar.
+
+### Vorschlag 2.4: Ein Bahntyp je Zone, Aufwertungen als Daten
+
+Die Zone nennt ihren Bahntyp; die Aufwertungsstufen sind eine Tabelle je Typ: Stufe → Gurt (0–4 wie heute), Wagenform
+(Skin-Variante), Kettenzugstärke (bestimmt die maximale Höhe des ersten Hügels, beim Zeichnen als Linie sichtbar),
+Launch-Arten, Booster, Bremse, Splash. In der ersten Version bauen wir alle vier Typen als Systeme (Richtlinie 3a hat
+sie im Labor) und schalten sie im Editor um, damit Florian vergleichen kann; welche die Alpen bekommt, ist eine Frage
+der Runde 2 (die Alpen-Visuals zeigen die Autobahn).
+
+### Rückfragen zu Paket 2 (Runde 1b)
+
+1. Editor: Option A, du bedienst ihn selbst am Mac mit der Maus? **Beantwortet am 24.10.: ja, Option A.**
+2. Fortschrittsstufe: durch die Levelnummer (fest, vorhersehbar) oder durch gesammelte Sterne (Wiederspielen lohnt)?
+   Empfehlung: Levelnummer für Aufwertungen und Zonenfortschritt, Sterne als Prestige und für Schmuck (Paket 4).
+   **Beantwortet am 24.10.: wie empfohlen, Levelnummer.**
+3. Feld im Hochformat: darf der Untergrund das untere Drittel einnehmen wie in den Visuals 15 und 18, auch wenn
+   die Bahn dann kleiner wird? Oder soll der Untergrund erst mit dem Fortschritt ins Feld rutschen?
+   **Beantwortet am 24.10.: teilweise schon Platz, aber nicht richtig sichtbar, bis freigespielt (Regel in 2.3).**
+
+**Status: bestätigt am 24.10.2026.** Das Datenmodell (2.1) ist Arbeitsgrundlage und wird mit Paket 3 (Bahn, Station)
+und Paket 5 (Untergrund) ergänzt; Änderungen daran werden hier mit Datum nachgetragen.
+
+## Paket 4: Levelziele, Sterne, Humor
+
+### Florians Vorgaben (Runde 1)
+
+- Wichtig sind Lernkurve, das Gefühl, etwas Kniffliges gelöst zu haben, und das Verständnis, welche Streckenführung
+  funktioniert. Mehr **Physikrätsel** in die Ziele; vielleicht Umgebungselemente, die mit der Fahrt interagieren
+  (Räder, Klappen, die durch die Fahrt gedreht oder geöffnet werden und Coins freilegen). Recherche und Vorschläge
+  gewünscht.
+- **Fangen** ist ein sehr cooles Ziel: der Wagen wirkt als Magnet und fängt Passagiere besser; Flug und Fangen in
+  Zeitlupe in einer **Bild-im-Bild-Kamera**. **„Fliegt raus“ gibt es nicht mehr** als Ziel.
+- **Coins** bleiben (sie geben die Form vor) und funktionieren ebenenübergreifend: nahe vorbei genügt, der Coin wird
+  wie von einem Magneten angezogen; nicht zu leicht.
+- In den meisten Leveln begrenzte Streckenlänge und Höhe. Der **erste Hügel hängt von der Kettenzugstärke** ab, die mit
+  dem Fortschritt aufgewertet wird, beim Zeichnen sichtbar.
+- Form der Bahn, Loopingzahl, Topspeed, Airtime (braucht bessere Gurte) sind gute Ziele. Tunnel-Meter gut.
+  **Sprungschanzen**: Lücken in der Strecke, der Zug landet wieder auf den Gleisen, wenn es in etwa stimmt.
+  Baustelle öffnen gut, aber nicht nur „Punkt verbinden“; Tunnel und Baustellen noch unentschieden (Paket 5).
+- **Schlange versorgen ist kein Ziel**: je größer die Bahn, desto mehr Leute kommen und stehen an; sie jubeln, wenn die
+  Bahn vorbeirauscht.
+- Höchstens drei Ziele je Level, meistens zwei (Frage an die Session).
+- Sterne: Recherche gewünscht. Egal, was man einsammelt: ein Ziel ist nur geschafft, wenn der Wagen ins Ziel kommt.
+- **Sehr viel Humor.** Nicht übertrieben viel Scheitern; bei extremen Loopings und Kurven Nahaufnahmen der Passagiere im
+  Bild im Bild (hysterisch schreiend, hin und her fliegend). Die Bahn soll nicht zu oft entgleisen, nicht frustrieren;
+  wenn, dann richtig krass und lustig. Regeln dafür festlegen.
+
+### Vorschlag 4.1: Zielarten-Katalog für das ganze Spiel (Entwurf)
+
+Bisheriger Stand: 26 Zielarten in `src/levels/types.ts`, Auswertung in `src/levels/evaluator.ts` (statisch beim
+Zeichnen oder nach der Fahrt). Mit Florians Vorgaben:
+
+| Zielart | Art | Messung (auf der 3D-Bahn oder in der Fahrt) | Anzeige | Stand | Einführung |
+|---|---|---|---|---|---|
+| Ankunft | Pflicht immer | Zug kommt in der Station an | kein Chip, Ergebnisbild | bleibt | Zone 1 |
+| Höhe ≥ | Form | höchster Punkt über dem Boden der Spur; Grenze durch Kettenzugstärke sichtbar | Chip, Lotlinie beim Zeichnen | bleibt | Zone 1, Level 1 |
+| Drop ≥ | Form | größter zusammenhängender Höhenverlust | Chip, Maßband | bleibt | Zone 1 |
+| Loopings ≥ | Form | Selbstkreuzungen der 3D-Kurve | Chip, Ring am Scheitel | bleibt | Zone 1 |
+| Kurven ≥, Spuren ≥ | Form | Spurwechsel, befahrene Spuren | Chip | bleibt | Zone 1 |
+| Strecke ≥ | Form | Bogenlänge | Chip | bleibt | Zone 1 |
+| Strecke ≤ (Budget) | Grenze | Bogenlänge | Budget-Regler statt Ziel | wird Grenze | Zone 1 |
+| Coins | Form/Weg | 3D-Abstand Wagen–Coin ≤ Fangradius, ebenenübergreifend, Magnetzug (4.4) | Chip n/m, Coins fliegen zum Wagen | bleibt, neu gebaut | Zone 1 |
+| Tunnel-Meter ≥ | Welt | Bogenlänge der Bahn im Berg- oder Untergrundvolumen | Chip, Meterzahl läuft in der Fahrt | neu (ersetzt „Tunnel-Anzahl“) | Zone 1 |
+| Baustelle öffnen | Welt/Rätsel | Anschluss verbunden; Variante: Durchbruch braucht Mindesttempo (4.2) | Chip, Freilegungs-Choreografie | neu | Zone 1 |
+| Sprung ≥ x m | Rätsel/Form | Zug fliegt über eine Lücke und landet im Fangtrichter (4.3) | Chip, Flugbahn-Vorschau | neu | Zone 1, spät |
+| Fangen ≥ n | Fahrgäste | Fahrgast fliegt heraus und wird von einem Wagen (Magnet) wieder gefangen (4.5) | Chip, Bild im Bild in Zeitlupe | bleibt, ausgebaut | Zone 1, spät |
+| Element bedienen | Rätsel | Rad n-mal gedreht, Klappe geöffnet, Glocke angeschlagen (4.2) | Chip, Element animiert in der Welt | neu | Zone 1 (zwei bis drei Elemente) |
+| Tempo ≥ | Fahrt | Höchstgeschwindigkeit | Chip nach der Fahrt | bleibt | Zone 1 |
+| Airtime ≥ | Fahrt | Sekunden mit g < 0; braucht Gurt-Aufwertung | Chip nach der Fahrt | bleibt | Zone 1, nach Gurt |
+| Launch / Kettenzug / Booster / Ohne Bremse | Ausrüstung | Startart oder Element benutzt | Chip | bleibt (Lehr-Level für neue Aufwertungen) | mit der Aufwertung |
+| Splash | Welt | Durchfahrt durch Wasser | Chip | bleibt | Zone 1 (Bergsee) oder später |
+| max. g ≤, min. g ≥ | Fahrt | Komfort oder Intensität | Chip nach der Fahrt | bleibt | später |
+| Fahrzeit ≥ / ≤ | Fahrt | Sekunden | Chip | bleibt | später |
+| Schleifen ≥ | Form | Rollen um die Fahrtrichtung; hängt von Entscheidung 4 (Wagen 3D) ab | Chip | später | nach Entscheidung |
+| Bestimmtes Element n-mal | Form | Vorlagen und Sonderteile | Chip | bleibt | später |
+| Alle an Bord | Fahrgäste | kein Fahrgast verloren (heutige Grundregel, jetzt als Zielart je Level) | Chip | neu (siehe 4.7) | wo das Level es verlangt |
+| Fliegt raus | – | – | – | **weg** (Rauswurf bleibt ein Ereignis, kein Ziel) | – |
+| Flug ≥ x m | – | – | – | weg als eigenes Ziel; denkbar als Bonus „gefangen nach ≥ x m Flug“ | Frage |
+| Schlange | – | – | Ambiente: Schlange wächst mit der Bahn, jubelt | kein Ziel | – |
+
+### Vorschlag 4.2: Interaktive Umgebungselemente (Physikrätsel) – Recherche und Übertragung
+
+Recherche: Cut the Rope führt je Box ein neues Element ein (Blasen, Luftkissen, Stacheln, Spinnen, bewegliche
+Haken, Funken, Zauberhüte als Teleporter, Sprungplattformen, Drehräder, die das Seil verlängern), Incredible Machine
+und Contraption Maker arbeiten mit Zahnrädern, Flaschenzügen, Hebeln, Wippen, Trampolinen (über hundert Teile), Poly
+Bridge hat eigene Sprunglevel mit Rampen und Hydraulik. Für ein Spiel, in dem der Zug das einzige bewegte Ding ist,
+heißt das: Elemente, die **auf die Fahrt reagieren** (der Zug treibt sie an) oder **die Fahrt verändern**.
+
+| Element | Auslöser und Physik | Was passiert | Rätseltyp | Alpen v1 |
+|---|---|---|---|---|
+| **Mühlrad / Wasserrad** | Zug streift die Schaufeln (Kontakt entlang eines Bogens), Rad dreht sich mit dem Impuls | nach n Umdrehungen öffnet sich eine Kiste oder Klappe mit Coins | Tempo und Höhe an einer Stelle | ja |
+| **Tor mit Schalterplatte / Klappe** | Zug fährt über eine Platte oder drückt eine Klappe mit seinem Gewicht | Tor öffnet eine Höhle oder Coins für den zweiten Durchgang | Topologie: zweimal vorbei, Reihenfolge | ja (einfachste Form: Platte öffnet Tor) |
+| **Kuhglocke** | Zug streift die Glocke | Klang, Haken, Schlange jubelt | Form und Höhe, lustig und billig | ja |
+| **Durchbruchwand (Baustelle)** | Zug trifft die Wand mit Mindesttempo | Wand zersplittert, Tunnel offen (Freilegung aus dem Labor) | Energie: Höhe vorher richtig wählen | ja, als Baustellen-Variante (Paket 5) |
+| **Sprungschanze** | Lücke in der Strecke, ballistischer Flug | Landung oder spektakuläres Scheitern (4.3) | Energie und Winkel | ja, spät |
+| Windböe / Geysir | Luftstrom oder Fontäne schiebt den Zug | Energie dazu oder weg, Tempo-Rätsel | Energie | später (Physik am Zug) |
+| Wippe / Zugbrücke | Zug kippt eine Wippe, die den Rückweg freigibt | bewegte Schiene | Topologie, Timing | später (bewegte Gleise, verwandt mit Kippschiene im GDD) |
+| Lawine / Felsbrocken | Zug löst einen Fels, der eine Höhle öffnet | Spektakel, neuer Weg | Timing | später |
+| Zustieg unterwegs | Wartende springen zu, wenn der Zug langsam genug vorbeikommt | mehr Fahrgäste, mehr Jubel | Tempo-Fenster | später (Frage) |
+
+Empfehlung für die Alpen: Kuhglocke, Mühlrad, Tor mit Schalterplatte, dazu Sprungschanze und Durchbruch. Jedes
+Element ist ein Typ im Elementkatalog (Position, Tiefe, Auslöse-Volumen, Zustandsmaschine, Animation), seine Messung
+läuft als Ereignis in der Fahrtsimulation (wie heute Coins, Tunnel, Booster), seine Anzeige ist ein Chip plus die
+Animation in der Welt. Rätsel entstehen aus Kombinationen: Rad braucht Tempo, Tempo braucht Höhe, Höhe ist durch den
+Kettenzug begrenzt, also Drop vor dem Rad; Tor braucht zwei Durchgänge, also eine Schleife im Layout; die Schanze
+braucht den richtigen Absprungwinkel.
+
+### Vorschlag 4.3: Sprungschanze
+
+- **Zeichnen:** Finger heben, dann ab mindestens 4 m Abstand zum offenen Ende weiterzeichnen; die Lücke wird zur
+  Schanze, wenn der neue Strich in der Flugzone beginnt. Sonst gilt wie heute: offenes Ende mit Absperrband.
+- **Physik:** Abflug mit Endgeschwindigkeit und Endtangente, ballistischer Flug (der Freiflug `flightSim` existiert).
+  **Fangtrichter** bei der Landung: Vorderachse trifft die Landeschiene mit Abstand ≤ 1,5 m und Richtungsabweichung
+  ≤ 25° → Einrasten mit Stoß, Funken, Kameraruck; sonst Entgleisen (richtig krass und lustig, siehe 4.7).
+- **Vorschau:** nach dem Loslassen rechnet eine stille Vorab-Fahrt die Flugbahn und zeigt sie als gestrichelten Bogen
+  mit Landemarke (grün passt, rot zu kurz oder zu steil). Nicht live während des Strichs, damit das Zeichnen flüssig
+  bleibt.
+- **Ziel:** „Sprung ≥ x m“ (Flugweite des Zugs) oder einfach Teil der Ankunft.
+- Vorbilder: Poly Bridge (eigene Sprunglevel mit Rampen), RollerCoaster Tycoon (Zug fliegt, wenn Gleis fehlt, aber nur
+  als Unfall). Ein Spiel mit „Lücke und wieder einrasten“ hat die Suche nicht gefunden; das ist ein eigenes Merkmal.
+
+### Vorschlag 4.4: Coins mit Magnet
+
+Heute: Coin zählt bei 2 m Abstand in der Spurebene. Vorschlag: 3D-Abstand (x, y, Tiefe) ≤ Fangradius 3,5 m, Tiefe
+zählt voll (ebenenübergreifend), der Coin fliegt in 0,25 s zum Wagen (Kraft wächst mit der Nähe, wie in den
+Magnet-Mechaniken von Endless Runnern), Pling. Nicht zu leicht: eine ganze Spur daneben (8,4 m) reicht nicht, eine
+halbe schon. Radius je Level einstellbar. Coin-Gruppen bleiben Form-Hinweise (Reihe, Bogen, Ring, Säule wie heute).
+
+### Vorschlag 4.5: Fangen mit Magnetwagen
+
+Heute: ein fliegender Fahrgast wird gefangen, wenn er einen Wagen mit höchstens 9 m/s Relativgeschwindigkeit trifft
+(`tryCatch`). Vorschlag: Fangtrichter um jeden freien Sitz (1,5 m), darin ein Sog zum Sitz, der die
+Relativgeschwindigkeit dämpft; Treffer bei ≤ 12 m/s. Level mit Fangziel geben eine schwache Gurtstufe vor, damit
+jemand fliegt; Rauswurf ohne Fangen bleibt ein Fehlschlag (Rückfrage). Flug und Fangen in Zeitlupe mit Bild im Bild.
+
+### Vorschlag 4.6: Bild im Bild
+
+| Option | Was | Kosten | Urteil |
+|---|---|---|---|
+| A: zweite 3D-Kamera (eigenes Rendertarget, als Fenster im HUD) | echte Nahaufnahme der Szene | zweiter Render-Durchgang je Bild, auf dem Handy zu messen | nur wenn B nicht reicht |
+| **B: 2D-Kabine** (Wageninnenraum als gemalte Fläche, die Cut-out-Figuren groß darin, Pixi im HUD) | Nahaufnahme der Figuren: Kiefer klappt, Augen groß, Arme rudern, Figuren fliegen im Wagen umher | fast nichts | **Empfehlung**: passt zum South-Park-Stil, ist lustiger als eine Kameraaufnahme |
+
+Auslöser: |g| über Schwelle (Looping, enge Kurve), Rauswurf und Fangen, Entgleisen; Dauer 1–2 s; Zeitlupe 0,3–0,5× auf
+dem Hauptbild (das heutige Zeitlupen-System trägt das); Position oben, im Hochformat etwa ein Drittel der Breite.
+Vorbild: die Zeitlupen-Unfallkamera von Burnout, die den Unfall aus mehreren Blickwinkeln zeigt.
+
+### Vorschlag 4.7: Humor und Scheitern (Regeln, Entwurf)
+
+- Entgleisen ist selten: großzügige Grenzen je Bahntyp, Schwachstellen-Marker beim Zeichnen (gibt es), Vorab-Fahrt
+  warnt vor sicherem Entgleisen („hier zu schnell“), bevor man auf Testfahrt drückt.
+- Wenn es passiert, ist es groß: Freiflug des Zugs (gibt es), Fahrgäste fliegen, Bild im Bild mit Gesichtern,
+  Sticker, Kameraruck, Staub.
+- Schreien ist kein Scheitern: hohe g lassen Fahrgäste kreischen und im Wagen herumfliegen (Bild im Bild), Ohnmacht ist
+  kein Fehlschlag mehr (heute kostet sie den dritten Stern).
+- Scheitern nur durch: Zug kommt nicht an (Entgleisen, Sprung verfehlt, offenes Ende) und Kollision im Schlangenbereich.
+- **Rauswurf ohne Fangen (Empfehlung der Session, von Florian am 24.10. bestätigt):** kein Fehlschlag, sondern Sternverlust.
+  Ein verlorener Fahrgast kostet den dritten Stern, mehr als die Hälfte verloren kostet auch den zweiten; der Zug muss
+  ankommen. Wo ein Level es verlangt (Lehr-Level für einen neuen Gurt, Finale), gibt es die Zielart **„Alle an Bord“**
+  als Pflichtziel; das ist die heutige Regel, aber als Daten je Level statt als Gesetz. Gründe: Fliegende Fahrgäste sind
+  der Humor des Spiels, der Rauswurf ist dann ein Lacher und kein Neustart; der Gurt wird zum Weg zum dritten Stern
+  statt zur Hürde; das Fangen bleibt die Rettung. Alternative (streng, wie heute): jeder ungefangene Rauswurf ist ein
+  Fehlschlag; dann muss der Gurt früh stark sein, und Airtime-Level werden vorsichtig.
+
+### Vorschlag 4.8: Sterne (Recherche und Optionen)
+
+Recherche: Cut the Rope vergibt drei Sterne je Level und **sperrt die nächste Box über die Sternensumme** (30 Sterne für
+die zweite Box auf dem Handy, rund 190 für die vierte); ein Level ohne Sterne gilt trotzdem als geschafft. Angry Birds
+hat die Drei-Sterne-Logik populär gemacht: ein Stern fürs Bestehen, zwei für Besser, drei für Meisterschaft, Sterne
+zählen hoch statt herunter. Kritik an solchen Systemen: ein oder zwei Sterne fühlen sich wie Trostpreise an, der
+eigentliche Reiz liegt im dritten; und unklare Sternkriterien verwirren. Daraus drei Optionen:
+
+| Option | Sterne bedeuten | Für | Gegen |
+|---|---|---|---|
+| **A: Prestige** (heute) | Schmuck auf der Karte, nichts gesperrt | kein Frust, Casual-Fluss Level für Level (Florians Vorgabe 3) | wenig Grund zum Wiederspielen |
+| B: Sternensumme öffnet den nächsten Zonenabschnitt oder die nächste Zone | Wiederspielen lohnt | bewährt (Cut the Rope) | sperrt Spieler aus, die nur vorankommen wollen |
+| C: Sternensumme öffnet Schmuck und Bonus-Level | Wagenlack, Fahnen, Figurenteile, ein Bonus-Level je Zone | Wiederspielen lohnt, niemand wird gesperrt | mehr Inhalt nötig |
+
+Empfehlung: **A plus C**. Aufwertungen und Zonenfortschritt kommen über die Levelnummer (vorhersehbar), Sterne sind
+Prestige und schalten Schmuck und ein Bonus-Level je Zone frei. Sternkriterien je Level klar: ★ alle Pflichtziele und
+Ankunft, ★★ das Bonusziel, ★★★ ein benanntes „Meisterstück“ je Level (zum Beispiel unter dem Budget, ohne Bremse, alle
+Coins) statt einer globalen „sauberen Fahrt“. Ein Ziel zählt nur, wenn der Wagen ankommt (Florians Regel).
+
+### Vorschlag 4.9: Ziele je Level
+
+Meinung der Session: ein Pflichtziel, das das Rätsel ist, dazu höchstens ein zweites Pflichtziel zur Form und höchstens
+ein Bonusziel; Lehr-Level haben genau ein Ziel. Also meist zwei Chips, nie mehr als drei. Gründe: Platz oben auf dem
+Handy, das alte Prinzip „ein neues Ding pro Level“, und die Vorbilder (Cut the Rope hat ein Ziel, die Sterne sind
+optional). Florians „maximal drei, meistens zwei“ passt genau.
+
+### Rückfragen zu Paket 4 (Runde 1b)
+
+1. Welche Umgebungselemente zuerst? Empfehlung: Kuhglocke, Mühlrad, Tor mit Schalterplatte, dazu Sprungschanze und
+   Durchbruch. Fehlt dir eines, das du im Kopf hast? **Beantwortet am 24.10.: passt (vorläufig).**
+2. Rauswurf ohne Fangen: bleibt ein Fehlschlag, oder nur ein verlorener Stern? **Beantwortet am 24.10.: wie empfohlen,
+   Sternverlust plus Zielart „Alle an Bord“ (4.7).**
+3. Bild im Bild als 2D-Kabine mit den Figuren (Option B) statt zweiter Kamera: einverstanden? **Beantwortet am 24.10.: ja.**
+4. Sterne: A plus C (Prestige, Schmuck, ein Bonus-Level je Zone), Fortschritt über die Levelnummer: einverstanden?
+   **Beantwortet am 24.10.: ja.**
+5. Sprungschanze schon in der Alpen-Zone (spät) oder erst in Zone 2? **Beantwortet am 24.10.: auf jeden Fall jetzt
+   einbauen; ob sie erst in späteren Zonen genutzt wird, entscheidet das Leveldesign.**
+
+**Status: bestätigt am 24.10.2026.** Offen bleibt nur, was ausdrücklich so markiert ist (Schleifen nach Entscheidung
+4, Flugweite als Bonus-Variante, Zustieg unterwegs); das wird in Paket 3 und 6 geklärt.
+
+## Pakete 3, 8a, 6, 5, 0, 7, 1, 8b, 9, 10, 11
+
+Noch nicht besprochen; die Fragen kommen in den Runden 2 bis 5 (Tabelle A). Zu jedem Paket wird hier wie oben
+festgehalten: Florians Vorgaben, Vorschlag mit Optionen und Empfehlung, Prüfung (Tor), Spanne, Rückfragen, Status.
+Die Technik aus `docs/RICHTLINIE.md` (Three.js-Welt mit geneigter Perspektivkamera, Pixi-HUD, Tiefenpuffer, eine
+Shadow Map, Umfärben per Shader, Untergrund als Baustelle plus Freilegung, 60 fps auf dem Handy) ist die Grundlage
+aller Pakete.
+
+## Paket 12: Karte und Morph (neu, 24.10.)
+
+Florians Vorgabe: Der Morph von der Glücksradkarte ins Spiel gehört doch in den Plan. Zuerst muss der Morph vom Rad
+zum Level sauber sein, dann wird die genaue Animation erarbeitet. Bisheriger Stand: Karte als Rad mit Glücksrad-Physik,
+gemeinsamer Himmel und aufklappende Spurstreifen (alter Plan M4, `src/app/mapTransition.ts`, `src/render/unfold.ts`);
+Florians Vorgabe K16 (Radlayout, Level als Miniaturen mit Symbolen und Animationen, Boden morpht, Bäume und Felsen
+werden einanimiert, keine Sprünge, nichts wird einfach eingeblendet); Richtlinie 10: mit der 3D-Welt wird der Morph
+einfacher, weil der Boden als Mesh gebogen wird und Bäume und Felsen echte Objekte sind. Konzepte liegen unter
+`refs/traumacoaster-gpt explore/moodboards_map/`. Fragen dazu in Runde 4 (zusammen mit dem Look): Was heißt „sauber“
+für dich beim Morph vom Rad ins Level, was darf der erste Schritt weglassen, und welche Rolle spielt die Karte für
+den Zonenfortschritt (Fortschrittsstufe über die Levelnummer).
+
+Status: aufgenommen, noch nicht besprochen.
+
+## Quellen der Recherche zu Paket 4
+
+- Cut the Rope, Spielelemente je Box: https://cuttherope.fandom.com/wiki/Gameplay_elements und
+  https://cuttherope.fandom.com/wiki/Fabric_Box (30 Sterne für die zweite Box); vierte Box rund 190 Sterne:
+  https://www.macworld.com/article/208314/cuttheropereview.html
+- Drei-Sterne-Systeme (Angry Birds, Cut the Rope): https://yukaichou.com/?p=40289; Kritik „Trostpreis-Sterne“:
+  https://toucharcade.com/?p=75409
+- Incredible Machine und Contraption Maker (Teile: Zahnräder, Flaschenzüge, Wippen, Trampoline):
+  https://www.mobygames.com/game/2473?s=platform, https://store.epicgames.com/p/contraption-maker-66e1ec
+- Poly Bridge, Rampen und Sprunglevel: https://www.nintendo.com/en-gb/Games/Nintendo-Switch-games/Game-1318070.html,
+  https://www.speedrun.com/poly_bridge/levels
+- Züge, die das Gleis verlassen (Unvorhersagbarkeit): https://coasterbuzz.com/Forums/PostLink/273664
+- Coin-Magnet, Kraft wächst mit der Nähe: https://discussions.unity.com/t/magnetic-object-to-make-coins-move-to-object/56921
+- Zeitlupen-Unfallkamera (Burnout): https://giantbomb.com/wiki/Franchises/Burnout, https://beamng.com/posts/1712091/

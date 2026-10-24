@@ -2,6 +2,10 @@
 
 # Trauma Coaster – Plan nach dem ersten Spieltest
 
+> **Abgelöst (24.10.2026):** Dieser Plan ist Archiv. Der große Plan für die erste Zone entsteht Paket für Paket mit
+> Florian in [GROSSER-PLAN.md](GROSSER-PLAN.md); die Technik steht in [RICHTLINIE.md](RICHTLINIE.md). Die Befunde und
+> der Umsetzungsstand unten bleiben als Nachschlagewerk gültig.
+
 ## Kontext
 
 Nach dem ersten Test des Prototyps (PixiJS 8 + Rapier2D, Branch `claude/serene-pascal-43m0gq`) liegt eine Liste mit 18 Anpassungen vor. Sie betreffen fünf Bereiche: (1) das Zeichnen und Bearbeiten der Bahn, (2) Fahrt, Physik und Feedback, (3) Karte und Übergänge, (4) Grafikstil und Terrain/Tunnel, (5) Technik, Plattform und Spielkonzept. Der Plan ordnet die Punkte in Arbeitspakete mit Abhängigkeiten, nennt pro Paket den technischen Ansatz, die betroffenen Dateien und die Prüfung. Jedes Paket ist ein eigener Commit-Block auf dem Branch; die Reihenfolge ist so gewählt, dass die Bedienung zuerst stimmt (sie entscheidet, ob das Spiel Spaß macht), dann das Feedback der Fahrt, dann Karte/Übergang, dann der Stil, dann Tunnel und Plattform.
