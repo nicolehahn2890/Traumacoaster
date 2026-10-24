@@ -13,10 +13,10 @@ hier nicht neu verhandelt (wo Florian sie anders sieht, wird es dort geklärt un
 | Z | Ziel und Zuschnitt des Plans | Florians Vorgabe vom 24.10.; mit Paket 2 und 4 bestätigt (Karte und Morph als Paket 12 ergänzt) | 24.10.2026 |
 | 2 | Zonen-Baukasten: Editor, Zone und Level als Daten | **bestätigt**: Editor im Spiel (A), Fortschritt über Levelnummer, Untergrund gedeckelt bis freigespielt; Datenmodell als Arbeitsgrundlage, wird in Paket 3 und 5 ergänzt | 24.10.2026 |
 | 4 | Levelziele, Sterne, Humor | **bestätigt**: Zielarten-Katalog v1, fünf Umgebungselemente, Schanze, Magnet-Coins, Fangen, Bild im Bild als 2D-Kabine, Sterne A plus C, Rauswurf ohne Fangen = Sternverlust plus Zielart „Alle an Bord“ | 24.10.2026 |
-| 3 | Achterbahn-Features: Bahntypen, Aufwertungen, Startarten, Station, Stützen | Runde 2 läuft (Fragen gestellt am 24.10.) | – |
-| 8a | Teile und Elemente (welche Grafiken, welche 3D-Körper) | Runde 2 läuft (Fragen gestellt am 24.10.) | – |
-| 6 | Figuren, Schlange, Fahrgäste | Fragen in Runde 3 | – |
-| 5 | Untergrund, Tunnel, Baustellen | Fragen in Runde 3 | – |
+| 3 | Achterbahn-Features: Bahntypen, Aufwertungen, Startarten, Station, Stützen | **bestätigt**: Fähigkeiten als Schalter, alles geht in der Basiszone; 3D-Wagen mit gemalten Flächen; Station als Anker mit Richtung; Stützen-Werkstatt (Hybrid); Startarten sichtbar | 24.10.2026 |
+| 8a | Teile und Elemente | **bestätigt**: Elementkatalog als Platzhalter-Satz, Ablauf Platzhalter → Auftrag → Grafik; die Grafikliste folgt aus der Basiszone, Referenzen in Paket 0 | 24.10.2026 |
+| 6 | Figuren, Schlange, Fahrgäste | Runde 3 läuft (Fragen gestellt am 24.10.) | – |
+| 5 | Untergrund, Tunnel, Baustellen | Runde 3 läuft (Fragen gestellt am 24.10.) | – |
 | 0 | Art Direction v2 (Look) | Fragen in Runde 4 | – |
 | 7 | Werkzeuge und Bedienung | Fragen in Runde 4 | – |
 | 1 | Weltrenderer (Technik, Richtlinie Schritt 2) | Technik gesetzt; Einordnung in die Etappen in Runde 5 | – |
@@ -28,7 +28,8 @@ hier nicht neu verhandelt (wo Florian sie anders sieht, wird es dort geklärt un
 
 Runde 1 (24.10.): offene Einladung, Zone und Level, Levelziele; Pakete Z, 2 und 4 am selben Abend bestätigt. Florians
 Antworten stehen je Paket unter „Florians Vorgaben“; die Vorschläge darunter sind die Antwort der Session darauf, und
-was Florian bestätigt hat, trägt das Datum. Runde 2 (24.10.): Achterbahn-Features und Teileliste.
+was Florian bestätigt hat, trägt das Datum. Runde 2 (24.10.): Achterbahn-Features und Teileliste; Florians Antworten haben die Zone zur **Basiszone** gemacht
+(Abschnitt Z); Pakete 3 und 8a am selben Abend bestätigt. Runde 3 (24.10.): Figuren und Schlange, Untergrund und Tunnel.
 
 ## Z. Ziel und Zuschnitt des Plans (Florians Vorgabe, 24.10.)
 
@@ -39,6 +40,11 @@ Zur Bestätigung so formuliert:
   der alles funktioniert, was später im Spiel vorkommt**.
 - Die genauen Level, die Anzahl je Zone (Florians Richtwert: 15–20, von sehr einfach bis Physikrätsel) und der
   Gesamtumfang werden **erst festgelegt, wenn Spielmechanik und Look sitzen**.
+- **Die Zone, die wir jetzt bauen, ist eine Basiszone** (Florian, Runde 2): Sie soll alles enthalten, was eventuell
+  kommen kann, allgemein gehalten, zuerst mit Platzhaltern, die ersetzt werden, sobald Form, Zuschnitt und Position
+  feststehen. In ihr gehen alle Bahntypen, alle Startarten, alle Aufwertungen, alle Elementtypen; welche Level was
+  wann bekommen, entscheidet später das Leveldesign. Welcher Look zuerst auf die Basiszone gelegt wird (die
+  Richtlinie sagt Alpen), klärt Paket 0.
 - Der Stil ist im Groben festgelegt; die Visuals unter `refs/traumacoaster-gpt explore/visuals/` zeigen ihn am
   besten, aber nur in Ausschnitten (Regelwerk daraus: Paket 0).
 - Wir bauen den Editor zusammen: zuerst mit einfachen Formen, die wir dann durch Grafiken und 3D-Modelle ersetzen und
@@ -91,7 +97,8 @@ Daraus, mit Florians Vorgaben:
 **Level** (Liste in der Zone; jedes Level ist leer, keine Bahn bleibt stehen):
 - **Feld**: Rechteck in Zonenkoordinaten (x von … bis, Höhe bis, Tiefe bis). Kamera scrollt nicht darüber hinaus
   (Begrenzung mit weichem Rückstoß), die Zoom-Grenze ist „Feld passt ins Bild“, an den Rändern Absperrband.
-- Stationsanker und Richtung (Bahnstart vorgegeben und etwas länger, Paket 3).
+- Stationsanker und Richtung (Bahnstart vorgegeben und etwas länger, Paket 3) und der **Schlangenbereich**, je Level
+  dort platziert, wo er zum Levelabschnitt am besten passt (Florian, Runde 2).
 - **Fortschrittsstufe** der Zone (steuert Look, Wachstum der Elemente, Untergrund offen, Nacht, Tunnel erlaubt).
 - **Aufwertungsstufe der Bahn** (Gurt, Wagen, Kettenzugstärke, Launch-Arten, Booster/Bremse/Splash verfügbar).
 - Grenzen: Streckenbudget, Höhenlimit (Florian: in den meisten Leveln begrenzt).
@@ -358,6 +365,176 @@ festgehalten: Florians Vorgaben, Vorschlag mit Optionen und Empfehlung, Prüfung
 Die Technik aus `docs/RICHTLINIE.md` (Three.js-Welt mit geneigter Perspektivkamera, Pixi-HUD, Tiefenpuffer, eine
 Shadow Map, Umfärben per Shader, Untergrund als Baustelle plus Freilegung, 60 fps auf dem Handy) ist die Grundlage
 aller Pakete.
+
+## Paket 3: Achterbahn-Features – Bahntypen, Aufwertungen, Startarten, Station, Stützen
+
+### Bisheriger Stand (Gedächtnisstütze für Runde 2)
+
+- **Vier Bahntypen im Labor** als Profil entlang der 3D-Kurve mit eigener Stützenfamilie (Richtlinie 3a): Straße
+  (Betonplatte 3,4 m, Asphalt, Mittellinie, Brüstung; brutalistische Betonpfeiler, ab 7 m mit Fenster), Stahl (zwei
+  cremefarbene Rohre, orange Schwellen, blaues Rückgrat; Rohrpylon, ab 10 m A-Bock), Holz (Schichtholz unter
+  Flachstahl, Handlauf; Böcke aus schrägen Pfosten, verzweigt, „verrückt“ als Regler), Hängebahn (Tragbalken oben,
+  Gondeln 1,1 m darunter; Betonportale, die abwechselnd vor und hinter der Bahn über den Balken greifen). Füße per
+  Alpha-Scan auf Kulissen, Höhlenboden oder Boden; „schwebend“ markiert. Holz hat 469 Draw Calls und wird instanziert.
+- **Florians Studien** in `refs/traumacoaster-gpt explore/bahn und strecke/`: zehn Bahnen mit Gleisen, drei Pfeilern,
+  Station, Eingang mit Schlange und Wagen in drei Detailgraden (01 Alpenautobahn: Straße 3,5 Wagenbreiten, Betonpfeiler
+  mit Fenster, Rennwagen, Beton-Station mit geschwungenem Dach, Drehkreuz und Geländer; 02 Betonbumerang: Beton-U-Profil,
+  Blockpfeiler mit Fenster; 03 Schirmwald-Express: Holzgleis mit Schwellen, Holzwagen wie Boote, Holzstation mit
+  Schirmdach; 05 Wolkenschaukel: blauer Tragbalken, hängende Gondeln, geschwungener Betonarm; dazu 04 Dornenmine, 06
+  Sternenfalter, 07 Vulkanwalze, 08 Eisblitz, 09 Dampfkarussell, 10 Mondjahrmarkt) und Einzelstudien: Wandkonsole,
+  fliegender Ausleger, schiefer Doppelbock, Fachwerkbrücke, Doppelportal, S-Bogen Holz, Beton-S, Beton-V, Breite,
+  Rohrschiene mit Fachwerkträger, Fahrwerk, Holz-Hügel, Stahl-S-Kurve.
+- **Startarten im Code:** Kettenzug (die Kette hält das Tempo), Launch (26 m, 12 m/s²), Hydro, Pendel, Vertikallift;
+  Elemente Booster, Bremse, Splash, Launch-Block. Richtlinie 3: Kettenzug als Kettenmesh, Launch als farbiges Band mit
+  Lichtern, Hängebahn mit Tragschiene. Befund vom Testtag: das Startart-Symbol über der Station wird nicht als Knopf
+  erkannt.
+- **Gurte:** fünf Stufen (keine, Beckengurt 0,6 g, Bügel 1,5 g, Schulterbügel 3 g, Rennsitz 5 g); nach Paket 4 ist der
+  Gurt eine Aufwertung der Zone und der Weg zum dritten Stern.
+- **Station heute:** Bahnsteig, zwei Pfosten, Dach, Fahne, an der ersten Bahnprobe gezeichnet. Florians Vorgabe K15:
+  Bahnstart vorgegeben und etwas länger, Zughäuschen, Schlange davor, die mit der Bahnlänge wächst.
+- **Wagen:** Seitenansichten (Labor: vier Wagenbilder); Entscheidung 4 offen (2D oder 3D, entscheidet über Rolls).
+- **Stützenplaner heute:** eine Form je Welt (zehn Formen), feste Abstände, nicht im Berg, Füße symmetrisch; prüft kein
+  Wasser (Befund: Stützen im See). Richtlinie 3: Kaskade Fuß → Deckenaufhängung → Brücke → Anlehnen → markieren.
+
+### Florians Vorgaben (Runde 2)
+
+- Keine Reihenfolge der Aufwertungen jetzt: Wie und wann etwas erscheint, entscheidet das Leveldesign, wenn die
+  Elemente stehen. In der Basiszone soll **alles gehen**: alle Launch-Arten, alle Aufwertungen, alle vier Bahntypen.
+- Wagen grundsätzlich als 3D-Körper mit gemalten Flächen. Die Wagen in den Studien sind noch nicht weit; für die Alpen
+  will Florian kleine getunte Autos, die er noch entwirft; der Holzzug und andere Wagen entstehen später mit GPT und
+  Meshy.
+- Station als Anker im Level (der Spieler verschiebt sie nicht); die Schlange steht je Level dort, wo es zum Abschnitt
+  am besten passt.
+- Stützen bleiben automatisch, sollen aber cool und gemalt aussehen wie in den Studien; das wird gesondert entwickelt.
+- Erst einmal baut die Session alles mit einfachen Formen, die wir dann durch die finalen Grafiken ersetzen.
+
+### Vorschlag 3.1: Fähigkeiten statt Reihenfolge
+
+Jede Fähigkeit der Bahn ist ein Schalter, den ein Level setzt (die Aufwertungsstufe aus 2.4 ist dann nur ein
+benannter Satz solcher Schalter, den das Leveldesign später füllt). Die Basiszone kann alles; der Editor schaltet je
+Level um.
+
+| Fähigkeit | Holz | Stahl | Autobahn | Schwebebahn | Stand |
+|---|---|---|---|---|---|
+| Bahnprofil | Schichtholz, Flachstahl | zwei Rohre, Schwellen, Rückgrat | Betonplatte, Asphalt, Brüstung | Tragbalken, Gondelhänger | Labor, alle vier |
+| Stützenfamilie | Böcke, Doppelbock, Fachwerkbrücke, Konsole, Ausleger | Rohrpylon, A-Bock, Fachwerkträger | Betonpfeiler mit Fenster, Beton-S, Blockpfeiler, Wandkonsole | Betonportal, Arm | Labor je eine Familie; Studien liefern die weiteren (3.4) |
+| Wagen | Boot-Wagen | kompakter Zug | getunte Autos (Florian) | Gondeln | Platzhalter-3D zuerst (3.2) |
+| Kettenzug | ja | ja | ja | ja (Hänger) | Code; Kettenmesh neu |
+| Launch, Hydro, Pendel, Vertikallift | ja | ja | ja | ja | Code; sichtbare Form neu (3.5) |
+| Booster, Bremse, Splash, Launch-Block | ja | ja | ja | ja (Splash als Gischt unter den Gondeln) | Code; Darstellung je Typ neu |
+| Gurte 0–4 | ja | ja | ja | ja | Code |
+| Schleifen, Schrauben | mit 3D-Wagen möglich | ja | ja | nein (Gondeln hängen) | Roll-Handle existiert; braucht 3.2 |
+| Sprungschanze (Paket 4) | ja | ja | ja | nein | neu |
+| Brücken über Wasser | Fachwerkbrücke | Fachwerkträger | Bogen zwischen Pfeilern | Portalreihe | Kaskade aus Richtlinie 3 |
+| Kollisionsverbot im Schlangenbereich | ja | ja | ja | ja | neu (Paket 6) |
+
+### Vorschlag 3.2: Wagen
+
+3D-Körper mit gemalten, unbeleuchteten Flächen (Richtlinie 9: 3D nur dort, wo ein Volumen von mehreren Seiten zu sehen
+ist; der Wagen ist der Fall). Stufe 1: Platzhalter je Typ (farbige Klötze mit Rädern oder Hänger, richtige Maße,
+Sitzplätze), damit Physik, Rollwinkel, Pendeln der Gondeln und Fahrgäste als Cut-outs im Wagen laufen. Stufe 2: finale
+Modelle, Alpen-Autos nach Florians Entwurf, Holzzug und weitere mit GPT und Meshy, mit gemalter Textur ohne
+realistisches Licht. Tor: Stilprobe mit allen vier Typen in der Basiszone.
+
+### Vorschlag 3.3: Station
+
+Anker im Level mit Position, Spur und Richtung (links nach rechts oder umgekehrt), Vorgabestück gerade, Länge als
+Parameter (Start bei 14 m), Häuschen-Platzhalter mit Drehkreuz und Geländer wie in den Studien, Startart-Wahl als
+großer Knopf am Vorgabestück (Befund: das kleine Symbol wird nicht erkannt). Der Schlangenbereich ist ein eigenes
+Element, das der Editor je Level platziert; die Schlange wächst mit der Bahnlänge (Paket 6).
+
+### Vorschlag 3.4: Stützen-Werkstatt (gesondert, mit eigenem Tor)
+
+Automatische Platzierung mit der Kaskade aus Richtlinie 3 (Boden, Kulisse, Felskonsole, Decke, Brücke, Ausleger,
+sichtbar markieren) und einem „Verrückt“-Regler je Zone. Für den gemalten Look drei Wege, die im Labor nebeneinander
+gebaut und gegen Florians Studien gehalten werden:
+
+| Weg | Was | Für | Gegen |
+|---|---|---|---|
+| A: Geometrie aus Code mit gemalten Texturen | Pfosten, Riegel, Bögen als Meshes, Holzmaserung und Beton als Kacheln | skaliert mit jeder Höhe, instanzierbar, billig | Formen bleiben technisch, wenig „Pinsel“ |
+| B: gemalte Teile zusammengesetzt | Pfosten, Riegel, Laschen, Füße, Konsolen als Bilder aus einem Teile-Bogen, je Stütze gesteckt | sieht gemalt aus wie die Studien | Teile für alle Höhen und Winkel, viele Draw Calls |
+| **C: Hybrid** | Tragwerk aus Code (A), Füße, Kapitelle, Laschen, Fenster, Konsolen als gemalte Teile (B) | gemalter Eindruck dort, wo das Auge hinschaut, Rest skaliert | zwei Pipelines je Familie |
+
+Empfehlung: C. Tor: jede Familie neben Florians Studie als Standbild aus dem Labor, Florian gibt sie frei; Messung
+auf dem Handy mit dem Holz-Typ (heute 469 Draw Calls, Ziel unter 150 mit Instanzen).
+
+### Vorschlag 3.5: Startarten sichtbar
+
+Kettenzug als Kettenmesh auf dem ersten Anstieg (die Kettenzugstärke zeichnet beim Zeichnen die erreichbare Höhe als
+Linie, Paket 4), Launch als farbiges Band mit Lichtern auf dem Vorgabestück, Hydro als stärkeres Band mit Dampf,
+Pendel als Station mit Durchfahrt und Puffern beidseits, Vertikallift als Turm mit Plattform; zuerst alle als
+Platzhalter mit richtigen Maßen.
+
+### Rückfragen zu Paket 3 (Runde 2b)
+
+1. Station in beide Richtungen (links nach rechts oder rechts nach links) als Eigenschaft des Ankers: einverstanden?
+   **Ja (24.10., kein Widerspruch bei der Festschreibung).**
+2. Stützen-Werkstatt mit Weg C als Start: einverstanden? **Ja (24.10.).**
+
+**Status: bestätigt am 24.10.2026.**
+
+## Paket 8a: Teile und Elemente
+
+### Bisheriger Stand (Gedächtnisstütze für Runde 2)
+
+- **Vorhanden:** 34 Labor-Teile als WebP (Himmel, Gipfel, Schneegrat, Vorberg, Wald, See, Wolken, Wiesen, großer
+  Bogen, Felsfenster, Doppelbaum, Silberbaum, Portal, Tunnelstein, Höhlenfüllungen, Höhlenterrasse, Wasserfall,
+  Wasservorhang, Lichtschacht, Nebel, Büsche, Pflanzenfächer, Gras-Kappe, Stationsdach, Kristall, vier Wagen) und der
+  Elemente-Bogen mit rund 139 PNG (Büsche, Höhlendecken, -säulen, -füllungen, -böden, -wände, Wolken, Vorberge, Wald,
+  See, Wiesen, Gipfel, Ufer, Himmel, Schneegrate, Nebel, Grasränder, Haine, Lichtschächte, Pfeilerteile, Portale in
+  sieben Materialien mit Vorder- und Schrägansichten, Felsen, Wurzeln, Geheimnisse, Bäume, Wasser, Wasserfälle).
+  Alle hart freigestellt, ohne Rückwand-Lippe-Schnitt und ohne Fundament-Metadaten (Richtlinie 11).
+- **Richtlinie 12.4:** Baum mit Fenster, Fels mit Tunnel und Portal als Dreiteiler produktionsfertig, bevor der große
+  Auftrag startet; Startumfang 50–70 Teile (Richtlinie 11); ein Teil je Bild, transparent, Metadaten je Teil, neutrale
+  Palette, Umfärben per Shader (Richtlinie 9).
+- **Alpen-Visuals:** 15 Alpenkurve (Straße, Tanne, Gipfel, Tunnel im Fels, Erdschnitt), 18 (Hochformat), 21 Alpenrausch
+  (Station mit Schlange, Tunnel im Berg, Höhlen mit Wasserfällen), 27 (Hochformat Unterwelt), 31 Wasserfallkehren, 50
+  Bergsee-Panorama.
+- **Offen bei Florian:** Entscheidung 3 (welche Referenzen eingefroren werden, ob die S-förmigen Elemente stilistisch
+  final sind) und Entscheidung 8 (welche Teile erzeugt werden: die Session legt eine Liste mit Begründung und
+  Reihenfolge vor, eingefroren wird sie nach Florians Antwort).
+
+### Florians Vorgaben (Runde 2)
+
+- Es geht nicht um die Zone Alpen, sondern um eine **Basiszone**, die alles haben soll, was eventuell kommen kann;
+  allgemein gehalten, zuerst mit Platzhaltern, die ersetzt werden, sobald Form, Zuschnitt und Position bekannt sind.
+- Erst einmal baut die Session alles mit einfachen Formen; die finalen Grafiken kommen danach.
+- Welche Referenzen der verbindliche Maßstab für Bahn, Station und Stützen sind, muss erst herausgefunden werden.
+
+### Vorschlag 8a.1: Der Elementkatalog als Platzhalter-Satz
+
+Jeder Elementtyp aus 2.1 bekommt einen Platzhalter mit richtigen Maßen und seinen Metadaten; die Session baut sie in
+den Klötzchen-Editor (Paket 2, Stufe 1). Was den Platzhalter später ersetzt, steht daneben; die konkrete Grafikliste
+(Entscheidung 8) entsteht aus der Basiszone, nicht vorher.
+
+| Typ | Platzhalter | Parameter | Metadaten | Ersatz später |
+|---|---|---|---|---|
+| Kulisse | farbige Fläche mit Beschriftung | Breite, Höhe, Tiefe | Tiefenrolle | gemaltes Bild |
+| Dreiteiler | Rückwand-Fläche, Innenraum-Kasten, Lippen-Fläche mit Loch | Öffnung, Tiefe des Innenraums | Öffnungsvolumen, Fundament-Polygon | Bild in drei Teile geschnitten |
+| Säule, Stamm | Zylinder | Radius, Höhe | Tiefenvolumen (bleibt unsichtbar) | gemalter Stamm, Zylinder bleibt |
+| Fundamentfläche | Streifen | Länge, Neigung | tragfähig | kommt mit dem Bild |
+| Höhlenkasten | Kasten mit offener Front | Maße | Boden tragfähig, Decke als Aufhängung | vier gemalte Flächen |
+| Wasserfläche, Wasserfall | blaue Fläche, senkrechtes Band | Maße | Stützen verboten, Splash-Zone | Shader plus Bild |
+| Portal, Tunnelmund | Ring | Öffnung | Anschlussachse | gemaltes Portal |
+| Station | Plattform-Kasten, Häuschen-Kasten | Länge, Richtung | Anker | Mesh plus gemalte Teile |
+| Baustelle | Marke mit Absperrband | Anschlussachse, Durchbruch-Energie | – | Freilegungs-Shader |
+| Schlangenbereich | Streifen mit Reihenfolge | Länge, Richtung | Kollisionsverbot | Figuren (Paket 6) |
+| Interaktives Element | Scheibe (Rad), Platte (Klappe, Schalter), Kugel (Glocke) | Auslöser, Zustände | Auslöse-Volumen | gemalte Teile, Animation |
+| Coin-Gruppe | Kugeln | Form (Reihe, Bogen, Ring, Säule) | Fangradius | Coin-Grafik |
+| Lichtquelle, Partikelquelle, Nebelband | Gizmo | Farbe, Stärke | – | Shader |
+| Feldrand | Rechteck | – | – | Absperrband |
+| Deko | Fläche ohne Funktion | Maße | – | Bild |
+| Stütze | automatisch (Paket 3) | – | – | Stützen-Werkstatt |
+
+### Vorschlag 8a.2: Vom Platzhalter zur Grafik
+
+Ablauf je Teil: Platzhalter in der Basiszone steht → Form, Zuschnitt und Position sind geprüft (Kamera an allen
+Grenzen, Bahn durch die Öffnung, Stützen auf dem Fundament) → Auftrag mit Maßen, Tiefenrolle und Prompt (Paket 8b) →
+Grafik oder Modell → ersetzt den Platzhalter über seinen Namen. Die eingefrorenen Referenzen (Entscheidung 3) werden
+in Paket 0 über die Stilprobe gefunden, nicht vorab festgelegt.
+
+**Status: bestätigt am 24.10.2026.** Die Grafikliste (Entscheidung 8) folgt aus der Basiszone und wird hier mit Datum
+nachgetragen, sobald die Platzhalter stehen.
 
 ## Paket 12: Karte und Morph (neu, 24.10.)
 
