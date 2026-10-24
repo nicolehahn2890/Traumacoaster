@@ -4,8 +4,9 @@
  * Wagen, Kulissen mit Tiefenpuffer), dann Pixi Zeichen-Overlay und HUD darüber. Vor jedem Wechsel setzt der jeweilige
  * Renderer seinen Zustand zurück (resetState), damit keiner die Annahmen des anderen über den Kontext erbt.
  * Three legt den Kontext an (stencil für Pixi-Masken); Pixi bekommt Zeichenfläche und Kontext beim Start (Game.init).
+ * Dazu Licht mit Shadow Map, Nebel und Looks (light.ts, looks.ts) und die Kulissen des Levels (levelElements.ts).
  */
-import { Group, Scene, SRGBColorSpace, WebGLRenderer } from 'three';
+import { Color, Fog, Group, PCFSoftShadowMap, Scene, SRGBColorSpace, WebGLRenderer } from 'three';
 import type { Terrain } from '@/physics/terrain';
 import type { WorldDef } from '@/levels/types';
 import type { TrackSamples } from '@/track/model';
@@ -14,7 +15,10 @@ import { mix } from '@/render/paint';
 import { WorldCamera, type CameraView } from './camera';
 import { buildGround, type GroundMeshes } from './ground';
 import { groundBandsTexture, strataTexture } from './textures';
-import { buildLights } from './light';
+import { WorldLights } from './light';
+import { applyGrade, LOOKS, type LookName } from './looks';
+import { elementsFromTerrain, type PortalLike } from './levelElements';
+import type { BuiltElement } from './elements';
 import { trackFrames } from './trackMesh';
 import { buildTrack, disposeTrack } from './trackBuilder';
 import type { TrackType } from './trackTypes';
@@ -25,6 +29,10 @@ import { buildWorldSupports, disposeSupports, planWorldSupports, type SupportSta
 export interface WorldRendererOptions {
   /** Kantenglättung des Kontexts (gilt für Three und Pixi); ?aa=0 schaltet sie zum Messen ab */
   antialias?: boolean;
+  /** Shadow Map (1024²); ?shadow=0 schaltet sie ab */
+  shadows?: boolean;
+  /** Look erzwingen (?look=), sonst Tag oder Nacht nach dem Level */
+  look?: LookName | null;
 }
 
 export class WorldRenderer {
@@ -32,7 +40,15 @@ export class WorldRenderer {
   readonly three: WebGLRenderer;
   readonly scene = new Scene();
   readonly camera = new WorldCamera();
+  readonly lights: WorldLights;
+  private readonly fog = new Fog(0xffffff, 200, 400);
   private level: GroundMeshes | null = null;
+  private levelData: { terrain: Terrain; world: WorldDef; night: boolean } | null = null;
+  private elements: BuiltElement[] = [];
+  private portals: PortalLike[] = [];
+  /** Look aus der Adresse überstimmt Tag und Nacht des Levels */
+  readonly lookOverride: LookName | null;
+  private look: LookName = 'day';
   private track: Group | null = null;
   private supports: Group | null = null;
   private readonly train = new WorldTrain();
@@ -47,7 +63,7 @@ export class WorldRenderer {
 
   constructor(opts: WorldRendererOptions = {}) {
     this.canvas = document.createElement('canvas');
-    this.scene.add(buildLights(), this.train.group);
+    this.scene.add(this.train.group);
     this.three = new WebGLRenderer({ canvas: this.canvas, antialias: opts.antialias ?? true, stencil: true, alpha: false, powerPreference: 'high-performance' });
     this.three.outputColorSpace = SRGBColorSpace;
     // Pixi hat den Himmel schon gemalt: Three löscht nur Tiefe und Stencil. Die Löschfarbe bleibt transparent schwarz,
@@ -55,6 +71,27 @@ export class WorldRenderer {
     // Masken mit deckendem Schwarz gelöscht)
     this.three.autoClearColor = false;
     this.three.setClearColor(0x000000, 0);
+    this.three.shadowMap.enabled = opts.shadows ?? true;
+    this.three.shadowMap.type = PCFSoftShadowMap;
+    this.lights = new WorldLights(opts.shadows ?? true);
+    this.lookOverride = opts.look ?? null;
+    this.scene.add(this.lights.group);
+    this.scene.fog = this.fog;
+    this.setLook('day');
+  }
+
+  /** Look setzen: Licht, Umfärben, Nebel (die Nebelfarbe mischt sich mit dem Himmel der Welt) */
+  setLook(name: LookName): void {
+    this.look = name;
+    const look = LOOKS[name];
+    applyGrade(look);
+    this.lights.apply(look);
+    const sky = this.levelData?.world.palette.sky[1] ?? look.background;
+    this.fog.color.set(look.fog).lerp(new Color(sky), 0.4);
+  }
+
+  get currentLook(): LookName {
+    return this.look;
   }
 
   /** der geteilte WebGL-Kontext (für Pixi) */
@@ -75,9 +112,14 @@ export class WorldRenderer {
     }
   }
 
-  /** Kamera dieses Bildes (aus der Weltansicht) */
+  /** Kamera dieses Bildes (aus der Weltansicht); Licht, Schattenkasten und Nebel folgen dem Ziel */
   setCamera(view: CameraView): void {
     this.camera.set(view);
+    this.lights.follow(view.cx);
+    // Nebelweiten relativ zum Kameraabstand: Luftperspektive beginnt hinter der Bühne (Labor)
+    const D = Number.isFinite(this.camera.distance) ? this.camera.distance : 300;
+    this.fog.near = D + 24;
+    this.fog.far = D + 140;
   }
 
   /** Welt zeichnen (zwischen Pixi-Himmel und Pixi-HUD) */
@@ -91,20 +133,47 @@ export class WorldRenderer {
     return this.three.info.render.calls;
   }
 
-  /** Boden und Erdschnitt eines Levels aufbauen (ersetzt das vorige Level) */
-  showLevel(terrain: Terrain, world: WorldDef): void {
+  /** Boden, Erdschnitt und Kulissen eines Levels aufbauen (ersetzt das vorige Level); night wählt den Nacht-Look */
+  showLevel(terrain: Terrain, world: WorldDef, night = false): void {
     this.clearLevel();
+    this.levelData = { terrain, world, night };
     const groundTex = groundBandsTexture(world.palette.ground[0], 'rgba(255,245,170,0.55)', world.id);
     const earth = strataTexture(mix('#7a5540', world.palette.ground[1], 0.3), world.id + 100);
     this.level = buildGround(terrain, groundTex, earth);
     this.scene.add(this.level.group);
-    this.foundations = [new TerrainFoundation(terrain)];
+    this.buildElements();
+    this.setLook(this.lookOverride ?? (night ? 'night' : 'day'));
+  }
+
+  /** Kulissen des Levels (Berge als Dreiteiler mit Tunnelöffnungen, Wasser, Wasserfälle, Deko) und Fundamente neu bauen */
+  private buildElements(): void {
+    for (const e of this.elements) {
+      this.scene.remove(e.group);
+      e.dispose();
+    }
+    this.elements = [];
+    if (!this.levelData) return;
+    const { terrain, world } = this.levelData;
+    this.elements = elementsFromTerrain(terrain, world, this.portals);
+    for (const e of this.elements) this.scene.add(e.group);
+    this.foundations = [new TerrainFoundation(terrain), ...this.elements.flatMap((e) => (e.foundation ? [e.foundation] : []))];
+  }
+
+  /** Tunnelportale der aktuellen Bahn (Ein- und Austritte in Berge): die Berge bekommen dort ihre Öffnungen */
+  setTunnelPortals(portals: PortalLike[]): void {
+    const same = portals.length === this.portals.length && portals.every((p, i) => Math.abs(p.x - this.portals[i].x) < 0.01 && Math.abs(p.y - this.portals[i].y) < 0.01 && Math.abs(p.z - this.portals[i].z) < 0.01);
+    if (same) return;
+    this.portals = portals.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+    this.buildElements();
   }
 
   /** Level aus der Szene nehmen und seine Geometrie freigeben (mit Bahn und Zug) */
   clearLevel(): void {
     this.clearTrack();
     this.clearTrain();
+    this.levelData = null;
+    this.portals = [];
+    this.buildElements();
     if (!this.level) return;
     this.scene.remove(this.level.group);
     this.level.dispose();

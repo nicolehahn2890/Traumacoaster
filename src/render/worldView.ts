@@ -15,7 +15,6 @@ import type { WorldRenderer } from '@/world/renderer';
 import { trackTypeForSkin } from '@/world/trackTypes';
 import { Camera } from './camera';
 import { Sky } from './sky';
-import { LaneFilter } from './shaders/laneFilter';
 import { GlowLayer } from './shaders/glowLayer';
 import { fxEnabled } from '@/core/fx';
 import { TerrainRenderer } from './terrainRenderer';
@@ -38,9 +37,8 @@ export class WorldView {
   readonly effects: Effects;
   private paper: TilingSprite;
   private laneContainers = new Map<number, Container>();
-  /** Leuchtebene je Spur (additiv, weichgezeichnet) und Spur-Filter (Stippling) */
+  /** Leuchtebene je Spur (additiv, weichgezeichnet) */
   private glows = new Map<number, GlowLayer>();
-  private laneFilters = new Map<number, LaneFilter>();
   private fxOn = false;
   private time = 0;
   /** letzte Kameralage, für die die Bahn in Perspektive projiziert wurde */
@@ -83,9 +81,6 @@ export class WorldView {
       );
       this.laneContainers.set(z, lane);
       this.world.addChild(lane);
-      // Spur-Filter: Stippling auf den Schattenseiten (Luftperspektive machen die Renderer selbst)
-      const pal = worldDef.palette;
-      this.laneFilters.set(z, new LaneFilter({ stipple: pal.stipple, sky: pal.sky[1], depth: 0 }));
     }
     this.trackR.glowTargets = new Map([...this.glows].map(([z, g]) => [z, g.container]));
     this.applyFx();
@@ -104,8 +99,8 @@ export class WorldView {
 
   /**
    * Weltrenderer an: Der Himmel verlässt die Bühne und wird als Hintergrund vor der Three-Welt gezeichnet
-   * (Scene.background); die Bodenstreifen der Spuren bleiben aus, denn den Boden zeichnet die Welt. Berge, Wasser und
-   * Deko (cover) bleiben bis zu den Kulissen-Platzhaltern (Schritt 4) in Pixi.
+   * (Scene.background); Bodenstreifen, Berge, Wasser und Deko der Spuren bleiben aus, denn Boden und Kulissen zeichnet
+   * die Welt.
    */
   setWorldMode(world: WorldRenderer | null): void {
     const on = !!world;
@@ -114,6 +109,7 @@ export class WorldView {
     if (on) this.root.removeChild(this.sky.container);
     else if (!this.sky.container.parent) this.root.addChildAt(this.sky.container, 0);
     for (const g of this.terrainR.layers.strip.values()) g.visible = !on;
+    for (const c of this.terrainR.layers.cover.values()) c.visible = !on;
     this.trackR.setWorldMode(on);
     this.trainR.setWorldMode(on);
   }
@@ -136,7 +132,9 @@ export class WorldView {
   setTrack(path: TrackPath, samples: TrackSamples, skin: string, terrain: Terrain, allowTunnels: boolean, preview = false): void {
     const portals = this.trackR.draw(path, samples, skin, terrain, allowTunnels, preview);
     if (!preview) this.terrainR.setTunnelPortals(portals);
-    // Weltrenderer: Profil aus denselben Abtastpunkten und derselben Schräglage wie die Schienen der Bühne
+    // Weltrenderer: Profil aus denselben Abtastpunkten und derselben Schräglage wie die Schienen der Bühne; die Berge
+    // bekommen an den Portalen ihre Öffnungen
+    if (!preview) this.worldR?.setTunnelPortals(portals);
     this.worldR?.setTrack(samples, this.trackR.railBanks, trackTypeForSkin(skin), preview, (x, y, z) => terrain.insideMountain(x, y, z));
   }
 
@@ -169,7 +167,7 @@ export class WorldView {
     this.worldR?.updateTrain(cars, rail ?? null);
   }
 
-  /** Effekte an/aus (Dev-Overlay, Einstellung): Spur-Filter und Leuchtebenen */
+  /** Effekte an/aus (Dev-Overlay, Einstellung): Leuchtebenen (der Spur-Filter mit Punktraster ist seit Etappe 1 weg) */
   setFx(on: boolean): void {
     this.fxOn = on;
     this.applyFx();
@@ -180,10 +178,6 @@ export class WorldView {
   }
 
   private applyFx(): void {
-    for (const [z, lane] of this.laneContainers) {
-      const f = this.laneFilters.get(z);
-      lane.filters = this.fxOn && f ? [f] : [];
-    }
     for (const g of this.glows.values()) g.enabled = this.fxOn;
   }
 

@@ -5,7 +5,8 @@
  * Vorderkante steht der Erdschnitt: eine senkrechte Fläche mit Erdschichten, oben entlang des Bodens, ohne Räume
  * (Paket 2.3: geschlossen, bis der Untergrund freigespielt ist). Beleuchtet wie das Labor (light.ts), unbeschattet bis Schritt 4.
  */
-import { BufferGeometry, Float32BufferAttribute, FrontSide, Group, Mesh, MeshLambertMaterial, type Texture } from 'three';
+import { BufferGeometry, Float32BufferAttribute, FrontSide, Group, Mesh, ShadowMaterial, type Texture } from 'three';
+import { paintedMaterial } from './looks';
 import type { Terrain } from '@/physics/terrain';
 import { LANE_MAX, LANE_MIN } from '@/track/stage';
 import { laneToZ } from './camera';
@@ -29,6 +30,8 @@ export interface GroundMeshes {
   group: Group;
   ground: Mesh;
   cut: Mesh;
+  /** Schattenfänger: zeichnet nur den Schatten, unabhängig von der Lichtstärke (Labor, Richtlinie 5) */
+  catcher: Mesh;
   dispose(): void;
 }
 
@@ -70,9 +73,15 @@ export function buildGround(terrain: Terrain, groundTex: Texture, strataTex: Tex
   groundGeo.setAttribute('position', new Float32BufferAttribute(pos, 3));
   groundGeo.setAttribute('uv', new Float32BufferAttribute(uv, 2));
   groundGeo.setIndex(idx);
-  const groundMat = new MeshLambertMaterial({ map: groundTex, side: FrontSide });
+  const groundMat = paintedMaterial({ map: groundTex, side: FrontSide });
   const ground = new Mesh(groundGeo, groundMat);
   ground.receiveShadow = true;
+  // Schattenfänger knapp über dem Boden: das schwache Richtungslicht allein ließe den Schatten kaum sehen
+  const catcherMat = new ShadowMaterial({ color: 0x0a1a30, opacity: 0.38, transparent: true, depthWrite: false });
+  const catcher = new Mesh(groundGeo, catcherMat);
+  catcher.position.y = 0.03;
+  catcher.receiveShadow = true;
+  catcher.renderOrder = 1;
 
   // Erdschnitt an der Vorderkante: oben der Boden der vordersten Reihe, unten EARTH_DEPTH tiefer
   const Zf = laneToZ(GROUND_FRONT);
@@ -106,21 +115,23 @@ export function buildGround(terrain: Terrain, groundTex: Texture, strataTex: Tex
   cutGeo.setAttribute('position', new Float32BufferAttribute(cpos, 3));
   cutGeo.setAttribute('uv', new Float32BufferAttribute(cuv, 2));
   cutGeo.setIndex(cidx);
-  const cutMat = new MeshLambertMaterial({ map: strataTex, side: FrontSide });
+  const cutMat = paintedMaterial({ map: strataTex, side: FrontSide });
   const cut = new Mesh(cutGeo, cutMat);
   cut.receiveShadow = true;
 
   const group = new Group();
-  group.add(ground, cut);
+  group.add(ground, catcher, cut);
   return {
     group,
     ground,
     cut,
+    catcher,
     dispose() {
       groundGeo.dispose();
       cutGeo.dispose();
       groundMat.dispose();
       cutMat.dispose();
+      catcherMat.dispose();
       groundTex.dispose();
       strataTex.dispose();
     },

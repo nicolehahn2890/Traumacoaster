@@ -133,7 +133,6 @@ const STROKE_MODE_URL: StrokeReading | null = (() => {
   const q = new URLSearchParams(location.search);
   return q.has('brush') ? 'brush' : q.has('stage') ? 'stage' : q.has('single') ? 'single' : q.has('lanes') ? 'lanes' : null;
 })();
-const STROKE_MODES: StrokeReading[] = ['brush', 'stage', 'single', 'lanes'];
 /** ?persp=1: Perspektive (Richtlinie, Schritt 1: Spur-Ebenen um das Kameraziel skaliert, Strich als Strahl je Spur gedeutet), ?fov=18 Bildwinkel in Grad */
 const PERSP_URL = typeof location !== 'undefined' && new URLSearchParams(location.search).get('persp') === '1';
 /** mit dem Weltrenderer (?world=1) ist die Perspektive Standard; ?persp=0 zeigt dort zum Vergleich die Bühne */
@@ -328,7 +327,6 @@ export class LevelScene implements Scene {
   /** Dev-Modus: Bahntyp durchschalten */
   private skinBtn = new Button('DEV', { width: 150, height: 40, size: 15, color: '#2a1f3d' });
   /** Umschalter der Lesart (Bühne / Ein Strich), zum Ausprobieren */
-  private modeBtn = new Button('', { width: 96, height: 36, size: 14, color: '#2a1f3d' });
   /** Lesart „Ebenen“: Ebenenleiste links (hinten oben, vorne unten) und die für den nächsten Strich gewählte Ebene */
   private lanePanel = new Container();
   private laneBtns: Array<{ lane: number; btn: Button }> = [];
@@ -403,18 +401,16 @@ export class LevelScene implements Scene {
     // Weltrenderer: Boden und Erdschnitt aus dem Terrain, Himmel vor der Welt; Perspektive dort Standard
     if (game.world) {
       this.view.setWorldMode(game.world);
-      game.world.showLevel(this.terrain, this.world);
+      game.world.showLevel(this.terrain, this.world, night);
     }
     setPerspective(game.world ? !PERSP_OFF : PERSP_URL, FOV_URL);
     this.view.overlay.addChild(this.laneGlow, this.spotLayer, this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
     this.laneHud.addChild(this.laneHudG);
-    this.hud.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn);
+    this.hud.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn);
     this.ui.addChild(this.hud, this.laneHud, this.toast);
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn, ...this.laneBtns.map((l) => l.btn)];
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, ...this.laneBtns.map((l) => l.btn)];
     this.speedBtn.visible = false;
-    this.modeBtn.setText(t(`strokeMode.btn.${this.reading}`));
-    this.modeBtn.onTap = () => this.toggleStrokeMode();
     this.buildLanePanel();
     this.buildLengthUI();
     this.skinBtn.visible = unlockAll();
@@ -943,8 +939,9 @@ export class LevelScene implements Scene {
 
   // ------------------------------------------------------------------ Strich → Bahn
   /** Lesart (Einstellung, Umschalter unten links; die Adresse kann sie erzwingen) */
+  /** Lesart: Pinsel; ?stage, ?single und ?lanes erzwingen die alten Lesarten (Szenarien, Replay-Vergleiche) */
   private get reading(): StrokeReading {
-    return STROKE_MODE_URL ?? storage.settings.strokeMode ?? 'brush';
+    return STROKE_MODE_URL ?? 'brush';
   }
   private get singleStroke(): boolean {
     return this.reading === 'single';
@@ -952,16 +949,6 @@ export class LevelScene implements Scene {
   private get brushMode(): boolean {
     return this.reading === 'brush';
   }
-  /** Pinsel → Bühne → Ein Strich → Pinsel */
-  private toggleStrokeMode(): void {
-    const next = STROKE_MODES[(STROKE_MODES.indexOf(this.reading) + 1) % STROKE_MODES.length];
-    storage.updateSettings({ strokeMode: next });
-    this.modeBtn.setText(t(`strokeMode.btn.${this.reading}`));
-    this.toast.show(t(`strokeMode.${this.reading}`), 2.2);
-    this.armedLane = null;
-    this.refreshLanePanel();
-  }
-
   /** Lesart „Ebenen“: fünf Knöpfe links (hinten oben), Tipp wählt die Ebene für den nächsten Strich */
   private buildLanePanel(): void {
     const top = label(t('lanes.back'), 12, INK, true);
@@ -2824,7 +2811,6 @@ export class LevelScene implements Scene {
     this.hint.visible = false;
     this.shelfBtn.visible = false;
     this.speedBtn.visible = true;
-    this.modeBtn.visible = false;
     this.laneHud.visible = false;
     this.refreshLanePanel();
     this.refreshLengthUI(true);
@@ -2858,7 +2844,6 @@ export class LevelScene implements Scene {
     this.timeScale = 1;
     this.speedText.text = '';
     this.speedBtn.visible = false;
-    this.modeBtn.visible = true;
     this.shelfBtn.visible = true;
     this.refreshLanePanel();
     this.refreshLengthUI(true);
@@ -2879,7 +2864,7 @@ export class LevelScene implements Scene {
     this.hud.removeChild(old);
     old.destroy({ children: true });
     this.playBtn = btn;
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn, ...this.laneBtns.map((l) => l.btn)];
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, ...this.laneBtns.map((l) => l.btn)];
     this.ui.addChild(this.toast);
   }
 
@@ -3237,7 +3222,6 @@ export class LevelScene implements Scene {
     this.clearBtn.position.set(w - R - 36, safeTop + 26);
     this.saveBtn.position.set(w - R - 92, safeTop + 26);
     this.skinBtn.position.set(L + 88, h - B - 50);
-    this.modeBtn.position.set(L + 62, h - B - (this.skinBtn.visible ? 96 : 50));
     this.lanePanel.position.set(L + 36, h * 0.52);
     // schmaler Bildschirm: über der Höhe des Play-Knopfs (sonst stieße die Anzeige an ihn)
     const pillY = h - B - (this.skinBtn.visible ? 142 : w < 520 ? 150 : 96);

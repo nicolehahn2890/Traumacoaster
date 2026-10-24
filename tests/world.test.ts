@@ -10,6 +10,10 @@ import { rect, ring, sweepGeometry, trackFrames } from '@/world/trackMesh';
 import { ATTACH, HANG_LIFT, SUPPORT_SPACING, buildTrack } from '@/world/trackBuilder';
 import { TerrainFoundation } from '@/world/foundations';
 import { buildWorldSupports, planWorldSupports, SUPPORT_MIN_H } from '@/world/supports';
+import { buildCave, buildColumn, buildFlat, buildPortal, buildThreePart, buildWater, buildWaterfall } from '@/world/elements';
+import { elementsFromTerrain } from '@/world/levelElements';
+import { footBelow } from '@/world/foundations';
+import { LOOKS, applyGrade, grade, parseLook } from '@/world/looks';
 
 /** deterministische Zufallszahlen */
 function lcg(seed: number): () => number {
@@ -300,5 +304,64 @@ describe('Weltrenderer: Stützen auf Fundamentflächen (Schritt 3)', () => {
       }
       expect(instances).toBeGreaterThanOrEqual(plans.length);
     }
+  });
+});
+
+describe('Weltrenderer: Kulissen-Platzhalter und Looks (Schritt 4)', () => {
+  it('Dreiteiler: Lippe mit Öffnungen hat mehr Ecken als ohne, Rückwand liegt hinter, Lippe vor der Spur', () => {
+    const outline: Array<[number, number]> = [[0, 0], [10, 12], [20, 0], [20, -1], [0, -1]];
+    const solid = buildThreePart(outline, 1, 7, [], '#a0765a');
+    const holed = buildThreePart(outline, 1, 7, [{ x: 6, y: 2, r: 2 }, { x: 15, y: 3, r: 2 }], '#a0765a');
+    const verts = (e: typeof solid, i: number): number => (e.group.children[i] as Mesh).geometry.getAttribute('position').count;
+    expect(verts(holed, 1)).toBeGreaterThan(verts(solid, 1));
+    expect(holed.openings?.length).toBe(2);
+    const back = holed.group.children[0] as Mesh;
+    const lip = holed.group.children[1] as Mesh;
+    expect(back.position.z).toBeCloseTo(-8.4 - 3.5, 6);
+    expect(lip.position.z).toBeCloseTo(-8.4 + 3.5, 6);
+  });
+
+  it('Höhlenboden trägt, Wasser sperrt, Säule als Tiefenvolumen schreibt keine Farbe', () => {
+    const cave = buildCave(50, -20, 0, 40, 12, 14, '#5a4a3a');
+    expect(cave.foundation!.surfaceBelow(50, -10, 0)).toEqual({ y: -20, kind: 'cave' });
+    expect(cave.foundation!.surfaceBelow(80, -10, 0)).toBeNull();
+    expect(cave.foundation!.surfaceBelow(50, -25, 0)).toBeNull();
+    const water = buildWater(100, 0, 0, 30, 20, '#3ec7c2');
+    const flat = new Terrain({ width: 200, terrain: [{ kind: 'flat' }] } as never);
+    const ground = { surfaceBelow: (x: number, y: number, z: number) => (flat.groundHeight(x, z) < y ? { y: flat.groundHeight(x, z), kind: 'ground' as const } : null) };
+    expect(footBelow([ground, water.foundation!], 100, 5, 0)).toBeNull();
+    expect(footBelow([ground, water.foundation!], 140, 5, 0)).toEqual({ y: 0, kind: 'ground' });
+    const col = buildColumn(10, 0, 0, 1, 8, '#888', true);
+    expect(((col.group.children[0] as Mesh).material as { colorWrite: boolean }).colorWrite).toBe(false);
+    expect(buildFlat(0, 0, 0, 3, 4, '#f00', 'Haus').kind).toBe('flat');
+    expect(buildWaterfall(0, 0, 0, 2, 6, '#bfefff').kind).toBe('waterfall');
+    expect(buildPortal(0, 2, -1, 2, 0.3, '#888').openings?.[0].r).toBe(2);
+    for (const e of [cave, water, col]) e.dispose();
+  });
+
+  it('Level-Kulissen: Berg wird Dreiteiler mit Öffnung am Portal, See eine Wasserfläche, die Stützen meiden', () => {
+    const terrain = new Terrain({ width: 200, terrain: [{ kind: 'flat' }, { kind: 'mountain', x: 60, width: 40, height: 18, lane: 0 }, { kind: 'lake', x: 150, width: 30, lane: -1 }] } as never);
+    const world = { id: 3, palette: { accent: '#ffb13b', ground: ['#a0765a', '#6b4a35'], sky: ['#5c6b8a', '#9aa9c4', '#e8d9b5'] } } as never;
+    const none = elementsFromTerrain(terrain, world, []);
+    expect(none.map((e) => e.kind)).toEqual(['threePart', 'water']);
+    const withPortals = elementsFromTerrain(terrain, world, [{ x: 44, y: 3, z: 0 }, { x: 76, y: 3, z: 0 }, { x: 150, y: 1, z: 0 }]);
+    expect(withPortals.filter((e) => e.kind === 'portal').length).toBe(2);
+    expect(withPortals.find((e) => e.kind === 'threePart')!.openings!.length).toBe(2);
+    const water = withPortals.find((e) => e.kind === 'water')!;
+    expect(water.foundation!.blocks!(150, -1)).toBe(true);
+    expect(water.foundation!.blocks!(150, 1)).toBe(false);
+    for (const e of withPortals) e.dispose();
+  });
+
+  it('Looks: Presets setzen die Umfärbe-Uniforms, Adresse wird geprüft', () => {
+    applyGrade(LOOKS.night);
+    expect(grade.uBright.value).toBeCloseTo(0.58, 6);
+    expect(grade.uGradeMix.value).toBeCloseTo(0.5, 6);
+    applyGrade(LOOKS.day);
+    expect(grade.uHue.value).toBe(0);
+    expect(grade.uGradeMix.value).toBe(0);
+    expect(parseLook('neon')).toBe('neon');
+    expect(parseLook('foo')).toBeNull();
+    expect(parseLook(null)).toBeNull();
   });
 });

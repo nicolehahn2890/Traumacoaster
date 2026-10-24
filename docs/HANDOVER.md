@@ -19,8 +19,13 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Schritt 3 gebaut: Holz und Hängebahn als Profile (die Gondel hängt am Balken 2,4 m über der Bahnlinie), vier
   Stützenfamilien aus dem Labor als Instanzen (höchstens fünf Zeichenaufrufe je Familie, Holzbahn 96 statt 469 im Labor),
   Füße über Fundamentflächen (`src/world/foundations.ts`: Terrain; Kulissen später über Metadaten). Replay `--world` mit
-  Stützen: 250 Bahnprofile, 7410 Stützen geplant und gebaut, keine Stelle ohne Fundament (die Aufnahmen liegen auf flachen Leveln), keine ungültigen Werte; Abstand Bahn–Strich bei 191 neuen Strichen im Median 2,0 px. Als Nächstes Schritt 4 (Kulissen-Platzhalter mit Tiefenpuffer, Licht, Shadow Map, Nebel, Looks;
-  Lesarten-Knopf und Spur-Filter raus), dann Tor 1a.
+  Stützen: 250 Bahnprofile, 7410 Stützen geplant und gebaut, keine Stelle ohne Fundament (die Aufnahmen liegen auf flachen Leveln), keine ungültigen Werte; Abstand Bahn–Strich bei 191 neuen Strichen im Median 2,0 px.
+  Schritt 4 gebaut: Kulissen-Platzhalter mit Tiefenpuffer (Fläche, Dreiteiler, Säule, Höhlenkasten, Wasser, Wasserfall,
+  Portal; Berge der Level sind Dreiteiler mit Tunnelöffnungen, Seen Wasserflächen), Licht mit Shadow Map und
+  Schattenfänger, Nebel, vier Looks aus dem Labor (`?look=`), Umfärbe-Shader auf allen Flächen; Lesarten-Knopf und
+  Spur-Filter sind weg (Pinsel ist die Lesart, `?stage|single|lanes` nur für Szenarien und Replay). Replay: unverändert grün (250 Profile, 7410 Stützen, Abstand Bahn–Strich im Median 2,0 px, kein Fehler).
+  **Damit stehen die Schritte 1 bis 4; als Nächstes Tor 1a** (Schritt 5): Handy-Messung mit Florian in allen vier
+  Bahntypen (`?world=1&track=road|steel|wood|hanging`, dazu `?aa=0`, `?shadow=0`, `?look=`), Standbilder, Fixes.
 - **24.10., spät: der große Plan steht.** `docs/GROSSER-PLAN.md` ist Paket für Paket mit Florian abgestimmt und in
   allen Paketen bestätigt: Ziel sind Look und Werkzeuge, nicht fertige Level. Es entsteht eine **Basiszone** als
   Werkstatt mit allen Fähigkeiten (vier Bahntypen, alle Startarten und Aufwertungen, alle Elementtypen) zuerst als

@@ -5,6 +5,7 @@ import { DevOverlay, type DevStats } from '@/core/devOverlay';
 import { Application, Container, Graphics, RenderTexture, UPDATE_PRIORITY, type ApplicationOptions } from 'pixi.js';
 import type { WorldRenderer } from '@/world/renderer';
 import { parseTrackType } from '@/world/trackTypes';
+import { parseLook } from '@/world/looks';
 import { InputManager } from '@/core/input';
 import type { Scene } from './scene';
 import { storage } from '@/core/storage';
@@ -42,7 +43,7 @@ export class Game {
     // ?world=1: Der Weltrenderer legt Zeichenfläche und Kontext an, Pixi zeichnet in denselben Kontext (?aa=0 ohne Glättung)
     if (params.get('world') === '1') {
       const { WorldRenderer } = await import('@/world/renderer');
-      this.world = new WorldRenderer({ antialias: params.get('aa') !== '0' });
+      this.world = new WorldRenderer({ antialias: params.get('aa') !== '0', shadows: params.get('shadow') !== '0', look: parseLook(params.get('look')) });
       // ?track=road|steel|wood|hanging: Bahntyp zum Vergleich erzwingen (sonst nach dem Skin des Levels)
       this.world.trackOverride = parseTrackType(params.get('track'));
       options.canvas = this.world.canvas;

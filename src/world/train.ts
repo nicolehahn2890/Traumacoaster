@@ -5,13 +5,14 @@
  * Schräglage der Schienen (railFrame), damit der Wagen auf den Schienen liegt wie in der Bühnendarstellung. Die
  * Fahrgäste bleiben Cut-outs in Pixi. Jeder Wagen ist eine Geometrie mit Farbe je Ecke: ein Zeichenaufruf je Wagen.
  */
-import { BoxGeometry, BufferGeometry, Color, CylinderGeometry, Float32BufferAttribute, Group, Matrix4, Mesh, MeshLambertMaterial, Vector3 } from 'three';
+import { BoxGeometry, BufferGeometry, Color, CylinderGeometry, Float32BufferAttribute, Group, Matrix4, Mesh, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Vec3 } from '@/core/math3';
 import type { CarState } from '@/physics/trainSim';
 import { CAR } from '@/physics/passengers';
 import { laneToZ } from './camera';
 import { HANG_LIFT } from './trackBuilder';
+import { paintedMaterial } from './looks';
 
 /** Wagenfarben wie in der Bühnendarstellung: erster Wagen rosa, dann im Wechsel */
 const BODY = ['#ffd23f', '#3ec7c2', '#9b6dff', '#7ee081', '#ff8a5c'];
@@ -22,7 +23,7 @@ const LAMP = new Color(0xffd23f);
 export type RailFrame = (s: number) => { T: Vec3; U: Vec3; S: Vec3; bank: number } | null;
 
 /** ein Material für alle Wagen: die Farbe steckt je Ecke in der Geometrie (ein Zeichenaufruf je Wagen) */
-const CAR_MATERIAL = new MeshLambertMaterial({ vertexColors: true });
+const CAR_MATERIAL = paintedMaterial({ vertexColors: true });
 
 const shaded = (hex: string, k: number): Color => new Color(hex).multiplyScalar(k);
 

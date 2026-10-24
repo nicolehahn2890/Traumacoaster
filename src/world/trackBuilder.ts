@@ -6,11 +6,12 @@
  * Physik fährt unverändert auf der Bahnlinie). Farben sind Platzhalter aus dem Labor; Umfärben per Shader kommt mit den
  * Looks (Schritt 4). Materialien werden geteilt und nie freigegeben, Geometrien je Bahn.
  */
-import { BoxGeometry, CanvasTexture, ClampToEdgeWrapping, DoubleSide, Group, Mesh, MeshLambertMaterial, RepeatWrapping, SRGBColorSpace } from 'three';
+import { BoxGeometry, CanvasTexture, ClampToEdgeWrapping, DoubleSide, Group, Mesh, RepeatWrapping, SRGBColorSpace, type MeshLambertMaterial } from 'three';
+import { paintedMaterial } from './looks';
 import { alongTrack, rect, ring, sweepGeometry, type TrackFrame } from './trackMesh';
 import type { TrackType } from './trackTypes';
 
-const lam = (color: number): MeshLambertMaterial => new MeshLambertMaterial({ color, side: DoubleSide });
+const lam = (color: number): MeshLambertMaterial => paintedMaterial({ color, side: DoubleSide });
 
 /** Platzhalter-Farben wie im Labor */
 export const MAT = {
@@ -44,7 +45,7 @@ function dashMaterial(): MeshLambertMaterial {
   t.colorSpace = SRGBColorSpace;
   t.wrapS = RepeatWrapping;
   t.wrapT = ClampToEdgeWrapping;
-  return (dashMat = new MeshLambertMaterial({ map: t, transparent: true, side: DoubleSide, depthWrite: false }));
+  return (dashMat = paintedMaterial({ map: t, transparent: true, side: DoubleSide, depthWrite: false }));
 }
 
 /** Hängebahn: der Tragbalken liegt so hoch über der Bahnlinie (Wagenhöhe plus Hänger) */

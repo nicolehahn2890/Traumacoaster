@@ -418,6 +418,15 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
    die Gondel hängt darunter am Balken), nicht wie im Labor die Bahnlinie als Balken; der Fuß wird unter der Bahnlinie
    gesucht, nicht unter dem Anschluss, sonst gilt eine niedrige Bahn als schwebend statt als zu kurz. Replay `--world` mit
    Stützen: 250 Bahnprofile und 7410 Stützen aus den Aufnahmen gebaut, keine Stelle ohne Fundament (flache Level), keine ungültigen Werte; Abstand der Bahnknoten zum Strich bei 191 neuen Strichen im Median 2,0 px, Maximum 159 px (Knoten des Rundenschlusses, der bis 10 m neben dem Strich liegen darf).
+9. Schritt 4 (24.10.): Kulissen-Platzhalter nach 8a.1 mit Tiefenpuffer (Kulisse, Dreiteiler, Säule, Höhlenkasten,
+   Wasser, Wasserfall, Portal), Berge der Level als Dreiteiler mit Öffnungen an den Tunnelportalen (die Bahn fährt hinter
+   der Lippe, verdeckt ohne Maske: Richtlinie 3 bestätigt sich im Spiel), Seen als Wasserflächen, die Füße sperren; Licht,
+   Shadow Map (1024², Kasten folgt der Kamera, `?shadow=0`), Schattenfänger, Nebel und vier Looks als Module, Umfärben
+   auf allen Flächen (`?look=`). Lesarten-Knopf und Spur-Filter sind raus (Paket 7, Entscheidung 7). Gelernt: Ein
+   Dreiteiler braucht keine Seitenwände (die Silhouette läuft am Rand auf den Boden aus; Wände ragten als Klingen über
+   den Berg); der Himmel liegt noch in Pixi und folgt nur dem Nacht-Level, nicht dem Look (Nachtrag für Schritt 4 der
+   Richtlinie: Himmel in die Welt, sobald ferne Kulissen kommen). Level 32 mit Bahn durch den Berg: 106 Zeichenaufrufe,
+   120 fps am Mac. Replay `--world`: unverändert (250 Profile, 7410 Stützen, Median 2,0 px, kein Fehler).
 
 ## Paket 10: Etappen und Abnahmen (Vorschlag aus allem Bestätigten)
 
@@ -476,7 +485,7 @@ mit Florian. Die Session arbeitet auf einem eigenen Branch und geht am Tor per P
 10. **Tor 1b:** Florian baut selbst einen Testausschnitt (Station, Hügel, Fenster-Element, Baustelle); das Handy zeigt
     dasselbe; Fixes; Doku in `docs/TECH.md` und `docs/HANDOVER.md`; Pull Request nach `main`.
 
-**Stand:** Schritte 1 bis 3 gebaut am 24.10.2026 (Nachträge in Paket 1).
+**Stand:** Schritte 1 bis 4 gebaut am 24.10.2026 (Nachträge in Paket 1); Tor 1a steht an.
 
 **Florian parallel zu Etappe 1:** den Erzeugungsweg für Teile mit der Session prüfen (Voraussetzung für E4), erste
 Figurenteile in zwei Ansichten skizzieren, Entwurf der Alpen-Autos, Handy-Tests an den Toren, Entscheidungen an den
@@ -1035,6 +1044,10 @@ der Basiszone, die Adressparameter bleiben zum Vergleichen.
 Die Lesarten Bühne, Ein Strich und Ebenen, der Spur-Filter (Punktraster als Filter) und die 150 spurbasierten Level
 als Inhalt fallen mit dem Umbau auf den Weltrenderer; die Level-Daten bleiben als Vorrat für Rezepte (Paket 9), die
 Aufnahmen und Tests der Lesarten bleiben, soweit sie den Pinsel prüfen. Der Lesart-Knopf unten links verschwindet.
+
+**Stand 24.10.2026 (Etappe 1, Schritt 4):** Lesart-Knopf und Spur-Filter sind raus; die drei alten Lesarten bleiben
+im Code nur noch per Adresse (`?stage`, `?single`, `?lanes`) für Szenarien und Replay. Die 150 Level liegen weiter in
+`src/levels` und tragen bis zum Zonen-Editor (Schritt 6) die Basiszone-Arbeit; als Inhalt fallen sie mit der Zonendatei.
 
 ### Vorschlag 7.3: Bug-Backlog aus dem Testtag (Entscheidung 5)
 

@@ -16,6 +16,8 @@ export interface FootHit {
 export interface Foundation {
   /** höchste tragende Fläche unter (x, y) auf Spur z (Spuren), oder null, wenn nichts trägt */
   surfaceBelow(x: number, y: number, z: number): FootHit | null;
+  /** sperrt die Stelle für Füße (Wasserfläche), auch wenn ein anderes Fundament darunter trüge */
+  blocks?(x: number, z: number): boolean;
 }
 
 /** das Terrain des Levels, wie es der Planer der Bühne liest (Boden plus Berg, kein Wasser) */
@@ -39,6 +41,7 @@ export class TerrainFoundation implements Foundation {
 
 /** höchster Treffer aller Fundamente unter einem Punkt */
 export function footBelow(foundations: readonly Foundation[], x: number, y: number, z: number): FootHit | null {
+  for (const f of foundations) if (f.blocks?.(x, z)) return null;
   let best: FootHit | null = null;
   for (const f of foundations) {
     const hit = f.surfaceBelow(x, y, z);
