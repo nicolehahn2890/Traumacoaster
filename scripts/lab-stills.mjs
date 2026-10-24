@@ -27,6 +27,15 @@ const shots = [
   ['dolly22-zoom14', 'cam=persp&fov=22&lens=0&zoom=14&cx=118&cy=6&hud=0'],
   ['linse22-zoom14', 'cam=persp&fov=22&lens=1&zoom=14&cx=118&cy=6&hud=0'],
   ['stress120', 'cam=persp&fov=22&zoom=7&stress=3&hud=0'],
+  ['bahn-strasse', 'cam=persp&fov=22&zoom=14&cx=36&cy=9&track=road&hud=0'],
+  ['bahn-strasse-verrueckt', 'cam=persp&fov=22&zoom=14&cx=36&cy=9&track=road&sup=crazy&hud=0'],
+  ['bahn-stahl', 'cam=persp&fov=22&zoom=12&cx=120&cy=8&track=steel&hud=0'],
+  ['bahn-holz', 'cam=persp&fov=22&zoom=14&cx=36&cy=9&track=wood&hud=0'],
+  ['bahn-holz-verrueckt', 'cam=persp&fov=22&zoom=14&cx=36&cy=9&track=wood&sup=crazy&hud=0'],
+  ['bahn-haengebahn', 'cam=persp&fov=22&zoom=14&cx=36&cy=9&track=hanging&hud=0'],
+  ['bahn-baumfenster', 'cam=persp&fov=22&zoom=12&cx=176&cy=11&track=wood&sup=crazy&feet=1&hud=0'],
+  ['bahn-felsfenster', 'cam=persp&fov=22&zoom=11&cx=140&cy=10&track=steel&feet=1&hud=0'],
+  ['bahn-hoehle', 'cam=persp&fov=22&zoom=9&cx=92&cy=-6&track=road&reveal=1&feet=1&hud=0'],
 ];
 
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -46,5 +55,10 @@ await page.waitForFunction(() => window.lab && window.lab.fps > 0, null, { timeo
 for (const fov of [12, 22, 35]) {
   const txt = await page.evaluate((f) => { window.lab.S.fov = f; return window.lab.measure(); }, fov);
   console.log(`\n=== FOV ${fov}° ===\n${txt}`);
+}
+// Stützen je Bahntyp: wo stehen die Füße (Boden, Kulisse, Höhlenboden, schwebend)?
+for (const track of ['road', 'steel', 'wood', 'hanging']) {
+  const st = await page.evaluate((t) => { window.lab.S.track = t; window.lab.rebuildTrack(); return window.lab.stats(); }, track);
+  console.log(`Stützen ${track.padEnd(8)} Boden ${st.ground}, Kulisse ${st.element} (${Object.entries(st.names).map(([k, v]) => k + ' ' + v).join(', ') || '–'}), Höhle ${st.cave}, schwebend ${st.floating}, zu kurz ${st.skipped}`);
 }
 await browser.close();

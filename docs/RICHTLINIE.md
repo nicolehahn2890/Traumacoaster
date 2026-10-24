@@ -135,6 +135,62 @@ Speicher (2048² RGBA = 16 MiB, +30 % Mipmaps; KTX2/UASTC von Anfang an einplane
 - **Startarten sichtbar:** Kettenzug als Kettenmesh auf dem Anstieg, Launch als farbiges Band mit Lichtern,
   Hängebahn mit Tragschiene oben, Gondeln darunter, seitliche Ausleger als eigene Stützenfamilie.
 
+## 3a. Bahn-Labor: vier Bahntypen, Stützenfamilien, Füße auf Kulissen (24.10., zweite Runde)
+
+Das Labor baut die Bahn jetzt als echtes Profil entlang der 3D-Kurve (Knopfzeile „Bahn“ und „Stützen“, Adresse
+`?track=road|steel|wood|hanging&sup=normal|crazy|none&feet=1`). Dieselbe Kurve, vier Materialien:
+
+| Typ | Bahnkörper | Stützenfamilie | Stand |
+|---|---|---|---|
+| Straße (Alpenautobahn) | Betonplatte 3,4 m breit, Asphalt, helle Ränder, gestrichelte Mittellinie entlang der Bogenlänge, Brüstung hinten | brutalistische Betonpfeiler: konisch, Seiten dunkler, ab 7 m mit rundem Fenster, Kapitell und Fundamentplatte; „verrückt“ lehnt und verschiebt das Fenster | trifft die Bilder 01/17; Brückenbögen zwischen Pfeilern fehlen noch |
+| Stahl (Stahlwirbel) | zwei cremefarbene Rohre, orange Schwellen, blaues Rückgrat mit Streben | Rohrpylon mit Gabel, ab 10 m A-Bock; „verrückt“ biegt den Pylon | nah an Bild 13 |
+| Holz (Holzwirbel, Schraubenwald) | Schichtholzstapel unter Flachstahl-Schienen, Schwellen, Eisenlaschen, Handlauf | Böcke aus 2–3 schrägen Pfosten mit Riegeln, Diagonalen und Laschen, Steinfüße; „verrückt“ krümmt die Pfosten, verdreht sie in der Tiefe und lässt Y-Gabeln aus einem Fuß wachsen | trifft die Skizze von 2014 und Bild 14/16; Pfosten dürfen noch dicker und die Verzweigung kann weiter gehen |
+| Hängebahn (Wolkenschaukel) | Tragbalken oben mit Rippen, Gondeln hängen 1,1 m darunter an einem Hänger, Bahn fährt 3 m höher | Betonportal, das abwechselnd vor und hinter der Bahn steht und mit einem Betonarm über den Balken greift | trifft Bild 05; die Arme könnten schwungvoller sein |
+
+**Füße auf Kulissen (die Frage „wie stützen 2D-Elemente die 3D-Bahn“):** Jede Kulisse, die als Fundament
+taugt (Wiese, Felsfenster, Doppelbaum), bekommt einen Alpha-Scan ihres Bildes (192 Spalten). Für jede Stütze
+sucht der Planer senkrecht unter dem Anschlusspunkt die erste deckende Stelle einer Kulisse, die in der Tiefe
+höchstens 1,9 m neben der Bahn steht, sonst den Boden oder den Höhlenboden; der höchste Treffer gewinnt. Der
+Fuß steht 0,35 m vor der Kulisse, die Stütze kippt dorthin. Ergebnis: Stützen stehen auf dem Hügelrücken der Wiese,
+auf der Fensterbank des Felsfensters und im Stammfenster des Doppelbaums, durch das die Bahn fährt; wo die Bahn
+hinter deckendem Bild liegt, entsteht keine Stütze (sie wäre unsichtbar); wo nichts unter der Bahn ist, setzt das
+Labor einen roten Marker („schwebend“), im Spiel wäre das die Stelle für Brücke, Ausleger oder eine Ablehnung des
+Strichs. Zählung auf der Testbahn (`Messen`):
+
+| Typ | Boden | Kulisse | Höhlenboden | schwebend | zu kurz (< 1,3 m) |
+|---|---|---|---|---|---|
+| Straße | 25 | 3 (Felsfenster 1, Baum 2) | 15 | 3 | 10 |
+| Stahl | 28 | 2 | 19 | 4 | 19 |
+| Holz | 41 | 4 (Felsfenster 3, Baum 1) | 25 | 6 | 18 |
+| Hängebahn | 29 | 5 (Wiese 2, Felsfenster 2, Baum 1) | 10 | 6 | 0 |
+
+Die „schwebenden“ Stellen liegen dort, wo die Testbahn ohne Tunnelmund unter die Wiese taucht; mit dem
+Baustellen-Tunnel aus Abschnitt 4 verschwinden sie. Bildrate mit allen vier Typen unverändert 120 fps am Mac;
+Draw Calls bei 1170 × 540: Straße 114, Stahl 155, Hängebahn 115, Holz 469. Die Holzböcke bestehen im Labor aus
+vielen Einzelteilen (Pfosten, Riegel, Laschen); im Spiel werden sie instanziert oder je Bock zu einer Geometrie
+verschmolzen, sonst wird der Holztyp auf dem Handy der teuerste.
+
+**So schlängelt sich die Bahn glaubwürdig um Elemente:**
+1. **Durch Fenster:** Die Bahn liegt eine halbe bis zwei Spuren hinter der Kulisse. Wo das Bild deckend ist, ist
+   sie weg, im Fenster ist sie da, und die Stütze steht auf dem Fensterrand. Kein Code pro Element, nur der
+   Tiefenpuffer und der Alpha-Scan.
+2. **Um Säulen und Stämme:** Vorne oder hinten entscheidet die Tiefe der Bahn relativ zur Kulisse. Ein Wechsel
+   geschieht nur über einen Spurwechsel, der an der Kulisse stattfindet; damit die Bahn dabei nicht „durch“ den
+   Stamm schneidet, bekommt der Stamm ein unsichtbares Volumen (ein Zylinder, der nur in den Tiefenpuffer
+   schreibt). Das ist die Stelle, an der 3D-Hilfskörper sinnvoll sind.
+3. **Stützen als Teil der Kulisse:** Füße nur auf Flächen, die das Element als tragfähig meldet (im Labor:
+   deckende Pixel; im Spiel: ein Fundament-Polygon je Element, damit Blattkronen und Wasser ausgeschlossen sind),
+   Form und Farbe je Zone, Seed je Level, „verrückt“ als Stärke-Regler statt Zufall ohne Grenzen.
+
+**Antwort zur Kombination mit Meshy:** Ja, aber andersherum als gefragt. Die gemalten Flächen tragen den Look,
+3D-Körper gibt es an drei Stellen: (1) Funktionsgeometrie aus Code (Bahn, Stützen, Straßenplatte, Höhlenkasten:
+alles im Labor), (2) unsichtbare Tiefen- und Kollisionskörper (Stamm-Zylinder, Felsvolumen; dafür reichen
+Primitive, Meshy ist hier Luxus), (3) sichtbare Meshes nur dort, wo ein Volumen wirklich von mehreren Seiten zu
+sehen ist: Wagen mit Rolls, vielleicht ein Hero-Fels. Ein Meshy-Untergrund als sichtbares Mesh müsste gemalt
+texturiert werden, sonst bricht er den Stil (Bilder 1–3 der ersten Nachricht zeigen genau das: schöne Form,
+falsches Licht); der Höhlenkasten aus vier gemalten Flächen im Labor liest sich bereits als Höhle. Regel:
+**Flächen malen, Volumen nur, wo die Bahn sie braucht.**
+
 ## 4. Untergrund, Höhlen, Tunnel
 
 - **Baustellenpunkt (gesetzt):** markierter Anschluss im Berg mit gelbem Absperrband. Verbindet der Strich ihn,
@@ -292,7 +348,10 @@ Strich-Overlay = weiß gestrichelt der Bühnen-Strich, pink die 3D-Bahn, Fahrt),
 Messen, Ansicht). Ziehen = schieben, Pinch/Rad = Zoom, ☰ blendet die Leiste aus. Adresse: `?cam=persp&fov=18&look=night&shadow=fake&reveal=1&hud=0&zoom=8&cx=90&cy=6&lens=1&stress=2`.
 Standbilder: `npm run dev` und `node scripts/lab-stills.mjs http://localhost:5173` → `docs/research/labs/tiefe-*.jpg`
 (Bühne, Perspektive 22°/40°, Strich-Overlay, Nacht, Neon, Vulkan, Abend, Höhle, Schatten map/fake/aus, Kamerafahrt vs.
-Linse bei 14 px/m, Stress 120 Ebenen) samt Bildrate und Draw Calls in der Konsole.
+Linse bei 14 px/m, Stress 120 Ebenen, Bahntypen `bahn-strasse`, `bahn-stahl`, `bahn-holz`, `bahn-haengebahn` samt
+„verrückt“, Füße im Baumfenster, am Felsfenster und in der Höhle) samt Bildrate, Draw Calls und Stützenzählung in der
+Konsole. Bedienung Bahn: Bahn (Straße/Stahl/Holz/Hängebahn), Stützen (passend/verrückt/keine), „Füße zeigen“
+(grün Boden, orange Kulisse, blau Höhlenboden, rot schwebend).
 
 Die vier Recherchen mit allen Quellen liegen unter `docs/research/`:
 [A 2,5D-Look und Engines](research/2026-10-24-recherche-a-2-5d-engines.md),

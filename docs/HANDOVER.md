@@ -15,6 +15,9 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Standbilder nach `docs/research/labs/`. Außerdem umgesetzt: Vollbild auf dem Handy (Bühne unter Kerbe und
   Home-Leiste, Bedienelemente weichen über `src/platform/safeArea.ts` aus) und Pinselgrößen per Adresse
   (`?tip=&line=&band=&dzoom=`). Noch nicht auf einem echten Handy geprüft.
+  Zweite Runde am selben Tag: das Labor baut die Bahn als Profil (Straße, Stahl, Holz, Hängebahn) mit eigenen
+  Stützenfamilien (Beton brutalistisch, Rohrpylon, Holzbock, Betonportal), Füße per Alpha-Scan auf den Kulissen;
+  Zählung und Antwort zu Meshy in `docs/RICHTLINIE.md`, Abschnitt 3a.
 
 - **`main` ist der Prototyp (23.10.):** Der Pinsel-Stand ist der neue Hauptzweig, lokal und auf GitHub gleich; jeder
   Push auf `main` geht über `.github/workflows/deploy.yml` auf https://nicolehahn2890.github.io/Traumacoaster/. Die

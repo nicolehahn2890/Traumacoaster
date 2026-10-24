@@ -46,6 +46,18 @@
     <button data-shadow="map" class="on">Shadow Map</button>
     <button data-shadow="fake">Fake 2D</button>
   </div>
+  <div class="row"><span class="lbl">Bahn</span>
+    <button data-track="road">Straße</button>
+    <button data-track="steel" class="on">Stahl</button>
+    <button data-track="wood">Holz</button>
+    <button data-track="hanging">Hängebahn</button>
+  </div>
+  <div class="row"><span class="lbl">Stützen</span>
+    <button data-sup="normal" class="on">passend</button>
+    <button data-sup="crazy">verrückt</button>
+    <button data-sup="none">keine</button>
+    <button id="feet">Füße zeigen</button>
+  </div>
   <div class="row"><span class="lbl">Look</span>
     <button data-look="spring" class="on">Frühling</button>
     <button data-look="dusk">Abend</button>
@@ -94,6 +106,7 @@ const scene = new THREE.Scene();
 // ------------------------------------------------------------------ Zustand
 const S = {
   cam: 'ortho', fov: 22, zoom: 8, stretch: true, lens: true, shadow: 'map', look: 'spring',
+  track: 'steel', sup: 'normal', feet: false,
   fog: true, sparkle: true, water: true, lines: false, ride: true,
   cx: 92, cy: 9, t: 0, reveal: 0, revealing: false, train: 0.12,
 };
@@ -252,7 +265,7 @@ function billboard(name, x, y0, z, w, opts = {}) {
   mesh.customDepthMaterial = m.userData.depth;
   mesh.renderOrder = opts.order ?? 0;
   scene.add(mesh);
-  billboards.push({ mesh, name, w, h, x, y0, z });
+  billboards.push({ mesh, name, w, h, x, y0, z, flip: !!opts.flip, foundation: !!opts.foundation, alpha: null });
   if (opts.fake) {
     // Fake-2D-Schatten: dieselbe Silhouette flach auf den Boden gelegt, nach vorn (zum Betrachter) und rechts
     // gestreckt; ein Draw Call, keine Shadow Map
@@ -385,11 +398,11 @@ function buildScene() {
   billboard('plant_fan', 112, CAVE.floor, 8, 7);
 
   // Bühne: Spuren +2 … −2 (hinten → vorn)
-  billboard('meadow_mass', 60, -1, Zl(2.4), 190, { sink: 0 });
-  billboard('tree_silver', 28, -0.5, Zl(2.2), 34, { fake: true });
-  billboard('mountain_window', 150, -0.5, Zl(1.5), 70, { fake: true });     // Felsfenster: Bahn auf Spur +2 fährt dahinter hindurch
-  billboard('water_curtain', 176, -0.5, Zl(1.45), 20, { shadow: false, order: 2 });
-  billboard('tree_double', 175, -0.5, Zl(-0.6), 40, { fake: true });
+  billboard('meadow_mass', 60, -1, Zl(2.2), 190, { foundation: true });
+  billboard('tree_silver', 28, -0.5, Zl(2.38), 34, { fake: true });   // hinter der Wiese (gleiche Tiefe flimmerte gegen die Wiese)
+  billboard('mountain_window', 150, -0.5, Zl(1.8), 70, { fake: true, foundation: true }); // Felsfenster: Bahn auf Spur +2 fährt dahinter hindurch, Stützen stehen auf der Fensterbank
+  billboard('water_curtain', 176, -0.5, Zl(1.75), 20, { shadow: false, order: 2 });
+  billboard('tree_double', 175, -0.5, Zl(-0.2), 40, { fake: true, foundation: true });   // Bahn auf Spur 0 fährt durch die Stammfenster, Stützen stehen auf dem Fensterrand
   billboard('grand_arch', 90, -0.5, Zl(-1.0), 72, { fake: true });          // großer Bogen vor Spur 0: Bahn im Fenster sichtbar
   billboard('station_canopy', 14, 1.6, Zl(0.35), 16, { fake: true });
   billboard('bush_fan', 40, -0.5, Zl(-1.7), 28, { fake: true });
@@ -401,126 +414,366 @@ function buildScene() {
   fogPlane = new THREE.Mesh(new THREE.PlaneGeometry(420, 26), fogMaterial());
   fogPlane.position.set(90, 8, -40); scene.add(fogPlane);
 
-  buildTrack();
-  buildTrain();
+  rebuildTrack();
   buildSparkles();
   buildLanterns();
   applyLook();
   applyShadow();
 }
 
-// ------------------------------------------------------------------ Bahn
-function buildTrack() {
-  // (x, Höhe, Spur): Station → Hügel → hinter dem Bogen → Looping → nach hinten → durch das Felsfenster → nach vorn → Untergrund → Station
-  const K = [
-    [6, 2, 0], [18, 2, 0], [30, 6, 0], [42, 18, 0], [54, 6, 0], [68, 4, 0], [84, 8, 0], [100, 9, 0], [116, 4, 0],
-    [128, 2, 0], [138, 7, 0], [141, 16, 0], [134, 24, 0], [126, 16, 0], [129, 6, 0], [140, 2, 0], [156, 3, 0],
-    [172, 6, 0.6], [186, 10, 1.4], [192, 12, 2], [180, 12, 2], [160, 11, 2], [140, 11, 2], [122, 10, 2], [104, 6, 2], [86, 4, 2], [66, 3, 2],
-    [46, 3, 1.6], [34, 2, 1], [26, 1, 0.5], [40, -1, 0.2], [56, -4, 0], [74, -10, 0], [92, -16, 0.2], [108, -12, 0.3], [116, -4, 0.3], [106, 3, 0.2],
-    [90, 3, 0], [70, 2, 0], [50, 2, 0], [28, 2, 0], [14, 2, 0],
-  ];
-  const pts = K.map(([x, y, l]) => new THREE.Vector3(x, y, Zl(l)));
+// ------------------------------------------------------------------ Bahn: Abtastung, Profile, vier Bahntypen, Stützenfamilien, Fundamente
+/** Bahnkurve (x, Höhe, Spur): Station → Hügel → hinter dem Bogen → Looping → nach hinten → Felsfenster → nach vorn → Untergrund → Station */
+const KNOTS = [
+  [6, 2, 0], [18, 2, 0], [30, 6, 0], [42, 18, 0], [54, 6, 0], [68, 4, 0], [84, 8, 0], [100, 9, 0], [116, 4, 0],
+  [128, 2, 0], [138, 7, 0], [141, 16, 0], [134, 24, 0], [126, 16, 0], [129, 6, 0], [140, 2, 0], [156, 3, 0],
+  [164, 9, 0], [172, 14.5, 0], [181, 13.2, 0.3], [190, 12, 1.0], [198, 12, 2], [180, 12, 2], [160, 11, 2], [140, 11, 2], [122, 10, 2], [104, 6, 2], [86, 4, 2], [66, 3, 2],
+  [46, 3, 1.6], [34, 2, 1], [26, 1, 0.5], [40, -1, 0.2], [56, -4, 0], [74, -10, 0], [92, -16, 0.2], [108, -12, 0.3], [116, -4, 0.3], [106, 3, 0.2],
+  [90, 3, 0], [70, 2, 0], [50, 2, 0], [28, 2, 0], [14, 2, 0],
+];
+/** Abtastung der Bahn: je Punkt Lage p, Tangente t, Seite s (stetig, nie springend), Oben n = s × t, Bogenlänge arc */
+let FR = null;
+const Y_OFF = { hanging: 3 };   // Hängebahn fährt höher: unter dem Tragbalken hängen die Gondeln
+function sampleTrack() {
+  const off = Y_OFF[S.track] ?? 0;
+  const pts = KNOTS.map(([x, y, l]) => new THREE.Vector3(x, y + off, Zl(l)));
   curve = new THREE.CatmullRomCurve3(pts, true, 'centripetal', 0.5);
   curveLength = curve.getLength();
-  trackGroup = new THREE.Group();
   const n = 900;
-  const P = [], T = [], Sd = [];
+  const frames = [];
   const up = new THREE.Vector3(0, 1, 0);
   let prevSide = new THREE.Vector3(0, 0, 1);
-  for (let i = 0; i <= n; i++) {
-    const t = (i % n) / n;
-    const p = curve.getPointAt(t); const tan = curve.getTangentAt(t).normalize();
-    let side = new THREE.Vector3().crossVectors(tan, up);
+  for (let i = 0; i < n; i++) {
+    const t = i / n;
+    const p = curve.getPointAt(t);
+    const tan = curve.getTangentAt(t).normalize();
+    const side = new THREE.Vector3().crossVectors(tan, up);
     if (side.length() < 0.2) side.copy(prevSide); else side.normalize();
     if (side.dot(prevSide) < 0) side.negate();
     prevSide = side;
-    P.push(p); T.push(tan); Sd.push(side);
-  }
-  const GAUGE = 0.55, R = 0.28;
-  const railMat = new THREE.MeshLambertMaterial({ color: 0xf5e6b8 });
-  const inkMat = new THREE.MeshLambertMaterial({ color: 0x1e2a3a });
-  const spineMat = new THREE.MeshLambertMaterial({ color: 0x3a6f9a });
-  for (const s of [-1, 1]) {
-    const rp = P.map((p, i) => p.clone().addScaledVector(Sd[i], GAUGE * s));
-    const rc = new THREE.CatmullRomCurve3(rp.slice(0, n), true, 'centripetal', 0.5);
-    const tube = new THREE.Mesh(new THREE.TubeGeometry(rc, n, R, 6, true), railMat);
-    tube.castShadow = true; tube.receiveShadow = true; trackGroup.add(tube);
-    const ink = new THREE.Mesh(new THREE.TubeGeometry(rc, n, R * 1.55, 6, true), inkMat);
-    ink.position.y = -0.1; ink.castShadow = false; trackGroup.add(ink);
-  }
-  const spineTube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(P.slice(0, n).map((p) => p.clone().setY(p.y - 0.5)), true, 'centripetal', 0.5), n, 0.28, 6, true), spineMat);
-  spineTube.castShadow = true; trackGroup.add(spineTube);
-  // Schwellen
-  const tieGeo = new THREE.BoxGeometry(0.22, 0.12, 2 * GAUGE + 0.5);
-  const ties = new THREE.InstancedMesh(tieGeo, inkMat, Math.ceil(curveLength / 1.6));
-  const m4 = new THREE.Matrix4(); const q = new THREE.Quaternion(); const basis = new THREE.Matrix4();
-  let ti = 0;
-  for (let s = 0; s < curveLength; s += 1.6) {
-    const t = s / curveLength; const i = Math.round(t * n);
-    const p = P[i], tan = T[i], side = Sd[i];
     const nrm = new THREE.Vector3().crossVectors(side, tan).normalize();
-    basis.makeBasis(tan, nrm, side); q.setFromRotationMatrix(basis);
-    m4.compose(p.clone().addScaledVector(nrm, -0.25), q, new THREE.Vector3(1, 1, 1));
-    ties.setMatrixAt(ti++, m4);
+    frames.push({ p, t: tan, s: side, n: nrm, arc: t * curveLength });
   }
-  ties.count = ti; ties.castShadow = true; trackGroup.add(ties);
-  scene.add(trackGroup);
-  // Stützen: alle 6 m, senkrecht bis zum Boden (Höhlenboden im Ausschnitt), nicht wenn die Bahn kopfüber liegt
-  supportsGroup = new THREE.Group(); fakeSupportShadows = new THREE.Group(); fakeSupportShadows.visible = false;
-  const postMat = new THREE.MeshLambertMaterial({ color: 0x24303f });
-  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x0a1020, transparent: true, opacity: 0.3, depthWrite: false });
-  supportList = [];
-  for (let s = 3; s < curveLength; s += 6) {
-    const t = s / curveLength; const i = Math.round(t * n);
-    const p = P[i], tan = T[i], side = Sd[i];
-    const nrm = new THREE.Vector3().crossVectors(side, tan);
-    if (nrm.y < 0.3) continue; // kopfüber oder steil: keine Stütze
-    const inCave = p.x > CAVE.x0 && p.x < CAVE.x1 && p.z > CAVE.zb;
-    const groundY = p.y < 0 || inCave && p.y < 0 ? CAVE.floor : 0;
-    if (p.y < 0 && !inCave) continue;
-    const h = p.y - 0.6 - groundY;
-    if (h < 1) continue;
-    const lean = Math.sin(s * 0.7) * 0.08;
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.42, h, 7), postMat);
-    post.position.set(p.x + lean * h / 2, groundY + h / 2, p.z); post.rotation.z = lean;
-    post.castShadow = true; post.receiveShadow = true; supportsGroup.add(post);
-    if (h > 6) {
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.18, 0.18), postMat);
-      bar.position.set(p.x, groundY + h * 0.45, p.z + 0.3); bar.rotation.z = 0.5; bar.castShadow = true; supportsGroup.add(bar);
-    }
-    supportList.push({ x: p.x, z: p.z, h, groundY });
-    // Fake-2D-Schatten: Parallelogramm vom Fuß nach vorn rechts (Lichtrichtung), flach auf dem Boden
-    const fx = p.x, fz = p.z, L = h * 0.42, dx = h * 0.5;
-    const sg = new THREE.BufferGeometry();
-    sg.setAttribute('position', new THREE.Float32BufferAttribute([fx - 0.3, 0, fz, fx + 0.3, 0, fz, fx + dx + 0.25, 0, fz + L, fx + dx - 0.25, 0, fz + L], 3));
-    sg.setIndex([0, 1, 2, 0, 2, 3]); sg.computeVertexNormals();
-    const sh = new THREE.Mesh(sg, shadowMat);
-    sh.position.y = groundY + 0.06; sh.renderOrder = 1;
-    fakeSupportShadows.add(sh);
-  }
-  scene.add(supportsGroup, fakeSupportShadows);
+  FR = { frames, n, length: curveLength };
 }
 
+const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide, ...extra });
+const MAT = {
+  asphalt: lam(0x3a3f4a), concrete: lam(0xddd5c3), concreteDark: lam(0xb8ae9c), cream: lam(0xf5e6b8), ink: lam(0x1e2a3a),
+  steelBlue: lam(0x2f4f72), steelLight: lam(0x4f7aa8), orange: lam(0xe8703a), wood: lam(0xcf9a44), woodDark: lam(0x8a5f2a),
+  stone: lam(0xcfc6b2), iron: lam(0x34414f), marker: { ground: lam(0x5ad85a), element: lam(0xffa531), cave: lam(0x5aa8ff), floating: lam(0xff4b4b) },
+};
+/** gestrichelte Mittellinie der Straße (Kachel entlang der Bahn) */
+function dashMaterial() {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 16;
+  const g = c.getContext('2d'); g.clearRect(0, 0, 256, 16); g.fillStyle = '#fff6dc'; g.fillRect(0, 2, 128, 12);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping;
+  return new THREE.MeshLambertMaterial({ map: t, transparent: true, side: THREE.DoubleSide, depthWrite: false });
+}
+const rect = (x0, y0, x1, y1) => [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+const ring = (cx, cy, r, k) => Array.from({ length: k }, (_, i) => ({ x: cx + Math.cos((i / k) * Math.PI * 2) * r, y: cy + Math.sin((i / k) * Math.PI * 2) * r }));
+
+/** Profil (Punkte in Seite×Oben-Metern um die Bahnmitte) entlang der Abtastung ziehen: Straßenplatte, Rohre, Balken, Streifen */
+function sweep(profile, mat, opts = {}) {
+  const { frames, n, length } = FR;
+  const segs = opts.closedProfile ? profile.length : profile.length - 1;
+  const uScale = opts.uScale ?? 3;
+  const pos = [], uv = [];
+  const vtx = (i, k) => { const f = frames[i % n]; const q = profile[k % profile.length]; return [f.p.x + f.s.x * q.x + f.n.x * q.y, f.p.y + f.s.y * q.x + f.n.y * q.y, f.p.z + f.s.z * q.x + f.n.z * q.y]; };
+  for (let i = 0; i < n; i++) {
+    const u0 = frames[i].arc / uScale, u1 = (frames[i].arc + length / n) / uScale;
+    for (let k = 0; k < segs; k++) {
+      const a = vtx(i, k), b = vtx(i + 1, k), c = vtx(i + 1, k + 1), d = vtx(i, k + 1);
+      const v0 = k / segs, v1 = (k + 1) / segs;
+      pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+      uv.push(u0, v0, u1, v0, u1, v1, u0, v0, u1, v1, u0, v1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat);
+  m.castShadow = opts.shadow !== false; m.receiveShadow = true;
+  return m;
+}
+/** Wiederholtes Teil (Schwelle, Rippe, Lasche) entlang der Bahn: lokal x = Fahrtrichtung, y = oben, z = Seite */
+function alongTrack(geo, mat, spacing, off = { x: 0, y: 0 }, phase = 0) {
+  const { frames, n, length } = FR;
+  const count = Math.floor(length / spacing);
+  const im = new THREE.InstancedMesh(geo, mat, count);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), basis = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1);
+  for (let k = 0; k < count; k++) {
+    const f = frames[Math.min(n - 1, Math.round(((k * spacing + phase) / length) * n))];
+    basis.makeBasis(f.t, f.n, f.s); q.setFromRotationMatrix(basis);
+    m4.compose(f.p.clone().addScaledVector(f.s, off.x).addScaledVector(f.n, off.y), q, one);
+    im.setMatrixAt(k, m4);
+  }
+  im.castShadow = true; im.receiveShadow = true;
+  return im;
+}
+
+// ---- die vier Bahntypen (Profil um die Bahnmitte; Anschlusshöhe der Stützen in ATTACH)
+const ATTACH = { road: -0.58, steel: -0.92, wood: -0.66, hanging: 0.58 };
+const SPACING = { road: 9, steel: 7, wood: 5.4, hanging: 10 };
+function buildRoad(g) {
+  const W = 1.7, D = 0.55;
+  g.add(sweep(rect(-W, -D, W, 0), MAT.concrete, { closedProfile: true, uScale: 4 }));                 // Betonplatte
+  g.add(sweep([{ x: -1.45, y: 0.03 }, { x: 1.45, y: 0.03 }], MAT.asphalt, { uScale: 4 }));          // Asphalt
+  g.add(sweep([{ x: -W, y: 0.035 }, { x: -1.45, y: 0.035 }], MAT.cream, { shadow: false }));         // helle Ränder
+  g.add(sweep([{ x: 1.45, y: 0.035 }, { x: W, y: 0.035 }], MAT.cream, { shadow: false }));
+  g.add(sweep([{ x: -0.13, y: 0.05 }, { x: 0.13, y: 0.05 }], dashMaterial(), { uScale: 6, shadow: false })); // Mittelstreifen
+  g.add(sweep(rect(-W, 0.03, -W + 0.16, 0.3), MAT.concreteDark, { closedProfile: true, shadow: false }));     // Brüstung hinten
+}
+function buildSteel(g) {
+  for (const x of [-0.55, 0.55]) g.add(sweep(ring(x, 0, 0.24, 7), MAT.cream, { closedProfile: true }));   // Rohre
+  g.add(sweep(ring(0, -0.64, 0.27, 7), MAT.steelBlue, { closedProfile: true }));                          // Rückgrat
+  g.add(alongTrack(new THREE.BoxGeometry(0.34, 0.12, 1.5), MAT.orange, 1.1, { x: 0, y: -0.06 }));        // Schwellen
+  const dg = new THREE.BoxGeometry(0.1, 0.68, 0.1);                                                      // Streben zum Rückgrat
+  dg.rotateX(0.62); dg.translate(0, -0.34, 0.2);
+  g.add(alongTrack(dg, MAT.steelLight, 2.2, { x: 0, y: -0.02 }));
+  const dg2 = dg.clone(); dg2.rotateX(-1.24); dg2.translate(0, 0, -0.4 - 0.0);
+  g.add(alongTrack(new THREE.BoxGeometry(0.1, 0.68, 0.1).rotateX(-0.62).translate(0, -0.34, -0.2), MAT.steelLight, 2.2, { x: 0, y: -0.02 }, 1.1));
+}
+function buildWood(g) {
+  for (const x of [-0.55, 0.55]) {
+    g.add(sweep(rect(x - 0.2, -0.64, x + 0.2, -0.02), MAT.wood, { closedProfile: true, uScale: 2 }));   // Schichtholzstapel
+    g.add(sweep(ring(x, 0.06, 0.09, 6), MAT.cream, { closedProfile: true }));                          // Flachstahl-Schiene
+  }
+  g.add(alongTrack(new THREE.BoxGeometry(0.28, 0.14, 2.3), MAT.woodDark, 1.0, { x: 0, y: -0.1 }));      // Schwellen
+  g.add(alongTrack(new THREE.BoxGeometry(0.5, 0.1, 0.12), MAT.iron, 3.0, { x: -0.8, y: -0.34 }));      // Laschen
+  g.add(sweep(rect(-1.25, 0.55, -1.13, 0.67), MAT.wood, { closedProfile: true, shadow: false }));     // Handlauf hinten
+  g.add(alongTrack(new THREE.BoxGeometry(0.1, 1.2, 0.1), MAT.wood, 2.0, { x: -1.19, y: 0.0 }));       // Geländerpfosten
+}
+function buildHanging(g) {
+  g.add(sweep(rect(-0.32, 0.0, 0.32, 0.56), MAT.steelBlue, { closedProfile: true, uScale: 3 }));     // Tragbalken oben
+  g.add(sweep([{ x: -0.36, y: 0.57 }, { x: 0.36, y: 0.57 }], MAT.cream, { shadow: false }));         // helle Oberkante
+  g.add(alongTrack(new THREE.BoxGeometry(0.12, 0.72, 0.92), MAT.ink, 2.0, { x: 0, y: 0.28 }));        // Rippen
+}
+const BUILDERS = { road: buildRoad, steel: buildSteel, wood: buildWood, hanging: buildHanging };
+
+// ---- Fundamente: Boden, Höhlenboden oder die gemalte Oberfläche eines Elements (Alpha-Scan der Kulisse)
+function alphaGrid(b) {
+  if (b.alpha) return b.alpha;
+  const img = TEX[b.name].image;
+  const w = 192, h = Math.max(8, Math.round((192 * img.height) / img.width));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(img, 0, 0, w, h);
+  const d = g.getImageData(0, 0, w, h).data;
+  const data = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) data[i] = d[i * 4 + 3];
+  b.alpha = { w, h, data };
+  return b.alpha;
+}
+/** erste deckende Stelle der Kulisse b senkrecht unter (x, y), als Welt-Höhe; null, wenn keine */
+function elementSurfaceBelow(b, x, y) {
+  const a = alphaGrid(b);
+  let u = (x - b.x) / b.w + 0.5;
+  if (b.flip) u = 1 - u;
+  const col = Math.max(0, Math.min(a.w - 1, Math.floor(u * a.w)));
+  const cy = b.mesh.position.y;
+  const row = Math.max(0, Math.floor((1 - ((y - cy) / b.h + 0.5)) * a.h));
+  for (let r = row; r < a.h; r++) if (a.data[r * a.w + col] > 110) return cy + (0.5 - (r + 0.5) / a.h) * b.h;
+  return null;
+}
+/** Fuß unter einem Anschlusspunkt: höchster fester Punkt darunter; Kulissen zählen nur, wenn sie in der Tiefe nah an der Bahn stehen */
+function footBelow(x, y, z) {
+  const cands = [];
+  const inCave = x > CAVE.x0 && x < CAVE.x1 && z > CAVE.zb;
+  if (inCave) { if (y > CAVE.floor) cands.push({ x, y: CAVE.floor, z, kind: 'cave' }); }
+  else if (y > 0) cands.push({ x, y: 0, z, kind: 'ground' });
+  for (const b of billboards) {
+    if (!b.foundation || Math.abs(b.z - z) > 1.9) continue;
+    if (x < b.x - b.w / 2 || x > b.x + b.w / 2) continue;
+    const hit = elementSurfaceBelow(b, x, y);
+    if (hit !== null && hit < y) cands.push({ x, y: hit, z: b.z + 0.35, kind: 'element', name: b.name });
+  }
+  if (!cands.length) return null;
+  cands.sort((p, q) => q.y - p.y);
+  return cands[0];
+}
+
+// ---- Stützenfamilien: lokal steht der Fuß im Ursprung, die Stütze wächst entlang +y bis zur Höhe h; alignY kippt sie zum Anschluss
+function mulberry(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const UP = new THREE.Vector3(0, 1, 0);
+function bar(a, b, thick, mat, depth = thick) {
+  const d = b.clone().sub(a); const len = d.length();
+  const m = new THREE.Mesh(new THREE.BoxGeometry(thick, len, depth), mat);
+  m.position.copy(a).addScaledVector(d, 0.5); m.quaternion.setFromUnitVectors(UP, d.normalize()); m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+function tubeAlong(points, r, mat) {
+  const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 14, r, 7, false), mat);
+  m.castShadow = true; m.receiveShadow = true; return m;
+}
+function block(w, h, d, mat, x = 0, y = 0, z = 0) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; return m; }
+function extruded(shape, depth, mat, sideMat = MAT.concreteDark) { const m = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false }), [mat, sideMat]); m.position.z = -depth / 2; m.castShadow = true; m.receiveShadow = true; return m; }
+
+/** Straße: brutalistischer Beton, konisch, ab 7 m mit rundem Fenster; „verrückt“ lehnt und verdreht sich */
+function supportConcrete(h, rnd, crazy, kind) {
+  const g = new THREE.Group();
+  const w = 1.3 + Math.min(1.3, h * 0.07);
+  const lean = crazy ? (rnd() - 0.5) * 0.7 : 0;
+  const shape = new THREE.Shape();
+  shape.moveTo(-w * 0.85, 0); shape.lineTo(w * 0.85, 0); shape.lineTo(w * 0.5 + lean, h); shape.lineTo(-w * 0.5 + lean, h); shape.closePath();
+  if (h > 7 && (crazy ? rnd() < 0.85 : true)) {
+    const hole = new THREE.Path(); const r = Math.min(w * 0.42, h * 0.18);
+    hole.absarc(lean * 0.5, h * (crazy ? 0.3 + rnd() * 0.35 : 0.45), r, 0, Math.PI * 2, true); shape.holes.push(hole);
+  }
+  g.add(extruded(shape, 1.4, MAT.concrete));
+  g.add(block(w * 1.4 + 0.4, 0.45, 1.9, MAT.concreteDark, lean, h - 0.2, 0));  // Kapitell unter der Platte
+  g.add(block(w * 1.7, 0.4, 1.8, MAT.concreteDark, 0, 0.1, 0));                 // Fundamentplatte
+  if (kind === 'element') g.add(block(w * 2.2, 0.3, 2.2, MAT.stone, 0, -0.1, 0));
+  return g;
+}
+/** Holz: Bock aus 2–3 schrägen Pfosten, Riegeln und Diagonalen; „verrückt“ krümmt, verdreht und verzweigt */
+function supportWood(h, rnd, crazy) {
+  const g = new THREE.Group();
+  const spread = Math.min(3.4, 0.7 + h * 0.16);
+  const posts = h > 9 ? 3 : 2;
+  const feet = posts === 3 ? [-spread, 0, spread] : [-spread, spread];
+  const heads = posts === 3 ? [-0.8, 0, 0.8] : [-0.8, 0.8];
+  const branch = crazy && h > 7 && rnd() < 0.55;
+  const r = 0.19 + (crazy ? rnd() * 0.08 : 0);
+  const tops = [];
+  for (let i = 0; i < posts; i++) {
+    const foot = new THREE.Vector3(branch ? 0 : feet[i], 0, 0);
+    const head = new THREE.Vector3(heads[i], h, (crazy ? (rnd() - 0.5) * 0.5 : 0));
+    const mid = foot.clone().lerp(head, 0.5);
+    if (crazy) { mid.x += (rnd() - 0.5) * Math.min(2.2, h * 0.3); mid.z += (rnd() - 0.5) * 0.8; }
+    g.add(tubeAlong([foot, mid, head], r, MAT.wood));
+    tops.push(head);
+    if (!branch || i === 0) g.add(block(0.75, 0.45, 0.85, MAT.stone, foot.x, 0.12, foot.z));
+  }
+  g.add(block(2.4, 0.3, 2.5, MAT.woodDark, 0, h - 0.15, 0));                       // Kappe unter den Schwellen
+  const levels = Math.max(1, Math.floor(h / 3.6));
+  for (let l = 1; l <= levels; l++) {
+    const y = (h * l) / (levels + 1);
+    const k = y / h; const x0 = (branch ? 0 : -spread) * (1 - k) + -0.8 * k, x1 = (branch ? 0 : spread) * (1 - k) + 0.8 * k;
+    if (x1 - x0 > 0.8) {
+      g.add(bar(new THREE.Vector3(x0, y, 0), new THREE.Vector3(x1, y, 0), 0.14, MAT.woodDark, 0.18));        // Riegel
+      const y2 = Math.min(h - 0.4, y + 3.0);
+      g.add(bar(new THREE.Vector3(x0, y, 0.12), new THREE.Vector3(x1 * 0.9, y2, 0.12), 0.1, MAT.wood, 0.1)); // Diagonale
+      g.add(block(0.42, 0.42, 0.1, MAT.iron, x0, y, 0.2)); g.add(block(0.42, 0.42, 0.1, MAT.iron, x1, y, 0.2));
+    }
+  }
+  g.add(block(0.5, 0.5, 0.12, MAT.iron, -0.8, h - 0.3, 0.22)); g.add(block(0.5, 0.5, 0.12, MAT.iron, 0.8, h - 0.3, 0.22));
+  return g;
+}
+/** Stahl: schlanker Rohrpylon mit Gabel, ab 10 m als A-Bock; „verrückt“ biegt den Pylon */
+function supportSteel(h, rnd, crazy) {
+  const g = new THREE.Group();
+  if (h < 10) {
+    const foot = new THREE.Vector3(0, 0, 0), head = new THREE.Vector3(0, h - 1.0, 0), mid = new THREE.Vector3(crazy ? (rnd() - 0.5) * Math.min(3, h * 0.35) : 0, h * 0.5, 0);
+    g.add(tubeAlong([foot, mid, head], 0.3, MAT.steelBlue));
+    for (const x of [-0.6, 0.6]) g.add(bar(head, new THREE.Vector3(x, h, 0), 0.16, MAT.steelBlue));
+  } else {
+    const sp = 0.8 + h * 0.11;
+    for (const s of [-1, 1]) {
+      const foot = new THREE.Vector3(s * sp, 0, 0), head = new THREE.Vector3(s * 0.55, h, 0);
+      const mid = foot.clone().lerp(head, 0.5); if (crazy) mid.x += (rnd() - 0.5) * 2.5;
+      g.add(tubeAlong([foot, mid, head], 0.26, MAT.steelBlue));
+      g.add(block(1.1, 0.3, 1.1, MAT.concreteDark, foot.x, 0.1, 0));
+    }
+    g.add(bar(new THREE.Vector3(-sp * 0.55, h * 0.45, 0), new THREE.Vector3(sp * 0.55, h * 0.45, 0), 0.14, MAT.steelLight));
+  }
+  g.add(block(1.3, 0.3, 1.3, MAT.concreteDark, 0, 0.1, 0));
+  return g;
+}
+/** Hängebahn: Betonarm, der hinter der Bahn aufsteigt und über den Tragbalken greift; „verrückt“ mit Schwung */
+function supportGantry(h, rnd, crazy, kind, side = -1) {
+  const g = new THREE.Group();
+  const back = 2.4 * side;                                                      // Pfeiler abwechselnd hinter und vor der Bahn
+  const top = h + 2.2;
+  const shape = new THREE.Shape(); shape.moveTo(-1.0, 0); shape.lineTo(1.0, 0); shape.lineTo(0.55, top); shape.lineTo(-0.55, top); shape.closePath();
+  const pillar = extruded(shape, 1.3, MAT.concrete); pillar.position.z = back - 0.65; g.add(pillar);
+  const swing = crazy ? (rnd() - 0.5) * 2.5 : 0;
+  g.add(tubeAlong([new THREE.Vector3(0, top - 0.4, back), new THREE.Vector3(swing, top + 0.9, back * 0.45), new THREE.Vector3(0, h + 0.1, 0)], 0.55, MAT.concrete));
+  g.add(block(2.2, 0.4, 2.2, MAT.concreteDark, 0, 0.1, back));
+  return g;
+}
+
+let feetGroup = null, supportStats = null;
+function alignY(obj, from, to) { const d = to.clone().sub(from); const len = d.length(); obj.quaternion.setFromUnitVectors(UP, d.normalize()); obj.position.copy(from); return len; }
+
+function buildSupports() {
+  supportsGroup = new THREE.Group(); fakeSupportShadows = new THREE.Group(); feetGroup = new THREE.Group();
+  fakeSupportShadows.visible = S.shadow === 'fake'; feetGroup.visible = S.feet;
+  supportStats = { ground: 0, element: 0, cave: 0, floating: 0, skipped: 0, names: {} };
+  scene.add(supportsGroup, fakeSupportShadows, feetGroup);
+  if (S.sup === 'none') return;
+  const rnd = mulberry(11);
+  let gantrySide = -1;
+  const { frames, n, length } = FR;
+  const spacing = SPACING[S.track], attach = ATTACH[S.track], hanging = S.track === 'hanging', crazy = S.sup === 'crazy';
+  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x0a1020, transparent: true, opacity: 0.3, depthWrite: false });
+  const marker = (p, kind) => { const m = new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 8), MAT.marker[kind]); m.position.copy(p); feetGroup.add(m); };
+  for (let arc = 3; arc < length; arc += spacing) {
+    const f = frames[Math.min(n - 1, Math.round((arc / length) * n))];
+    if (f.n.y < 0.35) continue;                                                   // kopfüber oder steil: keine Stütze
+    const A = f.p.clone().addScaledVector(f.n, attach);
+    const probeZ = hanging ? A.z + 2.4 * gantrySide : A.z;
+    const foot = footBelow(A.x, (hanging ? f.p.y - 2.6 : A.y) - 0.3, probeZ);
+    if (!foot) { supportStats.floating++; marker(A, 'floating'); continue; }
+    const F = new THREE.Vector3(foot.x, foot.y, hanging ? A.z : foot.z);
+    const h = A.y - F.y;
+    if (h < 1.3) { supportStats.skipped++; continue; }
+    supportStats[foot.kind]++;
+    if (foot.name) supportStats.names[foot.name] = (supportStats.names[foot.name] || 0) + 1;
+    marker(new THREE.Vector3(foot.x, foot.y, foot.z), foot.kind);
+    const fam = S.track === 'road' ? supportConcrete : S.track === 'wood' ? supportWood : S.track === 'steel' ? supportSteel : supportGantry;
+    const g = fam(h, rnd, crazy, foot.kind, gantrySide);
+    gantrySide = -gantrySide;
+    alignY(g, F, A);
+    supportsGroup.add(g);
+    // Fake-2D-Schatten: Parallelogramm vom Fuß nach vorn rechts
+    const L = h * 0.42, dx = h * 0.5;
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.Float32BufferAttribute([F.x - 0.4, 0, F.z, F.x + 0.4, 0, F.z, F.x + dx + 0.3, 0, F.z + L, F.x + dx - 0.3, 0, F.z + L], 3));
+    sg.setIndex([0, 1, 2, 0, 2, 3]);
+    const sh = new THREE.Mesh(sg, shadowMat); sh.position.y = F.y + 0.06; sh.renderOrder = 1; fakeSupportShadows.add(sh);
+  }
+}
+
+const CARS = { road: ['car_road', 3.0, 0.38], steel: ['car_steel', 3.2, 0.42], wood: ['car_wood', 2.8, 0.42], hanging: ['car_hanging', 2.6, 0] };
 function buildTrain() {
-  const names = ['car_steel', 'car_steel', 'car_steel'];
-  trainCars = names.map((nm, i) => {
-    const m = painted(TEX[nm]);
-    const t = TEX[nm]; const w = 3.2; const h = w * t.image.height / t.image.width;
+  for (const c of trainCars) scene.remove(c);
+  trainCars = [];
+  const [nm, w, lift] = CARS[S.track];
+  const t = TEX[nm]; const h = (w * t.image.height) / t.image.width;
+  for (let i = 0; i < 3; i++) {
+    const m = painted(t);
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), m);
-    mesh.castShadow = true; mesh.customDepthMaterial = m.userData.depth; mesh.renderOrder = 3; mesh.userData.h = h;
-    scene.add(mesh); return mesh;
-  });
+    mesh.castShadow = true; mesh.customDepthMaterial = m.userData.depth; mesh.renderOrder = 3; mesh.userData = { h, lift };
+    if (S.track === 'hanging') { const hanger = block(0.14, 1.2, 0.14, MAT.ink, 0, h / 2 + 0.5, -0.2); mesh.add(hanger); }
+    scene.add(mesh); trainCars.push(mesh);
+  }
 }
 function updateTrain(dt) {
-  if (S.ride) S.train = (S.train + dt * 14 / curveLength) % 1;
+  if (S.ride) S.train = (S.train + (dt * 14) / curveLength) % 1;
+  const hanging = S.track === 'hanging';
   trainCars.forEach((car, i) => {
-    const t = ((S.train - i * 3.6 / curveLength) % 1 + 1) % 1;
+    const t = (((S.train - (i * 3.6) / curveLength) % 1) + 1) % 1;
     const p = curve.getPointAt(t); const tan = curve.getTangentAt(t);
-    car.position.set(p.x, p.y + car.userData.h * 0.42, p.z + 0.6);
+    const side = new THREE.Vector3().crossVectors(tan, UP); if (side.length() < 0.2) side.set(0, 0, 1); else side.normalize();
+    const nrm = new THREE.Vector3().crossVectors(side, tan).normalize();
+    const lift = hanging ? -(1.1 + car.userData.h * 0.5) : car.userData.h * car.userData.lift;
+    car.position.copy(p).addScaledVector(nrm, lift); car.position.z += 0.6;
     const left = tan.x < 0;
     car.scale.x = left ? -1 : 1;
     car.rotation.z = Math.atan2(tan.y, tan.x) + (left ? Math.PI : 0);
   });
+}
+function disposeGroup(g) { g.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); }
+/** Bahn, Stützen und Zug für den gewählten Bahntyp neu bauen */
+function rebuildTrack() {
+  sampleTrack();
+  for (const g of [trackGroup, supportsGroup, fakeSupportShadows, feetGroup]) if (g) { scene.remove(g); disposeGroup(g); }
+  trackGroup = new THREE.Group();
+  BUILDERS[S.track](trackGroup);
+  scene.add(trackGroup);
+  buildSupports();
+  buildTrain();
 }
 
 // ------------------------------------------------------------------ Effekte
@@ -676,6 +929,8 @@ function measure() {
     }
   }
   S.cam = saveCam; S.stretch = saveStretch; placeCamera();
+  const st = supportStats || {};
+  out.push(`Stützen (${S.track}, ${S.sup}): Boden ${st.ground ?? 0}, auf Kulissen ${st.element ?? 0} (${Object.entries(st.names || {}).map(([k, v]) => k + ' ' + v).join(', ') || '–'}), Höhlenboden ${st.cave ?? 0}, schwebend ${st.floating ?? 0}, zu kurz ${st.skipped ?? 0}`);
   const txt = out.join('\n\n');
   const panel = document.getElementById('panel'); panel.style.display = 'block'; panel.textContent = txt;
   console.log(txt);
@@ -731,6 +986,8 @@ canvas.addEventListener('wheel', (e) => { e.preventDefault(); S.zoom = Math.max(
 const $ = (id) => document.getElementById(id);
 function setOn(group, value) { document.querySelectorAll(`[data-${group}]`).forEach((b) => b.classList.toggle('on', b.dataset[group] === value)); }
 document.querySelectorAll('[data-cam]').forEach((b) => b.addEventListener('click', () => { S.cam = b.dataset.cam; setOn('cam', S.cam); }));
+document.querySelectorAll('[data-track]').forEach((b) => b.addEventListener('click', () => { S.track = b.dataset.track; setOn('track', S.track); rebuildTrack(); applyShadow(); }));
+document.querySelectorAll('[data-sup]').forEach((b) => b.addEventListener('click', () => { S.sup = b.dataset.sup; setOn('sup', S.sup); rebuildTrack(); applyShadow(); }));
 document.querySelectorAll('[data-shadow]').forEach((b) => b.addEventListener('click', () => { S.shadow = b.dataset.shadow; setOn('shadow', S.shadow); applyShadow(); }));
 document.querySelectorAll('[data-look]').forEach((b) => b.addEventListener('click', () => { S.look = b.dataset.look; setOn('look', S.look); applyLook(); }));
 $('fov').addEventListener('input', (e) => { S.fov = +e.target.value; $('fovv').textContent = S.fov + '°'; });
@@ -742,6 +999,7 @@ toggleBtn('fog', 'fog', () => { fogPlane.visible = S.fog; applyLook(); });
 toggleBtn('sparkle', 'sparkle', () => { sparkles.visible = S.sparkle; });
 toggleBtn('water', 'water', () => { waterMesh.material.uniforms.uOn.value = S.water ? 1 : 0; });
 toggleBtn('lines', 'lines');
+toggleBtn('feet', 'feet', () => { if (feetGroup) feetGroup.visible = S.feet; });
 toggleBtn('ride', 'ride');
 $('reveal').addEventListener('click', startReveal);
 $('stress').addEventListener('click', stress);
@@ -778,7 +1036,7 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-const NAMES = ['sky_pearl', 'peak_swiss', 'snow_ridge', 'foothill', 'forest_distance', 'lake_field', 'cloud_ribbon', 'cloud_a', 'meadow_mass', 'grand_arch', 'mountain_window', 'tree_double', 'tree_silver', 'cave_fill_cobalt', 'cave_fill_amber', 'cave_terrace', 'bush_fan', 'bush_lime', 'plant_fan', 'grass_cap', 'lake_pool', 'water_curtain', 'station_canopy', 'car_steel', 'light_shaft', 'secret_crystal'];
+const NAMES = ['sky_pearl', 'peak_swiss', 'snow_ridge', 'foothill', 'forest_distance', 'lake_field', 'cloud_ribbon', 'cloud_a', 'meadow_mass', 'grand_arch', 'mountain_window', 'tree_double', 'tree_silver', 'cave_fill_cobalt', 'cave_fill_amber', 'cave_terrace', 'bush_fan', 'bush_lime', 'plant_fan', 'grass_cap', 'lake_pool', 'water_curtain', 'station_canopy', 'car_steel', 'car_road', 'car_wood', 'car_hanging', 'light_shaft', 'secret_crystal'];
 /** Zustand aus der Adresse, z. B. ?cam=persp&fov=18&look=night&shadow=fake&reveal=1&hud=0&zoom=8&cx=90&cy=6 */
 function applyParams() {
   const q = new URLSearchParams(location.search);
@@ -786,6 +1044,10 @@ function applyParams() {
   if (q.get('fov')) { S.fov = +q.get('fov'); $('fov').value = S.fov; $('fovv').textContent = S.fov + '°'; }
   if (q.get('look') && LOOKS[q.get('look')]) { S.look = q.get('look'); setOn('look', S.look); }
   if (q.get('shadow')) { S.shadow = q.get('shadow'); setOn('shadow', S.shadow); }
+  if (q.get('track') && BUILDERS[q.get('track')]) { S.track = q.get('track'); setOn('track', S.track); }
+  if (q.get('sup')) { S.sup = q.get('sup'); setOn('sup', S.sup); }
+  if (q.get('feet') === '1') { S.feet = true; $('feet').classList.add('on'); }
+  if (q.get('track') || q.get('sup') || q.get('feet')) rebuildTrack();
   for (const k of ['fog', 'sparkle', 'water', 'lines', 'ride', 'stretch', 'lens']) if (q.has(k)) { S[k] = q.get(k) !== '0'; $(k).classList.toggle('on', S[k]); }
   $('lens').textContent = S.lens ? 'Zoom = Linse' : 'Zoom = Kamerafahrt';
   if (q.get('zoom')) S.zoom = +q.get('zoom');
@@ -803,7 +1065,7 @@ loadAll(NAMES).then(() => {
   buildScene();
   homeView();
   applyParams();
-  window.lab = { S, scene, renderer, camera, measure, stress, startReveal, applyLook, applyShadow, placeCamera, worldToScreen, stageToScreen, syncUI, setOn, fps: 0, ms: 0 };
+  window.lab = { S, scene, renderer, camera, measure, stress, startReveal, applyLook, applyShadow, placeCamera, worldToScreen, stageToScreen, syncUI, setOn, rebuildTrack, stats: () => supportStats, fps: 0, ms: 0 };
   requestAnimationFrame(loop);
 });
 </script>

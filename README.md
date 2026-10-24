@@ -51,7 +51,7 @@ npm run strokes:replay  # aufgezeichnete Striche in allen vier Lesarten nachspie
 node scripts/lab-stills.mjs  # Standbilder und Messwerte des Tiefen-Labors (Dev-Server muss laufen)
 ```
 
-**Tiefen-Labor** (`public/labs/tiefe.html`, lokal unter `/labs/tiefe.html`, online unter `/Traumacoaster/labs/tiefe.html`): dieselbe Szene aus gemalten Elementen als heutige Bühne und als 3D-Welt mit Perspektive, Schatten, Nebel, Umfärben und Höhlenfreilegung; Grundlage der Entscheidung in `docs/RICHTLINIE.md`.
+**Tiefen-Labor** (`public/labs/tiefe.html`, lokal unter `/labs/tiefe.html`, online unter `/Traumacoaster/labs/tiefe.html`): dieselbe Szene aus gemalten Elementen als heutige Bühne und als 3D-Welt mit Perspektive, Schatten, Nebel, Umfärben und Höhlenfreilegung; Grundlage der Entscheidung in `docs/RICHTLINIE.md`. Bahntypen und Stützen per Adresse: `?track=road|steel|wood|hanging&sup=normal|crazy|none&feet=1`.
 
 Größen zum Ausprobieren auf dem Handy per Adresse: `?tip=26` (Tropfen unter dem Finger), `?line=15` (gemalte Linie), `?band=30` (Gummiband), `?dzoom=11` (Zeichen-Zoom in px/m).
 
