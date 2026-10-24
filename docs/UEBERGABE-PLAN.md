@@ -1,5 +1,10 @@
 # Übergabe für die Plan-Session: der große Plan für die erste Zone
 
+> **Erledigt (24.10.2026, spät):** Der Plan steht in [GROSSER-PLAN.md](GROSSER-PLAN.md), Paket für Paket mit Florian
+> bestätigt. Abschnitt 1 dieser Übergabe (Alpen mit Leveln) ist durch den Zuschnitt in Abschnitt Z des Plans
+> ersetzt (Look und Werkzeuge, Basiszone als Werkstatt, Level später); die Entscheidungen aus Abschnitt 3 sind im
+> Plan beantwortet. Diese Datei bleibt als Geschichte des Plans.
+
 Stand 24.10.2026, abends. Diese Datei ist die Eingabe für eine neue Session, die den großen Plan schreibt. Sie sagt,
 wofür der Plan gilt, was entschieden ist, was noch offen ist (und bei wem), was der Plan enthalten muss, welche
 Dateien die Session liest und wie sie arbeitet.

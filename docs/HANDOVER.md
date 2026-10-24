@@ -6,6 +6,17 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
 
 ## 1. Wo wir stehen
 
+- **24.10., spät: der große Plan steht.** `docs/GROSSER-PLAN.md` ist Paket für Paket mit Florian abgestimmt und in
+  allen Paketen bestätigt: Ziel sind Look und Werkzeuge, nicht fertige Level. Es entsteht eine **Basiszone** als
+  Werkstatt mit allen Fähigkeiten (vier Bahntypen, alle Startarten und Aufwertungen, alle Elementtypen) zuerst als
+  Platzhalter, ein **Editor im Spiel** (Florian bedient ihn am Mac), ein Zielarten-Katalog mit Physikrätseln,
+  Sprungschanze, Fangen und Bild im Bild, Figuren nach den Visuals mit Schlange und Freiraum, Untergrund mit festem
+  Fels und Baustellen in zwei Varianten, Look ohne Konturen mit Stilprobe als Tor, UI im Baustellen-Brutalismus
+  (UI-Werkstatt mit drei Varianten), ein Rad für alle Zonen mit Morph in zwei Schritten, Asset-Pipeline mit
+  automatischer Prüfung und eigenen Teilen je Zone, Vorschlag-Generator und Prüfer, der **Mystische
+  Neon-Freizeitpark** als zweite Zone ohne neuen Engine-Code. Acht Etappen mit Toren (Handy 60 fps, Replay grün,
+  Standbilder, Florians Freigabe), die ersten zwei Wochen tageweise ab Montag, 26.10. (Abschnitt 3). Der alte Plan
+  `docs/PLAN.md` trägt den Archivhinweis. Nicht gepusht: Die Commits der Plan-Session liegen lokal auf `main`.
 - **24.10.: Richtlinie und Tiefen-Labor.** Florians Klarstellungen und Fragen stehen in
   `docs/research/2026-10-24-klarstellungen-und-fragen.md`, die Antwort mit Messungen und Entscheidung in
   `docs/RICHTLINIE.md` (Kurzfassung: Weltrenderer zu Three.js mit geneigter Perspektivkamera, Pixi bleibt fürs HUD;
@@ -81,16 +92,23 @@ Skripte), `?fx=0` / `?fx=1` (Shader aus/an, sonst automatisch
 ab sechs CPU-Kernen), `?dev=1` (Overlay mit fps, Draw-Calls, Partikeln; Taste F schaltet die Effekte um).
 Eigene automatische Tests im Dev-Server mit `TC_NO_RECORD=1`, damit sie die echten Aufnahmen nicht verfälschen.
 
-## 3. Nächster Schritt: der große Plan für die erste Zone
+## 3. Nächster Schritt: Etappe 1 des großen Plans
 
-Die Eingabe für die Plan-Session ist `docs/UEBERGABE-PLAN.md`: wofür der Plan gilt (Zone Alpen im finalen Look mit
-allen Achterbahn-Features und Levelzielen plus die Systeme für weitere Zonen), die Prüfung aller 16 Klarstellungen
-und 11 Fragen vom 24.10. (entschieden, gebaut, offen für den Plan, offen bei Florian), die neun Entscheidungen,
-die bei Florian liegen (Bildwinkel, Zeichengrößen, Referenzen einfrieren, Wagen 2D oder 3D, Bug-Liste,
-Figurenbogen, was weg darf, welche Teile erzeugt werden, der Katalog der Zielarten fürs ganze Spiel), die Gliederung
-des Plans in zwölf Pakete, die Leseliste und die Arbeitsregeln. Die Plan-Session baut nichts, sie schreibt. Ergebnis
-der Plan-Session: `docs/GROSSER-PLAN.md`; `docs/PLAN.md` bleibt als Archiv. Die Technik steht in
-`docs/RICHTLINIE.md` und wird im Plan nicht neu verhandelt.
+Der Plan ist `docs/GROSSER-PLAN.md` (Tabelle A zeigt je Paket, was bestätigt ist; Paket 10 die Etappen; Paket 11 die
+Risiken). Als Nächstes kommt **Etappe 1, Weltrenderer und Klötzchen-Editor**, tageweise geplant für Montag, 26.10.
+bis Freitag, 6.11.2026 (Paket 10):
+
+- Woche 1: Three-Szene hinter Schalter im Spiel, Pixi-HUD im selben Kontext, Kamera 18 Grad mit Kamerafahrt,
+  Boden und Erdschnitt, vier Bahnprofile aus dem Bahnmodell, Stützenfamilien instanziert, Wagen-Platzhalter,
+  Kulissen-Platzhalter mit Tiefenpuffer, Licht, Schatten, Nebel, Looks aus dem Labor; Lesarten-Knopf und Spur-Filter
+  raus; 100-Punkte-Test, Replay, Handy-Messung mit Florian am Freitag (Tor 1a).
+- Woche 2: Editor-Modus am Mac mit Platzhaltern, Metadaten, Feldern, Station, Schlangenbereich, Baustelle, Coins,
+  Zonendatei, Testfahrt und Zielen; am Freitag baut Florian selbst einen Testausschnitt (Tor 1b).
+
+Regeln aus dem Plan, die für jede Session gelten: Nichts wird festgelegt, was Florian nicht bestätigt hat; was eine
+Etappe lernt, wird mit Datum im betroffenen Paket nachgetragen; keine Teile in Menge vor der Stilprobe (Etappe 4);
+die Technik der Richtlinie bleibt gesetzt. Die Übergabe `docs/UEBERGABE-PLAN.md` ist Geschichte des Plans: ihr
+Abschnitt 1 (Alpen mit Leveln) ist durch den Zuschnitt in Abschnitt Z des Plans ersetzt.
 
 GPTs Grafiksystem liegt lokal unter `refs/traumacoaster-gpt explore/` (nicht im Repository: Visuals, Elemente-Bogen,
 Figuren-Versuche, Karten-Moodboards, Parallaxentest, Umsetzungsplan als PDF, Art-Direction-Vorschlag, Bildprompts).

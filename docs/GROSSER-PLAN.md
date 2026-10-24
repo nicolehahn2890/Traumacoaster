@@ -1,10 +1,11 @@
-# Trauma Coaster – der große Plan (Entwurf in Abstimmung)
+# Trauma Coaster – der große Plan
 
-Stand 24.10.2026, abends. **Dieser Plan entsteht Paket für Paket mit Florian.** Nichts hier gilt als entschieden,
-was in der Tabelle unten nicht als „bestätigt am …“ steht; alles andere ist Vorschlag mit Optionen und Empfehlung,
-auf das Florian antwortet. Eingabe war `docs/UEBERGABE-PLAN.md`; die Technik steht in `docs/RICHTLINIE.md` und wird
-hier nicht neu verhandelt (wo Florian sie anders sieht, wird es dort geklärt und hier vermerkt). Der alte Plan
-`docs/PLAN.md` bleibt als Archiv.
+Stand 24.10.2026, spät. **Dieser Plan ist Paket für Paket mit Florian entstanden und am 24.10.2026 in allen Paketen
+bestätigt** (Tabelle A, Spalte „bestätigt am“). Er wird fortgeschrieben: Was eine Etappe lernt, wird mit Datum im
+betroffenen Paket nachgetragen; was Florian ändert, ebenso. Vorläufig bleiben ausdrücklich die zehn Regeln des Looks
+(bis zur Stilprobe), die Grafikliste (folgt aus der Basiszone), Graben in Stufen (Florians Vorbehalt) und der
+Autoscroll am Tunnel (wird ausprobiert). Eingabe war `docs/UEBERGABE-PLAN.md`; die Technik steht in
+`docs/RICHTLINIE.md` und wird hier nicht neu verhandelt. Der alte Plan `docs/PLAN.md` bleibt als Archiv.
 
 ## A. Stand der Abstimmung
 
@@ -19,11 +20,11 @@ hier nicht neu verhandelt (wo Florian sie anders sieht, wird es dort geklärt un
 | 5 | Untergrund, Tunnel, Baustellen | **bestätigt**: Fels fest, Baustellen in zwei Varianten, Freilegung auf zwei Wegen, Autoscroll als Schalter zum Ausprobieren, Graben in Stufen (Vorbehalt), Wasser mit Schaltern | 24.10.2026 |
 | 0 | Art Direction v2 (Look) | **bestätigt**: alle Visuals als Pool (Stil 04 und 09, Maßstab 15 und 16), zehn Regeln nur vorläufig bis zur Stilprobe, keine Konturen, Punktraster gemalt plus Funkeln-Shader, Alpen als erster Look, Stilprobe als Tor; UI-Richtung Baustellen-Brutalismus, Nachtrag: noch viel verrückter, UI-Werkstatt mit drei Varianten | 24.10.2026 |
 | 7 | Werkzeuge und Bedienung | **bestätigt**: 18 Grad, Richtlinien-Größen, drei Lesarten, Spur-Filter und 150 Level weg, Bug-Backlog, HUD in der Sprache der UI; Nachtrag: Kreuzungstausch bleibt als Rückfall im Bogenmenü, „Boden formen“ später als Fähigkeit der Basiszone | 24.10.2026 |
-| 1 | Weltrenderer (Technik, Richtlinie Schritt 2) | Technik gesetzt; Einordnung als Etappe 1 vorgeschlagen (Module, Tore) | mit Paket 10 |
+| 1 | Weltrenderer (Technik, Richtlinie Schritt 2) | **bestätigt**: Technik aus der Richtlinie, Module unter `src/world/`, Tore; Etappe 1 | 24.10.2026 |
 | 8b | Asset-Pipeline und Aufträge | **bestätigt**: Session erzeugt über Florians Figma-Konto (am ersten Auftrag geprüft), automatische Prüfung gegen Auftrag und Leitbilder, eigene Teile je Zone, Katalog, Aufträge in Sätzen | 24.10.2026 |
 | 9 | Produktion vieler Level | **bestätigt**: Vorschlag-Generator, Prüfer mit Lösungsbahn in der CI, zweite Zone „Mystischer Neon-Freizeitpark“ ohne neuen Engine-Code | 24.10.2026 |
-| 10 | Etappen und Abnahmen | Vorschlag aus allem Bestätigten: acht Etappen, die ersten zwei Wochen tageweise; Festschreibung angefragt | – |
-| 11 | Risiken und Grenzen | Vorschlag; Festschreibung angefragt | – |
+| 10 | Etappen und Abnahmen | **bestätigt**: acht Etappen E1 bis E8 mit vier Prüfungen je Tor, Zwischentor nach E2, Stilprobe parallel zu E3, die ersten zwei Wochen tageweise | 24.10.2026 |
+| 11 | Risiken und Grenzen | **bestätigt**: Risikotabelle mit Gegenmaßnahme und Tor, Liste dessen, was bewusst nicht im Plan ist | 24.10.2026 |
 | 12 | Karte und Morph (neu auf Florians Wunsch, 24.10.) | **bestätigt**: ein Rad für alle Zonen in Sektoren, Miniaturen und Symbole, Morph in zwei Schritten mit messbaren Kriterien | 24.10.2026 |
 
 Runde 1 (24.10.): offene Einladung, Zone und Level, Levelziele; Pakete Z, 2 und 4 am selben Abend bestätigt. Florians
@@ -32,7 +33,7 @@ was Florian bestätigt hat, trägt das Datum. Runde 2 (24.10.): Achterbahn-Featu
 (Abschnitt Z); Pakete 3 und 8a am selben Abend bestätigt. Runde 3 (24.10.): Figuren und Schlange, Untergrund und Tunnel; Pakete 6 und 5 am selben Abend bestätigt. Runde 4
 (24.10.): Look und Werkzeuge; Pakete 0 und 7 am selben Abend bestätigt. Runde 5 (24.10.): Karte und Morph, Pipeline,
 Produktion; Pakete 12, 8b und 9 am selben Abend bestätigt. Danach Etappen, Risiken und die Einordnung des Weltrenderers
-als Vorschlag aus allem Bestätigten (Paket 1, 10, 11).
+als Vorschlag aus allem Bestätigten (Paket 1, 10, 11), am selben Abend bestätigt. Damit ist der Plan komplett.
 
 ## Z. Ziel und Zuschnitt des Plans (Florians Vorgabe, 24.10.)
 
@@ -386,6 +387,8 @@ Klötzchen-Editor. **Was ersetzt wird:** `src/render/worldView`, `terrainRendere
 Tiefenfehler, Handy-Messung mit allen vier Bahntypen (60 fps Ziel, Holz unter 150 Draw Calls), Standbilder der
 Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
 
+**Status: bestätigt am 24.10.2026** (mit Paket 10).
+
 ## Paket 10: Etappen und Abnahmen (Vorschlag aus allem Bestätigten)
 
 ### Grundsätze
@@ -399,7 +402,8 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
   Richtlinie schätzte für den schmaleren Umfang (Renderer, Kulissen, Untergrund, Werkzeuge) fünf bis acht Wochen; mit
   Editor, Figuren, UI-Werkstatt, Karte, Generator und zweiter Zone sind es nach dieser Rechnung etwa sechzehn Wochen.
 - Florians Parallelarbeiten (jederzeit, nicht im Tor): Figurenteile in zwei Ansichten, Entwurf der Alpen-Autos,
-  Varianten je Zone, Handy-Tests am Ende jeder Woche, Entscheidungen an den Toren, Figma-Konto für den Generator.
+  Varianten je Zone, Handy-Tests am Ende jeder Woche, Entscheidungen an den Toren, Figma-Konto für den Generator,
+  falls die Session diesen Weg wählt (8b.1).
 
 ### Die Etappen
 
@@ -447,11 +451,13 @@ Figurenteile in zwei Ansichten skizzieren, Entwurf der Alpen-Autos, Handy-Tests 
 
 ### Rückfragen zu Paket 10
 
-1. Spannen und Reihenfolge so annehmen, mit der Stilprobe parallel zu E3, sobald der Figma-Weg steht?
+1. Spannen und Reihenfolge so annehmen, mit der Stilprobe parallel zu E3, sobald der Figma-Weg steht? **Ja (24.10.);
+   „Figma-Weg“ heißt jetzt: der gewählte Erzeugungsweg aus 8b.1.**
 2. Sollen E2 und E3 zu einer Etappe „Basiszone“ mit einem Tor nach vier Wochen zusammenfallen, oder bleibt das
-   Zwischentor nach zwei Wochen (Empfehlung: Zwischentor, damit der Spieltest früher kommt)?
+   Zwischentor nach zwei Wochen (Empfehlung: Zwischentor, damit der Spieltest früher kommt)? **Zwischentor bleibt
+   (Florian folgt der Empfehlung, 24.10.).**
 
-Status: Vorschlag, zur Festschreibung vorgelegt (24.10.).
+**Status: bestätigt am 24.10.2026.**
 
 ## Paket 11: Risiken und Grenzen (Vorschlag)
 
@@ -477,7 +483,7 @@ Status: Vorschlag, zur Festschreibung vorgelegt (24.10.).
 Lawine, Zustieg unterwegs, Graben Stufe 2 (nur nach Test), Rolls und Schrauben vor den finalen Wagen, der Inhalt der
 Veröffentlichung (Startzonen überarbeitet Florian nach E8 neu).
 
-Status: Vorschlag, zur Festschreibung vorgelegt (24.10.).
+**Status: bestätigt am 24.10.2026.**
 
 ## Paket 3: Achterbahn-Features – Bahntypen, Aufwertungen, Startarten, Station, Stützen
 
@@ -1136,7 +1142,10 @@ Hintergrund, Prompt mit dem Stil-Vorspann aus Paket 0 und der Beschreibung aus d
 Referenzen und Version jedes Teils stehen in einer Katalogdatei im Repository (ohne die Bilder); die Master liegen
 lokal und in der Figma-Datei als Archiv. Voraussetzung, die beim ersten Auftrag geprüft wird: Der Connector läuft mit
 Florians Konto (der alte Plan beschreibt den Weg über das Pro-Konto). Rückfall: Florian erzeugt aus demselben
-Auftragstext in seinem Werkzeug.
+Auftragstext in seinem Werkzeug. **Nachtrag Florian (24.10.):** Die Session wählt den Weg, der für sie besser ist,
+Figma-Konto oder der Bildgenerator über eine Schnittstelle vom Terminal aus; beide Wege liefern dieselben Dinge
+(transparentes Teil, Katalogeintrag mit Prompt, Referenzen und Version, Prüfung aus 8b.2). Entschieden wird am
+ersten Auftrag nach einem Vergleich an zwei Teilen.
 
 ### Vorschlag 8b.2: Prüfung „passt es genau“
 
