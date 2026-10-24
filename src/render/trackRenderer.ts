@@ -418,7 +418,7 @@ export class TrackRenderer {
       left.push({ x: pl.X, y: pl.Y });
       right.push({ x: pr.X, y: pr.Y });
       center.push(pc.X, pc.Y);
-      ratio.push(laneRatioFor(s.z[i], lane));
+      ratio.push(laneRatioFor(s.z[i], lane, s.y[i]));
     }
     // Schwellen zwischen den Schienen
     let nextS = s.s[a];

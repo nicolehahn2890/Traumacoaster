@@ -1,4 +1,4 @@
-# Übergabe – Trauma Coaster (Stand 23.10.2026)
+# Übergabe – Trauma Coaster (Stand 24.10.2026)
 
 Für die nächste Session (Florian oder wer auch immer weitermacht): Was fertig ist, was offen ist, wie du
 weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md`, die Technik in
@@ -6,6 +6,12 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
 
 ## 1. Wo wir stehen
 
+- **24.10., Etappe 1 begonnen** (Branch `etappe-1-weltrenderer`, Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10).
+  Schritt 1 gebaut: Weltrenderer hinter `?world=1` (Three-Szene im selben WebGL-Kontext, Pixi zeichnet davor den Himmel und
+  darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem
+  die exakte geneigte Kamera, auch für den Pinsel), Boden als Höhenfeld und geschlossener Erdschnitt aus dem Terrain,
+  100-Punkte-Test (`tests/world.test.ts`). Technik in `docs/TECH.md` 4e und 4f, Gelerntes im Plan unter Paket 1. Replay:
+  261 Aufnahmen, Pinsel in Perspektive 87 von 250 Fahrten geschafft (vorher 88, ohne Perspektive 90), kein Fehler. Als Nächstes Schritt 2 (Bahnprofile Straße und Stahl aus dem Bahnmodell, Wagen-Platzhalter, Replay `--world`).
 - **24.10., spät: der große Plan steht.** `docs/GROSSER-PLAN.md` ist Paket für Paket mit Florian abgestimmt und in
   allen Paketen bestätigt: Ziel sind Look und Werkzeuge, nicht fertige Level. Es entsteht eine **Basiszone** als
   Werkstatt mit allen Fähigkeiten (vier Bahntypen, alle Startarten und Aufwertungen, alle Elementtypen) zuerst als
@@ -89,7 +95,8 @@ npm run strokes:replay        # aufgezeichnete Striche in allen vier Lesarten na
 Nützliche URL-Parameter im Spiel: `?scene=start&level=8` (direkt ins Level), `?fast=6` (Zeitraffer),
 `?brush` / `?stage` / `?single` / `?lanes` (Lesart erzwingen), `?scroll=0` (kein Autoscroll beim Zeichnen, für
 Skripte), `?fx=0` / `?fx=1` (Shader aus/an, sonst automatisch
-ab sechs CPU-Kernen), `?dev=1` (Overlay mit fps, Draw-Calls, Partikeln; Taste F schaltet die Effekte um).
+ab sechs CPU-Kernen), `?dev=1` (Overlay mit fps, Draw-Calls, Partikeln; Taste F schaltet die Effekte um), `?world=1`
+(Weltrenderer der Etappe 1, Perspektive 18° Standard; dort `?persp=0` für die Bühne, `?aa=0` ohne Kantenglättung).
 Eigene automatische Tests im Dev-Server mit `TC_NO_RECORD=1`, damit sie die echten Aufnahmen nicht verfälschen.
 
 ## 3. Nächster Schritt: Etappe 1 des großen Plans

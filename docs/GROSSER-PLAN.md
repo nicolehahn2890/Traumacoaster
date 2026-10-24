@@ -389,6 +389,25 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
 
 **Status: bestätigt am 24.10.2026** (mit Paket 10).
 
+**Stand 24.10.2026, Etappe 1, Schritt 1 gebaut** (Branch `etappe-1-weltrenderer`; Technik in `docs/TECH.md` 4e und 4f):
+`src/world/` mit Renderer im geteilten Kontext, Kamera-Adapter, Boden und Erdschnitt, Schalter `?world=1`. Gelernt:
+1. Pixi und Three teilen den Kontext mit `resetState` je Bild wie dokumentiert, aber Pixi setzt die Löschfarbe nach dem
+   Reset nicht neu: Three muss sie transparent lassen, sonst sind Pixis Filter-Texturen deckend schwarz (Risiko „zwei Renderer
+   im selben Kontext“ aus Paket 11: gefunden und behoben, die Szenarien prüfen das Bild am Tor 1a).
+2. Die Perspektive aus Schritt 1 der Richtlinie rechnete die Spur-Ebenen bildparallel; die echte geneigte Kamera skaliert
+   zusätzlich mit der Höhe über dem Kameraziel (bei 10 m und D = 170 m rund 2,6 %). `toView` und `rayToWorld` sind jetzt die
+   exakte Kamera, die Spur-Container der Bühnendarstellung korrigieren jeden Punkt nach; der Pinsel deutet den Strich also
+   genau so, wie der Weltrenderer ihn zeigt.
+3. Kantenglättung: Die Richtlinie nennt `antialias: false`, Labor und Spiel liefen bisher mit Glättung (auch Florians
+   Handy-Messung im Labor). Der Kontext startet mit Glättung, `?aa=0` schaltet sie ab; am Tor 1a wird beides gemessen, Florian
+   entscheidet.
+4. Boden als Höhenfeld zeigt Hügel je Spur als Terrassen (so rechnet die Physik); ob der Boden der Basiszone je Spur oder
+   als Fläche beschrieben wird, klärt das Zonen-Datenmodell (Paket 2, Schritt 6/7).
+5. Im Übergang bleiben Schienen, Stützen, Zug, Berge und Wasser in Pixi über der Welt: ohne Tiefenpuffer scheint eine Bahn
+   hinter einem vorderen Hügel bis Schritt 2 durch, Berge und Wasser liegen in Perspektive bis zu ein paar Pixel neben dem
+   Boden (bis Schritt 4).
+6. Replay mit Perspektive nach dem Umbau: 261 Aufnahmen, Pinsel 87 von 250 Fahrten geschafft (vorher mit der bildparallelen Näherung 88, ohne Perspektive 90), kein Fehler, die Ausfallgründe verteilen sich wie vorher.
+
 ## Paket 10: Etappen und Abnahmen (Vorschlag aus allem Bestätigten)
 
 ### Grundsätze
@@ -445,6 +464,8 @@ mit Florian. Die Session arbeitet auf einem eigenen Branch und geht am Tor per P
    Aufwertungsstufe wählen; Prüfung: Zonendatei lädt deterministisch, Standbild-Test.
 10. **Tor 1b:** Florian baut selbst einen Testausschnitt (Station, Hügel, Fenster-Element, Baustelle); das Handy zeigt
     dasselbe; Fixes; Doku in `docs/TECH.md` und `docs/HANDOVER.md`; Pull Request nach `main`.
+
+**Stand:** Schritt 1 gebaut am 24.10.2026 (Nachtrag in Paket 1).
 
 **Florian parallel zu Etappe 1:** den Erzeugungsweg für Teile mit der Session prüfen (Voraussetzung für E4), erste
 Figurenteile in zwei Ansichten skizzieren, Entwurf der Alpen-Autos, Handy-Tests an den Toren, Entscheidungen an den

@@ -116,6 +116,52 @@ fallen auf `toStage/toWorld` zurück; Tests in `tests/projection.test.ts`. Die A
 (`points[i][3..4]`), `npm run strokes:replay -- --persp` spielt sie in Perspektive nach (ältere Aufnahmen mit fester Kamera im
 Strichzentrum).
 
+**Kamera exakt (24.10., Etappe 1, Schritt 1):** Die Perspektive ist seitdem genau die Kamera des Weltrenderers (4f): die um
+`CAMERA_TILT` = atan(4,2 / 8,4) = 26,57° geneigte Lochkamera im Abstand D vor dem Kameraziel, senkrecht um 1/cos gestreckt.
+Ein Weltpunkt erscheint um das Ziel mit D / W skaliert, W = D + DEPTH_VIEW·z − (y − cy)·sin 26,57° (`viewDepth`, `pointScale`):
+Was über dem Ziel liegt, rückt der geneigten Kamera näher. Vorher galt jede Spur-Ebene als bildparallel (W ohne den
+Höhenterm); 10 m über dem Ziel machte das bei D = 170 m rund 2,6 % Maßstab aus. Die Spur-Container skalieren weiter einheitlich
+mit dem Maßstab auf Zielhöhe (`viewScale`); `toLaneOf` korrigiert jeden Punkt mit `pointScale(y, z) / viewScale(lane)` nach, also
+auch Punkte auf ganzen Spuren, sobald sie über oder unter dem Ziel liegen (Schienenbreite über `laneRatioFor(z, lane, y)`).
+`rayToWorld` schneidet den Strahl mit der senkrechten Spur-Ebene in geschlossener Form: aus Yi·W = (dy + rise(z))·D folgt
+dy = [Yi·(D + DEPTH_VIEW·z) − rise(z)·D] / (D + Yi·sin 26,57°), daraus W und die Breite. Ohne Perspektive ändert sich nichts.
+
+## 4f. Weltrenderer hinter Schalter (`?world=1`, Etappe 1)
+Module unter `src/world/` (Richtlinie 2.3, Plan Paket 1). Three.js (r186, `three` als Abhängigkeit) rendert die Welt, Pixi
+bleibt für Himmel, Zeichen-Overlay und HUD. Der Weltrenderer wird nur mit dem Schalter per dynamischem Import geladen (eigener
+Chunk, 527 kB, 132 kB gzip); ohne Schalter ist das Spiel unverändert.
+- **Ein Kontext, zwei Renderer** (`src/world/renderer.ts`, `Game.init`): Three legt Zeichenfläche und WebGL2-Kontext an
+  (`stencil: true` für Pixi-Masken; Kantenglättung wie bisher an, `?aa=0` schaltet sie zum Messen ab), Pixi startet mit `canvas`,
+  `context` und `clearBeforeRender: false`. Pixis eigenes Rendern im Ticker ist abgeschaltet; `Game.renderFrame` zeichnet je
+  Bild: Pixi den Hintergrund der Szene (`Scene.background`, im Level der Himmel) mit Löschen, dann Three die Welt (löscht nur
+  Tiefe und Stencil, `autoClearColor = false`), dann Pixi Bühne, Overlay und HUD ohne Löschen; vor jedem Teil `resetState()`
+  des jeweiligen Renderers. Stolperstein: Pixi nimmt nach `resetState` an, die Löschfarbe sei transparent schwarz, und setzt sie
+  nicht neu; Three muss sie deshalb auf (0, 0, 0, 0) lassen (`setClearColor(0x000000, 0)`), sonst löscht Pixi seine
+  Filter-Texturen mit deckendem Schwarz (so sah der Spur-Filter zuerst aus: ein schwarzes Rechteck mit Tupfen). Die Größe der
+  Zeichenfläche bestimmt Pixi (rundet auf, Three rundet ab; `WorldRenderer.resize` stellt Pixis Maß wieder her). Das
+  Dev-Overlay (`?dev=1`) zählt die Zeichenaufrufe beider Renderer, weil es den einen Kontext umhüllt.
+- **Kamera** (`src/world/camera.ts`, `WorldCamera`): Bühne = geneigte Ortho-Kamera (26,57°, senkrecht 1/cos gestreckt),
+  Perspektive = dieselbe Neigung als Lochkamera mit Bildwinkel 18° (`?fov=`), Zoom als Kamerafahrt (Abstand aus `viewDistance`),
+  Streckung als Vormultiplikation der Projektionsmatrix. Welt-Koordinaten: x wie die Bühne, y Höhe, Z = −Spur · 8,4 (hinten
+  negativ, `laneToZ`). Je Bild stellt die Weltansicht die Kamera aus Ziel (mit Wackeln), Zoom und Bildgröße
+  (`WorldView.cameraView`, in `LevelScene.update` nach `view.update`). Mit `?world=1` ist die Perspektive Standard, `?persp=0`
+  zeigt dort die Bühne. Test `tests/world.test.ts` (der 100-Punkte-Test aus Richtlinie 2.1): 100 Punkte Bühne gegen die
+  Bühnenformel (Abweichung unter 10⁻⁴ px), 100 Punkte Perspektive gegen `toView` mit Rückweg über `rayToWorld` (die Bahn liegt
+  auf dem Strich), Spurmaßstab wie im Labor (22° bei 8 px/m: 8,76 und 7,36 px/m), Kamerafahrt stärker bei nahem Zoom.
+- **Boden und Erdschnitt** (`src/world/ground.ts`): Höhenfeld aus `terrain.groundHeight(x, z)` (x alle 2 m von −220 bis
+  Breite + 220, Spuren alle ⅛ von +2,5 bis −2,5: Hügel je Spur erscheinen als Terrassen, wie die Physik sie rechnet),
+  Boden-Textur in drei Tönen der Welt-Palette mit Tupfern (alle 22 m wiederholt), an der Vorderkante (Spur −2,5) der
+  geschlossene Erdschnitt 60 m tief mit Erdschichten (`src/world/textures.ts`, prozedural wie im Labor; unbeleuchtet, Licht,
+  Schatten, Nebel und Looks kommen in Schritt 4). Formt der Spieler Gelände (Bergbauer), wird der Boden neu gebaut. Zwei
+  Zeichenaufrufe.
+- **Was im Übergang in Pixi bleibt:** Die Bodenstreifen der Spuren sind aus (`WorldView.setWorldMode`); Berge, Wasser, Deko
+  (cover), Schienen, Stützen, Zug, Coins und Effekte liegen weiter in den Spur-Containern über der Welt, ohne Tiefenpuffer:
+  Eine Bahn hinter dem Hügel einer vorderen Spur scheint bis Schritt 2 durch, Berge und Wasser skalieren je Spur einheitlich
+  und liegen in Perspektive bis zu ein paar Pixel neben dem exakten Boden (bis Schritt 4). Karte und Übergang (Miniaturen,
+  Fotos der Ebenen) kennen die Welt noch nicht (Paket 12).
+- Messung am Mac (24.10., 800 × 600, Browser der Entwicklungsumgebung): 120 fps, 54 Zeichenaufrufe ohne Bahn, 108 mit Bahn
+  (zwei davon Three). Replay mit Perspektive: 261 Aufnahmen, Pinsel 87 von 250 Fahrten geschafft (vorher mit der bildparallelen Näherung 88, ohne Perspektive 90), kein Fehler; die drei Bühnen-Lesarten laufen ohne Perspektive und sind unverändert.
+
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).
 - g-Kräfte: f = v²·κ⃗ (Mindestradius 2,5 m; κ⃗ aus `sampleTrack` über ±1,2 m gemittelt, ein Wagen spürt keine kürzeren Spitzen) + a_tan·T + g·ŷ, wobei a_tan die echte Tangentialbeschleunigung des Zugs ist (Hangabtrieb minus Reibung, Kettenzug hält das Tempo, Launch, Booster, Bremse); zerlegt im Wagen-Rahmen (T, U, S) mit Schräglage. So drückt die Kette die Fahrgäste in die Lehne, der Launch in den Sitz, die Bremse nach vorn. Entgleisen bei seitlichem g über dem Limit des Schienentyps (`SKIN_PHYSICS`: Holz 2,0, Hybrid 2,4, Mine 2,2, Stahl 3,0, Gold 3,0, Neon 3,2, Eis 2,6, Geister 2,3, Lava 3,0, Space 3,5), Herausfallen bei kopfüber mit g_v < −0,15 über 0,12 s, Blackout über 7 g (nur ein Merker, kostet den dritten Stern). Entgleisen und Herausfallen übergeben den Zug in den Freiflug (unten), Rückroller und Wasser lassen ihn auf der Schiene ausrollen.

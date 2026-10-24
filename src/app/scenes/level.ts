@@ -136,6 +136,8 @@ const STROKE_MODE_URL: StrokeReading | null = (() => {
 const STROKE_MODES: StrokeReading[] = ['brush', 'stage', 'single', 'lanes'];
 /** ?persp=1: Perspektive (Richtlinie, Schritt 1: Spur-Ebenen um das Kameraziel skaliert, Strich als Strahl je Spur gedeutet), ?fov=18 Bildwinkel in Grad */
 const PERSP_URL = typeof location !== 'undefined' && new URLSearchParams(location.search).get('persp') === '1';
+/** mit dem Weltrenderer (?world=1) ist die Perspektive Standard; ?persp=0 zeigt dort zum Vergleich die Bühne */
+const PERSP_OFF = typeof location !== 'undefined' && new URLSearchParams(location.search).get('persp') === '0';
 const FOV_URL = urlNum('fov', 18);
 /** ?scroll=0: kein Autoscroll beim Zeichnen (automatische Tests zeichnen in festen Bildschirmkoordinaten) */
 const AUTOSCROLL = typeof location === 'undefined' || new URLSearchParams(location.search).get('scroll') !== '0';
@@ -398,7 +400,12 @@ export class LevelScene implements Scene {
     await initPhysics();
     const night = this.world.id === 6 || this.world.id === 8 || this.world.id === 10 || (this.unlocked.has('nightMode') && this.level.id === 25);
     this.view = new WorldView(this.world, this.terrain, this.skin, night);
-    setPerspective(PERSP_URL, FOV_URL);
+    // Weltrenderer: Boden und Erdschnitt aus dem Terrain, Himmel vor der Welt; Perspektive dort Standard
+    if (game.world) {
+      this.view.setWorldMode(true);
+      game.world.showLevel(this.terrain, this.world);
+    }
+    setPerspective(game.world ? !PERSP_OFF : PERSP_URL, FOV_URL);
     this.view.overlay.addChild(this.laneGlow, this.spotLayer, this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
     this.laneHud.addChild(this.laneHudG);
@@ -444,7 +451,13 @@ export class LevelScene implements Scene {
     this.stopRide();
     if (this.path && !this.sandbox) storage.saveDraft(this.level.id, this.path);
     setPerspective(false);
+    this.game.world?.clearLevel();
     this.view.destroy();
+  }
+
+  /** Hintergrund vor der Three-Welt (Weltrenderer): der Himmel */
+  get background(): Container | undefined {
+    return this.view?.background;
   }
 
   private leave(): void {
@@ -2039,6 +2052,8 @@ export class LevelScene implements Scene {
       return;
     }
     this.view.terrainR.redraw();
+    // Weltrenderer: Boden und Erdschnitt folgen dem geformten Gelände
+    this.game.world?.showLevel(this.terrain, this.world);
     this.afterEdit();
   }
 
@@ -3309,6 +3324,7 @@ export class LevelScene implements Scene {
     }
     this.sticker.update(dt);
     this.view.update(dt);
+    this.game.world?.setCamera(this.view.cameraView());
     // Perspektive: Griffe, Ende-Marker, Spur-Schein und Schwachstellen liegen in der Ansicht und wandern mit der Kamera
     if (this.view.viewMoved && this.mode === 'draw') {
       this.drawOverlay();

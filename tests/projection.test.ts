@@ -78,15 +78,23 @@ describe('Projektions-Adapter (Richtlinie, Schritt 1)', () => {
     expect(w.y).toBeCloseTo(12, 7);
   });
 
-  it('Spur-Container: ganze Spuren brauchen keine Korrektur, Zwischentiefen die Verhältniszahl', () => {
+  it('Spur-Container: ganze Spuren brauchen auf Zielhöhe keine Korrektur, darüber und bei Zwischentiefen die Verhältniszahl', () => {
     setPerspective(true, 22);
     setView(60, 6, 180);
     for (let lane = LANE_MIN; lane <= LANE_MAX; lane++) {
-      const a = toStage(100, 10, lane);
-      const b = toLane(100, 10, lane);
+      // auf Zielhöhe (y = cy) ist der Container-Maßstab exakt
+      const a = toStage(100, 6, lane);
+      const b = toLane(100, 6, lane);
       expect(b.X).toBeCloseTo(a.X, 9);
       expect(b.Y).toBeCloseTo(a.Y, 9);
       expect(laneRatio(lane)).toBeCloseTo(1, 9);
+      // über dem Ziel rückt der Punkt der geneigten Kamera näher: Korrektur im Container, Anzeige = Ansicht
+      const s = viewScale(lane);
+      const l = toLane(100, 10, lane);
+      const v = toView(100, 10, lane);
+      expect(60 + (l.X - 60) * s).toBeCloseTo(v.X, 9);
+      expect(6 + (l.Y - 6) * s).toBeCloseTo(v.Y, 9);
+      expect(v.X).toBeGreaterThan(toStage(100, 10, lane).X * s + 60 * (1 - s) - 1e-9);
     }
     // Zwischentiefe: Container-Maßstab mal Korrektur ergibt die Ansicht
     const z = 0.5;

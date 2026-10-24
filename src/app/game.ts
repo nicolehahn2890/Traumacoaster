@@ -2,7 +2,8 @@
  * Game: Pixi-Anwendung, Szenenwechsel mit Überblendung, Eingabe, Resize/Orientation.
  */
 import { DevOverlay, type DevStats } from '@/core/devOverlay';
-import { Application, Container, Graphics, RenderTexture } from 'pixi.js';
+import { Application, Container, Graphics, RenderTexture, UPDATE_PRIORITY, type ApplicationOptions } from 'pixi.js';
+import type { WorldRenderer } from '@/world/renderer';
 import { InputManager } from '@/core/input';
 import type { Scene } from './scene';
 import { storage } from '@/core/storage';
@@ -21,20 +22,37 @@ export class Game {
   width = 800;
   height = 600;
   private devOverlay: DevOverlay | null = null;
+  /** Weltrenderer (?world=1): Three-Szene im selben WebGL-Kontext, sonst null (Richtlinie 2.3, Etappe 1) */
+  world: WorldRenderer | null = null;
 
   async init(): Promise<void> {
     setLanguage(storage.settings.language);
+    const params = new URLSearchParams(location.search);
     // Die Fläche ist #app: der ganze Bildschirm; die Szenen halten ihre Bedienelemente im sicheren Bereich (safeArea)
     const host = document.getElementById('app')!;
-    await this.app.init({
+    const options: Partial<ApplicationOptions> = {
       resizeTo: host,
       background: '#1b2a4a',
       antialias: true,
       resolution: Math.min(2, window.devicePixelRatio || 1),
       autoDensity: true,
       preference: 'webgl',
-    });
+    };
+    // ?world=1: Der Weltrenderer legt Zeichenfläche und Kontext an, Pixi zeichnet in denselben Kontext (?aa=0 ohne Glättung)
+    if (params.get('world') === '1') {
+      const { WorldRenderer } = await import('@/world/renderer');
+      this.world = new WorldRenderer({ antialias: params.get('aa') !== '0' });
+      options.canvas = this.world.canvas;
+      options.context = this.world.context;
+      options.clearBeforeRender = false;
+    }
+    await this.app.init(options);
     host.appendChild(this.app.canvas);
+    if (this.world) {
+      // Pixi zeichnet nicht mehr von selbst: je Bild Himmel (Pixi), Welt (Three), Overlay und HUD (Pixi)
+      this.app.ticker.remove(this.app.render, this.app);
+      this.app.ticker.add(this.renderFrame, this, UPDATE_PRIORITY.LOW);
+    }
     this.app.stage.addChild(this.root, this.fade);
     this.input = new InputManager(this.app.canvas);
     this.input.handlers = {
@@ -79,6 +97,7 @@ export class Game {
   private onResize(): void {
     this.width = this.app.screen.width;
     this.height = this.app.screen.height;
+    this.world?.resize(this.width, this.height, this.app.renderer.resolution);
     readSafeArea();
     this.scene?.resize(this.width, this.height);
     this.fade.clear();
@@ -157,6 +176,23 @@ export class Game {
       const view = (this.scene as unknown as { view?: { effects?: { count: number } } }).view;
       this.devOverlay.frame(view?.effects?.count ?? 0);
     }
+  }
+
+  /**
+   * Bild mit Weltrenderer: Pixi malt den Hintergrund der Szene (Himmel) und löscht dabei, Three zeichnet die Welt
+   * darüber (nur Tiefe und Stencil gelöscht), Pixi zum Schluss Bühne, Overlay und HUD. Jeder Renderer setzt vor
+   * seinem Teil den Kontextzustand zurück.
+   */
+  private renderFrame(): void {
+    const world = this.world!;
+    const r = this.app.renderer;
+    const bg = this.scene?.background;
+    r.resetState();
+    if (bg) r.render({ container: bg, clear: true });
+    else r.clear();
+    world.render();
+    r.resetState();
+    r.render({ container: this.app.stage, clear: false });
   }
 
   /** Messwerte des Dev-Overlays (?dev=1), sonst null; die Szenarien prüfen damit das Draw-Call-Budget */

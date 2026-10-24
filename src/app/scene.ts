@@ -6,6 +6,8 @@ import type { Game } from './game';
 export interface Scene {
   readonly container: Container;
   readonly handlers: InputHandlers;
+  /** Container, der mit dem Weltrenderer vor der Three-Welt gezeichnet wird (der Himmel); sonst nichts */
+  readonly background?: Container;
   enter(game: Game): void | Promise<void>;
   exit(): void;
   update(dt: number): void;

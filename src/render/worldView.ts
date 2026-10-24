@@ -10,6 +10,7 @@ import type { CarState } from '@/physics/trainSim';
 import type { PassengerView } from '@/physics/passengers';
 import type { CharacterDef } from '@/editor/characters';
 import { LANE_MAX, LANE_MIN, setView, viewDistance, viewScale, viewState } from '@/track/stage';
+import type { CameraView } from '@/world/camera';
 import { Camera } from './camera';
 import { Sky } from './sky';
 import { LaneFilter } from './shaders/laneFilter';
@@ -46,6 +47,8 @@ export class WorldView {
   viewMoved = false;
   private worldDef: WorldDef;
   private night: boolean;
+  /** Weltrenderer (?world=1): Himmel wird vor der Three-Welt gezeichnet, der Boden kommt aus der Welt */
+  private worldMode = false;
 
   constructor(worldDef: WorldDef, terrain: Terrain, skin: string, night = false, fx: boolean | null = null) {
     this.worldDef = worldDef;
@@ -94,6 +97,30 @@ export class WorldView {
 
   get isNight(): boolean {
     return this.night;
+  }
+
+  /**
+   * Weltrenderer an: Der Himmel verlässt die Bühne und wird als Hintergrund vor der Three-Welt gezeichnet
+   * (Scene.background); die Bodenstreifen der Spuren bleiben aus, denn den Boden zeichnet die Welt. Berge, Wasser und
+   * Deko (cover) bleiben bis zu den Kulissen-Platzhaltern (Schritt 4) in Pixi.
+   */
+  setWorldMode(on: boolean): void {
+    this.worldMode = on;
+    if (on) this.root.removeChild(this.sky.container);
+    else if (!this.sky.container.parent) this.root.addChildAt(this.sky.container, 0);
+    for (const g of this.terrainR.layers.strip.values()) g.visible = !on;
+  }
+
+  /** Hintergrund hinter der Three-Welt (nur mit Weltrenderer): der Himmel */
+  get background(): Container | undefined {
+    return this.worldMode ? this.sky.container : undefined;
+  }
+
+  /** Kameralage dieses Bildes für den Weltrenderer: Ziel mit Wackeln, Zoom, Bildgröße, Perspektive */
+  cameraView(): CameraView {
+    const c = this.camera;
+    const v = viewState();
+    return { cx: c.x + c.ox, cy: c.y + c.oy, zoom: c.zoom, width: c.width, height: c.height, persp: v.persp, fov: v.fov };
   }
   get def(): WorldDef {
     return this.worldDef;
