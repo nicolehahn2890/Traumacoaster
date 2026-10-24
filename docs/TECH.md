@@ -154,13 +154,55 @@ Chunk, 527 kB, 132 kB gzip); ohne Schalter ist das Spiel unverändert.
   geschlossene Erdschnitt 60 m tief mit Erdschichten (`src/world/textures.ts`, prozedural wie im Labor; unbeleuchtet, Licht,
   Schatten, Nebel und Looks kommen in Schritt 4). Formt der Spieler Gelände (Bergbauer), wird der Boden neu gebaut. Zwei
   Zeichenaufrufe.
+- **Bahnprofile** (Schritt 2; `src/world/trackMesh.ts`, `trackBuilder.ts`, `trackTypes.ts`): Rahmen je Abtastpunkt aus
+  `sampleTrack` und `railBanksFor` (dieselbe Schräglage wie die Bühnen-Schienen; `designSpeed` und `railBanksFor` sind dafür
+  nach `src/track/model.ts` gewandert): t Fahrtrichtung, n oben, s = t × n zur Seite (zum Betrachter bei Fahrt nach rechts).
+  `sweepGeometry` zieht ein Profil (Seite × Oben in Metern, x positiv zum Betrachter) entlang jedes zweiten Rahmens (0,5 m)
+  als nicht indizierte Dreiecke mit Flächennormalen; `alongTrack` setzt Schwellen und Streben als Instanzen. Straße:
+  Betonplatte 3,4 m, Asphalt, helle Ränder, gestrichelte Mittellinie (Kacheltextur), Brüstung hinten; Stahl: zwei Rohre bei
+  ±0,55 m (die Spurweite der Bühne), blaues Rückgrat, orange Schwellen alle 1,1 m, Streben alle 2,2 m. Typ nach dem Skin
+  (`trackTypeForSkin`: Holz-Skins → Holz, sonst Stahl; Holz und Hängebahn fahren bis Schritt 3 auf dem Stahlprofil),
+  `?track=road|steel|wood|hanging` erzwingt einen Typ. Die Welt baut die Bahn bei jeder Zeichnung neu, auch für die
+  Live-Vorschau des Pinsels (alle 50 ms; ein Profil mit 400 Rahmen braucht wenige Millisekunden). Die Bühne blendet
+  Schwellen und Band-Meshes aus (`TrackRenderer.setWorldMode`); Elemente, Station und Leuchtlinie bleiben dort.
+- **Wagen** (`src/world/train.ts`): je Wagen eine Geometrie mit Farbe je Ecke (Boden, Heck, Front, Seiten, Trennwand, zwei
+  Sitzreihen, vier Räder, Nase und Lampe am ersten, Kupplung) in den Maßen der Physik (`CAR`), ein Zeichenaufruf je Wagen
+  (als Einzelteile waren es 16). Lage je Bild aus dem Wagenzustand, auf der Bahn mit dem Schienenrahmen (`railFrame`), im
+  Flug mit dem Rahmen der Physik. Die Bühne blendet ihre Wagenkörper aus (`TrainRenderer.setWorldMode`), die Fahrgäste
+  bleiben Cut-outs in Pixi über der Welt. Die Kamera folgt wie bisher: Die Weltkamera übernimmt je Bild Ziel und Zoom.
+- **Licht** (`src/world/light.ts`): Umgebungslicht 0,92, Himmelslicht 0,15, Richtungslicht 0,22 von hinten oben links (wie im
+  Labor), Lambert-Materialien überall; Schatten, Nebel und Looks ab Schritt 4.
+- **Holz und Hängebahn** (Schritt 3, `trackBuilder.ts`): Holz mit Schichtholzstapeln unter Flachstahl-Schienen bei ±0,55 m,
+  Schwellen alle 1 m, Laschen alle 3 m, Handlauf hinten mit Pfosten; Hängebahn mit Tragbalken und Rippen `HANG_LIFT` = 2,4 m
+  über der Bahnlinie, denn die Physik fährt unverändert auf der Bahnlinie: Die Gondel hängt mit zwei Hängern und einem
+  Laufwerk am Balken (`WorldTrain.build(count, hanging)`), die Stützen greifen über den Balken (`ATTACH.hanging` = 2,98 m).
+- **Stützen auf Fundamentflächen** (Schritt 3, `src/world/foundations.ts`, `src/world/supports.ts`): Ein Fundament meldet die
+  höchste tragende Fläche unter einem Punkt (`surfaceBelow`); Etappe 1 kennt das Terrain (Boden plus Berg, Wasser trägt
+  nicht), Kulissen und Höhlenböden melden ihre Flächen später über Metadaten statt über den Alpha-Scan des Labors.
+  `planWorldSupports` setzt alle `SUPPORT_SPACING` Meter (Straße 9, Stahl 7, Holz 5,4, Hängebahn 10) einen Anschluss
+  `ATTACH` unter die Bahn (Hängebahn: über den Balken, Pfeiler abwechselnd vor und hinter der Bahn), sucht den Fuß unter der
+  Bahnlinie und lässt aus: kopfüber oder steil (n.y < 0,35), im Berg, zu kurz (unter 1,3 m), dichter als 2,6 m an einem
+  gesetzten Fuß, durch ein tieferes Bahnstück hindurch (wie der Planer der Bühne). Ohne Fundament zählt die Stelle als
+  schwebend (`SupportStats`, später Brücke, Ausleger oder Ablehnung). Vier Familien aus dem Labor in ihrer ruhigen Form
+  (Betonpfeiler konisch mit Fenster ab 7 m, Kapitell, Platte; Rohrpylon mit Gabel, ab 10 m A-Bock; Holzbock aus zwei oder
+  drei schrägen Pfosten mit Riegeln, Diagonalen, Laschen, Steinfüßen; Betonportal mit Arm), jede aus wenigen Grundformen
+  (Einheitskasten, Einheitsrohr, Kegelstumpf, Scheibe) als `InstancedMesh` mit einer Matrix je Teil: höchstens fünf
+  Zeichenaufrufe je Familie, egal wie viele Stützen (im Labor hatte der Holzbock 469 Einzelteile). Die Stützen stehen nach
+  dem Loslassen (nicht in der Vorschau) und kippen vom Fuß zum Anschluss wie im Labor; das Hochwachsen der Bühne (0,3 s)
+  gibt es in der Welt noch nicht. Die Bühne blendet ihre Pfeiler und deren Lichter aus (`TrackRenderer.setWorldMode`).
+  Der „Verrückt“-Regler und gemalte Teile kommen mit der Stützen-Werkstatt (E4). Gemessen am Mac: Holzbahn mit Böcken 96
+  Zeichenaufrufe (Budget 150).
 - **Was im Übergang in Pixi bleibt:** Die Bodenstreifen der Spuren sind aus (`WorldView.setWorldMode`); Berge, Wasser, Deko
-  (cover), Schienen, Stützen, Zug, Coins und Effekte liegen weiter in den Spur-Containern über der Welt, ohne Tiefenpuffer:
-  Eine Bahn hinter dem Hügel einer vorderen Spur scheint bis Schritt 2 durch, Berge und Wasser skalieren je Spur einheitlich
-  und liegen in Perspektive bis zu ein paar Pixel neben dem exakten Boden (bis Schritt 4). Karte und Übergang (Miniaturen,
-  Fotos der Ebenen) kennen die Welt noch nicht (Paket 12).
+  (cover), Stützen, Coins, Elemente, Station, Absperrbänder und Effekte liegen weiter in den Spur-Containern über der Welt,
+  ohne Tiefenpuffer: Sie decken Bahn und Wagen immer, Berge und Wasser skalieren je Spur einheitlich und liegen in
+  Perspektive bis zu ein paar Pixel neben dem exakten Boden (bis Schritt 3 und 4). Karte und Übergang (Miniaturen, Fotos
+  der Ebenen) kennen die Welt noch nicht (Paket 12).
 - Messung am Mac (24.10., 800 × 600, Browser der Entwicklungsumgebung): 120 fps, 54 Zeichenaufrufe ohne Bahn, 108 mit Bahn
-  (zwei davon Three). Replay mit Perspektive: 261 Aufnahmen, Pinsel 87 von 250 Fahrten geschafft (vorher mit der bildparallelen Näherung 88, ohne Perspektive 90), kein Fehler; die drei Bühnen-Lesarten laufen ohne Perspektive und sind unverändert.
+  und Zug (Straße oder Stahl 6, Zug 3, Boden 2). Replay mit Perspektive: 261 Aufnahmen, Pinsel 87 von 250 Fahrten
+  geschafft (vorher mit der bildparallelen Näherung 88, ohne Perspektive 90), kein Fehler; die drei Bühnen-Lesarten laufen
+  ohne Perspektive und sind unverändert. Replay `--world` (wie `--persp`, dazu je Pinsel-Bahn das Profil mit Teilen,
+  Dreiecken und endlichen Werten sowie der Abstand der Bahnknoten zum Strich im Bild der Weltkamera, Median und Maximum, der
+  Rundenschluss zählt mit): 250 Bahnprofile gebaut, keine ungültigen Werte; Abstand der Bahnknoten zum Strich bei 227 Aufnahmen mit fester Kamera im Median der Mediane 2,3 px (das Maximum lag in fortgesetzten Bahnen, deren alte Knoten nicht zum Strich gehören; seit Schritt 3 zählen nur neue Striche).
 
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).

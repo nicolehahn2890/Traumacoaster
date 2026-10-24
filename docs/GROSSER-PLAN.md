@@ -407,6 +407,17 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
    hinter einem vorderen Hügel bis Schritt 2 durch, Berge und Wasser liegen in Perspektive bis zu ein paar Pixel neben dem
    Boden (bis Schritt 4).
 6. Replay mit Perspektive nach dem Umbau: 261 Aufnahmen, Pinsel 87 von 250 Fahrten geschafft (vorher mit der bildparallelen Näherung 88, ohne Perspektive 90), kein Fehler, die Ausfallgründe verteilen sich wie vorher.
+7. Schritt 2 (24.10.): Straße und Stahl als Profile entlang des Bahnmodells mit der Schräglage der Bühnen-Schienen,
+   Wagen-Platzhalter mit Sitzen, Licht aus dem Labor. Gelernt: Ein Wagen aus Einzelteilen kostete 16 Zeichenaufrufe (drei
+   Wagen fast die Hälfte des Budgets); als eine Geometrie mit Farbe je Ecke ist es einer. Bahn und Zug: 108 Zeichenaufrufe
+   mit Pixi-HUD und Pixi-Stützen am Mac, 120 fps. Replay `--world`: 250 Bahnprofile aus den Aufnahmen gebaut, keine ungültigen Werte, Abstand der Bahnknoten zum Strich im Median 2,3 px (bei 17 px/m etwa 14 cm: die Fit-Toleranz des Pinsels).
+8. Schritt 3 (24.10.): Holz und Hängebahn als Profile, vier Stützenfamilien als Instanzen (je Familie höchstens fünf
+   Zeichenaufrufe; Holzbahn mit Böcken 96 Zeichenaufrufe statt 469 Einzelteile im Labor), Füße über Fundamentflächen statt
+   Alpha-Scan (Terrain als erstes Fundament, Wasser trägt nicht; Kulissen melden ihre Flächen in Schritt 4 und 7 über
+   Metadaten). Gelernt: Die Hängebahn braucht im Spiel den Tragbalken über der Bahnlinie (die Physik fährt auf der Linie,
+   die Gondel hängt darunter am Balken), nicht wie im Labor die Bahnlinie als Balken; der Fuß wird unter der Bahnlinie
+   gesucht, nicht unter dem Anschluss, sonst gilt eine niedrige Bahn als schwebend statt als zu kurz. Replay `--world` mit
+   Stützen: 250 Bahnprofile und 7410 Stützen aus den Aufnahmen gebaut, keine Stelle ohne Fundament (flache Level), keine ungültigen Werte; Abstand der Bahnknoten zum Strich bei 191 neuen Strichen im Median 2,0 px, Maximum 159 px (Knoten des Rundenschlusses, der bis 10 m neben dem Strich liegen darf).
 
 ## Paket 10: Etappen und Abnahmen (Vorschlag aus allem Bestätigten)
 
@@ -465,7 +476,7 @@ mit Florian. Die Session arbeitet auf einem eigenen Branch und geht am Tor per P
 10. **Tor 1b:** Florian baut selbst einen Testausschnitt (Station, Hügel, Fenster-Element, Baustelle); das Handy zeigt
     dasselbe; Fixes; Doku in `docs/TECH.md` und `docs/HANDOVER.md`; Pull Request nach `main`.
 
-**Stand:** Schritt 1 gebaut am 24.10.2026 (Nachtrag in Paket 1).
+**Stand:** Schritte 1 bis 3 gebaut am 24.10.2026 (Nachträge in Paket 1).
 
 **Florian parallel zu Etappe 1:** den Erzeugungsweg für Teile mit der Session prüfen (Voraussetzung für E4), erste
 Figurenteile in zwei Ansichten skizzieren, Entwurf der Alpen-Autos, Handy-Tests an den Toren, Entscheidungen an den

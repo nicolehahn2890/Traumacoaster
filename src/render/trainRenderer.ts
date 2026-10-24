@@ -37,10 +37,21 @@ export class TrainRenderer {
   /** Stehender Zug (Zeichenmodus, Übersicht): Cut-out-Animatoren je Fahrgast */
   private animators = new Map<number, CutoutAnimator>();
   private standing = false;
+  /** Weltrenderer: die Wagenkörper zeichnet die Welt, die Fahrgäste bleiben Cut-outs */
+  private bodiesHidden = false;
 
   constructor(skin: string) {
     this.skin = skin;
     for (let z = LANE_MAX; z >= LANE_MIN; z--) this.layers.set(z, new Container());
+  }
+
+  /** Weltrenderer an oder aus: Wagenkörper hier ausblenden, die Welt zeichnet sie als 3D-Körper */
+  setWorldMode(on: boolean): void {
+    this.bodiesHidden = on;
+    for (const v of this.cars) {
+      v.back.visible = !on;
+      v.front.visible = !on;
+    }
   }
 
   /** Bahntyp wechseln (Farben der Wagen beim nächsten Zeichnen) */
@@ -56,6 +67,7 @@ export class TrainRenderer {
       const container = new Container();
       const back = new Graphics();
       const front = new Graphics();
+      back.visible = front.visible = !this.bodiesHidden;
       container.addChild(back, front);
       const body = c === 0 ? '#ff5c8a' : ['#ffd23f', '#3ec7c2', '#9b6dff', '#7ee081', '#ff8a5c'][c % 5];
       const view: CarView = { container, back, front, lane: 0, body };

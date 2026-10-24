@@ -3,9 +3,9 @@
  * Levels (groundHeight je x und Spur, Spuren fein abgetastet, sodass Hügel je Spur als Terrassen erscheinen wie in der
  * Physik), von einer halben Spur hinter der hintersten bis eine halbe Spur vor der vordersten Spur. An dieser
  * Vorderkante steht der Erdschnitt: eine senkrechte Fläche mit Erdschichten, oben entlang des Bodens, ohne Räume
- * (Paket 2.3: geschlossen, bis der Untergrund freigespielt ist).
+ * (Paket 2.3: geschlossen, bis der Untergrund freigespielt ist). Beleuchtet wie das Labor (light.ts), unbeschattet bis Schritt 4.
  */
-import { BufferGeometry, Float32BufferAttribute, FrontSide, Group, Mesh, MeshBasicMaterial, type Texture } from 'three';
+import { BufferGeometry, Float32BufferAttribute, FrontSide, Group, Mesh, MeshLambertMaterial, type Texture } from 'three';
 import type { Terrain } from '@/physics/terrain';
 import { LANE_MAX, LANE_MIN } from '@/track/stage';
 import { laneToZ } from './camera';
@@ -70,8 +70,9 @@ export function buildGround(terrain: Terrain, groundTex: Texture, strataTex: Tex
   groundGeo.setAttribute('position', new Float32BufferAttribute(pos, 3));
   groundGeo.setAttribute('uv', new Float32BufferAttribute(uv, 2));
   groundGeo.setIndex(idx);
-  const groundMat = new MeshBasicMaterial({ map: groundTex, side: FrontSide });
+  const groundMat = new MeshLambertMaterial({ map: groundTex, side: FrontSide });
   const ground = new Mesh(groundGeo, groundMat);
+  ground.receiveShadow = true;
 
   // Erdschnitt an der Vorderkante: oben der Boden der vordersten Reihe, unten EARTH_DEPTH tiefer
   const Zf = laneToZ(GROUND_FRONT);
@@ -105,8 +106,9 @@ export function buildGround(terrain: Terrain, groundTex: Texture, strataTex: Tex
   cutGeo.setAttribute('position', new Float32BufferAttribute(cpos, 3));
   cutGeo.setAttribute('uv', new Float32BufferAttribute(cuv, 2));
   cutGeo.setIndex(cidx);
-  const cutMat = new MeshBasicMaterial({ map: strataTex, side: FrontSide });
+  const cutMat = new MeshLambertMaterial({ map: strataTex, side: FrontSide });
   const cut = new Mesh(cutGeo, cutMat);
+  cut.receiveShadow = true;
 
   const group = new Group();
   group.add(ground, cut);

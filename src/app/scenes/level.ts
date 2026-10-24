@@ -402,7 +402,7 @@ export class LevelScene implements Scene {
     this.view = new WorldView(this.world, this.terrain, this.skin, night);
     // Weltrenderer: Boden und Erdschnitt aus dem Terrain, Himmel vor der Welt; Perspektive dort Standard
     if (game.world) {
-      this.view.setWorldMode(true);
+      this.view.setWorldMode(game.world);
       game.world.showLevel(this.terrain, this.world);
     }
     setPerspective(game.world ? !PERSP_OFF : PERSP_URL, FOV_URL);
@@ -2093,7 +2093,7 @@ export class LevelScene implements Scene {
       this.samples = null;
       this.stats = null;
       this.scheduleInspect();
-      this.view.trackR.clear();
+      this.view.clearTrack();
       this.drawOverlay();
       this.refreshLaneHud();
       return;
@@ -2116,7 +2116,7 @@ export class LevelScene implements Scene {
     if (!this.path || !this.samples || this.samples.count < 2) {
       this.standCars = [];
       this.standViews = [];
-      this.view.trainR.clear();
+      this.view.clearTrain();
       return;
     }
     const opts = simOptionsForLevel(this.level, this.path, this.terrain, this.skin, this.allowTunnels);
@@ -2846,7 +2846,7 @@ export class LevelScene implements Scene {
     this.sim = null;
     this.passengers?.dispose();
     this.passengers = null;
-    this.view.trainR.clear();
+    this.view.clearTrain();
     this.view.effects.clear();
     this.view.trackR.updateCoins([], 0);
     if (this.resultPanel) {

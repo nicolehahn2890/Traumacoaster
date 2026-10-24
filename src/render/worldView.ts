@@ -11,6 +11,8 @@ import type { PassengerView } from '@/physics/passengers';
 import type { CharacterDef } from '@/editor/characters';
 import { LANE_MAX, LANE_MIN, setView, viewDistance, viewScale, viewState } from '@/track/stage';
 import type { CameraView } from '@/world/camera';
+import type { WorldRenderer } from '@/world/renderer';
+import { trackTypeForSkin } from '@/world/trackTypes';
 import { Camera } from './camera';
 import { Sky } from './sky';
 import { LaneFilter } from './shaders/laneFilter';
@@ -47,8 +49,9 @@ export class WorldView {
   viewMoved = false;
   private worldDef: WorldDef;
   private night: boolean;
-  /** Weltrenderer (?world=1): Himmel wird vor der Three-Welt gezeichnet, der Boden kommt aus der Welt */
+  /** Weltrenderer (?world=1): Himmel wird vor der Three-Welt gezeichnet; Boden, Schienen und Wagen kommen aus der Welt */
   private worldMode = false;
+  private worldR: WorldRenderer | null = null;
 
   constructor(worldDef: WorldDef, terrain: Terrain, skin: string, night = false, fx: boolean | null = null) {
     this.worldDef = worldDef;
@@ -104,11 +107,15 @@ export class WorldView {
    * (Scene.background); die Bodenstreifen der Spuren bleiben aus, denn den Boden zeichnet die Welt. Berge, Wasser und
    * Deko (cover) bleiben bis zu den Kulissen-Platzhaltern (Schritt 4) in Pixi.
    */
-  setWorldMode(on: boolean): void {
+  setWorldMode(world: WorldRenderer | null): void {
+    const on = !!world;
     this.worldMode = on;
+    this.worldR = world;
     if (on) this.root.removeChild(this.sky.container);
     else if (!this.sky.container.parent) this.root.addChildAt(this.sky.container, 0);
     for (const g of this.terrainR.layers.strip.values()) g.visible = !on;
+    this.trackR.setWorldMode(on);
+    this.trainR.setWorldMode(on);
   }
 
   /** Hintergrund hinter der Three-Welt (nur mit Weltrenderer): der Himmel */
@@ -129,6 +136,20 @@ export class WorldView {
   setTrack(path: TrackPath, samples: TrackSamples, skin: string, terrain: Terrain, allowTunnels: boolean, preview = false): void {
     const portals = this.trackR.draw(path, samples, skin, terrain, allowTunnels, preview);
     if (!preview) this.terrainR.setTunnelPortals(portals);
+    // Weltrenderer: Profil aus denselben Abtastpunkten und derselben Schräglage wie die Schienen der Bühne
+    this.worldR?.setTrack(samples, this.trackR.railBanks, trackTypeForSkin(skin), preview, (x, y, z) => terrain.insideMountain(x, y, z));
+  }
+
+  /** Bahn löschen (Bühne und Welt) */
+  clearTrack(): void {
+    this.trackR.clear();
+    this.worldR?.clearTrack();
+  }
+
+  /** Zug entfernen (Bühne und Welt) */
+  clearTrain(): void {
+    this.trainR.clear();
+    this.worldR?.clearTrain();
   }
 
   /** Streben wachsen (0 … 1) nach dem Loslassen des Strichs */
@@ -138,11 +159,14 @@ export class WorldView {
 
   buildTrain(cars: number, riders: CharacterDef[], perCar: number): void {
     this.trainR.build(cars, riders, perCar);
+    this.worldR?.buildTrain(cars);
   }
 
   /** onRails: Der Zug fährt auf der Bahn (nicht im Flug nach einem Fehlschlag); die Wagen liegen dann auf den Schienen */
   updateTrain(cars: CarState[], passengers: PassengerView[], dt: number, onRails = true): void {
-    this.trainR.update(cars, passengers, dt, onRails ? (s) => this.trackR.railFrame(s) : undefined);
+    const rail = onRails ? (s: number) => this.trackR.railFrame(s) : undefined;
+    this.trainR.update(cars, passengers, dt, rail);
+    this.worldR?.updateTrain(cars, rail ?? null);
   }
 
   /** Effekte an/aus (Dev-Overlay, Einstellung): Spur-Filter und Leuchtebenen */
@@ -180,8 +204,10 @@ export class WorldView {
 
   /** Stehender Zug (Zeichenmodus): Pose setzen und Cut-out-Clips fortschreiben */
   updateStandingTrain(cars: CarState[], passengers: PassengerView[], dt: number): void {
-    this.trainR.update(cars, passengers, dt, (s) => this.trackR.railFrame(s));
+    const rail = (s: number) => this.trackR.railFrame(s);
+    this.trainR.update(cars, passengers, dt, rail);
     this.trainR.idleUpdate(dt);
+    this.worldR?.updateTrain(cars, rail);
   }
 
   resize(w: number, h: number): void {

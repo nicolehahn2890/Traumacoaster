@@ -4,6 +4,7 @@
 import { DevOverlay, type DevStats } from '@/core/devOverlay';
 import { Application, Container, Graphics, RenderTexture, UPDATE_PRIORITY, type ApplicationOptions } from 'pixi.js';
 import type { WorldRenderer } from '@/world/renderer';
+import { parseTrackType } from '@/world/trackTypes';
 import { InputManager } from '@/core/input';
 import type { Scene } from './scene';
 import { storage } from '@/core/storage';
@@ -42,6 +43,8 @@ export class Game {
     if (params.get('world') === '1') {
       const { WorldRenderer } = await import('@/world/renderer');
       this.world = new WorldRenderer({ antialias: params.get('aa') !== '0' });
+      // ?track=road|steel|wood|hanging: Bahntyp zum Vergleich erzwingen (sonst nach dem Skin des Levels)
+      this.world.trackOverride = parseTrackType(params.get('track'));
       options.canvas = this.world.canvas;
       options.context = this.world.context;
       options.clearBeforeRender = false;

@@ -11,7 +11,16 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem
   die exakte geneigte Kamera, auch für den Pinsel), Boden als Höhenfeld und geschlossener Erdschnitt aus dem Terrain,
   100-Punkte-Test (`tests/world.test.ts`). Technik in `docs/TECH.md` 4e und 4f, Gelerntes im Plan unter Paket 1. Replay:
-  261 Aufnahmen, Pinsel in Perspektive 87 von 250 Fahrten geschafft (vorher 88, ohne Perspektive 90), kein Fehler. Als Nächstes Schritt 2 (Bahnprofile Straße und Stahl aus dem Bahnmodell, Wagen-Platzhalter, Replay `--world`).
+  261 Aufnahmen, Pinsel in Perspektive 87 von 250 Fahrten geschafft (vorher 88, ohne Perspektive 90), kein Fehler.
+  Schritt 2 gebaut: Bahnprofile Straße und Stahl als Meshes aus dem Bahnmodell (gleiche Schräglage wie die Bühne, Schwellen
+  und Streben als Instanzen, `?track=` zum Vergleich), Wagen-Platzhalter als 3D-Körper mit Sitzen (eine Geometrie je
+  Wagen), Licht aus dem Labor, Replay `npm run strokes:replay -- --world` (Profil je Bahn gebaut und geprüft, Abstand
+  Bahn–Strich im Bild der Weltkamera): 250 Bahnprofile gebaut, keine ungültigen Werte, Abstand Bahn–Strich im Median 2,3 px.
+  Schritt 3 gebaut: Holz und Hängebahn als Profile (die Gondel hängt am Balken 2,4 m über der Bahnlinie), vier
+  Stützenfamilien aus dem Labor als Instanzen (höchstens fünf Zeichenaufrufe je Familie, Holzbahn 96 statt 469 im Labor),
+  Füße über Fundamentflächen (`src/world/foundations.ts`: Terrain; Kulissen später über Metadaten). Replay `--world` mit
+  Stützen: 250 Bahnprofile, 7410 Stützen geplant und gebaut, keine Stelle ohne Fundament (die Aufnahmen liegen auf flachen Leveln), keine ungültigen Werte; Abstand Bahn–Strich bei 191 neuen Strichen im Median 2,0 px. Als Nächstes Schritt 4 (Kulissen-Platzhalter mit Tiefenpuffer, Licht, Shadow Map, Nebel, Looks;
+  Lesarten-Knopf und Spur-Filter raus), dann Tor 1a.
 - **24.10., spät: der große Plan steht.** `docs/GROSSER-PLAN.md` ist Paket für Paket mit Florian abgestimmt und in
   allen Paketen bestätigt: Ziel sind Look und Werkzeuge, nicht fertige Level. Es entsteht eine **Basiszone** als
   Werkstatt mit allen Fähigkeiten (vier Bahntypen, alle Startarten und Aufwertungen, alle Elementtypen) zuerst als
