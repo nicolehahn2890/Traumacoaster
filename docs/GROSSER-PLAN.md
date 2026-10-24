@@ -17,21 +17,22 @@ hier nicht neu verhandelt (wo Florian sie anders sieht, wird es dort geklärt un
 | 8a | Teile und Elemente | **bestätigt**: Elementkatalog als Platzhalter-Satz, Ablauf Platzhalter → Auftrag → Grafik; die Grafikliste folgt aus der Basiszone, Referenzen in Paket 0 | 24.10.2026 |
 | 6 | Figuren, Schlange, Fahrgäste | **bestätigt**: Rig mit klappendem Oberschädel, zwei Ansichten, Visuals als Stilvorlage, Schlange mit Freiraum, Editor bleibt und wächst, zwei je Wagen gemischt | 24.10.2026 |
 | 5 | Untergrund, Tunnel, Baustellen | **bestätigt**: Fels fest, Baustellen in zwei Varianten, Freilegung auf zwei Wegen, Autoscroll als Schalter zum Ausprobieren, Graben in Stufen (Vorbehalt), Wasser mit Schaltern | 24.10.2026 |
-| 0 | Art Direction v2 (Look) | **bestätigt**: alle Visuals als Pool (Stil 04 und 09, Maßstab 15 und 16), zehn Regeln vorläufig bis zur Stilprobe, keine Konturen, Punktraster gemalt plus Funkeln-Shader, Alpen als erster Look, Stilprobe als Tor, UI im Baustellen-Brutalismus | 24.10.2026 |
-| 7 | Werkzeuge und Bedienung | **bestätigt**: 18 Grad, Richtlinien-Größen, drei Lesarten, Spur-Filter und 150 Level weg, Bug-Backlog, HUD in der Sprache der UI, Kreuzungstausch raus, kein Terrain-Zeichnen, „Boden formen“ später im Sandkasten | 24.10.2026 |
-| 1 | Weltrenderer (Technik, Richtlinie Schritt 2) | Technik gesetzt; Einordnung in die Etappen in Runde 5 | – |
-| 8b | Asset-Pipeline und Aufträge | Runde 5 läuft (Fragen gestellt am 24.10.) | – |
-| 9 | Produktion vieler Level | Runde 5 läuft (Fragen gestellt am 24.10.); Inhalt erst nach der Basiszone | – |
-| 10 | Etappen und Abnahmen | Runde 5 | – |
-| 11 | Risiken und Grenzen | Runde 5 | – |
-| 12 | Karte und Morph (neu auf Florians Wunsch, 24.10.) | Runde 5 läuft (Fragen gestellt am 24.10.) | – |
+| 0 | Art Direction v2 (Look) | **bestätigt**: alle Visuals als Pool (Stil 04 und 09, Maßstab 15 und 16), zehn Regeln nur vorläufig bis zur Stilprobe, keine Konturen, Punktraster gemalt plus Funkeln-Shader, Alpen als erster Look, Stilprobe als Tor; UI-Richtung Baustellen-Brutalismus, Nachtrag: noch viel verrückter, UI-Werkstatt mit drei Varianten | 24.10.2026 |
+| 7 | Werkzeuge und Bedienung | **bestätigt**: 18 Grad, Richtlinien-Größen, drei Lesarten, Spur-Filter und 150 Level weg, Bug-Backlog, HUD in der Sprache der UI; Nachtrag: Kreuzungstausch bleibt als Rückfall im Bogenmenü, „Boden formen“ später als Fähigkeit der Basiszone | 24.10.2026 |
+| 1 | Weltrenderer (Technik, Richtlinie Schritt 2) | Technik gesetzt; Einordnung als Etappe 1 vorgeschlagen (Module, Tore) | mit Paket 10 |
+| 8b | Asset-Pipeline und Aufträge | **bestätigt**: Session erzeugt über Florians Figma-Konto (am ersten Auftrag geprüft), automatische Prüfung gegen Auftrag und Leitbilder, eigene Teile je Zone, Katalog, Aufträge in Sätzen | 24.10.2026 |
+| 9 | Produktion vieler Level | **bestätigt**: Vorschlag-Generator, Prüfer mit Lösungsbahn in der CI, zweite Zone „Mystischer Neon-Freizeitpark“ ohne neuen Engine-Code | 24.10.2026 |
+| 10 | Etappen und Abnahmen | Vorschlag aus allem Bestätigten: acht Etappen, die ersten zwei Wochen tageweise; Festschreibung angefragt | – |
+| 11 | Risiken und Grenzen | Vorschlag; Festschreibung angefragt | – |
+| 12 | Karte und Morph (neu auf Florians Wunsch, 24.10.) | **bestätigt**: ein Rad für alle Zonen in Sektoren, Miniaturen und Symbole, Morph in zwei Schritten mit messbaren Kriterien | 24.10.2026 |
 
 Runde 1 (24.10.): offene Einladung, Zone und Level, Levelziele; Pakete Z, 2 und 4 am selben Abend bestätigt. Florians
 Antworten stehen je Paket unter „Florians Vorgaben“; die Vorschläge darunter sind die Antwort der Session darauf, und
 was Florian bestätigt hat, trägt das Datum. Runde 2 (24.10.): Achterbahn-Features und Teileliste; Florians Antworten haben die Zone zur **Basiszone** gemacht
 (Abschnitt Z); Pakete 3 und 8a am selben Abend bestätigt. Runde 3 (24.10.): Figuren und Schlange, Untergrund und Tunnel; Pakete 6 und 5 am selben Abend bestätigt. Runde 4
 (24.10.): Look und Werkzeuge; Pakete 0 und 7 am selben Abend bestätigt. Runde 5 (24.10.): Karte und Morph, Pipeline,
-Produktion. Danach Etappen, Risiken und die Einordnung des Weltrenderers als Vorschlag aus allem Bestätigten.
+Produktion; Pakete 12, 8b und 9 am selben Abend bestätigt. Danach Etappen, Risiken und die Einordnung des Weltrenderers
+als Vorschlag aus allem Bestätigten (Paket 1, 10, 11).
 
 ## Z. Ziel und Zuschnitt des Plans (Florians Vorgabe, 24.10.)
 
@@ -47,6 +48,9 @@ Zur Bestätigung so formuliert:
   feststehen. In ihr gehen alle Bahntypen, alle Startarten, alle Aufwertungen, alle Elementtypen; welche Level was
   wann bekommen, entscheidet später das Leveldesign. Welcher Look zuerst auf die Basiszone gelegt wird (die
   Richtlinie sagt Alpen), klärt Paket 0.
+- **Basiszone und Neon-Freizeitpark sind Werkstattzonen** (Florian, 24.10., zur Info): Vermutlich findet keine von
+  beiden so den Weg ins Spiel. Wenn klar ist, wie alles funktioniert und aussehen muss, überarbeitet Florian die
+  Startzonen neu. Der Plan liefert also das System und zwei Nachweise, nicht den Inhalt der Veröffentlichung.
 - Der Stil ist im Groben festgelegt; die Visuals unter `refs/traumacoaster-gpt explore/visuals/` zeigen ihn am
   besten, aber nur in Ausschnitten (Regelwerk daraus: Paket 0).
 - Wir bauen den Editor zusammen: zuerst mit einfachen Formen, die wir dann durch Grafiken und 3D-Modelle ersetzen und
@@ -363,13 +367,117 @@ optional). Florians „maximal drei, meistens zwei“ passt genau.
 **Status: bestätigt am 24.10.2026.** Offen bleibt nur, was ausdrücklich so markiert ist (Schleifen nach Entscheidung
 4, Flugweite als Bonus-Variante, Zustieg unterwegs); das wird in Paket 3 und 6 geklärt.
 
-## Pakete 3, 8a, 6, 5, 0, 7, 1, 8b, 9, 10, 11
+## Paket 1: Weltrenderer (Technik gesetzt, Einordnung als Etappe 1)
 
-Noch nicht besprochen; die Fragen kommen in den Runden 2 bis 5 (Tabelle A). Zu jedem Paket wird hier wie oben
-festgehalten: Florians Vorgaben, Vorschlag mit Optionen und Empfehlung, Prüfung (Tor), Spanne, Rückfragen, Status.
-Die Technik aus `docs/RICHTLINIE.md` (Three.js-Welt mit geneigter Perspektivkamera, Pixi-HUD, Tiefenpuffer, eine
-Shadow Map, Umfärben per Shader, Untergrund als Baustelle plus Freilegung, 60 fps auf dem Handy) ist die Grundlage
-aller Pakete.
+Die Technik steht in `docs/RICHTLINIE.md` (Abschnitt 2, 3, 5, 6, 12, 13) und wird hier nicht neu verhandelt: Three.js
+als Weltrenderer mit geneigter Perspektivkamera (18 Grad, Zoom als Kamerafahrt, vertikale Streckung), PixiJS 8 für
+HUD, Sticker, Karten-Overlay und Zeichen-Overlay im selben WebGL-Kontext, Tiefenpuffer statt Masken, eine Shadow Map
+(1024², abschaltbar), Umfärben und Looks per Shader, Untergrund als Erdschnitt mit Räumen, Ziel 60 fps auf dem Handy,
+Draw Calls unter 150, DPR höchstens 2. Schritt 1 (Strich als Strahl hinter `?persp=1`) ist gebaut.
+
+**Was neu entsteht (`src/world/`):** Szene und Kamera-Adapter, Boden und Erdschnitt, Kulissen (Fläche, Dreiteiler,
+Säule mit Tiefenvolumen, Höhlenkasten, Wasser, Portal), Bahnprofile der vier Typen aus dem Bahnmodell, Stützenfamilien
+(instanziert), Wagen (3D-Platzhalter), Station, Licht, Schatten, Nebel, Looks, Funkeln, Partikel, Freilegung, der
+Klötzchen-Editor. **Was ersetzt wird:** `src/render/worldView`, `terrainRenderer`, `trackRenderer`, `trainRenderer`,
+`supports`. **Was bleibt:** `src/track/*`, `src/physics/*`, `src/levels/*` (Datenmodell wird zur Zone erweitert),
+`src/core/*`, Figuren-Definitionen, Karten-Logik, Pixi-HUD.
+
+**Tore:** 100-Punkte-Test (die 3D-Bahn liegt auf dem Bühnen-Strich, Richtlinie 2.1), `npm run strokes:replay` ohne neue
+Tiefenfehler, Handy-Messung mit allen vier Bahntypen (60 fps Ziel, Holz unter 150 Draw Calls), Standbilder der
+Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
+
+## Paket 10: Etappen und Abnahmen (Vorschlag aus allem Bestätigten)
+
+### Grundsätze
+
+- Erst die Basiszone als Werkstatt mit Platzhaltern, dann der Look auf einem Feld (Stilprobe), dann der Alpen-Satz,
+  dann Generator und Prüfer, dann der Neonpark als Nachweis. Keine Teile in Menge vor der Stilprobe.
+- Jede Etappe hat ein Tor mit vier Prüfungen: Handy-Messung (Ziel 60 fps, Draw Calls unter 150), Replay grün
+  (`npm test`, Szenarien, `npm run strokes:replay`), Standbilder im Hochformat vom Handy, Florians Freigabe nach
+  eigenem Spielen. Ohne Freigabe beginnt die nächste Etappe nicht; parallel laufen nur Florians eigene Arbeiten.
+- Spannen sind Arbeitswochen einer Session mit täglicher Rückmeldung von Florian; die Handy-Tests brauchen ihn. Die
+  Richtlinie schätzte für den schmaleren Umfang (Renderer, Kulissen, Untergrund, Werkzeuge) fünf bis acht Wochen; mit
+  Editor, Figuren, UI-Werkstatt, Karte, Generator und zweiter Zone sind es nach dieser Rechnung etwa sechzehn Wochen.
+- Florians Parallelarbeiten (jederzeit, nicht im Tor): Figurenteile in zwei Ansichten, Entwurf der Alpen-Autos,
+  Varianten je Zone, Handy-Tests am Ende jeder Woche, Entscheidungen an den Toren, Figma-Konto für den Generator.
+
+### Die Etappen
+
+| Etappe | Inhalt | Ergebnis | Tor | Spanne | Braucht |
+|---|---|---|---|---|---|
+| **E1 Weltrenderer und Klötzchen-Editor** | Three-Szene hinter Schalter, Pixi-HUD im Kontext, Kamera 18 Grad, Boden, Erdschnitt, Kulissen-Platzhalter mit Tiefenpuffer, vier Bahnprofile, Stützenfamilien instanziert, Wagen-Platzhalter, Licht, Schatten, Nebel, Looks aus dem Labor; Editor Stufe 1 (Platzhalter, Metadaten, Felder, Station, Baustelle, Coins, Zonendatei, Testfahrt); Lesarten-Knopf und Spur-Filter raus | Basiszone-Datei v0 mit einem Testfeld, vom Editor geschrieben | 100-Punkte-Test, Replay grün, Handy 60 fps mit Holz unter 150 Draw Calls, Florian baut selbst einen Testausschnitt, Handy zeigt dasselbe | 2 Wochen (tageweise unten) | Richtlinie, Labor |
+| **E2 Bahn und Welt** | Fähigkeiten als Schalter (3.1), Startarten sichtbar (Platzhalter), Aufwertungen als Daten, Station mit Vorgabestück, Häuschen, Hebel und Richtung, Schlangenbereich mit Freiraum und Platzhalter-Figuren, Feld mit Kamerabegrenzung, Fels-Regeln (Öffnungen, Baustellen, Stop-Hinweis), Baustellen in zwei Varianten mit Freilegung, Räume mit „offen ab Stufe“, Autoscroll-Schalter, Wasser mit Schaltern, Fortschrittsstufe mit Looks, Kettenzuglinie | Basiszone v1: alle Bahn- und Weltfähigkeiten mit Platzhaltern spielbar | Checkliste je Fähigkeit in je einem Feld, Replay grün, Handy 60 fps, Florians Spieltest | 2 Wochen | E1 |
+| **E3 Ziele, Rätsel, Humor** | Zielarten-Katalog v1 auf der 3D-Bahn, Magnet-Coins, Tunnel-Meter, Sprungschanze mit Fangtrichter und Vorab-Fahrt, Fangen mit Magnetwagen, Bild im Bild als 2D-Kabine, Glocke, Mühlrad, Tor mit Schalterplatte, Durchbruch, Sterne A plus C mit „Alle an Bord“, Humor-Regeln (Entgleisen selten und groß), Bug-Backlog (Stabilität, Schräglage automatisch, Strichintelligenz, Bahnende, Kreuzungstausch ins Bogenmenü), 150 Level als Inhalt raus | Basiszone v2: jedes Ziel und jedes Element in einem Feld erlebbar | Prüfer-Vorstufe: jedes Ziel einmal erfüllt im Replay, Handy 60 fps auch mit Vorab-Fahrt und Bild im Bild, Florians Spieltest mit Fokus Humor | 2 Wochen | E2 |
+| **E4 Stilprobe** | Stützen-Werkstatt (drei Wege, Hybrid gegen Florians Studien), UI-Werkstatt (drei Varianten, Florian wählt), Funkeln-Shader, Stilproben-Satz (10 bis 15 Teile über das Figma-Konto mit Prüfung), Florians erste Figurenteile mit Farbmasken im Rig, Looks Tag, Abend, Nacht; ein Feld der Basiszone komplett ohne Platzhalter | Stilprobe: ein Feld im Alpen-Look, Art Direction v2 als Dokument (ersetzt `docs/ART.md`) | Standbild vom Handy neben Bild 15 und 04, Stützen je Familie neben der Studie, UI-Variante gewählt, Handy 60 fps mit Shadow Map und Funkeln, Florians Freigabe | 2 Wochen (parallel zu E3 möglich, sobald der Figma-Weg steht) | E1, Florians Teile, Figma-Konto |
+| **E5 Alpen-Satz, Figuren, Karte** | Alpen-Satz (50 bis 70 Teile in Familien) ersetzt die Platzhalter der Basiszone, Katalog und KTX2, Figuren-Editor Stufe 1, Schlange mit Florians Figuren, Wagen Stufe 2 (Alpen-Autos nach Florians Entwurf, Holzzug und weitere über Generator und Meshy), Karte als ein Rad mit Sektoren, Miniaturen und Symbolen, Morph Schritt 1, Boden formen im Sandkasten | Basiszone komplett im Alpen-Look, Karte und Morph laufen | Zone komplett ohne Platzhalter, Morph-Video vom Handy ohne Sprung bei 60 fps, Replay grün, Prüfung „Platzhalter ohne Teil“ leer, Florians Freigabe | 3 Wochen | E3, E4, Florians Wagenentwurf |
+| **E6 Generator und Prüfer** | Rezepte als Layout-Grammatiken, Seeds, Kandidaten im Editor, Lösungsbahn je Level, Prüfer in der CI, Zonen-Bundles mit Vorladen, Speicher-Messung | Zehn Kandidaten-Level in der Basiszone, vom Prüfer bestanden | CI grün mit Prüfer, Handy 60 fps und Speicher im Rahmen, Florian nimmt zehn Kandidaten an oder ändert sie | 2 Wochen | E5 |
+| **E7 Neon-Freizeitpark** | Zweite Zone nur aus Daten, Neonpark-Satz, Looks Nacht und Neon mit Neon-Nebel, Glühen, Punktlichtern, eigene Stützen- und Stationsvarianten, Kostüme, höchstens ein neues interaktives Element; jede nötige Code-Änderung wird als Befund gegen das System notiert und behoben; danach Morph Schritt 2 mit Florian | Zweite Zone spielbar, Liste der Befunde, Morph-Animation final | Zone ohne neuen Engine-Code (Ausnahmen gelistet), 60 fps, Prüfer grün, Florians Freigabe | 3 Wochen | E6, Neonpark-Satz |
+| **E8 Übergabe ans Leveldesign** | Dokumentation von Editor, Katalog, Generator, Prüfer; Florian beginnt die Startzonen neu | Übergabe | Florian baut eine Zone ohne Hilfe der Session | 1 Woche | E7 |
+
+### Die ersten zwei Wochen, tageweise (Etappe 1)
+
+**Woche 1, Montag 26.10. bis Freitag 30.10.2026: der Weltrenderer.**
+
+- **Mo:** Three-Szene hinter Schalter im Spiel (`?world=1`), Pixi-HUD im selben Kontext mit Zustands-Reset je Bild,
+  Kamera-Adapter (18 Grad, Kamerafahrt, vertikale Streckung), Boden und geschlossener Erdschnitt; 100-Punkte-Test aus
+  der Richtlinie als Vitest.
+- **Di:** Bahnprofile Straße und Stahl als Meshes aus dem echten Bahnmodell, Wagen-Platzhalter als 3D-Körper mit
+  Sitzen, Kamera folgt; Replay mit `--world`.
+- **Mi:** Bahnprofile Holz und Hängebahn, vier Stützenfamilien aus dem Labor als Instanzen (Holz unter 150 Draw Calls),
+  Füße über Fundamentflächen statt Alpha-Scan.
+- **Do:** Kulissen-Platzhalter (Fläche, Dreiteiler, Säule, Höhlenkasten, Wasser, Portal) mit Tiefenpuffer; Licht,
+  Shadow Map, Nebel, Looks als Module; Lesarten-Knopf und Spur-Filter raus.
+- **Fr:** Handy-Messung mit Florian (alle vier Typen), Standbilder, Fixes; Tor 1a: 60 fps Ziel, Replay grün, Konsole leer.
+
+**Woche 2, Montag 2.11. bis Freitag 6.11.2026: der Klötzchen-Editor.**
+
+- **Mo:** Editor-Modus (`?editor=1`) am Mac: Platzhalter setzen, ziehen, in der Tiefe schieben, löschen; Zonendatei
+  speichern und laden; Hot-Reload.
+- **Di:** Metadaten je Platzhalter (Fundament, Öffnung, Anschlüsse, Wachstumsstufe, Tiefenrolle), Level-Feld aufziehen
+  mit Kamerabegrenzung und Absperrband, Zoom-Grenze.
+- **Mi:** Stationsanker mit Richtung, Vorgabestück, Häuschen-Platzhalter und Hebel; Schlangenbereich mit Freiraum und
+  Platzhalter-Figuren; Baustellen-Marke; Coin-Gruppen.
+- **Do:** Testfahrt aus dem Editor, Ziele je Level eintragen (Katalog v1, statische Ziele live), Fortschritts- und
+  Aufwertungsstufe wählen; Prüfung: Zonendatei lädt deterministisch, Standbild-Test.
+- **Fr:** Florian baut selbst einen Testausschnitt (Station, Hügel, Fenster-Element, Baustelle); Handy zeigt dasselbe;
+  Fixes; Doku in `docs/TECH.md` und `docs/HANDOVER.md`; Tor 1b.
+
+**Florian in diesen zwei Wochen:** Figma-Konto und Generator mit der Session prüfen (Voraussetzung für E4), erste
+Figurenteile in zwei Ansichten skizzieren, Entwurf der Alpen-Autos, Handy-Tests freitags, Entscheidungen an den Toren.
+
+### Rückfragen zu Paket 10
+
+1. Spannen und Reihenfolge so annehmen, mit der Stilprobe parallel zu E3, sobald der Figma-Weg steht?
+2. Sollen E2 und E3 zu einer Etappe „Basiszone“ mit einem Tor nach vier Wochen zusammenfallen, oder bleibt das
+   Zwischentor nach zwei Wochen (Empfehlung: Zwischentor, damit der Spieltest früher kommt)?
+
+Status: Vorschlag, zur Festschreibung vorgelegt (24.10.).
+
+## Paket 11: Risiken und Grenzen (Vorschlag)
+
+| Risiko | Wo | Gegenmaßnahme | Tor |
+|---|---|---|---|
+| Füllrate auf dem Handy bei vielen großen halbtransparenten Kulissen | E1, E5 | DPR höchstens 2, Kulissen auf Inhaltsgrenzen schneiden, opaker Kern per Alpha-Test, schmaler Blend-Rand, Shadow Map 1024² abschaltbar | Messung jede Etappe |
+| Speicher (Texturen, Räume, zweite Zone) | E5, E7 | KTX2 (UASTC) ab E5, Atlanten je Zone, Master höchstens 2048, Bundles je Abschnitt mit Vorladen und Entladen | Speicher-Messung E6 |
+| Zwei Renderer im selben Kontext | E1 | Zustands-Reset je Bild, Texturen getrennt, Szenarien prüfen Konsole und Bild | Tor 1a |
+| Zeichnen in Perspektive bringt Tiefenfehler | E1, E3 | Replay gegen alle Aufnahmen je Etappe, Fels-Regeln und Freiraum über den Tiefenlöser, Kreuzungstausch als Rückfall | Replay grün |
+| Vorab-Fahrt (Schanze, Durchbruch, Entgleis-Warnung) kostet beim Zeichnen | E3 | nur nach dem Loslassen, mit Zeitbudget, abschaltbar | Handy-Messung E3 |
+| Graben entwertet Tunnelrätsel oder frisst Zeit | nach E7 | Stufe 2 nur in markierten Grabzonen und nur nach einem Labor-Test; Fels bleibt fest | eigenes Tor |
+| Figurenzahl (Schlange, Zug, Bild im Bild) | E2, E5 | Deckel zwölf in der Schlange, Cut-outs als Instanzen, Bild im Bild in 2D | Messung E3, E5 |
+| Editor-Oberfläche frisst die Etappe | E1 | Stufe 1 nur mit Maus und Tastatur ohne Politur, Pixi-HUD vorhanden, Florian testet am Ende der Woche | Tor 1b |
+| Figma-Weg läuft nicht aus der Session | E4 | Rückfall: Florian erzeugt aus demselben Auftragstext; Prüfung und Nacharbeit bleiben bei der Session | vor E4 |
+| Teile sind nicht pixelgenau, Nacharbeit wächst | E4, E5 | automatische Prüfung je Teil, Kontaktbogen, Deckel: zwei Durchläufe je Teil, dann Florian oder Platzhalter bleibt | je Satz |
+| Florians Teile und Entwürfe kommen später als die Etappe | E4, E5 | Platzhalter bleiben spielbar; die Stilprobe wartet, der Rest nicht | Tor E4 |
+| Humor kippt in Frust (Entgleisen, Rauswurf) | E3 | Regeln aus 4.7, Spieltest mit Fokus Humor, Zahlen aus dem Replay (Entgleisquote je Typ) | Tor E3 |
+| Die UI-Werkstatt verliert sich im Verrückten | E4 | drei Varianten, feste Grenzen (Treffer, Lesbarkeit in einer Sekunde), Florian wählt in einer Sitzung | Tor E4 |
+| Morph „sauber“ ohne Maßstab | E5 | messbare Kriterien aus 12.2, Video vom Handy, Schritt 2 erst nach Freigabe | Tor E5 |
+| Neonpark braucht doch Code | E7 | jede Änderung als Befund gegen das System, zuerst Daten und Shader-Presets versuchen | Tor E7 |
+
+**Nicht in diesem Plan (bewusst später):** Audio, Store-Builds, Community und Teilen, Spine, Windböe und Wippe,
+Lawine, Zustieg unterwegs, Graben Stufe 2 (nur nach Test), Rolls und Schrauben vor den finalen Wagen, der Inhalt der
+Veröffentlichung (Startzonen überarbeitet Florian nach E8 neu).
+
+Status: Vorschlag, zur Festschreibung vorgelegt (24.10.).
 
 ## Paket 3: Achterbahn-Features – Bahntypen, Aufwertungen, Startarten, Station, Stützen
 
@@ -814,13 +922,26 @@ Baustellen-Inventar der Zone, hart aufgeklebt auf das gemalte Bild.
   gelbem Rand; Konfetti aus schwarz umrandeten Quadraten.
 - **Grenzen:** Trefferflächen mindestens 56 bis 60 Pixel (Richtlinie 7), Texte mindestens 18 Pixel, nichts im
   Zeichenraum außer den Griffen und der Kettenzuglinie; die wilde Form sitzt an den Rändern.
-- Ein erster Entwurf als Bild wurde Florian am 24.10. gezeigt (Hochformat-HUD); die endgültige UI entsteht als Teil der
-  Stilprobe.
+- Ein erster Entwurf als Bild wurde Florian am 24.10. gezeigt (Hochformat-HUD). Florians Urteil: **noch viel
+  verrückter und unkonventioneller.** Darum eine **UI-Werkstatt** mit drei Varianten zum Vergleich, bevor die UI in die
+  Stilprobe kommt. Hebel, an denen „verrückter“ ansetzt:
+  - **Die UI lebt:** Chips haben Augen und blinzeln, der Testfahrt-Block atmet, Knöpfe fallen beim Drücken um und
+    rappeln sich auf, das Absperrband wird von einer Figur gehalten, die mit jedem Meter weiter zurückweicht.
+  - **Die UI ist Teil der Zone:** Bedienelemente hängen an Seilen von oben, stecken als Schilder im Boden, sind an
+    die Station genagelt; sie wackeln mit, wenn der Zug vorbeirauscht.
+  - **Bewusst falsch:** nichts ist ausgerichtet, Schrift läuft schräg und über Kanten hinaus, Elemente überlappen,
+    Löcher und Risse in den Blöcken, Klebeband hält Ecken, Marquee-Text als Laufschrift auf dem Band.
+  - **Effekte als Ereignis:** Stempel schlagen mit Staubwolke ein, Erfolge zerreißen den Chip und zeigen einen neuen
+    darunter, Fehlschläge lassen das ganze HUD kurz kippen, Sterne werden mit einer Hand aufgeklebt.
+  - **Eigenes Alphabet:** eine Display-Schrift aus Schablonen- und Pinselbuchstaben, Zahlen als gestanzte Blechziffern.
+  Grenzen bleiben: Trefferflächen, Lesbarkeit der Ziele in einer Sekunde, nichts im Zeichenraum außer Griffen und
+  Kettenzuglinie. Tor: drei Varianten als Bilder, Florian wählt; die gewählte wird in der Stilprobe gebaut.
 
 ### Rückfragen zu Paket 0 (Runde 4b)
 
-1. Zehn Regeln als vorläufiges Regelwerk bis zur Stilprobe: einverstanden? **Ja (24.10.).**
-2. Baustellen-Brutalismus als Richtung für die UI: weiter ausarbeiten, oder noch verrückter? **Weiter so (24.10.).**
+1. Zehn Regeln als vorläufiges Regelwerk bis zur Stilprobe: einverstanden? **Ja, aber nur vorläufig (24.10.).**
+2. Baustellen-Brutalismus als Richtung für die UI: weiter ausarbeiten, oder noch verrückter? **Noch viel verrückter und
+   unkonventioneller (Florian, 24.10., Nachtrag).** Ausarbeitung in 0.4 als UI-Werkstatt mit Varianten.
 
 **Status: bestätigt am 24.10.2026**; die zehn Regeln bleiben vorläufig, bis die Stilprobe sie bestätigt oder ändert.
 
@@ -880,7 +1001,7 @@ Aufnahmen und Tests der Lesarten bleiben, soweit sie den Pinsel prüfen. Der Les
 | Befund (Florian) | Einordnung | Paket | Vorschlag |
 |---|---|---|---|
 | Bahn kann stabiler laufen; Wagen entgleist zu schnell, vor allem in horizontalen Kurven | Physik und Regeln | 4 (Humor und Scheitern), 3 | Seitengrenzen je Bahntyp anheben, automatische Schräglage in Kurven, Warnung vor sicherem Entgleisen durch die Vorab-Fahrt; Entgleisen bleibt selten und groß |
-| Kreuzung umdrehen nicht nötig | Werkzeug | 7 | Kreuzungs-Tausch per Tipp entfällt; Kreuzungen entstehen aus dem Strich |
+| Kreuzung umdrehen nicht nötig | Werkzeug | 7 | Tausch nur noch im Bogenmenü als Rückfall, nicht im HUD; fällt ganz, wenn das Replay ihn nicht braucht (Nachtrag 24.10.) |
 | Strichintelligenz weiter feilen; zu viele unnötige Schleifen; zu viele Punkte | Pinsel-Pipeline | 7, 1 | Knotenwahl mit größerer Toleranz, Schleifen nur bei klarer Drehung, Glättung der Enden; Prüfung gegen die Aufnahmen (`npm run strokes:replay`) |
 | Bahnende sauberer | Pinsel-Pipeline | 7 | Endstück mit sauberem Auslauf, Anschluss an die Station mit Vorschau |
 | Visuelles Feedback, wenn es nicht weitergeht | HUD | 7, 0 | Stempel „STOP“ mit Grund (Fels, Feld, Budget, Schlange) und Rütteln (0.4) |
@@ -903,8 +1024,14 @@ gebaut nach der Basiszone, zuerst für „Eigene Bahnen“ (Sandkasten, GDD 12),
 
 ### Rückfragen zu Paket 7 (Runde 4b)
 
-1. Kreuzungs-Tausch wirklich entfernen (auch für spätere Zonen)? **Ja (24.10.).**
-2. „Boden formen“ als Schalter je Level, zuerst im Sandkasten: einverstanden? **Ja (24.10.).**
+1. Kreuzungs-Tausch wirklich entfernen (auch für spätere Zonen)? **Florian (24.10., Nachtrag): „Brauchen wir ihn? Wenn
+   du ihn für nötig hältst, lass ihn drin.“ Urteil der Session: als Rückfall behalten, nicht als sichtbares Werkzeug.**
+   Der Tausch bleibt im Bogenmenü der Kreuzung (Tippen auf die Kreuzung, dann „vorn/hinten tauschen“), weil der
+   Tiefenlöser bei engen Kreuzungen falsch raten kann; er verschwindet aus dem HUD. Das Replay zählt, wie oft er
+   gebraucht wird; wird er in der Basiszone nicht gebraucht, fällt er ganz.
+2. „Boden formen“ als Schalter je Level, zuerst im Sandkasten: einverstanden? **Ja, wenn es später in die Basiszone
+   eingebaut werden kann (24.10., Nachtrag).** Also: Fähigkeit der Basiszone (Schalter je Level, Radius und Höhe),
+   gebaut nach der Stilprobe, zuerst im Sandkasten getestet, dann in Leveln, wo die Zone es erlaubt.
 
 **Status: bestätigt am 24.10.2026.**
 
@@ -935,10 +1062,39 @@ einfacher, weil der Boden als Mesh gebogen wird und Bäume und Felsen echte Obje
   Miniatur; die Auswahl rastet an einem festen Fokuspunkt oben; auf dem Handy ein größerer Ausschnitt des Bogens mit
   fester Auswahlkarte unten (Visuals 05, 07, 08).
 
-Fragen der Runde 5 (24.10.): Was „sauber“ heißt und was der erste Schritt weglassen darf; Miniaturen und Skulpturen;
-eine Zone je Rad oder alle Zonen in Sektoren.
+### Florians Vorgaben (Runde 5)
 
-Status: Runde 5 läuft.
+- Was „sauber“ genau heißt, weiß er noch nicht; wir fangen mit dem Vorschlag an.
+- Miniaturen und Symbole wie in den GPT-Bildern ausprobieren.
+- Alle Zonen auf ein Rad.
+
+### Vorschlag 12.1: Ein Rad für alle Zonen
+
+Ein Rad mit Sektoren je Zone (Weltenrad, Visual 05 und 08), die Level radial am Rand des Sektors. Bestandene Level
+zeigen die eigene gebaute Bahn als Miniatur (die heutige Miniatur-Technik, auf die 3D-Welt umgestellt), offene Level
+eine Skulptur der Zone mit Symbol (Samen, Felstrompete, Sternknospe, Laterne), gesperrte ruhiger mit Sperrsymbol. Die
+Auswahl rastet am festen Fokuspunkt oben, Titel, Fortschritt und Play bleiben fest; die Glücksrad-Physik bleibt; auf
+dem Handy ein größerer Ausschnitt des Bogens mit fester Auswahlkarte unten (Visual 07). Die Fortschrittsstufe der Zone
+zeigt der Sektor an (mehr Miniaturen, wachsende Skulpturen), gesteuert wird sie über die Levelnummer (Paket 2).
+
+### Vorschlag 12.2: Morph in zwei Schritten
+
+**Schritt 1, der saubere Morph:** kein Schnitt und kein Einblenden. Die echte 3D-Zone wird im Vertex-Shader von der
+Krümmung des Rads ins Flache gebogen, Bäume, Felsen und Station wachsen als Objekte aus dem Boden, der Himmel läuft
+durch, die Kamera fährt in einem Zug vom Rad-Blick in den Level-Blick; die Spurstreifen klappen wie heute gestaffelt
+auf, die gezeichnete Bahn erscheint zuletzt. Weil „sauber“ noch kein Maßstab hat, bekommt der Schritt messbare Kriterien
+als Vorschlag: kein Objekt springt oder blendet ohne Bewegung ein, 60 fps auf dem Handy während des Morphs, Dauer
+etwa 1,5 Sekunden hinein und 1,3 Sekunden heraus, Rückweg spiegelbildlich. Abnahme: ein Video vom Handy, Florian
+sieht keinen Sprung, dazu die Messung.
+
+**Schritt 2, die genaue Animation:** Timing, Kurven, Reihenfolge der Objekte, Partikel, Klang; mit Florian am
+fertigen Schritt 1, nach der Stilprobe (Paket 10).
+
+### Rückfragen zu Paket 12 (Runde 5b)
+
+Keine; die Kriterien in 12.2 sind Vorschlag und werden am ersten Video geprüft.
+
+**Status: bestätigt am 24.10.2026.**
 
 ## Paket 8b: Asset-Pipeline und Aufträge
 
@@ -962,9 +1118,65 @@ Status: Runde 5 läuft.
   Figurenteile farbig, die Session legt Masken an (6); Wagen über GPT und Meshy mit gemalter Textur (3); Funkeln über
   einen Maskenkanal (0); die Stilprobe braucht den ersten Satz echter Teile (0).
 
-Fragen der Runde 5 (24.10.): Werkzeugweg (wer erzeugt wo), Namensschema, erster Auftrag für die Stilprobe.
+### Florians Vorgaben (Runde 5)
 
-Status: Runde 5 läuft.
+- Werkzeugweg: über Florians Figma-Konto mit dem Bildgenerator versuchen; dann kann die Session selbst erzeugen,
+  Florian passt nur an, wenn nötig.
+- **Jede Zone bekommt eigene Teile, und zwar komplett**; nur wenige Teile sind für alle Zonen wiederverwendbar.
+  Varianten je Zone macht Florian oder die Session mit Figma und GPT.
+- Reihenfolge des ersten Auftrags ist in Ordnung. Generell soll die Session anhand der Referenzen selbst Bilder
+  erzeugen, sie analysieren und sagen, was wie angepasst werden muss, damit es **genau** passt; der Generator macht
+  schöne Bilder, aber nicht pixelgenau. Nacharbeit macht Florian, oder die Session, wenn sie es sich zutraut.
+
+### Vorschlag 8b.1: Werkzeugweg
+
+Die Session erzeugt die Teile über den Bildgenerator in Florians Figma-Konto (Referenzbilder: die Leitbilder aus
+Paket 0 und ein Bild des Platzhalters im Editor als Vorlage für Form und Maße), ein Teil je Bild, transparenter
+Hintergrund, Prompt mit dem Stil-Vorspann aus Paket 0 und der Beschreibung aus dem Auftrag. Quelle, Prompt,
+Referenzen und Version jedes Teils stehen in einer Katalogdatei im Repository (ohne die Bilder); die Master liegen
+lokal und in der Figma-Datei als Archiv. Voraussetzung, die beim ersten Auftrag geprüft wird: Der Connector läuft mit
+Florians Konto (der alte Plan beschreibt den Weg über das Pro-Konto). Rückfall: Florian erzeugt aus demselben
+Auftragstext in seinem Werkzeug.
+
+### Vorschlag 8b.2: Prüfung „passt es genau“
+
+Jedes erzeugte Teil durchläuft eine automatische Analyse gegen den Auftrag: Umriss und Maße (Alpha-Begrenzung gegen
+die Zielmaße und den Fußpunkt), Öffnungsgröße bei Dreiteilern, Lichtseite (Helligkeit links, rechts, oben), Palette
+(Farbrollen und Sättigung gegen das Leitbild), Kantenhärte (hart freigestellt), Detaildichte im Zielmaßstab (keine
+Feinheiten unter drei Pixeln auf dem Handy). Ergebnis ist ein Kontaktbogen: Teil neben Platzhalter und Leitbild im
+Editor, dazu eine Liste „anpassen: …“. Nacharbeit: Zuschnitt, Skalierung, Fußpunkt, Maske und kleine Retuschen macht
+die Session; Malerei, die den Charakter ändert, macht Florian; gezielte Neuerzeugung einzelner Stellen probiert die
+Session mit dem Generator, bevor sie Florian bittet.
+
+### Vorschlag 8b.3: Namensschema und Katalog
+
+Zone als Ordner, dann Typ, Motiv, Variante: `alpen/dreiteiler_fels_fenster_a`, `neonpark/portal_geisterbahn_b`,
+`gemeinsam/coin_a` für die wenigen Teile, die in allen Zonen vorkommen. Der Katalog (`assets/katalog.json`) trägt je
+Teil die Metadaten aus Paket 8a (Maße in Metern, Fußpunkt, Tiefenrolle, Öffnung, Fundament, Anschlüsse,
+Wachstumsstufe), ob eine Farbmaske existiert, Quelle, Prompt und Version. Das Umfärben per Shader dient Stimmungen
+(Tag, Abend, Nacht) und kleinen Varianten, nicht als Ersatz für eigene Zonen-Teile (Florian).
+
+### Vorschlag 8b.4: Aufträge in Sätzen
+
+1. **Stilproben-Satz** (sobald das Stilproben-Feld als Platzhalter steht): etwa zehn bis fünfzehn Teile: drei
+   Dreiteiler (Baum mit Fenster, Fels mit Tunnel, Portal), Stationsteile (Häuschen, Dach, Drehkreuz), Füße, Kapitelle,
+   Laschen und Konsolen für die Stützen-Werkstatt, Coin, Nebelband, Funkeln-Maske; Florians Figurenteile kommen von
+   ihm.
+2. **Alpen-Satz:** aus den Platzhaltern der Basiszone (Richtwert 50 bis 70 Teile je Zone, Richtlinie 11), in Familien
+   (Landmarken, Füller, Untergrund, Wasser, Station, Deko, interaktive Elemente).
+3. **Neonpark-Satz** für die zweite Zone (Paket 9).
+
+### Vorschlag 8b.5: Format und Grenzen
+
+Master bis 2048 Pixel, WebP für die Entwicklung, KTX2 (UASTC) für das Handy, Atlanten je Zone, Kulissen auf
+Inhaltsgrenzen geschnitten (Richtlinie 2 und 12); eine Prüfung in der CI meldet jeden Platzhalter, dessen Teil fehlt,
+und jedes Teil ohne Katalogeintrag.
+
+### Rückfragen zu Paket 8b (Runde 5b)
+
+Keine; der Weg über das Figma-Konto wird am ersten Auftrag geprüft.
+
+**Status: bestätigt am 24.10.2026.**
 
 ## Paket 9: Produktion vieler Level
 
@@ -987,7 +1199,44 @@ Status: Runde 5 läuft.
 Fragen der Runde 5 (24.10.): wie Level später entstehen (von Hand, Vorschlag-Generator, automatisch), der Prüfer, die
 zweite Zone als Nachweis.
 
-Status: Runde 5 läuft.
+### Florians Vorgaben (Runde 5)
+
+- **Bestätigt am 24.10.2026: Level entstehen später mit einem Vorschlag-Generator im Editor.**
+- Prüfer mit gespeicherter Lösungsbahn: einverstanden.
+- Zweite Zone als Nachweis: **„Mystischer Neon-Freizeitpark“**, mit vielen mystischen Neonfarben, greller Beleuchtung,
+  Shader-Details wie Neon-Nebel und Licht, Geisterbahn- und Halloween-Elementen.
+
+### Vorschlag 9.1: Vorschlag-Generator
+
+Rezepte sind Layout-Grammatiken der Zone (Wiesental, Seebalkon, Einzelbaum, Doppelbaum, Felsfenster,
+Wasserfallschlucht, Kathedralgrotte, Bergring, für den Neonpark eigene) mal Zielvarianten aus dem Katalog (Paket 4).
+Rezept plus Seed erzeugt Kandidaten: Feld in der Zone, Fortschrittsstufe, erlaubte Fähigkeiten, höchstens drei Ziele,
+Coin-Gruppen, aktive Elemente und Baustellen. Der Editor zeigt die Kandidaten nebeneinander; Florian wählt, ändert und
+nimmt an. Gespeichert werden Rezept, Seed, Generator- und Assetversion (Richtlinie 10), damit ein Level
+reproduzierbar bleibt. Der Generator kommt nach der Basiszone (Paket 10).
+
+### Vorschlag 9.2: Prüfer
+
+Je Level eine Lösungsbahn, die Florian einmal im Editor zeichnet. Der Prüfer fährt sie automatisch mit genau den
+Fähigkeiten, die das Level erlaubt, und meldet: Ziele, die die Lösung nicht erfüllt; Ziele, die auf fehlende Elemente
+zeigen (Befund vom Testtag); Lösungen, die das Feld verlassen; Baustellen, die nicht erreichbar sind. Er läuft in der
+CI (`npm test` und das Replay) und vor jeder Freigabe einer Zone zusammen mit der Handy-Messung (60 fps).
+
+### Vorschlag 9.3: Zweite Zone „Mystischer Neon-Freizeitpark“
+
+Zweck: der Beweis, dass das System trägt. Die Zone entsteht **ohne neuen Engine-Code**, nur aus Daten im Editor, einem
+eigenen Teilesatz (Buden, Geisterbahn-Fassade, Kürbisse, Laternen, Neon-Schilder, Nebelbänke, Riesenrad als Kulisse,
+Spukbäume), den Looks Nacht und Neon aus dem Labor mit Neon-Nebel, Glühen und Punktlichtern, eigenen Stützen- und
+Stationsvarianten und dem Figuren-Pool mit Kostümen. Referenzen liegen schon vor: Visuals 23, 26, 33 und 51
+(Mystischer Freizeitpark). Erlaubt sind neue Daten, neue Teile, neue Shader-Presets und höchstens ein neues
+interaktives Element; alles, was mehr Code braucht, ist ein Befund gegen das System und wird im Plan vermerkt.
+Bahntyp der Zone und ihre Rezepte: Entscheidung mit Florian, wenn die Basiszone steht.
+
+### Rückfragen zu Paket 9 (Runde 5b)
+
+Keine; Bahntyp und Rezepte des Neonparks folgen nach der Basiszone.
+
+**Status: bestätigt am 24.10.2026.**
 
 ## Quellen der Recherche zu Paket 4
 
