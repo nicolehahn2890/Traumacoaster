@@ -15,21 +15,23 @@ hier nicht neu verhandelt (wo Florian sie anders sieht, wird es dort geklärt un
 | 4 | Levelziele, Sterne, Humor | **bestätigt**: Zielarten-Katalog v1, fünf Umgebungselemente, Schanze, Magnet-Coins, Fangen, Bild im Bild als 2D-Kabine, Sterne A plus C, Rauswurf ohne Fangen = Sternverlust plus Zielart „Alle an Bord“ | 24.10.2026 |
 | 3 | Achterbahn-Features: Bahntypen, Aufwertungen, Startarten, Station, Stützen | **bestätigt**: Fähigkeiten als Schalter, alles geht in der Basiszone; 3D-Wagen mit gemalten Flächen; Station als Anker mit Richtung; Stützen-Werkstatt (Hybrid); Startarten sichtbar | 24.10.2026 |
 | 8a | Teile und Elemente | **bestätigt**: Elementkatalog als Platzhalter-Satz, Ablauf Platzhalter → Auftrag → Grafik; die Grafikliste folgt aus der Basiszone, Referenzen in Paket 0 | 24.10.2026 |
-| 6 | Figuren, Schlange, Fahrgäste | Runde 3 läuft (Fragen gestellt am 24.10.) | – |
-| 5 | Untergrund, Tunnel, Baustellen | Runde 3 läuft (Fragen gestellt am 24.10.) | – |
-| 0 | Art Direction v2 (Look) | Fragen in Runde 4 | – |
-| 7 | Werkzeuge und Bedienung | Fragen in Runde 4 | – |
+| 6 | Figuren, Schlange, Fahrgäste | **bestätigt**: Rig mit klappendem Oberschädel, zwei Ansichten, Visuals als Stilvorlage, Schlange mit Freiraum, Editor bleibt und wächst, zwei je Wagen gemischt | 24.10.2026 |
+| 5 | Untergrund, Tunnel, Baustellen | **bestätigt**: Fels fest, Baustellen in zwei Varianten, Freilegung auf zwei Wegen, Autoscroll als Schalter zum Ausprobieren, Graben in Stufen (Vorbehalt), Wasser mit Schaltern | 24.10.2026 |
+| 0 | Art Direction v2 (Look) | Runde 4 läuft (Fragen gestellt am 24.10.) | – |
+| 7 | Werkzeuge und Bedienung | Runde 4 läuft (Fragen gestellt am 24.10.) | – |
 | 1 | Weltrenderer (Technik, Richtlinie Schritt 2) | Technik gesetzt; Einordnung in die Etappen in Runde 5 | – |
 | 8b | Asset-Pipeline und Aufträge | Runde 5 | – |
 | 9 | Produktion vieler Level | Runde 5 (nach Florians Zuschnitt erst nach der kompletten Zone) | – |
 | 10 | Etappen und Abnahmen | Runde 5 | – |
 | 11 | Risiken und Grenzen | Runde 5 | – |
-| 12 | Karte und Morph (neu auf Florians Wunsch, 24.10.) | erst der saubere Morph vom Rad ins Level, dann die genaue Animation; Fragen in Runde 4 | – |
+| 12 | Karte und Morph (neu auf Florians Wunsch, 24.10.) | erst der saubere Morph vom Rad ins Level, dann die genaue Animation; Fragen in Runde 5 | – |
 
 Runde 1 (24.10.): offene Einladung, Zone und Level, Levelziele; Pakete Z, 2 und 4 am selben Abend bestätigt. Florians
 Antworten stehen je Paket unter „Florians Vorgaben“; die Vorschläge darunter sind die Antwort der Session darauf, und
 was Florian bestätigt hat, trägt das Datum. Runde 2 (24.10.): Achterbahn-Features und Teileliste; Florians Antworten haben die Zone zur **Basiszone** gemacht
-(Abschnitt Z); Pakete 3 und 8a am selben Abend bestätigt. Runde 3 (24.10.): Figuren und Schlange, Untergrund und Tunnel.
+(Abschnitt Z); Pakete 3 und 8a am selben Abend bestätigt. Runde 3 (24.10.): Figuren und Schlange, Untergrund und Tunnel; Pakete 6 und 5 am selben Abend bestätigt. Runde 4
+(24.10.): Look und Werkzeuge. Runde 5: Karte und Morph, Pipeline, Produktion. Danach Etappen und Risiken als Vorschlag
+aus allem Bestätigten.
 
 ## Z. Ziel und Zuschnitt des Plans (Florians Vorgabe, 24.10.)
 
@@ -174,7 +176,10 @@ der Runde 2 (die Alpen-Visuals zeigen die Autobahn).
    **Beantwortet am 24.10.: teilweise schon Platz, aber nicht richtig sichtbar, bis freigespielt (Regel in 2.3).**
 
 **Status: bestätigt am 24.10.2026.** Das Datenmodell (2.1) ist Arbeitsgrundlage und wird mit Paket 3 (Bahn, Station)
-und Paket 5 (Untergrund) ergänzt; Änderungen daran werden hier mit Datum nachgetragen.
+und Paket 5 (Untergrund) ergänzt; Änderungen daran werden hier mit Datum nachgetragen. Ergänzt am 24.10. aus Runde 3
+(mit Paket 5 und 6 bestätigt): Schlangenbereich mit Freiraum-Volumen, Baustelle mit Variante
+(Verbinden, Durchbruch), Tunnel mit Schalter „Autoscroll zum Ausgang“, Wasser mit Schaltern (Schmuck, trägt Stützen,
+Splash-Zone, Wasserfall), Räume mit „offen ab Stufe“.
 
 ## Paket 4: Levelziele, Sterne, Humor
 
@@ -535,6 +540,236 @@ in Paket 0 über die Stilprobe gefunden, nicht vorab festgelegt.
 
 **Status: bestätigt am 24.10.2026.** Die Grafikliste (Entscheidung 8) folgt aus der Basiszone und wird hier mit Datum
 nachgetragen, sobald die Platzhalter stehen.
+
+## Paket 6: Figuren, Schlange, Fahrgäste
+
+### Bisheriger Stand (Gedächtnisstütze für Runde 3)
+
+- **Florians Vorgaben (K14, Runde 1 und 2):** Charaktere im Originalstil, der GPT-Baukasten trifft den Stil, funktioniert
+  als Baukasten aber schlecht; detailreich, einfach animiert nach South Park (Terrance und Phillip: der Kiefer klappt);
+  Figuren stehen in der Zone Schlange, die Schlange wächst mit der Bahn und jubelt, wenn die Bahn vorbeirauscht;
+  im Schlangenbereich darf die Bahn nicht mit Figuren kollidieren; der Schlangenbereich wird je Level frei platziert.
+- **Aus Paket 4 und 3 (bestätigt):** Fangen mit Magnetwagen, Bild im Bild als 2D-Kabine mit den Figuren, Rauswurf ohne
+  Fangen kostet Sterne, Zielart „Alle an Bord“; Fahrgäste als Cut-outs in 3D-Wagen; Schlange ist Ambiente, kein Ziel.
+- **Richtlinie 8:** Eigenbau-Cut-out datengetrieben: Teile-Slots (Kopf, Frisur, Oberteil, Hose, Schuhe), Ersatzsets
+  (Münder, Hände, Augen), Kopf zweiteilig mit Pivot an der Mundlinie, Clips (Stehen, Staunen, Jubel, Ducken, Schlange
+  rücken), Statemaschine mit Auslösern Abstand, Tempo, Entgleisen; Spine nur bei Bedarf.
+- **Heute im Spiel:** Animator mit Clips idle, talk, wave, hop, scared, scream, dizzy, faint auf 12 Schritten je Sekunde,
+  Kopf klappt an der Mundlinie; Figur aus Beinen, Armen, Rumpf mit Unterkopf und Mund, Oberkopf mit Augen, Brauen,
+  Haaren, Hut; Figuren-Editor (Idle, Tipp erschreckt, Speichern winkt); Fahrgäste als Ragdoll aus sechs Teilen in der
+  Wagenwanne, Pupillen und Mund folgen den g-Kräften, zwei je Wagen; GDD 11.2: Teile wählen, Hautton, Logo als Foto,
+  bis 16 eigene Figuren, Auswahl, wer mitfährt.
+- **GPT-Bögen** (`refs/traumacoaster-gpt explore/character/`): drei Figuren mit Teilen (Kappe, Frisuren, Augenpaare,
+  Münder mit Kiefer, Oberteile, Arme, Hosen, Schuhe); große Köpfe, riesige Augen, Kiefer als eigenes Teil; Maßstäbe
+  uneinheitlich, Teile berühren sich (Richtlinie 8). Florians Bahnstudien zeigen fünf Figuren je Eingang am Drehkreuz.
+- **Entscheidung 6 (Übergabe):** Florians Figurenbogen als Vorlage für das Rig.
+
+### Florians Vorgaben (Runde 3)
+
+- Figurenbogen: Florian macht einige Teile mit verschiedenen Kleidern, Frisuren und Accessoires; die Session färbt sie
+  später über Shader ein und baut daraus einen richtigen Charakter-Editor. Bis dahin reicht die Platzhalter-Figur mit
+  den Proportionen aus den Bahnstudien.
+- Animation wie vorgeschlagen (Cut-out, zwölf Schritte je Sekunde, klappender Kiefer; Reaktionen in Schlange und Wagen).
+- Schlange wie vorgeschlagen, vielleicht später mehr Figuren. **Ein Strich durch die Schlange soll nicht gehen; wenn
+  er doch dort landet, baut die Bahn immer eine Brücke oder Erhöhung, so dass die Schlange nie getroffen wird.**
+- Der Figuren-Editor bleibt grundsätzlich und wird stark ausgebaut; der genaue Editor kommt, wenn die ersten Teile da
+  sind. Frage: braucht es wie bei South Park mehr Ansichten als frontal und schräg?
+- Zwei Fahrgäste je Wagen, gemischt; gespeicherte eigene Figuren werden bevorzugt.
+- **Die Visuals sind feste Stilvorlage, so werden die Figuren aussehen,** vielleicht etwas flacher und einfacher
+  schattiert. Der Oberkiefer sitzt auf dem Unterkiefer auf, der obere Schädel ist in Kiefer und Kopf gesteckt.
+
+### Vorschlag 6.1: Rig und Ansichten
+
+- **Proportionen:** wie in den Visuals und Bahnstudien, Kopf etwa ein Drittel der Körperhöhe, riesige Augen, Figuren
+  übergroß, der Kopf ragt über den Wagenrand.
+- **Teile:** Unterkiefer mit Mundboden, fest am Rumpf; **Oberschädel** (Augen, Brauen, Frisur, Kopfbedeckung) steckt auf
+  dem Kiefer und klappt um ein Scharnier am hinteren Ende der Mundlinie (Terrance und Phillip); Rumpf mit Oberteil;
+  zwei Arme als starre Streifen an der Schulter; zwei Beine mit Hose und Schuhen; Ersatzsets für Münder, Augen, Hände.
+  Jeder Slot nimmt Florians Teile auf; Hautton, Stoff und Haar werden über eine RGB-Maske je Teil per Shader gefärbt
+  (Richtlinie 6; die Session legt die Masken an, Florian malt wie gewohnt farbig).
+- **Ansichten, Antwort auf Florians Frage:** South Park arbeitet mit vier und mehr Ansichten je Figur, weil die Figuren
+  frei im Raum stehen und laufen. Unsere Welt ist eine Seitenansicht mit leichtem Blick von oben, die Figuren stehen
+  in der Schlange und sitzen im Wagen. Darum reichen zuerst **zwei Ansichten**: Dreiviertel (Schlange und Wagen, für
+  die andere Richtung gespiegelt) und frontal (Editor und Bild im Bild). Eine reine Seitenansicht kommt nur dazu, wenn
+  die Dreiviertel im Wagen nicht liest. Jedes Teil braucht also zwei Fassungen, nicht vier.
+- **Platzhalter:** Die Session baut die Figur zuerst aus einfachen Formen in diesen Proportionen mit allen Slots, so
+  dass Schlange, Wagen, Fangen und Bild im Bild laufen, bevor Florians Teile da sind.
+
+### Vorschlag 6.2: Animation und Reaktionen
+
+Cut-out auf zwölf Schritten je Sekunde ohne Zwischenwerte (wie heute). Clips in der Schlange: Stehen (Atmen,
+Blinzeln), Nachrücken (Hüpfer), Jubel (Arme hoch, Kiefer auf), Ducken, Erschrecken (Kiefer weit, Augen groß), Winken.
+Im Wagen: Sitzen, Schreien, Arme hoch, Haare und Kleidung im Fahrtwind (einfache Kette), Benommen und Ohnmacht als Gag
+ohne Spielfolge, Flug und Fangen. Eine kleine Statemaschine schaltet nach Abstand und Tempo der Bahn, g im Wagen,
+Rauswurf, Fangen, Entgleisen. Das Bild im Bild zeigt die Kabine frontal.
+
+### Vorschlag 6.3: Schlange mit Freiraum
+
+- Der Schlangenbereich ist ein Element je Level (Paket 3). Regel: eine Figur je zehn Meter Bahn, Deckel zwölf, beides
+  Parameter der Zone (Florian will vielleicht mehr). Beim Start gehen die Fahrgäste durchs Drehkreuz in den Zug.
+- Reaktionen: Jubel, wenn die Bahn näher als zwölf Meter mit Tempo vorbeirauscht; Ducken unter vier Metern.
+- **Freiraum statt Verbot:** Der Schlangenbereich trägt ein Freiraum-Volumen (Vorschlag: fünf Meter hoch über der
+  Schlange). Ein Strich, der hinein zielt, wird nicht abgelehnt; die Bahn wird dort auf die Freiraum-Höhe angehoben und
+  weich ein- und ausgeleitet, die Stützen stehen außerhalb des Bereichs (Kaskade aus Richtlinie 3: Brücke). Tief unter
+  der Schlange (Tunnel) darf die Bahn durch. Damit kann es in der Fahrt keine Kollision mehr geben; ein Fahrgast, der
+  in die Schlange fliegt, ist ein Gag, kein Fehlschlag.
+
+### Vorschlag 6.4: Figuren-Editor
+
+Bleibt und wird ausgebaut, auf der Grundlage von GDD 11.2: Teile je Slot wählen, Farben über die Shader-Maske,
+Logo als Foto aufs Oberteil, bis 16 eigene Figuren, Auswahl, wer mitfährt. Stufe 1 mit Florians ersten Teilen:
+Slots und Farbwahl, Vorschau als lebende Figur. Stufe 2: mehr Teile und Accessoires, Posen, Vorschau in der Kabine.
+Tor: Florian baut sich und drei Freunde in zwei Minuten nach.
+
+### Vorschlag 6.5: Wer fährt mit
+
+Zwei je Wagen, gemischt aus dem Figuren-Pool der Zone; gespeicherte eigene Figuren füllen die Wagen zuerst, der Rest
+kommt aus dem Pool; die Reihenfolge im Zug ist die Reihenfolge in der Schlange.
+
+### Rückfragen zu Paket 6 (Runde 3b)
+
+1. Zwei Ansichten (Dreiviertel und frontal) als Start: einverstanden? **Ja (24.10.).**
+2. Freiraum über der Schlange fünf Meter: einverstanden? **Ja (24.10.).**
+3. Du malst die Teile farbig wie gewohnt, die Session legt die Farbmasken an: einverstanden? **Ja (24.10.).**
+
+**Status: bestätigt am 24.10.2026.**
+
+## Paket 5: Untergrund, Tunnel, Baustellen
+
+### Bisheriger Stand (Gedächtnisstütze für Runde 3)
+
+- **Richtlinie 4:** Baustellenpunkt mit gelbem Absperrband ist gesetzt; die Freilegung läuft als Choreografie (Ping, Kamera
+  fährt heraus, Risse, die Vorderfläche löst sich auf, Staub, Innenraum mit Licht und Nebel, Kamera zurück) und ist im
+  Labor gebaut; Untergrund als Ameisenfarm (Erdschnitt vorn, Räume dahinter, der Fortschritt erweitert die Kamera nach
+  unten); dynamisches Graben nur als Skalarfeld in freigegebenen Zonen, Kontur per Marching Squares, geprüft um die
+  Fahrzeughülle; Wasserfälle als drei Schichten. Recherche C hat die Technik mit Quellen.
+- **Florians Ideen (F6, F7, Runde 1):** Das Ziel ist immer, die Bahn komplett zu bauen. Drei Ideen: auf eine Baustelle
+  ziehen und einen Durchgang freisprengen, durch den die Bahn weitergeht; auf eine Baustelle oder einen Tunneleingang
+  ziehen, das Level scrollt zum Ausgang, dort geht es weiter; beim Ziehen Erde und Tunnel dynamisch mit Animation
+  entstehen lassen (braucht Elemente mit Öffnungen, die überall passen). Vorgefertigt ist einfacher, dynamisch sehr
+  cool, Kombination denkbar; noch unentschieden.
+- **Aus Paket 4 und 2 (bestätigt):** Durchbruchwand mit Mindesttempo als Baustellen-Variante, Tunnel-Meter als Ziel,
+  Untergrund vor dem Freispielen gedeckelt (geschlossener Erdschnitt), Räume werden mit der Fortschrittsstufe
+  freigelegt.
+- **Heute im Spiel:** Bahn durch Berg ist automatisch ein Tunnel, Portale sind Platzhalter-Kreise, auch dort, wo die Bahn
+  den Berg auf einer anderen Spur nur streift (Befund); ein Strich abseits der Bahn wird ohne Hinweis zum Berg
+  (Befund „Bergbauer“).
+- **Labor:** Höhlenkasten unter dem Erdschnitt, Freilegung per Auflösen, Füße auf dem Höhlenboden, Bahn hinter dem Bogen
+  und durch das Felsfenster über den Tiefenpuffer. Die GPT-Progression (Smaragdhain Anfänger, Mittel, Profi) zeigt, wie
+  derselbe Ort nach unten wächst: mehr Räume, mehr Wasserfälle.
+
+### Florians Vorgaben (Runde 3)
+
+- Fester Fels: wie empfohlen, der Strich geht nur durch Öffnungen und Baustellen.
+- Graben in Stufen: ja, mit dem Vorbehalt, dass sich das noch ändern kann.
+- Freilegung und Kamera: muss er ausprobieren. Der Ausgang kann weiter unten in einem Bereich liegen, den man nicht
+  vermutet hätte; dann wäre ein Autoscroll zum Ausgang nett. Zuerst wie vorgeschlagen.
+- Wasser: sowohl als auch, offen halten. Seen können reiner Schmuck im Hintergrund sein, **Seen sollen auch Stützen
+  tragen** (die Bahn gleitet übers Wasser, ein bekanntes Achterbahn-Element), und Splash-Hindernisse gehören dazu.
+
+### Vorschlag 5.1: Regeln für Fels, Öffnungen und Baustellen
+
+- **Fels ist fest.** Kulissen mit Volumen (Dreiteiler, Säulen, Höhlenkästen) lassen die Bahn nur durch ihre Öffnungen
+  (Fenster, Tunnelmünder, Höhlenräume) und durch Baustellen. Zielt der Strich in festen Fels, weicht der Tiefenlöser auf
+  eine freie Spur vor oder hinter dem Fels aus, wenn es eine gibt; sonst wird der Abschnitt rot markiert (wie heute die
+  Schwachstellen) mit dem Hinweis „Fels“, und beim Loslassen endet die Bahn davor.
+- **Baustelle** als Element mit Anschlussachse in zwei Varianten, als Daten je Baustelle: **Verbinden** (der Strich trifft
+  den Punkt, die Freilegung läuft sofort) und **Durchbruch** (die Bahn muss in der Fahrt mit Mindesttempo ankommen, die
+  Wand zersplittert; die Vorab-Fahrt aus Paket 4 zeigt beim Zeichnen, ob das Tempo reicht).
+- **Tunnelmund** ist eine Öffnung mit Portal; Tunnel-Meter zählen innerhalb der Öffnungsvolumen.
+
+### Vorschlag 5.2: Untergrund und Freilegung
+
+- Der Erdschnitt ist ein Element (geschlossen, bis die Fortschrittsstufe ihn öffnet, Paket 2). Räume sind Höhlenkästen
+  mit tragfähigem Boden und Decke als Aufhängung, verbunden durch vorgefertigte Tunnelkapseln (Stufe 1) oder Grabzonen
+  (Stufe 2).
+- Freilegung auf zwei Wegen: durch die Fortschrittsstufe (Raum ab Stufe n offen) und durch eine Baustelle im Level
+  (Choreografie aus dem Labor); ein so geöffneter Raum bleibt in späteren Leveln offen (die Zone merkt sich „offen ab
+  Stufe“).
+- **Kamera am Tunnel:** zuerst läuft die Bahn hinter der Kulisse gedimmt sichtbar weiter, die Tunnel-Meter zählen.
+  Dazu ein **Editor-Schalter „Autoscroll zum Ausgang“** je Tunnel, den Florian in der Basiszone ausprobiert: Liegt der
+  Ausgang außerhalb des Bildes (etwa tief unten), fährt die Kamera dorthin, sobald der Strich den Mund trifft, und das
+  Zeichnen geht am Ausgang weiter. Entschieden wird nach dem Ausprobieren.
+
+### Vorschlag 5.3: Graben in Stufen
+
+Stufe 1 (Basiszone): vorgefertigte Räume, Münder, Kapseln und Baustellen. Stufe 2: Grabzonen in weicher Erde als
+Daten (zwischen Räumen, unter Wiesen), in denen der Strich gräbt: Skalarfeld und Marching Squares (Richtlinie 4),
+Animation beim Ziehen (Erde bricht auf, Randstreifen und Innenschatten im Stil), geprüft um die Fahrzeughülle. Tor
+vor Stufe 2: ein Labor-Test der Grab-Animation im Earle-Rayman-Look und eine Handy-Messung. Fels bleibt immer fest.
+Florians Vorbehalt: kann sich noch ändern.
+
+### Vorschlag 5.4: Wasser mit Schaltern
+
+Wasser ist ein Element mit Schaltern je Instanz, alle Kombinationen erlaubt: **Schmuck** (hinten, ohne Wirkung),
+**trägt Stützen** (Pfeiler stehen im Wasser mit Wellenring, die Bahn gleitet darüber), **Splash-Zone** (Durchfahrt
+bremst leicht, Fontäne, Zielart Splash), **Wasserfall** (Band vor der Bahn, Gischt, Fahrt dahinter gedämpft). Die
+heutige Regel „keine Stützen im Wasser“ gilt damit nur, wo der Schalter „trägt Stützen“ aus ist.
+
+### Rückfragen zu Paket 5 (Runde 3b)
+
+1. Baustelle in zwei Varianten (Verbinden, Durchbruch) als Daten: einverstanden? **Ja (24.10.).**
+2. Autoscroll zum Ausgang als Editor-Schalter zum Ausprobieren: einverstanden? **Ja (24.10.).**
+
+**Status: bestätigt am 24.10.2026.** Graben in Stufen trägt Florians Vorbehalt; Autoscroll wird nach dem Ausprobieren
+entschieden.
+
+## Paket 0: Art Direction v2 (Look)
+
+### Bisheriger Stand (Gedächtnisstütze für Runde 4)
+
+- **Florians Vorgaben:** Es gibt noch keine Art Direction, sie wird hier erarbeitet (K1). Stil Rayman Legends trifft
+  Eyvind Earle, vereinfacht; die Vereinfachung tragen Umgebungsanimationen, Shading, Partikel und die Kombination aus
+  gezeichneten Grafiken mit Shadern, Schatten und Licht; von Alpen bis Cyberpunk ein Look (K5). Detailgrad wie Bild 15
+  und 16, Stil wie Bild 04 und 09 (K6). S-Formen und organische Portale gefallen (K7). Skizze von 2014 für Holz und
+  Stahl (K12). Runde 1: der Stil ist einigermaßen festgelegt, die Visuals zeigen ihn am besten, aber nur in
+  Ausschnitten. Runde 3: die Visuals sind feste Stilvorlage für die Figuren, etwas flacher und einfacher schattiert.
+  Runde 2: Stützen cool und gemalt wie die Studien; Referenzen für Bahn und Station erst herausfinden.
+- **Alter Stil (`docs/ART.md`, wird ersetzt):** drei harte Töne, Punktraster auf Schattenseiten, schwarze Stämme mit
+  Farbflecken, Hügel als Bänder, Luftperspektive in Stufen, Leuchten nur auf Interaktivem, Tinte-Konturen, Papier-Sticker
+  als UI.
+- **GPT-Vorschlag** (`refs/traumacoaster-gpt explore/doc/Art-Direction-Vorschlag.md`): Earle prägt Formen und
+  Farbrhythmen, Rayman Licht, Staffelung und Humor; keine Konturlinien um Landschaft und Bedienelemente, Lesbarkeit
+  durch Farbwert und Materialkontrast; die Bahn ist die klarste Form; UI als dunkle Lozenges mit heller runder Schrift;
+  Richtungen Smaragd, Vulkan, Kosmos, Straße als Varianten, nicht als Zuordnung.
+- **Labor:** Looks Frühling, Abend, Nacht, Neon, Vulkan als Shader-Presets aus denselben Grafiken (Farbton, Sättigung,
+  Gradient-Map, Tönung), Nebel, Glitzern, Wasser, Lichtquellen, eine Shadow Map (Richtlinie 5 und 6). Richtlinie 11:
+  die Visuals 5 bis 8 treffen Detailgrad und Stil, 13 und 52 sind zu dicht.
+- **Übergabe, Paket 0:** eingefrorene Referenzen, zehn Regeln (Formen, Kanten, Detaildichte je Quadratmeter,
+  Farbrollen, Lichtrichtung, Bahn als klarste Form, Figuren, UI), Zonen-Looks als Presets, die ersten Dreiteiler, eine
+  Stilprobe als Tor, bevor Assets in Menge entstehen; ersetzt `docs/ART.md`. Entscheidung 3 (Referenzen einfrieren).
+- **Aus den bestätigten Paketen:** Platzhalter zuerst, Grafiken ersetzen sie (8a); Looks je Fortschrittsstufe (2);
+  Figuren nach den Visuals (6); Stützen-Werkstatt gegen Florians Studien (3).
+
+Fragen der Runde 4 (24.10.): Referenzen einfrieren, Konturen, Punktraster, erster Look auf der Basiszone und Stilprobe,
+UI-Stil.
+
+Status: Runde 4 läuft.
+
+## Paket 7: Werkzeuge und Bedienung
+
+### Bisheriger Stand (Gedächtnisstütze für Runde 4)
+
+- **Richtlinie 7:** Zeichnen auf dem Handy größer: Linie 14–18 px, Tropfen Ø 50–60 px, Gummiband 30 px, Zeichen-Zoom
+  10–12 px/m, kleinster Kringel 120–150 px, Trefferzonen 56–60 px, Anschluss an die Station 60 px; Lupe nur am
+  Anschluss; Rand-Autoscroll nach etwa 150 ms; Zwei-Finger-Pan und Pinch; testbar per Adresse
+  (`?tip=26&line=15&band=30&dzoom=11`). Vollbild ist gebaut. Entscheidung 2 (Zeichengrößen).
+- **Perspektive:** hinter `?persp=1&fov=…` gebaut, Zoom als Kamerafahrt (Florians Entscheidung), Bildwinkel laut
+  Richtlinie 15–22°, zur Wahl 12, 18, 24; Florians Handy-Test fand Risse an Spurgrenzen, behoben. Entscheidung 1.
+- **Heute im Spiel:** vier Lesarten per Knopf (Pinsel bleibt, K4), Budget-Regler, Kreuzungen per Tipp tauschbar,
+  einrastende Tiefen, Bogenmenü am Segment (Tiefe, Schräglage, Löschen), Profi-Handles nach Langdruck, Zwei-Finger-Tipp
+  Undo, Autoscroll, Zeichen-Zoom, Strich-Rekorder; Terrain-Striche abseits der Bahn werden ohne Hinweis zu Bergen
+  (Befund); Startart-Symbol wird nicht als Knopf erkannt (Befund); Scheiben am Bahnhof (Befund).
+- **Entscheidung 5:** Florians Bug-Liste vom Testtag (Zeichnen gut bis auf Bugs und Entgleis-Einstellungen) fehlt noch.
+- **Entscheidung 7:** was weg darf: die Lesarten Bühne, Ein Strich und Ebenen, der Spur-Filter, die 150 Level als Inhalt
+  (Daten bleiben als Vorrat); Empfehlung der Übergabe: ja, alles drei.
+- **Aus den bestätigten Paketen:** Ziele als höchstens drei Chips oben (4), Kettenzugstärke als Linie beim Zeichnen (4),
+  Vorab-Fahrt für Schanze und Durchbruch (4, 5), Startart als großer Knopf am Vorgabestück (3), Feld mit weicher
+  Kamerabegrenzung (2), Freiraum über der Schlange hebt die Bahn an (6), Fels markiert den Strich rot (5).
+
+Fragen der Runde 4 (24.10.): Bildwinkel, Zeichengrößen, Bug-Liste, was weg darf, HUD und Werkzeuge im Feld.
+
+Status: Runde 4 läuft.
 
 ## Paket 12: Karte und Morph (neu, 24.10.)
 
