@@ -15,8 +15,8 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   (UI-Werkstatt mit drei Varianten), ein Rad für alle Zonen mit Morph in zwei Schritten, Asset-Pipeline mit
   automatischer Prüfung und eigenen Teilen je Zone, Vorschlag-Generator und Prüfer, der **Mystische
   Neon-Freizeitpark** als zweite Zone ohne neuen Engine-Code. Acht Etappen mit Toren (Handy 60 fps, Replay grün,
-  Standbilder, Florians Freigabe), die ersten zwei Wochen tageweise ab Montag, 26.10. (Abschnitt 3). Der alte Plan
-  `docs/PLAN.md` trägt den Archivhinweis. Nicht gepusht: Die Commits der Plan-Session liegen lokal auf `main`.
+  Standbilder, Florians Freigabe), Etappe 1 als Arbeitsschritte in Reihenfolge ohne Kalender (Abschnitt 3). Der alte
+  Plan `docs/PLAN.md` trägt den Archivhinweis. Die Commits der Plan-Session sind auf `main` gepusht.
 - **24.10.: Richtlinie und Tiefen-Labor.** Florians Klarstellungen und Fragen stehen in
   `docs/research/2026-10-24-klarstellungen-und-fragen.md`, die Antwort mit Messungen und Entscheidung in
   `docs/RICHTLINIE.md` (Kurzfassung: Weltrenderer zu Three.js mit geneigter Perspektivkamera, Pixi bleibt fürs HUD;
@@ -95,15 +95,24 @@ Eigene automatische Tests im Dev-Server mit `TC_NO_RECORD=1`, damit sie die echt
 ## 3. Nächster Schritt: Etappe 1 des großen Plans
 
 Der Plan ist `docs/GROSSER-PLAN.md` (Tabelle A zeigt je Paket, was bestätigt ist; Paket 10 die Etappen; Paket 11 die
-Risiken). Als Nächstes kommt **Etappe 1, Weltrenderer und Klötzchen-Editor**, tageweise geplant für Montag, 26.10.
-bis Freitag, 6.11.2026 (Paket 10):
+Risiken). Als Nächstes kommt **Etappe 1, Weltrenderer und Klötzchen-Editor**, als zehn Arbeitsschritte in Reihenfolge
+ohne Kalender (Paket 10): Schritte 1 bis 4 bauen den Weltrenderer (Three-Szene hinter Schalter, Pixi-HUD im selben
+Kontext, Kamera 18 Grad mit Kamerafahrt, Boden und Erdschnitt, vier Bahnprofile aus dem Bahnmodell, Stützenfamilien
+instanziert, Wagen-Platzhalter, Kulissen-Platzhalter mit Tiefenpuffer, Licht, Schatten, Nebel, Looks; Lesarten-Knopf
+und Spur-Filter raus), Schritt 5 ist Tor 1a (Handy-Messung mit Florian), Schritte 6 bis 9 bauen den Klötzchen-Editor
+am Mac (Platzhalter, Metadaten, Felder, Station, Schlangenbereich, Baustelle, Coins, Zonendatei, Testfahrt, Ziele),
+Schritt 10 ist Tor 1b (Florian baut selbst einen Testausschnitt).
 
-- Woche 1: Three-Szene hinter Schalter im Spiel, Pixi-HUD im selben Kontext, Kamera 18 Grad mit Kamerafahrt,
-  Boden und Erdschnitt, vier Bahnprofile aus dem Bahnmodell, Stützenfamilien instanziert, Wagen-Platzhalter,
-  Kulissen-Platzhalter mit Tiefenpuffer, Licht, Schatten, Nebel, Looks aus dem Labor; Lesarten-Knopf und Spur-Filter
-  raus; 100-Punkte-Test, Replay, Handy-Messung mit Florian am Freitag (Tor 1a).
-- Woche 2: Editor-Modus am Mac mit Platzhaltern, Metadaten, Feldern, Station, Schlangenbereich, Baustelle, Coins,
-  Zonendatei, Testfahrt und Zielen; am Freitag baut Florian selbst einen Testausschnitt (Tor 1b).
+**Startsatz für eine neue Session** (so beginnt die Bau-Session, Florian passt ihn an):
+
+> Lies `docs/HANDOVER.md` ganz und `docs/GROSSER-PLAN.md` (Tabelle A, Abschnitt Z, Paket 1, 2, 3, 10, 11), dann
+> `docs/RICHTLINIE.md` Abschnitte 0, 2, 3, 3a, 12 und `docs/TECH.md` 4b bis 4e. Starte Etappe 1 nach den zehn
+> Arbeitsschritten in Paket 10, in dieser Reihenfolge, auf einem eigenen Branch. Nach jedem Schritt `npm test`,
+> `npm run build` und das Replay; eigene Browser-Tests nur mit `TC_NO_RECORD=1`; `recordings/strokes.jsonl` nie
+> anfassen. An den Toren (Schritt 5 und 10) hältst du an und fragst mich; Entscheidungen, die der Plan mir
+> zuschreibt, triffst du nicht selbst. Was du lernst, trägst du mit Datum im betroffenen Paket des Plans nach, die
+> Technik in `docs/TECH.md`, den Stand hier in Abschnitt 1. Deutsch, keine Modell- oder Werkzeugnamen in Dateien
+> und Commits, Commit-Betreff beschreibt das Spielverhalten. Keine Grafiken in Menge vor der Stilprobe.
 
 Regeln aus dem Plan, die für jede Session gelten: Nichts wird festgelegt, was Florian nicht bestätigt hat; was eine
 Etappe lernt, wird mit Datum im betroffenen Paket nachgetragen; keine Teile in Menge vor der Stilprobe (Etappe 4);
