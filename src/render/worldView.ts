@@ -42,6 +42,8 @@ export class WorldView {
   private time = 0;
   /** letzte Kameralage, für die die Bahn in Perspektive projiziert wurde */
   private lastView = { x: NaN, y: NaN, zoom: NaN, persp: false };
+  /** Perspektive: die Kamera hat sich in diesem Bild bewegt, Ansichts-Overlays (Griffe) müssen neu gezeichnet werden */
+  viewMoved = false;
   private worldDef: WorldDef;
   private night: boolean;
 
@@ -183,6 +185,7 @@ export class WorldView {
     const lv = this.lastView;
     const moved = persp && (lv.x !== vx || lv.y !== vy || lv.zoom !== c.zoom || !lv.persp);
     this.lastView = { x: vx, y: vy, zoom: c.zoom, persp };
+    this.viewMoved = moved;
     if (moved) this.trackR.reproject();
     this.sky.update(dt, c);
     this.effects.update(dt);

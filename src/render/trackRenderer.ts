@@ -12,7 +12,7 @@ import type { TrackPath, TrackSamples } from '@/track/model';
 import { frameWithBank, railBanks, stateAt } from '@/track/model';
 import type { Terrain } from '@/physics/terrain';
 import type { WorldDef } from '@/levels/types';
-import { laneScale, toLane, toStage, viewState, LANE_MIN, LANE_MAX, LANE_DEPTH } from '@/track/stage';
+import { laneRatioFor, laneScale, toLaneOf, toStage, viewState, LANE_MIN, LANE_MAX, LANE_DEPTH } from '@/track/stage';
 import { findCrossings, type Crossing } from '@/track/crossings';
 import { hexNum, mix, railProfileTexture, shade } from './paint';
 import { atmosphere } from './terrainRenderer';
@@ -103,7 +103,7 @@ export class TrackRenderer {
   private railPool = new Map<number, StripMesh[]>();
   private railUsed = new Map<number, number>();
   /** Pfeiler der aktuellen Zeichnung mit ihrer Spur-Skalierung (für das Wachsen) */
-  private supportNodes: Array<{ c: Container; k: number; x: number; ground: number; z: number }> = [];
+  private supportNodes: Array<{ c: Container; k: number; x: number; ground: number; z: number; lane: number }> = [];
   /** letzte Zeichnung (für die Neuprojektion bei Kamerabewegung in Perspektive) */
   private last: { path: TrackPath; samples: TrackSamples; skin: string; preview: boolean } | null = null;
   private supportGlows: Array<SupportGlow & { lane: number; X: number; Y: number; k: number }> = [];
@@ -265,7 +265,7 @@ export class TrackRenderer {
       const g = this.layers.barriers.get(lane);
       if (!g) continue;
       const k = laneScale(lane);
-      const p = toLane(c.x, Math.max(c.y1, c.y2) + 1.6, c.z);
+      const p = toLaneOf(c.x, Math.max(c.y1, c.y2) + 1.6, c.z, lane);
       const r = 0.75 * k;
       g.circle(p.X, p.Y, r).fill({ color: 0xff4d5e, alpha: 0.95 }).stroke({ width: 0.14 * k, color: ink });
       const a = r * 0.45;
@@ -279,8 +279,8 @@ export class TrackRenderer {
       if (!g) continue;
       const k = laneScale(lane);
       const half = 0.95;
-      const l = toLane(b.x - b.sx * half, b.y - b.sy * half, b.z - (b.sz * half) / LANE_DEPTH);
-      const r = toLane(b.x + b.sx * half, b.y + b.sy * half, b.z + (b.sz * half) / LANE_DEPTH);
+      const l = toLaneOf(b.x - b.sx * half, b.y - b.sy * half, b.z - (b.sz * half) / LANE_DEPTH, lane);
+      const r = toLaneOf(b.x + b.sx * half, b.y + b.sy * half, b.z + (b.sz * half) / LANE_DEPTH, lane);
       for (const p of [l, r]) {
         g.moveTo(p.X, p.Y - 0.1 * k).lineTo(p.X, p.Y + 1.1 * k).stroke({ width: 0.14 * k, color: ink, cap: 'round' });
         g.circle(p.X, p.Y + 1.1 * k, 0.1 * k).fill(0xffd23f);
@@ -333,12 +333,12 @@ export class TrackRenderer {
       const parent = this.layers.supports.get(p.lane);
       if (!parent) continue;
       const k = laneScale(p.z);
-      const bot = toLane(p.x, p.ground, p.z);
+      const bot = toLaneOf(p.x, p.ground, p.z, p.lane);
       const c = buildSupport(p, ctx);
       c.position.set(bot.X, bot.Y);
       c.scale.set(k, k);
       parent.addChild(c);
-      this.supportNodes.push({ c, k, x: p.x, ground: p.ground, z: p.z });
+      this.supportNodes.push({ c, k, x: p.x, ground: p.ground, z: p.z, lane: p.lane });
       for (const gl of ctx.glows) this.supportGlows.push({ ...gl, lane: p.lane, X: bot.X + gl.x * k, Y: bot.Y + gl.y * k, k });
       ctx.glows.length = 0;
     }
@@ -348,30 +348,24 @@ export class TrackRenderer {
   private drawRails(path: TrackPath, samples: TrackSamples, skin: string, style: SkinStyle, sky: string, preview: boolean): void {
     const n = samples.count;
     const banks = this.railBank;
-    const L = new Float64Array(n * 2);
-    const R = new Float64Array(n * 2);
-    const C = new Float64Array(n * 2);
+    // 3D-Schienenpunkte je Abtastpunkt (links/rechts); projiziert wird je Stück gegen dessen Spur (drawRailChunk)
+    const L3 = new Float64Array(n * 3);
+    const R3 = new Float64Array(n * 3);
     for (let i = 0; i < n; i++) {
       const st = stateAt(samples, samples.s[i]);
       const fr = frameWithBank(st, banks[i]);
-      const lx = samples.x[i] - fr.S.x * GAUGE;
-      const ly = samples.y[i] - fr.S.y * GAUGE;
-      const lz = samples.z[i] - (fr.S.z * GAUGE) / LANE_DEPTH;
-      const rx = samples.x[i] + fr.S.x * GAUGE;
-      const ry = samples.y[i] + fr.S.y * GAUGE;
-      const rz = samples.z[i] + (fr.S.z * GAUGE) / LANE_DEPTH;
-      const pl = toLane(lx, ly, lz);
-      const pr = toLane(rx, ry, rz);
-      const pc = toLane(samples.x[i], samples.y[i], samples.z[i]);
-      L[i * 2] = pl.X; L[i * 2 + 1] = pl.Y;
-      R[i * 2] = pr.X; R[i * 2 + 1] = pr.Y;
-      C[i * 2] = pc.X; C[i * 2 + 1] = pc.Y;
+      L3[i * 3] = samples.x[i] - fr.S.x * GAUGE;
+      L3[i * 3 + 1] = samples.y[i] - fr.S.y * GAUGE;
+      L3[i * 3 + 2] = samples.z[i] - (fr.S.z * GAUGE) / LANE_DEPTH;
+      R3[i * 3] = samples.x[i] + fr.S.x * GAUGE;
+      R3[i * 3 + 1] = samples.y[i] + fr.S.y * GAUGE;
+      R3[i * 3 + 2] = samples.z[i] + (fr.S.z * GAUGE) / LANE_DEPTH;
     }
     let chunkStart = 0;
     let chunkLane = Math.round(samples.z[0]);
     const flush = (a: number, b: number, lane: number) => {
       if (!this.layers.rails.has(lane)) return;
-      this.drawRailChunk(samples, L, R, C, a, b, lane, skin, style, sky);
+      this.drawRailChunk(samples, L3, R3, a, b, lane, skin, style, sky);
     };
     for (let i = 1; i < n; i++) {
       const lane = Math.round(samples.z[i]);
@@ -382,7 +376,7 @@ export class TrackRenderer {
       }
     }
     flush(chunkStart, n - 1, chunkLane);
-    if (!preview) this.drawElements(path, samples, C);
+    if (!preview) this.drawElements(path, samples);
     this.drawStation(samples, style, sky);
   }
 
@@ -401,12 +395,12 @@ export class TrackRenderer {
     const style = SKIN_STYLES[d.skin] ?? SKIN_STYLES.skinWood;
     this.drawRails(d.path, d.samples, d.skin, style, this.world.sky[1], d.preview);
     for (const node of this.supportNodes) {
-      const bot = toLane(node.x, node.ground, node.z);
+      const bot = toLaneOf(node.x, node.ground, node.z, node.lane);
       node.c.position.set(bot.X, bot.Y);
     }
   }
 
-  private drawRailChunk(s: TrackSamples, L: Float64Array, R: Float64Array, C: Float64Array, a: number, b: number, lane: number, skin: string, style: SkinStyle, sky: string): void {
+  private drawRailChunk(s: TrackSamples, L3: Float64Array, R3: Float64Array, a: number, b: number, lane: number, skin: string, style: SkinStyle, sky: string): void {
     const k = laneScale(lane);
     const tie = atmosphere(style.tie, lane, sky);
     const under = this.railUnder.get(lane)!;
@@ -414,10 +408,17 @@ export class TrackRenderer {
     const left: StripPoint[] = [];
     const right: StripPoint[] = [];
     const center: number[] = [];
+    // Perspektive: Zwischentiefen gegen die Spur dieses Stücks korrigiert (Lage und Breite), damit das Stück an seiner
+    // Grenze nahtlos an das nächste anschließt
+    const ratio: number[] = [];
     for (let i = a; i <= b; i++) {
-      left.push({ x: L[i * 2], y: L[i * 2 + 1] });
-      right.push({ x: R[i * 2], y: R[i * 2 + 1] });
-      center.push(C[i * 2], C[i * 2 + 1]);
+      const pl = toLaneOf(L3[i * 3], L3[i * 3 + 1], L3[i * 3 + 2], lane);
+      const pr = toLaneOf(R3[i * 3], R3[i * 3 + 1], R3[i * 3 + 2], lane);
+      const pc = toLaneOf(s.x[i], s.y[i], s.z[i], lane);
+      left.push({ x: pl.X, y: pl.Y });
+      right.push({ x: pr.X, y: pr.Y });
+      center.push(pc.X, pc.Y);
+      ratio.push(laneRatioFor(s.z[i], lane));
     }
     // Schwellen zwischen den Schienen
     let nextS = s.s[a];
@@ -426,14 +427,12 @@ export class TrackRenderer {
     for (let i = a; i <= b; i++) {
       if (s.s[i] < nextS) continue;
       nextS = s.s[i] + tieSpacing;
-      const lx = L[i * 2];
-      const ly = L[i * 2 + 1];
-      const rx = R[i * 2];
-      const ry = R[i * 2 + 1];
-      const dx = rx - lx;
-      const dy = ry - ly;
+      const l = left[i - a];
+      const r = right[i - a];
+      const dx = r.x - l.x;
+      const dy = r.y - l.y;
       const ext = 0.18;
-      under.moveTo(lx - dx * ext, ly - dy * ext).lineTo(rx + dx * ext, ry + dy * ext).stroke({ width: tieW, color: hexNum(tie), cap: 'round' });
+      under.moveTo(l.x - dx * ext, l.y - dy * ext).lineTo(r.x + dx * ext, r.y + dy * ext).stroke({ width: tieW * ratio[i - a], color: hexNum(tie), cap: 'round' });
     }
     // Schienen als Band-Mesh (Profil: Tinte – Schiene – Lichtkante), UV läuft mit der Bogenlänge weiter
     const tex = this.railTexture(skin, style, lane, sky);
@@ -441,7 +440,7 @@ export class TrackRenderer {
     for (const pts of [left, right]) {
       const m = this.takeRail(lane);
       m.texture = tex;
-      m.setPath(pts, RAIL_HALF * k, 1 / (RAIL_REPEAT * k), uOffset);
+      m.setPath(pts, (_s, i) => RAIL_HALF * k * ratio[i], 1 / (RAIL_REPEAT * k), uOffset);
     }
     if (style.glow) {
       over.poly(center, false).stroke({ width: 0.05 * k, color: hexNum(style.glow), alpha: 0.6, cap: 'round', join: 'round' });
@@ -451,17 +450,20 @@ export class TrackRenderer {
     }
   }
 
-  private drawElements(path: TrackPath, s: TrackSamples, C: Float64Array): void {
+  private drawElements(path: TrackPath, s: TrackSamples): void {
     const Ln = s.length;
     for (const e of path.elements) {
       const color = e.kind === 'booster' || e.kind === 'launchBlock' ? '#ff8a5c' : e.kind === 'brake' ? '#d64545' : e.kind === 'splash' ? '#3ec7c2' : '#9b6dff';
-      const pts: number[] = [];
-      let lane = 0;
+      const idx: number[] = [];
       for (let d = 0; d <= e.length; d += 0.5) {
         const sv = ((e.s + d) % Ln + Ln) % Ln;
-        const i = Math.min(s.count - 1, Math.round(sv / s.step));
-        pts.push(C[i * 2], C[i * 2 + 1]);
-        lane = Math.round(s.z[i]);
+        idx.push(Math.min(s.count - 1, Math.round(sv / s.step)));
+      }
+      const lane = idx.length ? Math.round(s.z[idx[Math.floor(idx.length / 2)]]) : 0;
+      const pts: number[] = [];
+      for (const i of idx) {
+        const p = toLaneOf(s.x[i], s.y[i], s.z[i], lane);
+        pts.push(p.X, p.Y);
       }
       const g = this.railOver.get(lane);
       if (!g || pts.length < 4) continue;
@@ -477,7 +479,7 @@ export class TrackRenderer {
     const g = this.railOver.get(lane);
     if (!g) return;
     const k = laneScale(lane);
-    const p = toLane(s.x[0], s.y[0], s.z[0]);
+    const p = toLaneOf(s.x[0], s.y[0], s.z[0], lane);
     const col = atmosphere(style.post, lane, sky);
     g.roundRect(p.X - 3.2 * k, p.Y - 0.9 * k, 6.4 * k, 0.6 * k, 0.2 * k).fill(hexNum(shade(col, -0.1))).stroke({ width: 0.1 * k, color: hexNum(shade(col, -0.5)) });
     for (const dx of [-2.6, 2.6]) g.moveTo(p.X + dx * k, p.Y - 0.3 * k).lineTo(p.X + dx * k, p.Y + 2.8 * k).stroke({ width: 0.2 * k, color: hexNum(col) });

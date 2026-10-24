@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { DEPTH_VIEW, LANE_DEPTH, LANE_MAX, LANE_MIN, laneRatio, mixPoint, rayToWorld, setPerspective, setView, tagRay, toLane, toStage, toView, toWorld, viewDistance, viewScale, type StagePoint } from '@/track/stage';
+import { DEPTH_VIEW, LANE_DEPTH, LANE_MAX, LANE_MIN, laneRatio, mixPoint, rayToWorld, setPerspective, setView, tagRay, toLane, toLaneOf, toStage, toView, toWorld, viewDistance, viewScale, type StagePoint } from '@/track/stage';
 import { planBrushTrack } from '@/track/brushTrack';
 import { Terrain } from '@/physics/terrain';
 
@@ -95,6 +95,28 @@ describe('Projektions-Adapter (Richtlinie, Schritt 1)', () => {
     const v = toView(100, 10, z);
     expect(60 + (l.X - 60) * s).toBeCloseTo(v.X, 9);
     expect(6 + (l.Y - 6) * s).toBeCloseTo(v.Y, 9);
+  });
+
+  it('Stückgrenze: derselbe Punkt landet aus beiden Spur-Containern am selben Ort (keine Risse an Spurwechseln)', () => {
+    setPerspective(true, 24);
+    setView(70, 9, 90);
+    const r = lcg(3);
+    for (let i = 0; i < 100; i++) {
+      const x = r() * 200;
+      const y = r() * 25;
+      const lane = LANE_MIN + Math.floor(r() * (LANE_MAX - LANE_MIN));
+      const z = lane + 0.5; // genau auf der Rundungsgrenze: gehört beiden Stücken
+      const a = toLaneOf(x, y, z, lane);
+      const b = toLaneOf(x, y, z, lane + 1);
+      const sa = viewScale(lane);
+      const sb = viewScale(lane + 1);
+      // Anzeige = Kameraziel + (Containerpunkt − Kameraziel) · Containermaßstab
+      expect(70 + (a.X - 70) * sa).toBeCloseTo(70 + (b.X - 70) * sb, 9);
+      expect(9 + (a.Y - 9) * sa).toBeCloseTo(9 + (b.Y - 9) * sb, 9);
+      const v = toView(x, y, z);
+      expect(70 + (a.X - 70) * sa).toBeCloseTo(v.X, 9);
+      expect(9 + (a.Y - 9) * sa).toBeCloseTo(v.Y, 9);
+    }
   });
 
   it('mixPoint mischt Lage und Kamera, fehlende Kameras werden übernommen', () => {

@@ -9,7 +9,7 @@ import type { CarState } from '@/physics/trainSim';
 import type { PassengerView } from '@/physics/passengers';
 import { CAR } from '@/physics/passengers';
 import type { CharacterDef } from '@/editor/characters';
-import { laneRatio, laneScale, toLane, toStage, viewState, LANE_MIN, LANE_MAX, LANE_DEPTH } from '@/track/stage';
+import { laneRatio, laneScale, toLaneOf, toStage, viewState, LANE_MIN, LANE_MAX, LANE_DEPTH } from '@/track/stage';
 import { CharacterSprite } from './characterSprite';
 import { CutoutAnimator, type ClipName } from './cutoutAnimator';
 import { hexNum, shade } from './paint';
@@ -167,7 +167,7 @@ export class TrainRenderer {
       const x = P.x + a * T.x + b * U.x + c * S.x;
       const y = P.y + a * T.y + b * U.y + c * S.y;
       const z = P.z + a * T.z + b * U.z + c * S.z;
-      return toLane(x, y, z / LANE_DEPTH);
+      return toLaneOf(x, y, z / LANE_DEPTH, view.lane);
     };
     const hl = CAR.halfLength;
     const hw = 0.6;
@@ -253,9 +253,9 @@ export class TrainRenderer {
       }
       this.drawCar(view, st, c, this.cars.length);
       // Fahrgäste: lokale (vorwärts, oben) → Bühne über den projizierten Rahmen
-      const base = toLane(st.x, st.y, st.z);
-      const fx = toLane(st.x + st.tx, st.y + st.ty, st.z + st.tz / LANE_DEPTH);
-      const fy = toLane(st.x + st.upx, st.y + st.upy, st.z + st.upz / LANE_DEPTH);
+      const base = toLaneOf(st.x, st.y, st.z, lane);
+      const fx = toLaneOf(st.x + st.tx, st.y + st.ty, st.z + st.tz / LANE_DEPTH, lane);
+      const fy = toLaneOf(st.x + st.upx, st.y + st.upy, st.z + st.upz / LANE_DEPTH, lane);
       const ex = { x: fx.X - base.X, y: fx.Y - base.Y };
       const ey = { x: fy.X - base.X, y: fy.Y - base.Y };
       for (const pv of passengers) {
@@ -265,7 +265,7 @@ export class TrainRenderer {
         sp.container.visible = true;
         // Sitzreihe leicht zur sichtbaren Seite versetzen, damit Fahrgäste vor der Rückwand sitzen
         const sideShift = 0.15 * (st.sz > 0 ? -1 : 1);
-        const seatBase = toLane(st.x + st.sx * sideShift, st.y + st.sy * sideShift, st.z + (st.sz * sideShift) / LANE_DEPTH);
+        const seatBase = toLaneOf(st.x + st.sx * sideShift, st.y + st.sy * sideShift, st.z + (st.sz * sideShift) / LANE_DEPTH, lane);
         sp.container.setFromMatrix(new Matrix(ex.x, ex.y, ey.x, ey.y, seatBase.X, seatBase.Y));
         sp.setPose(pv.parts, CAR.railOffset);
         sp.setBelt(pv.belt, pv.beltBroken);

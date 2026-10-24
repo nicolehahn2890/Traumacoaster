@@ -3309,6 +3309,13 @@ export class LevelScene implements Scene {
     }
     this.sticker.update(dt);
     this.view.update(dt);
+    // Perspektive: Griffe, Ende-Marker, Spur-Schein und Schwachstellen liegen in der Ansicht und wandern mit der Kamera
+    if (this.view.viewMoved && this.mode === 'draw') {
+      this.drawOverlay();
+      this.laneGlowState = { lane: NaN, mode: 'floor', blocked: false };
+      this.drawLaneGlow();
+      if (this.weakSpots.length) this.drawWeakSpots();
+    }
     this.toast.update(dt);
   }
 

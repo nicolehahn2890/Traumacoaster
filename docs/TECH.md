@@ -103,9 +103,11 @@ Die Bühnenprojektion (`toStage`, Y = y + 0,5·Tiefe) ist das Ortho-Bild einer u
 ergänzt sie um eine Kamerafahrt-Perspektive, ohne den Renderer zu wechseln: Jede Spur-Ebene bleibt bildparallel und bekommt
 den Maßstab s(z) = D / (D + DEPTH_VIEW·z) um das Kameraziel (D = halbe Bildhöhe in Metern / tan(fov/2), DEPTH_VIEW = 8,4·cos 26,57° =
 7,51 m). Die Weltansicht setzt je Bild `setView(cx, cy, D)` und skaliert die fünf Spur-Container um das Ziel (`WorldView.update`);
-Zwischentiefen (Spurwechsel der Bahn, Zug, Absperrband, Pfeilerfüße) werden über `toLane` in ihren Container korrigiert, bei
+Zwischentiefen (Spurwechsel der Bahn, Zug, Absperrband, Pfeilerfüße) werden über `toLaneOf(x, y, z, lane)` gegen die Spur
+des Containers korrigiert, in dem sie gezeichnet werden (alle Punkte eines Schienenstücks gegen dieselbe Spur, Breite der
+Schiene und Schwellen mit demselben Verhältnis; gegen die eigene gerundete Spur je Punkt riss die Bahn an Spurgrenzen auf), bei
 Kamerabewegung projiziert `TrackRenderer.reproject` die Schienen neu (gemessen am Mac: 120 fps mit und ohne). Griffe, Treffer und
-Effekte liegen über `toView` in der Ansicht. Der Strich: Jeder Zeigerpunkt wird mit `tagRay` zum Strahl (Bühnenpunkt plus Kameraziel
+Effekte liegen über `toView` in der Ansicht und werden bei Kamerabewegung neu gezeichnet (`WorldView.viewMoved`). Der Strich: Jeder Zeigerpunkt wird mit `tagRay` zum Strahl (Bühnenpunkt plus Kameraziel
 beim Aufsetzen, damit Autoscroll während des Strichs nichts verschiebt); Gummiband, Abtastung und Glättung mischen die Kamera mit
 (`mixPoint`), `rayToWorld(p, z)` schneidet den Strahl mit der Spurebene z. Der Tiefenlöser arbeitet weiter in Bühnenkoordinaten,
 nur die Weltpunkte (`worldPoints`) und die Bodenhöhen kommen aus dem Strahl; die Bahn liegt damit per Konstruktion auf dem Strich,

@@ -121,10 +121,27 @@ export function viewScale(z: number): number {
   return view.D / (view.D + DEPTH_VIEW * z);
 }
 
-/** Maßstab einer Zwischentiefe relativ zu ihrem Spur-Container (der selbst viewScale(round z) trägt) */
-export function laneRatio(z: number): number {
+/** Maßstab einer Zwischentiefe z relativ zum Spur-Container lane (der selbst viewScale(lane) trägt) */
+export function laneRatioFor(z: number, lane: number): number {
   if (!view.persp) return 1;
-  return viewScale(z) / viewScale(clampLane(z));
+  return viewScale(z) / viewScale(lane);
+}
+
+/** Maßstab einer Zwischentiefe relativ zu ihrem nächsten Spur-Container */
+export function laneRatio(z: number): number {
+  return laneRatioFor(z, clampLane(z));
+}
+
+/**
+ * Welt → Koordinaten im Spur-Container lane: Zwischentiefen werden um das Kameraziel nachkorrigiert. Alle Punkte eines
+ * Stücks müssen gegen dieselbe Spur korrigiert werden (die des Containers), sonst reißt die Bahn an Spurgrenzen auf,
+ * wo linke und rechte Schiene verschieden runden.
+ */
+export function toLaneOf(x: number, y: number, z: number, lane: number): StagePoint {
+  const p = toStage(x, y, z);
+  if (!view.persp) return p;
+  const r = laneRatioFor(z, lane);
+  return { X: view.cx + (p.X - view.cx) * r, Y: view.cy + (p.Y - view.cy) * r };
 }
 
 /** Welt → Bühne der Ansicht: wie toStage, um das Kameraziel mit s(z) skaliert (Griffe, Treffer, Effekte) */
@@ -135,12 +152,9 @@ export function toView(x: number, y: number, z: number): StagePoint {
   return { X: view.cx + (p.X - view.cx) * s, Y: view.cy + (p.Y - view.cy) * s };
 }
 
-/** Welt → Koordinaten im Spur-Container von round(z): Zwischentiefen werden um das Kameraziel nachkorrigiert */
+/** Welt → Koordinaten im nächsten Spur-Container (round z) */
 export function toLane(x: number, y: number, z: number): StagePoint {
-  const p = toStage(x, y, z);
-  if (!view.persp) return p;
-  const r = laneRatio(z);
-  return { X: view.cx + (p.X - view.cx) * r, Y: view.cy + (p.Y - view.cy) * r };
+  return toLaneOf(x, y, z, clampLane(z));
 }
 
 /** Bühnenpunkt der Ansicht zum Strahl machen (Kameraziel beim Aufsetzen merken) */
