@@ -14,8 +14,9 @@ auf `main` auch auf dem Handy unter https://nicolehahn2890.github.io/Traumacoast
    und Wagen als Meshes. Das heutige Bild ist exakt eine um 26,6° nach unten geneigte Ortho-Kamera; die neue Kamera
    ist dieselbe Neigung, nur mit leichter Perspektive. Der Pinsel und „hinten ist oben“ bleiben, die Zeichenmathematik
    bekommt statt `toStage/toWorld` einen Strahl-Ebenen-Schnitt je Spur.
-2. **Perspektive schwach und zoomfest:** Bildwinkel 15–22° bezogen auf 7 px/m, Zoom als Linse (Kameraabstand fest).
-   Gemessen bei 22°: Spur +2 ist 10 % kleiner als Spur −2, Wald 17 % und Berge 24 % langsamer als die Bühne.
+2. **Perspektive schwach, Zoom als Kamerafahrt (Florians Entscheidung vom 24.10.):** Bildwinkel 15–22°, die Kamera
+   fährt beim Zoomen heran, nah gezoomt wird die Perspektive stärker. Gemessen bei 22° und 8 px/m: Spur +2 ist 10 %
+   kleiner als Spur −2, Wald 17 % und Berge 24 % langsamer als die Bühne; bei 14 px/m etwa das Doppelte.
 3. **Verdeckung kommt aus dem Tiefenpuffer**, nicht aus Masken: Element = Rückwand + Innenraum + Vorderlippe, die
    Bahn fährt mit ihrer echten Tiefe dazwischen. Masken nur für weiche Übergänge (Portaldunkel, Wasserfall).
 4. **Schatten: eine Shadow Map** (Licht von hinten oben, 1024², nur Schiene/Stützen/Wagen werfen, Boden fängt) plus
@@ -82,16 +83,19 @@ Drei Befunde aus dem Labor, die man nur dort sieht:
   hinter der Bühne lägen 150 m über ihr). Darum fälscht das heutige Spiel die Ferne als 2D-Kulisse ohne Bewegung.
   Mit Perspektive laufen Ferne und Himmel auf den Horizont zu und bewegen sich beim Scrollen von selbst richtig.
   Alles, was in den GPT-Bildern „nach Rayman“ aussieht (gestaffelte Ferne, Tiefe beim Scrollen), kommt daher.
-- **Zoom als Linse, nicht als Kamerafahrt.** Fährt die Kamera beim Zoomen heran (FOV fest), verdoppelt sich die
-  Perspektivstärke von 7 auf 14 px/m (Spurmaßstab ±4,5 % → ±9 %): Beim Zeichnen würde die Welt „aufklappen“.
-  Bleibt der Abstand fest und nur der Bildwinkel ändert sich (Labor: „Zoom = Linse“), ist das Bild in jedem Zoom
-  dieselbe Perspektive, nur vergrößert. Das ist die richtige Wahl für ein Zeichenspiel.
+- **Zoom als Kamerafahrt oder als Linse.** Fährt die Kamera beim Zoomen heran (FOV fest), verdoppelt sich die
+  Perspektivstärke von 7 auf 14 px/m (Spurmaßstab ±4,5 % → ±9 %): Beim Heranzoomen klappt die Welt auf. Bleibt der
+  Abstand fest und nur der Bildwinkel ändert sich („Zoom = Linse“), ist das Bild in jedem Zoom dieselbe Perspektive,
+  nur vergrößert. Meine Empfehlung war die Linse (ruhiger beim Zeichnen); **Florian hat nach dem Handy-Test die
+  Kamerafahrt gewählt**, weil das Aufklappen beim Heranzoomen die Tiefe spürbar macht. Das Labor startet seitdem mit
+  Kamerafahrt; die Pinsel-Deutung per Strahl funktioniert in beiden Fällen gleich, nur der Spurmaßstab beim Zeichnen
+  hängt dann vom Zoom ab (bei 11 px/m Zeichen-Zoom rund ±7 % je Spur).
 - **Vertikale Streckung behalten.** Ohne sie sind Hügel 11 % flacher als heute (cos 26,57°); beide Varianten sind
   im Labor schaltbar („Höhe wie Bühne“), die gestreckte sieht wie das heutige Spiel aus und bleibt Standard.
 
 ### 2.3 Entscheidung
 
-**3D-Szene mit geneigter Perspektivkamera, Bildwinkel 15–22° bei 7 px/m, Linsen-Zoom, vertikale Streckung,
+**3D-Szene mit geneigter Perspektivkamera, Bildwinkel 15–22°, Zoom als Kamerafahrt, vertikale Streckung,
 gemalte Flächen als Kulissen, Bahn und Stützen als Meshes.** Nicht volles 3D (keine freie Kamera, keine
 modellierte Landschaft), nicht reine Parallaxe (keine Tiefenbeziehung zwischen Bahn und Kulissen). Das ist der Weg
 von Hollow Knight („3D camera, backgrounds pushed back on the z-plane“) und Ori (Sprites in 3D, Perspektivkamera);
@@ -319,8 +323,17 @@ Spielbarkeit (sein eigener Prüfbericht sagt das).
 
 ## 12. Offene Tests und Risiken
 
-1. **Handy-Leistung:** Labor nach dem Push auf dem iPhone öffnen: Bildrate mit Shadow Map an/aus, Perspektive,
-   „+40 Ebenen“ zwei- bis dreimal (Füllrate). Ziel 60 fps auf iPhone 12/13, 30-fps-Stufe für Schwächere.
+1. **Handy-Leistung:** Erste Messung von Florian (24.10., iPhone, Labor mit Holzbahn, Shadow Map an, Perspektive,
+   beim Ziehen): 48–55 fps, fühlt sich flüssig an. Das ist der teuerste Typ (469 Draw Calls, viele Einzelteile je
+   Bock) ohne jede Optimierung, also die Untergrenze, nicht das Ziel. **Leistung soll immer top sein:** Ziel sind
+   stabile 60 fps auf dem Zielgerät in jeder Zone, Draw Calls unter 150, DPR höchstens 2, Shadow Map 1024² und
+   abschaltbar, Holzböcke instanziert oder je Bock verschmolzen, Kulissen auf Inhaltsgrenzen geschnitten; jede neue
+   Technik (Nebel, LUT, Partikel, Figuren-Schlange) wird auf dem Handy gemessen, bevor sie bleibt. Noch offen:
+   Zeitlupe bei vielen Partikeln. Zweite Messung (Florian, 24.10.): dreimal „+40 Ebenen“ ohne Shadow Map,
+   Perspektive, Neon, Holz: etwa 50–60 fps; die anderen Bahntypen stabiler. Die Füllrate von 120 zusätzlichen
+   großen Kulissen kostet also ungefähr so viel wie die Shadow Map. **Die Shadow Map bleibt** (Florians
+   Entscheidung); gespart wird bei den Böcken (Instanzen), bei den Kulissen (Zuschnitt, Atlanten, KTX2) und beim
+   Overdraw.
 2. **Zeichnen in Perspektive:** Die Bahn-Deutung per Strahl je Spur muss gegen die 222 Aufnahmen laufen
    (`npm run strokes:replay`) und darf keine neuen Tiefenfehler bringen.
 3. **Speicher:** Atlanten + KTX2 vor der zweiten Zone.
@@ -329,6 +342,30 @@ Spielbarkeit (sein eigener Prüfbericht sagt das).
 5. **Zwei Renderer:** Pixi-HUD über Three im selben Kontext, Zustands-Reset je Frame, Figma-Kacheln bleiben in Pixi.
 
 ## 13. Nächste Etappen (Vorschlag für den „großen Plan“)
+
+Stand 24.10. nach der Bahn-Runde: Von den drei offenen Punkten („Füllrate auf dem iPhone“, „Pinsel-Deutung in
+Perspektive“, „Kulissen als Dreiteiler“) ist der erste mit 48–55 fps beim teuersten Typ beantwortet, die beiden
+anderen sind die ersten Arbeitspakete der Etappe 1 und 2. Reihenfolge, die am wenigsten doppelt baut:
+
+1. **Projektions-Adapter und Pinsel-Deutung** (im Spiel, ohne neuen Renderer): `toStage/toWorld` bekommen eine
+   zweite Implementierung „Kamera“ (geneigte Perspektive, Zoom als Kamerafahrt), der Strich wird per Strahl-Ebenen-Schnitt
+   je Spur gedeutet, der 100-Punkte-Test und `npm run strokes:replay` bleiben grün. Damit ist das Spielgefühl in
+   Perspektive geprüft, bevor ein Pixel anders gerendert wird.
+2. **Weltrenderer hinter Schalter:** Three-Szene mit Boden, Erdschnitt, Kulissen, Bahnprofil, Stützenfamilien und
+   Wagen aus dem echten Bahnmodell (die Labor-Bausteine werden Module unter `src/world/`), Pixi-HUD im selben
+   Kontext; Holzböcke instanziert; Messung auf dem Handy mit Zielwert 60 fps.
+3. **Kulissen als Dreiteiler:** drei Alpen-Elemente (Baum mit Fenster, Fels mit Tunnel, Portal) in Rückwand,
+   Innenraum und Vorderlippe schneiden, mit Fundament-Polygon und Öffnungsvolumen; damit die Stützen und der
+   Tunnel aus dem Labor im Spiel ankommen.
+4. **Untergrund, Werkzeuge, Ziele, Produktion** wie unten.
+
+**Beweistest oder Produktion?** Schritt 1 ist der letzte Beweistest: Er läuft hinter einem Schalter im heutigen
+Spiel, ist in einem Tag rückbaubar und beantwortet die einzige Frage, die das Labor nicht beantworten kann, nämlich
+ob sich Zeichnen in Perspektive auf dem Handy richtig anfühlt. Sein Code (Projektions-Adapter, Strahl-Deutung) bleibt
+aber in jedem Fall, weil ihn auch der neue Renderer braucht. Ab Schritt 2 ist es Produktion: der Weltrenderer ist
+die Architektur, nicht ein Versuch, auch wenn jede Etappe weiter eine Messung auf dem Handy als Tor hat. Der große
+Plan sollte deshalb vor Schritt 2 stehen; Schritt 1 kann parallel zum Schreiben laufen, weil er keine Festlegung
+beim Renderer trifft.
 
 1. **Weltrenderer-Grundlage (1–2 Wochen):** Three-Szene hinter Schalter; Kamera-Adapter (Ortho = Bühne, Perspektive);
    Schienen-, Stützen-, Zug-Meshes aus dem heutigen Bahnmodell; Boden + Erdschnitt; Pixi-HUD darüber; 100-Punkte-Test;

@@ -35,7 +35,7 @@
     <button data-cam="ortho" class="on">Bühne (ortho)</button>
     <button data-cam="persp">Perspektive</button>
     <label>FOV <input id="fov" type="range" min="4" max="50" value="22" /> <span id="fovv">22°</span></label>
-    <button id="lens" class="on">Zoom = Linse</button>
+    <button id="lens">Zoom = Kamerafahrt</button>
   </div>
   <div class="row"><span class="lbl">Zoom</span>
     <input id="zoom" type="range" min="4" max="28" step="0.5" value="8" /> <span id="zoomv">8 px/m</span>
@@ -105,7 +105,7 @@ const scene = new THREE.Scene();
 
 // ------------------------------------------------------------------ Zustand
 const S = {
-  cam: 'ortho', fov: 22, zoom: 8, stretch: true, lens: true, shadow: 'map', look: 'spring',
+  cam: 'ortho', fov: 22, zoom: 8, stretch: true, lens: false, shadow: 'map', look: 'spring',
   track: 'steel', sup: 'normal', feet: false,
   fog: true, sparkle: true, water: true, lines: false, ride: true,
   cx: 92, cy: 9, t: 0, reveal: 0, revealing: false, train: 0.12,

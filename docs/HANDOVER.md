@@ -18,6 +18,10 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Zweite Runde am selben Tag: das Labor baut die Bahn als Profil (Straße, Stahl, Holz, Hängebahn) mit eigenen
   Stützenfamilien (Beton brutalistisch, Rohrpylon, Holzbock, Betonportal), Füße per Alpha-Scan auf den Kulissen;
   Zählung und Antwort zu Meshy in `docs/RICHTLINIE.md`, Abschnitt 3a.
+  Erste Handy-Messung (Florian, iPhone): Holzbahn im Labor 48–55 fps beim Ziehen, flüssig; Leistung soll
+  immer top sein, Ziel 60 fps, siehe Richtlinie Abschnitt 12.
+  Entscheidungen 24.10.: Zoom als Kamerafahrt (nicht Linse), Shadow Map bleibt; dreimal „+40 Ebenen“ ohne Shadow
+  Map, Neon, Holz: etwa 50–60 fps.
 
 - **`main` ist der Prototyp (23.10.):** Der Pinsel-Stand ist der neue Hauptzweig, lokal und auf GitHub gleich; jeder
   Push auf `main` geht über `.github/workflows/deploy.yml` auf https://nicolehahn2890.github.io/Traumacoaster/. Die
