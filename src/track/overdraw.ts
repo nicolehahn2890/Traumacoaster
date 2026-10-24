@@ -6,7 +6,7 @@
  */
 import { add3, dist3, normalize3, scale3, sub3 } from '@/core/math3';
 import { closestSample, isAutoNode, isClosed, nodeIn, nodeOut, nodePos, sampleTrack, type TrackNode, type TrackPath, type TrackSamples } from './model';
-import { LANE_DEPTH, LANE_MAX, LANE_MIN, toWorld, type StagePoint } from './stage';
+import { LANE_DEPTH, LANE_MAX, LANE_MIN, rayToWorld, type StagePoint } from './stage';
 import { closePath, interpretWithEvents, pointsToNodes, prepareStroke, type StrokeOptions } from './strokeToTrack';
 
 export interface Anchors {
@@ -38,7 +38,7 @@ export function nodeArcLengths(path: TrackPath, samples: TrackSamples): number[]
 export function nearestOnTrack(samples: TrackSamples, p: StagePoint): { s: number; d: number; index: number } {
   let best = { s: 0, d: Infinity, index: -1 };
   for (let z = LANE_MIN; z <= LANE_MAX; z += 0.25) {
-    const w = toWorld(p.X, p.Y, z);
+    const w = rayToWorld(p, z);
     const c = closestSample(samples, w.x, w.y, z);
     if (c.d < best.d) best = { s: c.s, d: c.d, index: c.index };
   }

@@ -22,6 +22,9 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   immer top sein, Ziel 60 fps, siehe Richtlinie Abschnitt 12.
   Entscheidungen 24.10.: Zoom als Kamerafahrt (nicht Linse), Shadow Map bleibt; dreimal „+40 Ebenen“ ohne Shadow
   Map, Neon, Holz: etwa 50–60 fps.
+  Schritt 1 der Richtlinie gebaut: Perspektive hinter `?persp=1` (TECH.md 4e), Strich als Strahl, Tests in
+  `tests/projection.test.ts`, Replay mit `--persp`. Eigene Browser-Tests im Dev-Server nur mit `TC_NO_RECORD=1`, sonst
+  landen sie in Florians Aufnahmen.
 
 - **`main` ist der Prototyp (23.10.):** Der Pinsel-Stand ist der neue Hauptzweig, lokal und auf GitHub gleich; jeder
   Push auf `main` geht über `.github/workflows/deploy.yml` auf https://nicolehahn2890.github.io/Traumacoaster/. Die

@@ -6,6 +6,8 @@
  *   npm run strokes:replay                      # alle Striche
  *   npm run strokes:replay -- --last 5          # die letzten fünf
  *   npm run strokes:replay -- datei.jsonl
+ *   npm run strokes:replay -- --persp         # in Perspektive (Richtlinie, Schritt 1): Kamera je Strich fest im Strichzentrum,
+ *                                              #   sofern die Aufnahme keine Kamera je Punkt enthält (points[3..4])
  */
 import { readFileSync } from 'node:fs';
 import { getLevel } from '../src/levels/levels';
@@ -18,7 +20,7 @@ import { extendTrack, lanesTrack, strokeToTrack } from '../src/track/strokeToTra
 import { applyOverdraw } from '../src/track/overdraw';
 import { RubberBrush } from '../src/track/brush';
 import { BrushRefiner, joinLines, planBrushTrack, spliceLine, trackLine, trackLineWithDepth } from '../src/track/brushTrack';
-import type { StagePoint } from '../src/track/stage';
+import { setPerspective, setView, viewDistance, type StagePoint } from '../src/track/stage';
 
 type Reading = 'brush' | 'stage' | 'single' | 'lanes';
 interface Rec {
@@ -30,12 +32,14 @@ interface Rec {
   auto?: boolean;
   zoom: number;
   screen: [number, number];
-  points: Array<[number, number, number]>;
+  points: Array<[number, number, number] | [number, number, number, number, number]>;
+  persp?: number;
   before: TrackPath | null;
   result: { nodes: number; closed: boolean; length: number } | null;
 }
 
 const args = process.argv.slice(2);
+const PERSP = args.includes('--persp');
 const lastIdx = args.indexOf('--last');
 const last = lastIdx >= 0 ? Number(args[lastIdx + 1]) : 0;
 const file = args.find((a, i) => !a.startsWith('--') && (lastIdx < 0 || i !== lastIdx + 1)) ?? 'recordings/strokes.jsonl';
@@ -61,7 +65,19 @@ function levelOf(id: number): { level: LevelDef; skin: string } {
 }
 
 function build(rec: Rec, reading: Reading, level: LevelDef, terrain: Terrain, skin: string): { path: TrackPath | null; note: string } {
-  const stroke: StagePoint[] = rec.points.map(([X, Y]) => ({ X, Y }));
+  let stroke: StagePoint[] = rec.points.map(([X, Y]) => ({ X, Y }));
+  if (PERSP) {
+    // Kamera: wie aufgezeichnet (Punkt 4/5), sonst für den ganzen Strich fest im Strichzentrum
+    let cx = 0;
+    let cy = 0;
+    for (const p of stroke) {
+      cx += p.X / stroke.length;
+      cy += p.Y / stroke.length;
+    }
+    setPerspective(true, rec.persp ?? 18);
+    setView(cx, cy, viewDistance(rec.zoom, rec.screen[1]));
+    stroke = rec.points.map((p) => (p.length >= 5 ? { X: p[0], Y: p[1], cx: p[3], cy: p[4] } : { X: p[0], Y: p[1], cx, cy }));
+  } else setPerspective(false);
   const ground = (x: number, z: number) => terrain.groundHeight(x, z);
   const closeSnap = Math.max(8, 60 / rec.zoom);
   const before = fixNaN(rec.before);

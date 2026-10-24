@@ -55,6 +55,8 @@ node scripts/lab-stills.mjs  # Standbilder und Messwerte des Tiefen-Labors (Dev-
 
 Größen zum Ausprobieren auf dem Handy per Adresse: `?tip=26` (Tropfen unter dem Finger), `?line=15` (gemalte Linie), `?band=30` (Gummiband), `?dzoom=11` (Zeichen-Zoom in px/m).
 
+**Perspektive (Richtlinie, Schritt 1, Beweistest):** `?persp=1` schaltet die Spur-Ebenen auf Kamerafahrt-Perspektive (um das Kameraziel skaliert, vorne größer, hinten kleiner, mit Parallaxe beim Scrollen), `?fov=18` setzt den Bildwinkel in Grad. Der Pinselstrich wird dann je Spur als Strahl gedeutet, die Bahn liegt also weiter genau unter dem Finger. `npm run strokes:replay -- --persp` spielt die Aufnahmen in Perspektive nach.
+
 `?scene=start` überspringt den Splash, `?scene=splash` zeigt ihn immer (im Spiel: Einstellungen → „Intro ansehen“), `?fast=4` beschleunigt die Spielzeit (Tests), Der Knopf **DEV** unten links auf der Karte (oder `VITE_UNLOCK_ALL=1 npm run dev`) schaltet alle Welten, Level, Elemente und Starttypen frei; im Level schaltet dann der Knopf unten links durch alle zehn Bahntypen.
 
 ## Stand des Prototyps

@@ -37,7 +37,7 @@ import { MeasureOverlay } from '@/render/measureOverlay';
 import { safeArea } from '@/platform/safeArea';
 import { applyOverdraw, nearestOnTrack } from '@/track/overdraw';
 import { cutIndexNear, retractIndex } from '@/track/strokeBuffer';
-import { laneRise, laneScale, nearestLane, toStage, toWorld, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
+import { laneRise, laneScale, nearestLane, rayToWorld, setPerspective, tagRay, toStage, toView, viewState, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
 import { hexNum, shade } from '@/render/paint';
@@ -134,6 +134,9 @@ const STROKE_MODE_URL: StrokeReading | null = (() => {
   return q.has('brush') ? 'brush' : q.has('stage') ? 'stage' : q.has('single') ? 'single' : q.has('lanes') ? 'lanes' : null;
 })();
 const STROKE_MODES: StrokeReading[] = ['brush', 'stage', 'single', 'lanes'];
+/** ?persp=1: Perspektive (Richtlinie, Schritt 1: Spur-Ebenen um das Kameraziel skaliert, Strich als Strahl je Spur gedeutet), ?fov=18 Bildwinkel in Grad */
+const PERSP_URL = typeof location !== 'undefined' && new URLSearchParams(location.search).get('persp') === '1';
+const FOV_URL = urlNum('fov', 18);
 /** ?scroll=0: kein Autoscroll beim Zeichnen (automatische Tests zeichnen in festen Bildschirmkoordinaten) */
 const AUTOSCROLL = typeof location === 'undefined' || new URLSearchParams(location.search).get('scroll') !== '0';
 /** Zeichen-Zoom auf dem Handy: mindestens so viele Pixel pro Bühnen-Meter (eine Spur rund 5 mm); der Rest des Levels
@@ -218,7 +221,7 @@ export class LevelScene implements Scene {
   /** Handy: Übersicht statt Zeichen-Zoom (Doppeltipp auf freie Fläche schaltet um) */
   private overview = false;
   /** rohe Fingerpunkte des laufenden Strichs (Bühne X, Y, Millisekunden seit Strichbeginn) für den Strich-Rekorder */
-  private rawStroke: Array<[number, number, number]> = [];
+  private rawStroke: number[][] = [];
   private rawStart = 0;
   private strokeKind: StrokeKind = 'new';
   private strokeModes: StrokeMode[] = [];
@@ -395,6 +398,7 @@ export class LevelScene implements Scene {
     await initPhysics();
     const night = this.world.id === 6 || this.world.id === 8 || this.world.id === 10 || (this.unlocked.has('nightMode') && this.level.id === 25);
     this.view = new WorldView(this.world, this.terrain, this.skin, night);
+    setPerspective(PERSP_URL, FOV_URL);
     this.view.overlay.addChild(this.laneGlow, this.spotLayer, this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
     this.laneHud.addChild(this.laneHudG);
@@ -439,6 +443,7 @@ export class LevelScene implements Scene {
   exit(): void {
     this.stopRide();
     if (this.path && !this.sandbox) storage.saveDraft(this.level.id, this.path);
+    setPerspective(false);
     this.view.destroy();
   }
 
@@ -510,7 +515,7 @@ export class LevelScene implements Scene {
         }
       }
       if (this.isOverUI(p)) return;
-      const st = this.view.camera.toStage(p.x, p.y);
+      const st = tagRay(this.view.camera.toStage(p.x, p.y));
       if (this.longPressArmed) {
         // Langdruck hat den Knoten gewählt und die Profi-Handles gezeigt; der Finger liegt noch auf dem Knoten.
         // Von hier aus beginnt kein Strich und kein Knoten-Zug: erst loslassen, dann Handle greifen.
@@ -531,7 +536,7 @@ export class LevelScene implements Scene {
       const extendHere = (): boolean => {
         if (!this.path || isClosed(this.path)) return false;
         const endNode = this.path.nodes[this.path.nodes.length - 1];
-        const endS = toStage(endNode.x, endNode.y, endNode.z);
+        const endS = toView(endNode.x, endNode.y, endNode.z);
         return Math.hypot(endS.X - st.X, endS.Y - st.Y) * this.view.camera.zoom < 56;
       };
       const nodeIdx = this.path && !extendHere() ? this.hitNode(p) : -1;
@@ -555,8 +560,8 @@ export class LevelScene implements Scene {
           if (!isAutoNode(a) && !isAutoNode(b)) {
             const i0 = Math.max(0, near.index - 2);
             const i1 = Math.min(this.samples.count - 1, near.index + 2);
-            const sa = toStage(this.samples.x[i0], this.samples.y[i0], this.samples.z[i0]);
-            const sb = toStage(this.samples.x[i1], this.samples.y[i1], this.samples.z[i1]);
+            const sa = toView(this.samples.x[i0], this.samples.y[i0], this.samples.z[i0]);
+            const sb = toView(this.samples.x[i1], this.samples.y[i1], this.samples.z[i1]);
             const tl = Math.hypot(sb.X - sa.X, sb.Y - sa.Y) || 1;
             // Bühne → Bildschirm: Y gespiegelt
             const tangent = { x: (sb.X - sa.X) / tl, y: -(sb.Y - sa.Y) / tl };
@@ -568,7 +573,7 @@ export class LevelScene implements Scene {
           }
         }
       }
-      this.stroke = [{ X: st.X, Y: st.Y }];
+      this.stroke = [{ ...st }];
       this.beginRaw(st);
       this.strokeModes = [];
       this.pointerTrail = [{ X: st.X, Y: st.Y }];
@@ -583,7 +588,7 @@ export class LevelScene implements Scene {
         const near = this.samples ? nearestOnTrack(this.samples, st) : null;
         const nearPx = near ? near.d * this.view.camera.zoom : Infinity;
         const endNode = this.path.nodes[this.path.nodes.length - 1];
-        const endS = toStage(endNode.x, endNode.y, endNode.z);
+        const endS = toView(endNode.x, endNode.y, endNode.z);
         const endPx = Math.hypot(endS.X - st.X, endS.Y - st.Y) * this.view.camera.zoom;
         if (!isClosed(this.path) && endPx < 56) {
           this.strokeKind = 'extend';
@@ -615,7 +620,7 @@ export class LevelScene implements Scene {
     };
     H.dragMove = (p) => {
       if (this.mode !== 'draw') return;
-      const st = this.view.camera.toStage(p.x, p.y);
+      const st = tagRay(this.view.camera.toStage(p.x, p.y));
       switch (this.drag.kind) {
         case 'stroke':
           this.pointerScreen = { x: p.x, y: p.y };
@@ -806,7 +811,7 @@ export class LevelScene implements Scene {
 
   // ------------------------------------------------------------------ Treffer-Tests
   private nodeScreen(n: TrackNode): Pt {
-    const s = toStage(n.x, n.y, n.z);
+    const s = toView(n.x, n.y, n.z);
     return this.view.toScreen(s.X, s.Y);
   }
   /**
@@ -864,8 +869,8 @@ export class LevelScene implements Scene {
     if (this.proNode === this.selected) {
       const a = nodeIn(n);
       const b = nodeOut(n);
-      const sa = toStage(a.x, a.y, a.z / LANE_DEPTH);
-      const sb = toStage(b.x, b.y, b.z / LANE_DEPTH);
+      const sa = toView(a.x, a.y, a.z / LANE_DEPTH);
+      const sb = toView(b.x, b.y, b.z / LANE_DEPTH);
       inP = this.view.toScreen(sa.X, sa.Y);
       outP = this.view.toScreen(sb.X, sb.Y);
     }
@@ -891,7 +896,7 @@ export class LevelScene implements Scene {
   private bendTo(st: StagePoint): void {
     if (!this.path || this.drag.kind !== 'segment') return;
     const z = this.drag.z ?? 0;
-    const w = toWorld(st.X, st.Y, z);
+    const w = rayToWorld(tagRay(st), z);
     let y = Math.max(this.groundAt(w.x, z) + 0.6, w.y);
     if (this.level.maxHeight) y = Math.min(y, this.level.maxHeight);
     bendSegment(this.path, this.drag.seg ?? 0, this.drag.t ?? 0.5, { x: w.x, y, z: z * LANE_DEPTH });
@@ -904,7 +909,7 @@ export class LevelScene implements Scene {
   private nearStation(st: StagePoint): boolean {
     if (!this.path) return false;
     const n = this.path.nodes[0];
-    const s = toStage(n.x, n.y, n.z);
+    const s = toView(n.x, n.y, n.z);
     return Math.hypot(s.X - st.X, s.Y - st.Y) < 6;
   }
   private terrainEditable(): boolean {
@@ -917,7 +922,7 @@ export class LevelScene implements Scene {
       const e = this.path.elements[i];
       const mid = ((e.s + e.length / 2) % L + L) % L;
       const idx = Math.min(this.samples.count - 1, Math.round(mid / this.samples.step));
-      const s = toStage(this.samples.x[idx], this.samples.y[idx], this.samples.z[idx]);
+      const s = toView(this.samples.x[idx], this.samples.y[idx], this.samples.z[idx]);
       if (Math.hypot(s.X - st.X, s.Y - st.Y) < 2.5) return i;
     }
     return -1;
@@ -1117,8 +1122,9 @@ export class LevelScene implements Scene {
   /** Neuer Strichpunkt (Bühne) aus Zeigerbewegung oder Autoscroll: Zurückziehen prüfen, anhängen, Tinte */
   private appendStrokePoint(st: StagePoint): void {
     if (!this.stroke) return;
-    const np = { X: st.X, Y: st.Y };
-    this.rawStroke.push([st.X, st.Y, performance.now() - this.rawStart]);
+    const np: StagePoint = { ...st };
+    const ms = performance.now() - this.rawStart;
+    this.rawStroke.push(st.cx !== undefined && st.cy !== undefined ? [st.X, st.Y, ms, st.cx, st.cy] : [st.X, st.Y, ms]);
     if (this.brush) {
       // Pinsel: Zurückziehen radiert die gemalte Linie (this.stroke ist die Linie des Pinsels), danach zieht das
       // Gummiband die Linie weiter
@@ -1236,13 +1242,13 @@ export class LevelScene implements Scene {
     const zs = 1 / Math.max(0.35, this.view.camera.zoom / 12);
     for (const n of path.nodes) {
       if (n.kind !== 'loopApex') continue;
-      const sp = toStage(n.x, n.y, n.z);
+      const sp = toView(n.x, n.y, n.z);
       const k = laneScale(n.z);
       g.circle(sp.X, sp.Y, 0.9 * k * zs).stroke({ width: 0.16 * k * zs, color: 0x9b6dff, alpha: 0.9 });
     }
     if (!this.stroke || this.stroke.length < 2 || isClosed(path) || path.nodes.length < 2) return;
     const st0 = path.nodes[0];
-    const sp = toStage(st0.x, st0.y, st0.z);
+    const sp = toView(st0.x, st0.y, st0.z);
     const e = this.stroke[this.stroke.length - 1];
     const d = Math.hypot(sp.X - e.X, sp.Y - e.Y);
     const snap = Math.max(8, 60 / this.view.camera.zoom);
@@ -1436,7 +1442,7 @@ export class LevelScene implements Scene {
     const color = blocked ? 0xff4d5e : sl.mode === 'height' ? 0xff5c8a : 0x7ee081;
     const pts: number[] = [];
     for (let x = -20; x <= this.level.width + 20; x += 2) {
-      const p = toStage(x, this.groundAt(x, lane), lane);
+      const p = toView(x, this.groundAt(x, lane), lane);
       pts.push(p.X, p.Y);
     }
     g.poly(pts, false).stroke({ width: 1.6 * k, color, alpha: 0.16, cap: 'round', join: 'round' });
@@ -1530,14 +1536,14 @@ export class LevelScene implements Scene {
 
   private beginRaw(st: StagePoint): void {
     this.rawStart = performance.now();
-    this.rawStroke = [[st.X, st.Y, 0]];
+    this.rawStroke = [st.cx !== undefined && st.cy !== undefined ? [st.X, st.Y, 0, st.cx, st.cy] : [st.X, st.Y, 0]];
   }
 
   /**
    * Strich-Rekorder (nur im Dev-Server): fertigen Strich mit rohen Fingerpunkten, Lesart, Zoom und Ergebnis an
    * /__strokes schicken (landet in recordings/strokes.jsonl, nachspielen mit npm run strokes:replay)
    */
-  private recordStroke(raw: Array<[number, number, number]>, kind: StrokeKind, before: TrackPath | null): void {
+  private recordStroke(raw: number[][], kind: StrokeKind, before: TrackPath | null): void {
     if (!import.meta.env.DEV || raw.length < 3 || kind === 'terrain') return;
     const rec = {
       at: new Date().toISOString(),
@@ -1549,7 +1555,8 @@ export class LevelScene implements Scene {
       zoom: +this.view.camera.zoom.toFixed(3),
       screen: [this.w, this.h],
       dpr: window.devicePixelRatio,
-      points: raw.map(([X, Y, ms]) => [+X.toFixed(3), +Y.toFixed(3), Math.round(ms)]),
+      persp: viewState().persp ? viewState().fov : undefined,
+      points: raw.map(([X, Y, ms, cx, cy]) => (cx === undefined ? [+X.toFixed(3), +Y.toFixed(3), Math.round(ms)] : [+X.toFixed(3), +Y.toFixed(3), Math.round(ms), +cx.toFixed(3), +cy.toFixed(3)])),
       before,
       result: this.path ? { nodes: this.path.nodes.length, closed: isClosed(this.path), length: Math.round(this.samples?.length ?? 0), brush: !!this.path.brush } : null,
     };
@@ -2002,7 +2009,7 @@ export class LevelScene implements Scene {
     const zs = 1 / Math.max(0.35, this.view.camera.zoom / 12);
     for (const spot of this.weakSpots) {
       const i = Math.min(this.samples.count - 1, Math.max(0, Math.round(spot.s / this.samples.step)));
-      const p = toStage(this.samples.x[i], this.samples.y[i], this.samples.z[i]);
+      const p = toView(this.samples.x[i], this.samples.y[i], this.samples.z[i]);
       g.circle(p.X, p.Y, 1.6 * zs).stroke({ width: 0.3 * zs, color: 0xff4d5e, alpha: 0.9 });
     }
   }
@@ -2014,7 +2021,7 @@ export class LevelScene implements Scene {
     let x0 = Infinity;
     let x1 = -Infinity;
     for (const p of stroke) {
-      const w = toWorld(p.X, p.Y, z);
+      const w = rayToWorld(p, z);
       const h = w.y - this.terrain.groundHeight(w.x, z);
       maxH = Math.max(maxH, h);
       minH = Math.min(minH, h);
@@ -2054,7 +2061,7 @@ export class LevelScene implements Scene {
     }
     if (animate && this.samples) {
       const n = path.nodes[0];
-      const s = toStage(n.x, n.y, n.z);
+      const s = toView(n.x, n.y, n.z);
       for (let i = 0; i < 6; i++) this.view.effects.glitter(s.X, s.Y + 1);
       // Streben wachsen vom Boden hoch
       this.supportGrow = 0;
@@ -2120,8 +2127,8 @@ export class LevelScene implements Scene {
       if (this.samples.closed) st = stateAt(this.samples, -back);
       else st = { ...s0, x: s0.x - s0.t3x * back, y: s0.y - s0.t3y * back, z: s0.z - (s0.t3z * back) / LANE_DEPTH };
       const fr = carFrame(st, 0, g);
-      const p0 = toStage(st.x, st.y, st.z);
-      const p1 = toStage(st.x + st.t3x, st.y + st.t3y, st.z + st.t3z / LANE_DEPTH);
+      const p0 = toView(st.x, st.y, st.z);
+      const p1 = toView(st.x + st.t3x, st.y + st.t3y, st.z + st.t3z / LANE_DEPTH);
       this.standCars.push({
         index: c, s: 0, x: st.x, y: st.y, z: st.z, tx: fr.T.x, ty: fr.T.y, tz: fr.T.z, upx: fr.U.x, upy: fr.U.y, upz: fr.U.z, sx: fr.S.x, sy: fr.S.y, sz: fr.S.z,
         bank: fr.bank, angle: Math.atan2(p1.Y - p0.Y, p1.X - p0.X), gSeat: 1, gFwd: 0, gLat: 0, feltFwd: 0, feltUp: g, feltSide: 0, inTunnel: false, inverted: false, vx: 0, vy: 0,
@@ -2180,7 +2187,7 @@ export class LevelScene implements Scene {
   private moveNode(i: number, st: StagePoint): void {
     if (!this.path) return;
     const n = this.path.nodes[i];
-    const w = toWorld(st.X, st.Y, n.z);
+    const w = rayToWorld(tagRay(st), n.z);
     n.x = w.x;
     n.y = Math.max(this.groundAt(w.x, n.z) + 0.6, w.y);
     if (this.level.maxHeight) n.y = Math.min(n.y, this.level.maxHeight);
@@ -2190,7 +2197,7 @@ export class LevelScene implements Scene {
     if (!this.path) return;
     const n = this.path.nodes[i];
     const hz = isIn ? n.inZ : n.outZ;
-    const w = toWorld(st.X, st.Y, n.z + hz);
+    const w = rayToWorld(tagRay(st), n.z + hz);
     const dx = w.x - n.x;
     const dy = w.y - n.y;
     const dz = hz * LANE_DEPTH;
@@ -2364,7 +2371,7 @@ export class LevelScene implements Scene {
     const nodes = this.path.nodes;
     if (!isClosed(this.path) && nodes.length >= 2) {
       const e = nodes[nodes.length - 1];
-      const se = toStage(e.x, e.y, e.z);
+      const se = toView(e.x, e.y, e.z);
       const ke = laneScale(e.z);
       const zs = 1 / Math.max(0.35, this.view.camera.zoom / 12);
       // um den eigenen Ursprung gezeichnet, damit der Anschlusspunkt in update() atmen kann
@@ -2376,21 +2383,21 @@ export class LevelScene implements Scene {
     // Looping-Scheitel sind immer markiert (auch ohne Handles): So sieht man sofort, dass die Schleife erkannt wurde
     for (const n of nodes) {
       if (n.kind !== 'loopApex') continue;
-      const sp = toStage(n.x, n.y, n.z);
+      const sp = toView(n.x, n.y, n.z);
       const k = laneScale(n.z);
       g.circle(sp.X, sp.Y, 0.9 * k * zoomScale).stroke({ width: 0.16 * k * zoomScale, color: 0x9b6dff, alpha: 0.9 });
     }
     if (!this.unlocked.has('handles')) return;
     nodes.forEach((n, i) => {
       if (isAutoNode(n)) return;
-      const s = toStage(n.x, n.y, n.z);
+      const s = toView(n.x, n.y, n.z);
       const k = laneScale(n.z);
       const r = (i === this.selected ? 0.55 : 0.38) * k * zoomScale;
       const col = n.kind === 'turn' ? 0x3ec7c2 : n.kind === 'loopApex' ? 0x9b6dff : 0xffffff;
       g.circle(s.X, s.Y, r).fill(i === this.selected ? 0xffd23f : col).stroke({ width: 0.12 * k, color: hexNum(INK) });
       // Tiefen-Linie zum Boden (zeigt die Spur)
       if (i === this.selected) {
-        const gnd = toStage(n.x, this.terrain.groundHeight(n.x, n.z), n.z);
+        const gnd = toView(n.x, this.terrain.groundHeight(n.x, n.z), n.z);
         g.moveTo(s.X, s.Y).lineTo(gnd.X, gnd.Y).stroke({ width: 0.08 * k, color: hexNum(INK), alpha: 0.5 });
         g.ellipse(gnd.X, gnd.Y, 0.9 * k, 0.3 * k).stroke({ width: 0.1 * k, color: hexNum(INK), alpha: 0.6 });
       }
@@ -2398,14 +2405,14 @@ export class LevelScene implements Scene {
     if (this.selected >= 0 && this.selected < nodes.length) {
       const n = nodes[this.selected];
       const k = laneScale(n.z);
-      const c = toStage(n.x, n.y, n.z);
+      const c = toView(n.x, n.y, n.z);
       const gp = this.gizmoPositions()!;
       // Tangenten-Handles nur im Profi-Modus (Langdruck auf den Knoten)
       if (gp.in && gp.out) {
         const a = nodeIn(n);
         const b = nodeOut(n);
-        const sa = toStage(a.x, a.y, a.z / LANE_DEPTH);
-        const sb = toStage(b.x, b.y, b.z / LANE_DEPTH);
+        const sa = toView(a.x, a.y, a.z / LANE_DEPTH);
+        const sb = toView(b.x, b.y, b.z / LANE_DEPTH);
         const rr = 0.5 * k * zoomScale;
         g.moveTo(sa.X, sa.Y).lineTo(c.X, c.Y).lineTo(sb.X, sb.Y).stroke({ width: 0.12 * k, color: hexNum(INK), alpha: 0.8 });
         g.circle(sa.X, sa.Y, rr).fill(0x3ec7c2).stroke({ width: 0.12 * k, color: hexNum(INK) });
@@ -2477,9 +2484,9 @@ export class LevelScene implements Scene {
     }
     // Pinsel-Bahn offen und ihr Ende im Ziel-Radius: Tipp auf die Station schließt die Runde sauber
     if (plan && !this.stroke && this.path.brush && !isClosed(this.path) && nodes.length > 1 && this.pathStamp(this.path) === this.brushPlanStamp) {
-      const a = toStage(nodes[0].x, nodes[0].y, nodes[0].z);
+      const a = toView(nodes[0].x, nodes[0].y, nodes[0].z);
       const end = nodes[nodes.length - 1];
-      const b = toStage(end.x, end.y, end.z);
+      const b = toView(end.x, end.y, end.z);
       const reach = this.closeReach();
       if (Math.hypot(a.X - b.X, a.Y - b.Y) <= reach) {
         const rpx = reach * this.view.camera.zoom;
@@ -2761,7 +2768,7 @@ export class LevelScene implements Scene {
       } else this.sim?.fail(side ? 'ejectSide' : 'eject', pv.car);
       const car = this.sim?.cars[pv.car];
       if (car) {
-        const s = toStage(car.x, car.y, car.z);
+        const s = toView(car.x, car.y, car.z);
         this.view.effects.sparks(s.X, s.Y, 6);
       }
     };
@@ -2777,7 +2784,7 @@ export class LevelScene implements Scene {
       const name = riders[pv.index]?.name ?? 'Jemand';
       const c = this.sim?.cars[car];
       if (c) {
-        const s = toStage(c.x, c.y, c.z);
+        const s = toView(c.x, c.y, c.z);
         this.view.effects.confetti(s.X, s.Y + 2, 30);
       }
       this.setSlow(0.35, 1.0, { kind: 'car', index: car });
@@ -2867,12 +2874,12 @@ export class LevelScene implements Scene {
     while (ev.length) {
       const e = ev.shift()!;
       const car = this.sim.cars[e.car ?? 0];
-      const s = car ? toStage(car.x, car.y, car.z) : { X: 0, Y: 0 };
+      const s = car ? toView(car.x, car.y, car.z) : { X: 0, Y: 0 };
       switch (e.kind) {
         case 'coin': {
           const c = this.level.coins?.[e.index ?? 0];
           if (c) {
-            const cs = toStage(c.x, c.y, c.lane ?? 0);
+            const cs = toView(c.x, c.y, c.lane ?? 0);
             this.view.effects.coin(cs.X, cs.Y);
           }
           this.view.trackR.updateCoins(this.sim.collected, this.time);
@@ -2909,7 +2916,7 @@ export class LevelScene implements Scene {
         if (v.landed && !this.landedSeen.has(v.index)) {
           this.landedSeen.add(v.index);
           const tp = v.parts.torso;
-          const ls = toStage(tp.x, tp.y, v.lane);
+          const ls = toView(tp.x, tp.y, v.lane);
           this.view.effects.dust(ls.X, ls.Y - 0.3, 6);
         }
         v.face = v.landed ? 'dizzy' : 'normal';
@@ -2928,7 +2935,7 @@ export class LevelScene implements Scene {
     if (!flight || !flight.impacts.length) return;
     for (const imp of flight.impacts) {
       const thrown = this.passengers.ejectCar(imp.car, this.sim.cars, imp.speed);
-      const s = toStage(imp.x, imp.y, imp.z);
+      const s = toView(imp.x, imp.y, imp.z);
       if (imp.water) {
         this.view.effects.splash(s.X, s.Y - 0.5);
       } else {
@@ -3011,7 +3018,7 @@ export class LevelScene implements Scene {
     if (this.sim.wheelLock > 0) {
       // blockierte Räder vor dem Absperrband: Funkenspur unter dem ersten Wagen
       const fc = this.renderCars[0];
-      const fs = toStage(fc.x, fc.y, fc.z);
+      const fs = toView(fc.x, fc.y, fc.z);
       this.view.effects.sparks(fs.X, fs.Y - 0.2, 2);
     }
     const cam = this.view.camera;

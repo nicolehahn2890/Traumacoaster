@@ -12,7 +12,7 @@ import type { TrackPath, TrackSamples } from '@/track/model';
 import { frameWithBank, railBanks, stateAt } from '@/track/model';
 import type { Terrain } from '@/physics/terrain';
 import type { WorldDef } from '@/levels/types';
-import { laneScale, toStage, LANE_MIN, LANE_MAX, LANE_DEPTH } from '@/track/stage';
+import { laneScale, toLane, toStage, viewState, LANE_MIN, LANE_MAX, LANE_DEPTH } from '@/track/stage';
 import { findCrossings, type Crossing } from '@/track/crossings';
 import { hexNum, mix, railProfileTexture, shade } from './paint';
 import { atmosphere } from './terrainRenderer';
@@ -103,7 +103,9 @@ export class TrackRenderer {
   private railPool = new Map<number, StripMesh[]>();
   private railUsed = new Map<number, number>();
   /** Pfeiler der aktuellen Zeichnung mit ihrer Spur-Skalierung (für das Wachsen) */
-  private supportNodes: Array<{ c: Container; k: number }> = [];
+  private supportNodes: Array<{ c: Container; k: number; x: number; ground: number; z: number }> = [];
+  /** letzte Zeichnung (für die Neuprojektion bei Kamerabewegung in Perspektive) */
+  private last: { path: TrackPath; samples: TrackSamples; skin: string; preview: boolean } | null = null;
   private supportGlows: Array<SupportGlow & { lane: number; X: number; Y: number; k: number }> = [];
   private glowsDrawn = false;
   /** Bahn und Schräglage der Schienen der letzten Zeichnung: Der Wagen fährt mit derselben Schräglage (railFrame) */
@@ -131,6 +133,7 @@ export class TrackRenderer {
 
   clear(): void {
     this.railSamples = null;
+    this.last = null;
     for (const c of this.layers.supports.values()) {
       for (const child of c.removeChildren()) child.destroy({ children: true });
     }
@@ -212,30 +215,10 @@ export class TrackRenderer {
     let maxY = 0;
     for (let i = 0; i < samples.count; i++) maxY = Math.max(maxY, samples.y[i]);
 
-    // 3D-Schienenpunkte je Abtastpunkt (links/rechts), projiziert
-    const n = samples.count;
-    const L = new Float64Array(n * 2);
-    const R = new Float64Array(n * 2);
-    const C = new Float64Array(n * 2);
     const banks = railBanks(samples, (i) => designSpeed(samples, i, maxY));
     this.railSamples = samples;
     this.railBank = banks;
-    for (let i = 0; i < n; i++) {
-      const st = stateAt(samples, samples.s[i]);
-      const fr = frameWithBank(st, banks[i]);
-      const lx = samples.x[i] - fr.S.x * GAUGE;
-      const ly = samples.y[i] - fr.S.y * GAUGE;
-      const lz = samples.z[i] - (fr.S.z * GAUGE) / LANE_DEPTH;
-      const rx = samples.x[i] + fr.S.x * GAUGE;
-      const ry = samples.y[i] + fr.S.y * GAUGE;
-      const rz = samples.z[i] + (fr.S.z * GAUGE) / LANE_DEPTH;
-      const pl = toStage(lx, ly, lz);
-      const pr = toStage(rx, ry, rz);
-      const pc = toStage(samples.x[i], samples.y[i], samples.z[i]);
-      L[i * 2] = pl.X; L[i * 2 + 1] = pl.Y;
-      R[i * 2] = pr.X; R[i * 2 + 1] = pr.Y;
-      C[i * 2] = pc.X; C[i * 2 + 1] = pc.Y;
-    }
+    this.last = { path, samples, skin, preview };
 
     // Vorschau: Schienen, Schwellen und Station wie fertig, nur Pfeiler und Elemente nicht (die Pfeiler wachsen
     // nach dem Loslassen in 0,3 s hoch, siehe redrawSupports)
@@ -243,31 +226,14 @@ export class TrackRenderer {
       this.drawSupports(samples, style, terrain, sky);
       this.setSupportGrowth(1);
     }
-
-    let chunkStart = 0;
-    let chunkLane = Math.round(samples.z[0]);
-    const flush = (a: number, b: number, lane: number) => {
-      if (!this.layers.rails.has(lane)) return;
-      this.drawRailChunk(samples, L, R, C, a, b, lane, skin, style, sky);
-    };
-    for (let i = 1; i < n; i++) {
-      const lane = Math.round(samples.z[i]);
-      if (lane !== chunkLane) {
-        flush(chunkStart, i, chunkLane);
-        chunkStart = Math.max(0, i - 1);
-        chunkLane = lane;
-      }
-    }
-    flush(chunkStart, n - 1, chunkLane);
-
-    if (!preview) this.drawElements(path, samples, C);
+    this.drawRails(path, samples, skin, style, sky, preview);
+    const n = samples.count;
     let wasInside = terrain.insideMountain(samples.x[0], samples.y[0], samples.z[0]);
     for (let i = 1; i < n; i++) {
       const inside = terrain.insideMountain(samples.x[i], samples.y[i], samples.z[i]);
       if (inside !== wasInside && allowTunnels) portals.push({ x: samples.x[i], y: samples.y[i], z: samples.z[i], dir: inside ? 1 : -1 });
       wasInside = inside;
     }
-    this.drawStation(samples, style, sky);
     // Offene Bahn: Absperrband am Ende und 3 m hinter der Station (die Fahrt endet hier, kein Rückweg)
     if (!samples.closed && !preview) {
       const end = stateAt(samples, samples.length);
@@ -299,7 +265,7 @@ export class TrackRenderer {
       const g = this.layers.barriers.get(lane);
       if (!g) continue;
       const k = laneScale(lane);
-      const p = toStage(c.x, Math.max(c.y1, c.y2) + 1.6, c.z);
+      const p = toLane(c.x, Math.max(c.y1, c.y2) + 1.6, c.z);
       const r = 0.75 * k;
       g.circle(p.X, p.Y, r).fill({ color: 0xff4d5e, alpha: 0.95 }).stroke({ width: 0.14 * k, color: ink });
       const a = r * 0.45;
@@ -313,8 +279,8 @@ export class TrackRenderer {
       if (!g) continue;
       const k = laneScale(lane);
       const half = 0.95;
-      const l = toStage(b.x - b.sx * half, b.y - b.sy * half, b.z - (b.sz * half) / LANE_DEPTH);
-      const r = toStage(b.x + b.sx * half, b.y + b.sy * half, b.z + (b.sz * half) / LANE_DEPTH);
+      const l = toLane(b.x - b.sx * half, b.y - b.sy * half, b.z - (b.sz * half) / LANE_DEPTH);
+      const r = toLane(b.x + b.sx * half, b.y + b.sy * half, b.z + (b.sz * half) / LANE_DEPTH);
       for (const p of [l, r]) {
         g.moveTo(p.X, p.Y - 0.1 * k).lineTo(p.X, p.Y + 1.1 * k).stroke({ width: 0.14 * k, color: ink, cap: 'round' });
         g.circle(p.X, p.Y + 1.1 * k, 0.1 * k).fill(0xffd23f);
@@ -367,14 +333,76 @@ export class TrackRenderer {
       const parent = this.layers.supports.get(p.lane);
       if (!parent) continue;
       const k = laneScale(p.z);
-      const bot = toStage(p.x, p.ground, p.z);
+      const bot = toLane(p.x, p.ground, p.z);
       const c = buildSupport(p, ctx);
       c.position.set(bot.X, bot.Y);
       c.scale.set(k, k);
       parent.addChild(c);
-      this.supportNodes.push({ c, k });
+      this.supportNodes.push({ c, k, x: p.x, ground: p.ground, z: p.z });
       for (const gl of ctx.glows) this.supportGlows.push({ ...gl, lane: p.lane, X: bot.X + gl.x * k, Y: bot.Y + gl.y * k, k });
       ctx.glows.length = 0;
+    }
+  }
+
+  /** Schienen, Schwellen, Elemente und Station: 3D-Schienenpunkte je Abtastpunkt in die Spur-Container projiziert */
+  private drawRails(path: TrackPath, samples: TrackSamples, skin: string, style: SkinStyle, sky: string, preview: boolean): void {
+    const n = samples.count;
+    const banks = this.railBank;
+    const L = new Float64Array(n * 2);
+    const R = new Float64Array(n * 2);
+    const C = new Float64Array(n * 2);
+    for (let i = 0; i < n; i++) {
+      const st = stateAt(samples, samples.s[i]);
+      const fr = frameWithBank(st, banks[i]);
+      const lx = samples.x[i] - fr.S.x * GAUGE;
+      const ly = samples.y[i] - fr.S.y * GAUGE;
+      const lz = samples.z[i] - (fr.S.z * GAUGE) / LANE_DEPTH;
+      const rx = samples.x[i] + fr.S.x * GAUGE;
+      const ry = samples.y[i] + fr.S.y * GAUGE;
+      const rz = samples.z[i] + (fr.S.z * GAUGE) / LANE_DEPTH;
+      const pl = toLane(lx, ly, lz);
+      const pr = toLane(rx, ry, rz);
+      const pc = toLane(samples.x[i], samples.y[i], samples.z[i]);
+      L[i * 2] = pl.X; L[i * 2 + 1] = pl.Y;
+      R[i * 2] = pr.X; R[i * 2 + 1] = pr.Y;
+      C[i * 2] = pc.X; C[i * 2 + 1] = pc.Y;
+    }
+    let chunkStart = 0;
+    let chunkLane = Math.round(samples.z[0]);
+    const flush = (a: number, b: number, lane: number) => {
+      if (!this.layers.rails.has(lane)) return;
+      this.drawRailChunk(samples, L, R, C, a, b, lane, skin, style, sky);
+    };
+    for (let i = 1; i < n; i++) {
+      const lane = Math.round(samples.z[i]);
+      if (lane !== chunkLane) {
+        flush(chunkStart, i, chunkLane);
+        chunkStart = Math.max(0, i - 1);
+        chunkLane = lane;
+      }
+    }
+    flush(chunkStart, n - 1, chunkLane);
+    if (!preview) this.drawElements(path, samples, C);
+    this.drawStation(samples, style, sky);
+  }
+
+  /**
+   * Perspektive: Nach einer Kamerabewegung liegen Zwischentiefen (Spurwechsel) anders in ihren Spur-Containern.
+   * Schienen, Schwellen, Elemente und Station werden neu projiziert, die Pfeiler nur verschoben.
+   */
+  reproject(): void {
+    const d = this.last;
+    if (!d || !viewState().persp) return;
+    for (const g of this.railUnder.values()) g.clear();
+    for (const g of this.railOver.values()) g.clear();
+    for (const pool of this.railPool.values()) for (const m of pool) m.hide();
+    this.railUsed.clear();
+    for (const g of this.glowGraphics.values()) g.clear();
+    const style = SKIN_STYLES[d.skin] ?? SKIN_STYLES.skinWood;
+    this.drawRails(d.path, d.samples, d.skin, style, this.world.sky[1], d.preview);
+    for (const node of this.supportNodes) {
+      const bot = toLane(node.x, node.ground, node.z);
+      node.c.position.set(bot.X, bot.Y);
     }
   }
 
@@ -449,7 +477,7 @@ export class TrackRenderer {
     const g = this.railOver.get(lane);
     if (!g) return;
     const k = laneScale(lane);
-    const p = toStage(s.x[0], s.y[0], s.z[0]);
+    const p = toLane(s.x[0], s.y[0], s.z[0]);
     const col = atmosphere(style.post, lane, sky);
     g.roundRect(p.X - 3.2 * k, p.Y - 0.9 * k, 6.4 * k, 0.6 * k, 0.2 * k).fill(hexNum(shade(col, -0.1))).stroke({ width: 0.1 * k, color: hexNum(shade(col, -0.5)) });
     for (const dx of [-2.6, 2.6]) g.moveTo(p.X + dx * k, p.Y - 0.3 * k).lineTo(p.X + dx * k, p.Y + 2.8 * k).stroke({ width: 0.2 * k, color: hexNum(col) });

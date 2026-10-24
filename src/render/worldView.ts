@@ -9,7 +9,7 @@ import type { TrackPath, TrackSamples } from '@/track/model';
 import type { CarState } from '@/physics/trainSim';
 import type { PassengerView } from '@/physics/passengers';
 import type { CharacterDef } from '@/editor/characters';
-import { LANE_MAX, LANE_MIN } from '@/track/stage';
+import { LANE_MAX, LANE_MIN, setView, viewDistance, viewScale, viewState } from '@/track/stage';
 import { Camera } from './camera';
 import { Sky } from './sky';
 import { LaneFilter } from './shaders/laneFilter';
@@ -40,6 +40,8 @@ export class WorldView {
   private laneFilters = new Map<number, LaneFilter>();
   private fxOn = false;
   private time = 0;
+  /** letzte Kameralage, für die die Bahn in Perspektive projiziert wurde */
+  private lastView = { x: NaN, y: NaN, zoom: NaN, persp: false };
   private worldDef: WorldDef;
   private night: boolean;
 
@@ -167,6 +169,21 @@ export class WorldView {
     const c = this.camera;
     this.world.scale.set(c.zoom, -c.zoom);
     this.world.position.set(c.width / 2 - (c.x + c.ox) * c.zoom, c.height / 2 + (c.y + c.oy) * c.zoom);
+    // Perspektive (?persp=1): Kameraziel und -abstand für die Projektion; jeder Spur-Container skaliert um das Ziel.
+    // Zwischentiefen (Bahn, Zug) korrigieren die Renderer über toLane; die Bahn wird bei Kamerabewegung neu projiziert.
+    const persp = viewState().persp;
+    const vx = c.x + c.ox;
+    const vy = c.y + c.oy;
+    setView(vx, vy, viewDistance(c.zoom, c.height));
+    for (const [z, lane] of this.laneContainers) {
+      const s = persp ? viewScale(z) : 1;
+      lane.scale.set(s, s);
+      lane.position.set(vx * (1 - s), vy * (1 - s));
+    }
+    const lv = this.lastView;
+    const moved = persp && (lv.x !== vx || lv.y !== vy || lv.zoom !== c.zoom || !lv.persp);
+    this.lastView = { x: vx, y: vy, zoom: c.zoom, persp };
+    if (moved) this.trackR.reproject();
     this.sky.update(dt, c);
     this.effects.update(dt);
   }

@@ -4,7 +4,7 @@
  * Pinsel mit 100 % Glättung (gezogene Schnur). Zittern innerhalb der Bandlänge malt nichts, Ecken werden mit etwa
  * der Bandlänge rund. Beim Loslassen holt die Linie bis zum Finger auf.
  */
-import type { StagePoint } from './stage';
+import { mixPoint, type StagePoint } from './stage';
 
 /** kleinster Abstand zweier Linienpunkte (Bühnen-Meter) */
 const MIN_STEP = 0.05;
@@ -17,20 +17,20 @@ export class RubberBrush {
   private tip: StagePoint;
 
   constructor(start: StagePoint, public length: number) {
-    this.tip = { X: start.X, Y: start.Y };
-    this.finger = { X: start.X, Y: start.Y };
-    this.points = [{ X: start.X, Y: start.Y }];
+    this.tip = { ...start };
+    this.finger = { ...start };
+    this.points = [{ ...start }];
   }
 
   /** Finger bewegt (Bühne); true, wenn die Linie gewachsen ist */
   move(p: StagePoint): boolean {
-    this.finger = { X: p.X, Y: p.Y };
+    this.finger = { ...p };
     const dx = p.X - this.tip.X;
     const dy = p.Y - this.tip.Y;
     const d = Math.hypot(dx, dy);
     if (d <= this.length) return false;
     const f = (d - this.length) / d;
-    this.tip = { X: this.tip.X + dx * f, Y: this.tip.Y + dy * f };
+    this.tip = mixPoint(this.tip, p, f);
     const last = this.points[this.points.length - 1];
     if (Math.hypot(this.tip.X - last.X, this.tip.Y - last.Y) < MIN_STEP) return false;
     this.points.push({ ...this.tip });
@@ -48,7 +48,7 @@ export class RubberBrush {
     const n = Math.ceil(d / 0.25);
     for (let i = 1; i <= n; i++) {
       const f = i / n;
-      this.points.push({ X: this.tip.X + (this.finger.X - this.tip.X) * f, Y: this.tip.Y + (this.finger.Y - this.tip.Y) * f });
+      this.points.push(mixPoint(this.tip, this.finger, f));
     }
     this.tip = { ...this.finger };
     return this.points;
@@ -111,7 +111,7 @@ export function resamplePolyline(pts: StagePoint[], step: number): StagePoint[] 
     if (d < 1e-9) continue;
     let t = step - carry;
     while (t <= d) {
-      out.push({ X: a.X + ((b.X - a.X) * t) / d, Y: a.Y + ((b.Y - a.Y) * t) / d });
+      out.push(mixPoint(a, b, t / d));
       t += step;
     }
     carry = d - (t - step);
@@ -130,7 +130,7 @@ export function chaikin(pts: StagePoint[]): StagePoint[] {
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i];
     const b = pts[i + 1];
-    out.push({ X: 0.75 * a.X + 0.25 * b.X, Y: 0.75 * a.Y + 0.25 * b.Y }, { X: 0.25 * a.X + 0.75 * b.X, Y: 0.25 * a.Y + 0.75 * b.Y });
+    out.push(mixPoint(a, b, 0.25), mixPoint(a, b, 0.75));
   }
   out.push({ ...pts[pts.length - 1] });
   return out;

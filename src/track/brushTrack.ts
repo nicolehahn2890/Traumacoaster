@@ -15,7 +15,7 @@ import { findCrossings } from './crossings';
 import { createNode, emptyPath, sampleTrack, type TrackPath, type TrackSamples } from './model';
 import { reduceNodes } from './reduceNodes';
 import { previewNodes } from './strokeToTrack';
-import { LANE_DEPTH, LANE_MAX, LANE_MIN, LANE_RISE, type StagePoint } from './stage';
+import { LANE_DEPTH, LANE_MAX, LANE_MIN, LANE_RISE, fillRays, mixPoint, rayToWorld, tagRay, toView, type StagePoint } from './stage';
 
 /** Bildhöhe je Meter Tiefe */
 const C = LANE_RISE / LANE_DEPTH;
@@ -196,7 +196,7 @@ function resampleLine(pts: StagePoint[], step: number): StagePoint[] {
     if (d < 1e-9) continue;
     let t = step - carry;
     while (t <= d) {
-      out.push({ X: a.X + ((b.X - a.X) * t) / d, Y: a.Y + ((b.Y - a.Y) * t) / d });
+      out.push(mixPoint(a, b, t / d));
       t += step;
     }
     carry = d - (t - step);
@@ -216,14 +216,27 @@ function smoothLine(pts: StagePoint[], sigma: number, step: number): StagePoint[
     let sx = 0;
     let sy = 0;
     let sw = 0;
+    let scx = 0;
+    let scy = 0;
+    let sc = 0;
     for (let k = -r; k <= r; k++) {
       const q = pts[Math.max(0, Math.min(pts.length - 1, i + k))];
       const w = Math.exp(-((k * step) ** 2) / (2 * sigma * sigma));
       sx += q.X * w;
       sy += q.Y * w;
       sw += w;
+      if (q.cx !== undefined && q.cy !== undefined) {
+        scx += q.cx * w;
+        scy += q.cy * w;
+        sc += w;
+      }
     }
-    return { X: sx / sw, Y: sy / sw };
+    const out: StagePoint = { X: sx / sw, Y: sy / sw };
+    if (sc > 0) {
+      out.cx = scx / sc;
+      out.cy = scy / sc;
+    }
+    return out;
   });
 }
 
@@ -241,12 +254,14 @@ export function lineLength(pts: StagePoint[]): number {
 export function prepareBrushLine(points: StagePoint[], closeSnap = 8, closeReach = 0): { line: StagePoint[]; closed: boolean; closeFrom?: number } | null {
   if (points.length < 2 || lineLength(points) < 6) return null;
   const line = resampleLine(smoothLine(resampleLine(points, 0.25), 0.5, 0.25), STEP);
+  fillRays(line);
   if (line.length < 7) return null;
   const a = line[0];
   const b = line[line.length - 1];
   const gap = Math.hypot(b.X - a.X, b.Y - a.Y);
   if (gap > Math.max(closeSnap, closeReach) || lineLength(line) < 40) return { line, closed: false };
   const ring = closeBrushLine(line, closeReach > 0);
+  if (ring) fillRays(ring.line);
   return ring ? { line: ring.line, closed: true, closeFrom: ring.from } : { line, closed: false };
 }
 
@@ -913,7 +928,7 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
   let solved = false;
   const bounds = () => {
     for (let i = 0; i < n; i++) {
-      const g = o.ground(line[i].X, z[i] / LANE_DEPTH);
+      const g = o.ground(rayToWorld(line[i], z[i] / LANE_DEPTH).x, z[i] / LANE_DEPTH);
       target[i] = (line[i].Y - g - H_COMFORT) / C;
       // unter der vordersten Bodenlinie gezeichnet: ganz vorne bleiben (die Höhe wird dort angehoben)
       upper[i] = Math.max(Z_MIN, Math.min(Z_MAX, (line[i].Y - g - o.clearance) / C));
@@ -1259,8 +1274,9 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
 /** Weltpunkte je Linienpunkt: x wie gezeichnet, Höhe = Bildhöhe − Tiefe · c (nie unter der halben Mindesthöhe) */
 function worldPoints(line: StagePoint[], z: Float64Array, closed: boolean, o: Opts): Vec3[] {
   const pts = line.map((p, i) => {
-    const g = o.ground(p.X, z[i] / LANE_DEPTH);
-    return { x: p.X, y: Math.max(p.Y - C * z[i], g + o.clearance * 0.5), z: z[i] };
+    const w = rayToWorld(p, z[i] / LANE_DEPTH);
+    const g = o.ground(w.x, z[i] / LANE_DEPTH);
+    return { x: w.x, y: Math.max(w.y, g + o.clearance * 0.5), z: z[i] };
   });
   if (closed) pts[pts.length - 1] = { ...pts[0] };
   return pts;
@@ -1546,7 +1562,7 @@ export function trackLineWithDepth(samples: TrackSamples): { line: StagePoint[];
   const line: StagePoint[] = [];
   const zs: number[] = [];
   if (!samples.count) return { line, z: new Float64Array(0) };
-  const at = (i: number) => ({ X: samples.x[i], Y: samples.y[i] + C * samples.z[i] * LANE_DEPTH });
+  const at = (i: number) => tagRay(toView(samples.x[i], samples.y[i], samples.z[i]));
   let prev = at(0);
   line.push(prev);
   zs.push(samples.z[0] * LANE_DEPTH);
@@ -1558,7 +1574,7 @@ export function trackLineWithDepth(samples: TrackSamples): { line: StagePoint[];
     let t = STEP - carry;
     while (t <= d) {
       const f = t / d;
-      line.push({ X: prev.X + (cur.X - prev.X) * f, Y: prev.Y + (cur.Y - prev.Y) * f });
+      line.push(mixPoint(prev, cur, f));
       zs.push((samples.z[i - 1] + (samples.z[i] - samples.z[i - 1]) * f) * LANE_DEPTH);
       t += STEP;
     }
@@ -1571,7 +1587,7 @@ export function trackLineWithDepth(samples: TrackSamples): { line: StagePoint[];
 /** Bildschirmlinie einer vorhandenen Bahn (Bühne, 1 m Abstand), zum Fortsetzen und Überzeichnen */
 export function trackLine(samples: TrackSamples): StagePoint[] {
   const pts: StagePoint[] = [];
-  for (let i = 0; i < samples.count; i++) pts.push({ X: samples.x[i], Y: samples.y[i] + C * samples.z[i] * LANE_DEPTH });
+  for (let i = 0; i < samples.count; i++) pts.push(tagRay(toView(samples.x[i], samples.y[i], samples.z[i])));
   return pts.length >= 2 ? resampleLine(pts, STEP) : pts;
 }
 

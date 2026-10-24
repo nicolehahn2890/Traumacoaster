@@ -359,6 +359,13 @@ anderen sind die ersten Arbeitspakete der Etappe 1 und 2. Reihenfolge, die am we
    Tunnel aus dem Labor im Spiel ankommen.
 4. **Untergrund, Werkzeuge, Ziele, Produktion** wie unten.
 
+**Stand Schritt 1 (24.10., abends): gebaut.** `?persp=1&fov=18` im Spiel. Spur-Container skalieren um das Kameraziel
+(bei 7 px/m und 22°: vorne 1,12, hinten 0,91), der Strich wird je Punkt als Strahl mit seiner Kamera gedeutet, Griffe und
+Treffer liegen in der Ansicht, die Schienen werden bei Kamerabewegung neu projiziert. Messung am Mac: 120 fps mit und
+ohne Perspektive in der Fahrt. Replay der 218 Pinsel-Aufnahmen: 87 Fahrten geschafft ohne, 84 von 219 mit Perspektive
+(feste Kamera im Strichzentrum, weil ältere Aufnahmen keine Kamera je Punkt haben), kein Absturz. Offen: das Gefühl auf
+dem Handy, und die Lesarten Bühne/Ein Strich/Ebenen bleiben in Ortho (sie werden nicht weiterverfolgt).
+
 **Beweistest oder Produktion?** Schritt 1 ist der letzte Beweistest: Er läuft hinter einem Schalter im heutigen
 Spiel, ist in einem Tag rückbaubar und beantwortet die einzige Frage, die das Labor nicht beantworten kann, nämlich
 ob sich Zeichnen in Perspektive auf dem Handy richtig anfühlt. Sein Code (Projektions-Adapter, Strahl-Deutung) bleibt

@@ -9,7 +9,7 @@ import type { CarState } from '@/physics/trainSim';
 import type { PassengerView } from '@/physics/passengers';
 import { CAR } from '@/physics/passengers';
 import type { CharacterDef } from '@/editor/characters';
-import { laneScale, toStage, LANE_MIN, LANE_MAX, LANE_DEPTH } from '@/track/stage';
+import { laneRatio, laneScale, toLane, toStage, viewState, LANE_MIN, LANE_MAX, LANE_DEPTH } from '@/track/stage';
 import { CharacterSprite } from './characterSprite';
 import { CutoutAnimator, type ClipName } from './cutoutAnimator';
 import { hexNum, shade } from './paint';
@@ -167,7 +167,7 @@ export class TrainRenderer {
       const x = P.x + a * T.x + b * U.x + c * S.x;
       const y = P.y + a * T.y + b * U.y + c * S.y;
       const z = P.z + a * T.z + b * U.z + c * S.z;
-      return toStage(x, y, z / LANE_DEPTH);
+      return toLane(x, y, z / LANE_DEPTH);
     };
     const hl = CAR.halfLength;
     const hw = 0.6;
@@ -253,9 +253,9 @@ export class TrainRenderer {
       }
       this.drawCar(view, st, c, this.cars.length);
       // Fahrgäste: lokale (vorwärts, oben) → Bühne über den projizierten Rahmen
-      const base = toStage(st.x, st.y, st.z);
-      const fx = toStage(st.x + st.tx, st.y + st.ty, st.z + st.tz / LANE_DEPTH);
-      const fy = toStage(st.x + st.upx, st.y + st.upy, st.z + st.upz / LANE_DEPTH);
+      const base = toLane(st.x, st.y, st.z);
+      const fx = toLane(st.x + st.tx, st.y + st.ty, st.z + st.tz / LANE_DEPTH);
+      const fy = toLane(st.x + st.upx, st.y + st.upy, st.z + st.upz / LANE_DEPTH);
       const ex = { x: fx.X - base.X, y: fx.Y - base.Y };
       const ey = { x: fy.X - base.X, y: fy.Y - base.Y };
       for (const pv of passengers) {
@@ -265,7 +265,7 @@ export class TrainRenderer {
         sp.container.visible = true;
         // Sitzreihe leicht zur sichtbaren Seite versetzen, damit Fahrgäste vor der Rückwand sitzen
         const sideShift = 0.15 * (st.sz > 0 ? -1 : 1);
-        const seatBase = toStage(st.x + st.sx * sideShift, st.y + st.sy * sideShift, st.z + (st.sz * sideShift) / LANE_DEPTH);
+        const seatBase = toLane(st.x + st.sx * sideShift, st.y + st.sy * sideShift, st.z + (st.sz * sideShift) / LANE_DEPTH);
         sp.container.setFromMatrix(new Matrix(ex.x, ex.y, ey.x, ey.y, seatBase.X, seatBase.Y));
         sp.setPose(pv.parts, CAR.railOffset);
         sp.setBelt(pv.belt, pv.beltBroken);
@@ -293,7 +293,10 @@ export class TrainRenderer {
       }
       const k = laneScale(pv.lane);
       const base = toStage(0, 0, pv.lane);
-      f.sprite.container.setFromMatrix(new Matrix(k, 0, 0, k, base.X, base.Y));
+      // Perspektive: Zwischentiefe um das Kameraziel in den Spur-Container korrigiert (Lage und Maßstab)
+      const r = laneRatio(pv.lane);
+      const vs = viewState();
+      f.sprite.container.setFromMatrix(new Matrix(k * r, 0, 0, k * r, vs.cx + (base.X - vs.cx) * r, vs.cy + (base.Y - vs.cy) * r));
       f.sprite.setPose(pv.parts, 0);
       f.sprite.setFace(pv.face);
       f.sprite.update(dt, 0, 9.81, pv.landed ? 1 : -0.5);
