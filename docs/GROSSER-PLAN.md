@@ -1162,6 +1162,12 @@ und neue Malereien kommen mit der Stilprobe (Paket 0). Offen für Florian: zuers
 zuerst neue Malereien aus seinen Collagen? Nach der Sichtung aller Referenzen (25.10.2026, Paket 0 „Referenzen als
 Essenz“) gilt der Vorschlag mit den dort genannten Änderungen (Rollen des Elemente-Bogens, Stufenschaltung „mehr
 Ebenen bei gleichem Blick“, Stützen auf Säumen, Freilegung an der Probe erarbeiten).
+**Florians Entscheidung (25.10.2026):** Ebenen-Probe mit den Körpern des Baukastens. Dazu sein Wunsch: organische
+Formen wie in seinen Collagen statt Klötzchen und Blöcken, damit man ein Gefühl für die Formen bekommt; noch besser
+Formen, die sich wie in Illustrator bearbeiten oder sogar erstellen lassen. Dann hat er perfekte Formvorlagen für seine
+gemalten Elemente und sieht früh, wo echte 3D-Geometrie nötig ist und wo eine 2D-Verschiebung reicht. Die Session hält
+das für richtig (Antwort vom selben Tag): geschlossene Kurvenpfade als geometrische Wahrheit jedes Körpers, das Feld
+liest den Pfad, Bilder sind nur der Look; Schritte dazu unten, sobald Florian sie freigibt.
 **Status: bestätigt am 24.10.2026.** Graben in Stufen trägt Florians Vorbehalt; Autoscroll wird nach dem Ausprobieren
 entschieden. **Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Der Wasserfall bleibt ein eigenes Element (er ist
 seit Etappe 1 da) und bekommt den Schalter „Fahrt dahinter gedämpft“; die Schalter Schmuck, trägt Stützen und Splash-Zone
