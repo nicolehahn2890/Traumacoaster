@@ -435,9 +435,12 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
     (Level 32) war ein einziger 41 m tiefer Dreiteiler; im geneigten Bild liegt seine Vorderseite zehn Meter unter der
     Rückseite, die Bahn schwebte sichtbar dazwischen, und der Tunnel war nicht zu sehen. Behoben: Ein solcher Berg steht
     wie auf der Bühne als Scheibe je Spur gestaffelt (zu drei Zeichenaufrufen verschmolzen), jede Scheibe mit den
-    Öffnungen der Bahn ihrer Spur; die Tunnelmünder bekommen eine dunkle Scheibe hinter dem Ring. Offen am Tor: fps-Werte vom Handy, Kantenglättung an oder aus, was an den Bergen unklar ist (Aussehen, das
-    Verschwinden der Bahn hinter der Lippe oder der Dreiteiler-Gedanke selbst); die gedimmt sichtbare Bahn im Berg kommt
-    mit den Fels-Regeln in E2 (Paket 5.2). Replay `--world` nach den Fixes: 306 Bahnprofile (Florians Handy-Striche vom 25.10. sind aufgezeichnet, 261 → über 300 Aufnahmen), 8835 Stützen, 64 Stellen ohne Fundament (neue Aufnahmen über Wasser), Median 2,0 px, kein Fehler.
+    Öffnungen der Bahn ihrer Spur; die Tunnelmünder bekommen eine dunkle Scheibe hinter dem Ring. Die gedimmt sichtbare
+    Bahn im Berg kommt mit den Fels-Regeln in E2 (Paket 5.2).
+    **Tor 1a bestanden (Florian, 25.10.):** Leistung am Handy reicht, Kantenglättung bleibt an (jederzeit per `?aa=0`
+    nachjustierbar), die Berge sind als Platzhalter eingeordnet (Dreiteiler-Prinzip bleibt, Form, Farbe und Staffelung
+    kommen aus den Bildern der Basiszone). Regel aus dem Tor für alle Stände: Platzhalter immer dazusagen
+    (`docs/HANDOVER.md`, Abschnitt 5). Weiter mit Schritt 6. Replay `--world` nach den Fixes: 306 Bahnprofile (Florians Handy-Striche vom 25.10. sind aufgezeichnet, 261 → über 300 Aufnahmen), 8835 Stützen, 64 Stellen ohne Fundament (neue Aufnahmen über Wasser), Median 2,0 px, kein Fehler.
 
 ## Paket 10: Etappen und Abnahmen (Vorschlag aus allem Bestätigten)
 
@@ -496,7 +499,7 @@ mit Florian. Die Session arbeitet auf einem eigenen Branch und geht am Tor per P
 10. **Tor 1b:** Florian baut selbst einen Testausschnitt (Station, Hügel, Fenster-Element, Baustelle); das Handy zeigt
     dasselbe; Fixes; Doku in `docs/TECH.md` und `docs/HANDOVER.md`; Pull Request nach `main`.
 
-**Stand:** Schritte 1 bis 4 gebaut am 24.10.2026 (Nachträge in Paket 1); Tor 1a steht an.
+**Stand:** Schritte 1 bis 4 gebaut am 24.10.2026, Tor 1a bestanden am 25.10.2026 (Nachträge in Paket 1); Schritt 6 in Arbeit.
 
 **Florian parallel zu Etappe 1:** den Erzeugungsweg für Teile mit der Session prüfen (Voraussetzung für E4), erste
 Figurenteile in zwei Ansichten skizzieren, Entwurf der Alpen-Autos, Handy-Tests an den Toren, Entscheidungen an den

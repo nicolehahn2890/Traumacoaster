@@ -26,8 +26,9 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Spur-Filter sind weg (Pinsel ist die Lesart, `?stage|single|lanes` nur für Szenarien und Replay). Replay: unverändert grün (250 Profile, 7410 Stützen, Abstand Bahn–Strich im Median 2,0 px, kein Fehler).
   Tor 1a, erste Runde (25.10.): Florian hat alle Links auf dem Handy gesehen (3D und Schatten besser). Fixes: Hängebahn
   mit dem Balken auf dem Strich und der Gondel darunter (Regel: der Strich ist immer genau dort, wo gezeichnet wird),
-  Berge ohne feste Spur als gestaffelte Scheiben je Spur statt als ein tiefer Klotz, dunkle Tunnelmünder. Offen am Tor: fps vom Handy, Kantenglättung, was an den Bergen unklar ist; danach
-  Freigabe für Schritt 6 (Editor). Links für den Handy-Test: Dev-Server mit `npm run dev` (zeichnet auf), Adresse aus dem
+  Berge ohne feste Spur als gestaffelte Scheiben je Spur statt als ein tiefer Klotz, dunkle Tunnelmünder. **Tor 1a
+  bestanden (25.10.):** Leistung reicht, Kantenglättung bleibt an, Berge als Platzhalter eingeordnet. Weiter mit
+  Schritt 6 (Klötzchen-Editor am Mac). Links für den Handy-Test: Dev-Server mit `npm run dev` (zeichnet auf), Adresse aus dem
   Vite-Log plus `?scene=start&level=8&world=1&dev=1` und `&track=`, `&aa=0`, `&shadow=0`, `&look=`, Level 32 (Tunnel),
   Level 47 (See).
 - **24.10., spät: der große Plan steht.** `docs/GROSSER-PLAN.md` ist Paket für Paket mit Florian abgestimmt und in
