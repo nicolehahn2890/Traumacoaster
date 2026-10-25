@@ -11,6 +11,9 @@
  *   npm run strokes:replay -- --world         # wie --persp, dazu je Pinsel-Bahn das Bahnprofil und die Stützen des Weltrenderers
  *                                              #   (nur Geometrie: Teile, Dreiecke, endliche Werte, Füße je Fundament) und bei neuen
  *                                              #   Strichen der Abstand der Bahnknoten vom Strich im Bild der Weltkamera (Median, Maximum)
+ *   npm run strokes:replay -- --zone probe    # Striche aus einer Zone (Etappe 2): Fels und offene Räume der Zonendatei gelten für den
+ *                                              #   Pinsel (Aufnahmen mit Zone nehmen ihre, ältere aus Level 0 die genannte); zählt je
+ *                                              #   Strich Tiefensprünge, größte Tiefenänderung, Kreuzungen und Fels-Abschnitte
  */
 import { readFileSync } from 'node:fs';
 import { getLevel } from '../src/levels/levels';
@@ -22,8 +25,11 @@ import { sampleTrack, type TrackPath } from '../src/track/model';
 import { extendTrack, lanesTrack, strokeToTrack } from '../src/track/strokeToTrack';
 import { applyOverdraw } from '../src/track/overdraw';
 import { RubberBrush } from '../src/track/brush';
-import { BrushRefiner, joinLines, planBrushTrack, spliceLine, trackLine, trackLineWithDepth } from '../src/track/brushTrack';
-import { setPerspective, setView, viewDistance, type StagePoint } from '../src/track/stage';
+import { BrushRefiner, joinLines, planBrushTrack, previewBrushTrack, ROOM_DIVE, spliceLine, trackLine, trackLineWithDepth, type BrushPreview, type RoomHit } from '../src/track/brushTrack';
+import { LANE_DEPTH, rayToWorld, setPerspective, setView, viewDistance, type StagePoint } from '../src/track/stage';
+import { parseZone, type ZoneFile } from '../src/zone/types';
+import { RockField } from '../src/zone/rock';
+import { groundWithRooms, openRooms, roomLanes } from '../src/zone/underground';
 import { railBanksFor } from '../src/track/model';
 import { trackFrames } from '../src/world/trackMesh';
 import { buildTrack } from '../src/world/trackBuilder';
@@ -45,6 +51,9 @@ interface Rec {
   screen: [number, number];
   points: Array<[number, number, number] | [number, number, number, number, number]>;
   persp?: number;
+  /** Zone und Feld der Aufnahme (Etappe 2; ältere Aufnahmen aus einer Zone tragen nur level 0) */
+  zone?: string;
+  field?: string;
   before: TrackPath | null;
   result: { nodes: number; closed: boolean; length: number } | null;
 }
@@ -54,7 +63,16 @@ const WORLD = args.includes('--world');
 const PERSP = args.includes('--persp') || WORLD;
 const lastIdx = args.indexOf('--last');
 const last = lastIdx >= 0 ? Number(args[lastIdx + 1]) : 0;
-const file = args.find((a, i) => !a.startsWith('--') && (lastIdx < 0 || i !== lastIdx + 1)) ?? 'recordings/strokes.jsonl';
+const zoneIdx = args.indexOf('--zone');
+const ZONE = zoneIdx >= 0 ? args[zoneIdx + 1] : null;
+/** --no-rock: die Zone nur für die Maße laden, Fels und Räume aber nicht anwenden (Vergleich) */
+const NO_ROCK = args.includes('--no-rock');
+const stageIdx = args.indexOf('--stage');
+/** Fortschrittsstufe statt der des Felds (Räume „offen ab Stufe“, Wachstum) */
+const STAGE = stageIdx >= 0 ? Number(args[stageIdx + 1]) : null;
+const file = args.find((a, i) => !a.startsWith('--') && (lastIdx < 0 || i !== lastIdx + 1) && (zoneIdx < 0 || i !== zoneIdx + 1) && (stageIdx < 0 || i !== stageIdx + 1)) ?? 'recordings/strokes.jsonl';
+const zoneFile: ZoneFile | null = ZONE ? parseZone(JSON.parse(readFileSync(`public/zones/${ZONE}/zone.json`, 'utf8'))) : null;
+if (ZONE && !zoneFile) throw new Error(`Zone ${ZONE} nicht gefunden`);
 const NAME: Record<Reading, string> = { brush: 'Pinsel', stage: 'Bühne', single: 'Ein Strich', lanes: 'Ebenen' };
 const FAIL: Record<string, string> = { derail: 'entgleist', fall: 'Fahrgäste fallen', stall: 'bleibt stehen', eject: 'Rauswurf', water: 'Wasser', ejectSide: 'Rauswurf seitlich', openEnd: 'Absperrband (offenes Ende)', crossing: 'Kreuzung', chain: 'Kette reicht nicht' };
 
@@ -71,8 +89,8 @@ function levelOf(id: number): { level: LevelDef; skin: string } {
   try {
     return { level: getLevel(id), skin: worldOfLevel(id).skin };
   } catch {
-    // Sandbox (id 0) oder unbekannt: breite, flache Bühne
-    return { level: { id: 0, world: 1, name: 'Sandbox', hook: '', goals: [], width: 200, terrain: [{ kind: 'flat' }], cars: 3, passengers: 6 } as unknown as LevelDef, skin: 'skinWood' };
+    // Sandbox (id 0) oder unbekannt: breite, flache Bühne (in einer Zone deren Breite)
+    return { level: { id: 0, world: 1, name: 'Sandbox', hook: '', goals: [], width: zoneFile?.width ?? 200, terrain: [{ kind: 'flat' }], cars: 3, passengers: 6 } as unknown as LevelDef, skin: 'skinWood' };
   }
 }
 
@@ -90,28 +108,113 @@ function build(rec: Rec, reading: Reading, level: LevelDef, terrain: Terrain, sk
     setView(cx, cy, viewDistance(rec.zoom, rec.screen[1]));
     stroke = rec.points.map((p) => (p.length >= 5 ? { X: p[0], Y: p[1], cx: p[3], cy: p[4] } : { X: p[0], Y: p[1], cx, cy }));
   } else setPerspective(false);
-  const ground = (x: number, z: number) => terrain.groundHeight(x, z);
+  let ground = (x: number, z: number) => terrain.groundHeight(x, z);
   const closeSnap = Math.max(8, 60 / rec.zoom);
+  // Zone (Etappe 2): Fels und offene Räume zur Stufe des Felds gelten für den Pinsel
+  let zoneOpts: { rock?: (p: StagePoint) => { z0: number; z1: number }[]; underground?: (p: StagePoint) => RoomHit | null } = {};
+  if (zoneFile && !NO_ROCK && rec.level === 0 && (rec.zone ?? ZONE) === zoneFile.name) {
+    const field = zoneFile.fields.find((f) => f.id === rec.field) ?? zoneFile.fields[0];
+    const stage = STAGE ?? field?.stage ?? Infinity;
+    const rock = new RockField(zoneFile.elements, stage);
+    const rooms = openRooms(zoneFile.elements, stage);
+    const base = ground;
+    ground = groundWithRooms(base, rooms);
+    zoneOpts = {
+      rock: rock.empty ? undefined : (p) => rock.spans(p, (q, lane) => rayToWorld(q, lane)),
+      underground: rooms.length ? (p) => roomLanes(rooms, p, (q, lane) => rayToWorld(q, lane), (x, lane) => base(x, lane)) : undefined,
+    };
+  }
   const before = fixNaN(rec.before);
   if (reading === 'brush') {
     const b = new RubberBrush(stroke[0], 22 / rec.zoom);
     for (const p of stroke.slice(1)) b.move(p);
     let line = b.finish();
     let keep: Float64Array | undefined;
+    let baseLine: StagePoint[] | null = null;
     if (before && rec.kind === 'extend') {
       // wie im Spiel: Die alte Bahn behält beim Fortsetzen ihre Tiefe
       const base = trackLineWithDepth(sampleTrack(before, 0.25));
+      baseLine = base.line;
       line = joinLines(base.line, line);
       keep = base.z;
     } else if (before && rec.kind === 'overdraw') line = spliceLine(trackLine(sampleTrack(before, 0.25)), line, Math.max(2, 30 / rec.zoom));
-    const opts = { ground, clearance: 0.8, closeSnap, tolerance: Math.max(0.4, 8 / rec.zoom) };
-    const plan = planBrushTrack(line, opts, keep);
+    const opts = { ground, clearance: 0.8, closeSnap, tolerance: Math.max(0.4, 8 / rec.zoom), ...zoneOpts };
+    // Zone: die Live-Vorschau alle acht Punkte nachspielen wie beim Malen; Tiefenänderungen über 0,5 Spuren an schon
+    // gezeigten Punkten sind Vorschau-Sprünge (das Springen der Bahn unter dem Finger), dazu der Sprung beim Loslassen
+    let pv: BrushPreview | null = null;
+    let pvJumps = 0;
+    let pvMax = 0;
+    if (zoneFile && rec.kind !== 'overdraw') {
+      const b2 = new RubberBrush(stroke[0], 22 / rec.zoom);
+      for (let i = 1; i < stroke.length; i++) {
+        b2.move(stroke[i]);
+        if (i % 8 && i !== stroke.length - 1) continue;
+        if (b2.points.length < 2) continue;
+        const l2 = baseLine ? joinLines(baseLine, b2.points) : b2.points;
+        const next = previewBrushTrack(l2, opts, pv, keep);
+        if (next && pv) {
+          // nur Punkte, die mehr als 15 m vor dem Ende der neuen Vorschau liegen (am wachsenden Ende rechnet der Löser ohnehin neu)
+          const m = Math.min(next.z.length - 15, pv.z.length);
+          for (let k = 0; k < m; k++) {
+            const d = Math.abs(next.z[k] - pv.z[k]) / LANE_DEPTH;
+            if (d > 0.5) pvJumps++;
+            pvMax = Math.max(pvMax, d);
+          }
+        }
+        if (next) pv = next;
+      }
+    }
+    const plan = planBrushTrack(line, opts, keep, pv ?? undefined);
     if (!plan) return { path: null, note: 'zu kurz' };
+    const debugRock = (tag: string) => {
+      if (!process.env.TC_DEBUG_ROCK || !plan.rock.length) return;
+      const lines = plan.rock.map(([a, b]) => {
+        const sp = zoneOpts.rock?.(plan.line[a]) ?? [];
+        return `    ${tag}: blockiert ${a}–${b} von ${plan.line.length} (X ${plan.line[a].X.toFixed(1)}, Y ${plan.line[a].Y.toFixed(1)}, Tiefe ${(plan.z[a] / LANE_DEPTH).toFixed(2)}${keep && a < keep.length ? ', in der alten Bahn' : ''}) Spannen ${sp.map((q) => `${(q as { id?: string }).id ?? '?'}/${(q as { kind?: string }).kind ?? '?'} ${q.z0.toFixed(2)}…${q.z1.toFixed(2)}`).join(', ')}`;
+      });
+      lines.push(`    Seiten: ${[...plan.rockSides].map(([k, v]) => `${k}=${v}`).join(', ')}`);
+      console.log(lines.join('\n'));
+    };
+    debugRock('Plan');
     const limit = (SKIN_PHYSICS[skin] ?? SKIN_PHYSICS.skinWood).lateralLimit;
     const ref = new BrushRefiner(plan, opts, (path, samples) => new TrainSim(samples, path, { ...simOptionsForLevel(level, path, terrain, skin, true), lateralLimit: Infinity, checkCrossings: false }), limit);
     while (!ref.run(1000));
+    debugRock('nach Probefahrten');
     const spots = ref.accepted.map((a) => `${Math.round(a.s)} m ${FAIL[a.reason] ?? a.reason}`);
-    return { path: ref.best, note: `${plan.crossings.length} Kreuzungen, ${ref.repaired} nachgebessert${spots.length ? `, hingenommen: ${spots.join(', ')}` : ''}` };
+    let smooth = '';
+    if (zoneFile) {
+      // Glättungs-Maße (Tor 2b): Tiefenänderung je Meter im neuen Teil der Linie, Sprünge über 0,4 Spuren in 2 m
+      const from = keep ? Math.min(plan.z.length, keep.length) : 0;
+      let maxStep = 0;
+      let jumps = 0;
+      for (let i = Math.max(1, from); i < plan.z.length; i++) maxStep = Math.max(maxStep, Math.abs(plan.z[i] - plan.z[i - 1]) / LANE_DEPTH);
+      for (let i = Math.max(2, from); i < plan.z.length; i++) if (Math.abs(plan.z[i] - plan.z[i - 2]) > 0.4 * LANE_DEPTH) jumps++;
+      zoneTally.strokes++;
+      zoneTally.jumps += jumps;
+      zoneTally.maxStep = Math.max(zoneTally.maxStep, maxStep);
+      zoneTally.steps.push(maxStep);
+      zoneTally.crossings += plan.crossings.length;
+      zoneTally.blocked += plan.rock.length;
+      if (plan.rockCut) zoneTally.cut++;
+      let release = 0;
+      if (pv) {
+        const m = Math.min(plan.z.length, pv.z.length);
+        for (let k = 0; k < m; k++) release = Math.max(release, Math.abs(plan.z[k] - pv.z[k]) / LANE_DEPTH);
+      }
+      // Striche, die Fels oder einen Raum berühren, getrennt zählen
+      const touches = line.filter((q) => (zoneOpts.rock?.(q).length ?? 0) > 0 || (zoneOpts.underground?.(q)?.h ?? 1) < -ROOM_DIVE).length;
+      const bucket = touches > 0 ? zoneTally.zoneStrokes : zoneTally.freeStrokes;
+      bucket.n++;
+      bucket.jumps += jumps;
+      bucket.previewJumps += pvJumps;
+      bucket.release.push(release);
+      zoneTally.previewJumps += pvJumps;
+      zoneTally.previewMax = Math.max(zoneTally.previewMax, pvMax);
+      zoneTally.releaseMax = Math.max(zoneTally.releaseMax, release);
+      zoneTally.releases.push(release);
+      smooth = `, Tiefe: max ${maxStep.toFixed(2)} Spuren/m, ${jumps} Sprünge, Vorschau ${pvJumps} Sprünge (max ${pvMax.toFixed(2)} Spuren), Loslassen max ${release.toFixed(2)} Spuren, ${plan.rock.length} Fels-Abschnitte${plan.rockCut ? ', vor dem Fels abgeschnitten' : ''}`;
+    }
+    return { path: ref.best, note: `${plan.crossings.length} Kreuzungen, ${ref.repaired} nachgebessert${spots.length ? `, hingenommen: ${spots.join(', ')}` : ''}${smooth}` };
   }
   const opts = { groundHeight: ground, groundClearance: 0.8, maxHeight: level.maxHeight ?? 0, allowTurns: true, allowLoops: true, closeSnap, single: reading === 'single' };
   if (reading === 'lanes' && rec.kind !== 'overdraw') {
@@ -145,6 +248,8 @@ const segDist = (q: { x: number; y: number }, a: { x: number; y: number }, b: { 
 };
 
 const worldTally = { built: 0, invalid: 0, medians: [] as number[], max: 0, supports: 0, floating: 0 };
+const bucketOf = () => ({ n: 0, jumps: 0, previewJumps: 0, release: [] as number[] });
+const zoneTally = { strokes: 0, jumps: 0, maxStep: 0, steps: [] as number[], crossings: 0, blocked: 0, cut: 0, previewJumps: 0, previewMax: 0, releaseMax: 0, releases: [] as number[], zoneStrokes: bucketOf(), freeStrokes: bucketOf() };
 
 /**
  * Weltrenderer: Bahnprofil aus dem Bahnmodell bauen (nur Geometrie, ohne WebGL) und prüfen, dann die Bahnknoten durch die
@@ -251,6 +356,15 @@ recs.forEach((rec, k) => {
 });
 console.log('\nFahrt geschafft (offenes Ende zählt als geschafft):');
 for (const r of ['brush', 'stage', 'single', 'lanes'] as Reading[]) console.log(`  ${NAME[r].padEnd(10)}: ${tally[r].ok} von ${tally[r].n}`);
+if (zoneFile) {
+  const st = [...zoneTally.steps].sort((a, b) => a - b);
+  const mid = st.length ? st[Math.floor(st.length / 2)] : NaN;
+  const rel = [...zoneTally.releases].sort((a, b) => a - b);
+  const relMid = rel.length ? rel[Math.floor(rel.length / 2)] : NaN;
+  const med = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : NaN);
+  for (const [name, bk] of [['mit Fels oder Raum', zoneTally.zoneStrokes], ['ohne Berührung', zoneTally.freeStrokes]] as const) console.log(`  Striche ${name}: ${bk.n}, Tiefensprünge ${bk.jumps} (${(bk.jumps / Math.max(1, bk.n)).toFixed(1)} je Strich), Vorschau-Sprünge ${bk.previewJumps} (${(bk.previewJumps / Math.max(1, bk.n)).toFixed(1)} je Strich), Loslassen im Median ${med(bk.release).toFixed(2)} Spuren`);
+  console.log(`\nZone ${zoneFile.name}: ${zoneTally.strokes} Pinsel-Striche, ${zoneTally.jumps} Tiefensprünge (über 0,4 Spuren in 2 m), größte Tiefenänderung je Strich im Median ${mid.toFixed(2)} Spuren/m (Maximum ${zoneTally.maxStep.toFixed(2)}), ${zoneTally.crossings} Kreuzungen, ${zoneTally.blocked} Fels-Abschnitte, ${zoneTally.cut} vor dem Fels abgeschnitten; Vorschau: ${zoneTally.previewJumps} Sprünge an gezeigten Punkten (größter ${zoneTally.previewMax.toFixed(2)} Spuren), Sprung beim Loslassen im Median ${relMid.toFixed(2)} Spuren (Maximum ${zoneTally.releaseMax.toFixed(2)})`);
+}
 if (WORLD) {
   const med = [...worldTally.medians].sort((a, b) => a - b);
   const mid = med.length ? med[Math.floor(med.length / 2)] : NaN;

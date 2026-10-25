@@ -65,7 +65,16 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Gelernt: Ein nach unten gezeichneter Strich hieße für den Pinsel „nach vorn“; darum hält der Löser einen Punkt unter
   der Oberfläche über einem offenen Raum in dessen Spuren (sonst landete die Bahn am Bühnenrand statt im Raum). Tests 267
   grün, Build grün, Replay `--world` unverändert grün (475 Profile, Median 2,0 px), Szenario 10 mit 17 Prüfungen grün
-  (135 Zeichenaufrufe). Als Nächstes Tor 2b (Handy-Test).
+  (135 Zeichenaufrufe).
+  Tor 2b, erster Test (25.10.): Florian fand die Bahn in Räumen und an Berg und Tunnel unschön und springend. Fix gebaut
+  (25.10., TECH.md 4h „Glättung der Tiefenwahl“): eine Seite je Passage am Fels, die über Vorschauen, Loslassen und
+  Nachbessern bleibt; Anlauf 8 m vor und nach Wänden und Räumen; Räume bis zur Oberfläche offen, Brücke über das Loch oder
+  Tauchfahrt auf der Raummitte; nur die Seitenwände des Raums sind Fels für den Pinsel; der Fels schlägt die Hebel der
+  Probefahrten. System: Passagen, Seitengedächtnis, Anlauf, Raum-Treffer. Platzhalter: Abtauchen ohne Schacht,
+  rechteckige Löcher. Messung an 71 Aufnahmen (Replay `--zone probe`): Tiefensprünge je berührendem Strich 10,7 statt
+  12,2, Vorschau-Sprünge 85,3 statt 95,2, Loslassen 1,09 statt 1,14 Spuren, blockierte Läufe 0 statt 6. Tests 272 grün,
+  Build grün, Replay `--world` unverändert (475 Profile, Median 2,0 px); Browser: der Strich durch den Berg läuft glatt
+  (0,03 Spuren je Meter), die Tauchfahrt in den Raum ohne Knick am Lochrand. Als Nächstes: Florian testet erneut (Tor 2b).
 - **24.10., Etappe 1 begonnen** (Branch `etappe-1-weltrenderer`, Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10).
   Schritt 1 gebaut: Weltrenderer hinter `?world=1` (Three-Szene im selben WebGL-Kontext, Pixi zeichnet davor den Himmel und
   darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem

@@ -441,6 +441,39 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   Stufe kein Raum offen ist. Prüfzone: Raum e4 (offen ab Stufe 2), Looks Tag/Abend/Nacht; Tests in
   `tests/underground.test.ts`. Platzhalter: rechteckige Löcher und Fenster, Abtauchen als Knick statt Schacht, Himmel nur
   Tag oder Nacht, die Lichtschächte und der Nebel der Räume aus dem Labor fehlen noch.
+- **Glättung der Tiefenwahl an Wänden und Räumen** (Fix zu Tor 2b, 25.10.; `src/track/brushTrack.ts`, `src/zone/rock.ts`,
+  `src/zone/underground.ts`). Florians erster Test an Tor 2b: unschöne, springende Bahnen in Räumen und an Berg und Tunnel.
+  Befund: Die Seitenwahl am Fels fiel je Lauf von Linienpunkten und je Wand (Lippe und Rückwand getrennt) und in jeder
+  Vorschau neu, also kippte sie von Vorschau zu Vorschau und beim Loslassen; die Schranken setzten ohne Anlauf hart an der
+  Wand ein. Über einem offenen Raum war der Raumboden auch für eine Bahn über der Oberfläche der Boden (die Wunschtiefe zog
+  eine Brücke über das Loch bis 3 Spuren nach hinten), die zulässigen Spuren im Raum wanderten mit der Bildhöhe (Wunsch in
+  der Mitte des zulässigen Bereichs, der nahe der Decke auf die hinterste Spur schrumpfte), und der Boden des Höhlenkastens
+  sperrte einen Strich entlang des Raumbodens. Jetzt: (1) Spannen tragen Element und Wand (`RockSpan.id`, `kind`); Läufe
+  desselben Elements, die höchstens `ROCK_RAMP` (8) Punkte auseinanderliegen, bilden eine Passage (ein Vorbeikommen am
+  Element), und je Passage gilt eine Seite (`RockSide`: davor, zwischen Lippe und Rückwand, dahinter), nach der Lage der
+  ersten Lösung. (2) Die Seite bleibt über Vorschauen, Loslassen und Nachbessern (`BrushPreview.rockSides` →
+  `BrushOptions.rockSides` → `BrushPlan.rockSides`; Schlüssel Element@Anfang der Passage, bis 3 Punkte Versatz); geht sie
+  nicht mehr, die nächste, sonst blockiert. Die Seitenwahl misst an den harten Schranken (Bühne, Raum; `hardLow`), nicht am
+  Hebel „nach hinten legen“ der Probefahrten: Der Fels schlägt den Hebel (vorher sperrte der Hebel die Seite, und eine
+  Passage, die frei war, wurde rot). (3) Wunschtiefe `ROCK_GAP` (0,15 Spuren) vor der Wand bzw. in der Korridormitte, mit
+  Anlauf über `ROCK_RAMP` Punkte davor und danach (smoothstep). (4) Räume: `roomLanes` liefert für jeden Punkt über der
+  Grundfläche einen `RoomHit` (Spuren, Raummitte, Höhe h des Strahls auf der Raummitte über der Oberfläche, Raumboden,
+  Oberfläche); der Raum ist bis zur Oberfläche offen (`ROOM_DIVE` 0,3 m; die Decke zählt nicht mehr, der Deckel ist weg).
+  Tauchfahrt (h < −0,3 m): Tiefe in den Spuren des Raums zwischen Raumboden + 1 m und Oberfläche, Wunsch die Raummitte
+  (unter dem Raumboden gemalt: alle Spuren, die Höhe hebt der Boden an), `ROOM_MARGIN` 0,15 Spuren Abstand zu den Wänden,
+  und die Raummitte zieht mit `ROOM_PULL` (2, zusätzlich zum Höhengewicht), sonst bliebe eine Bahn, die von hinten kommt, an
+  der Rückwand hängen. Brücke (h ≥ −0,3 m, Bahn in den Spuren des Raums):
+  Boden ist der Raumboden (weite Schranke), die Wunschtiefe die der Oberfläche, und je näher der Strich der Oberfläche
+  kommt, desto mehr zieht sie auf die Raummitte; davor und danach der Anlauf. Für den Pinsel sind beim Höhlenkasten nur die
+  Seitenwände Fels (`caveSide`), den Boden hält die Boden-Funktion; `solid` (Fahrt, Stützen) kennt Boden und Wände weiter.
+  Messung (`npm run strokes:replay -- --zone probe recordings/strokes.jsonl` auf 71 Aufnahmen aus dem Worktree, 53 davon
+  mit Fels- oder Raumberührung; `--stage N` erzwingt eine Fortschrittsstufe, `TC_DEBUG_ROCK=1` druckt blockierte Läufe und
+  Seiten): Tiefensprünge je berührendem Strich 10,7 statt 12,2, Vorschau-Sprünge 85,3 statt 95,2, Sprung beim Loslassen im
+  Median 1,09 statt 1,14 Spuren, blockierte Läufe 0 statt 6, größte Tiefenänderung je Meter unverändert höchstens 1,57
+  Spuren; ohne Zonenregeln 11,2 / 73,3 / 0,87 (die Aufnahmen entstanden ohne Zone, die Berührungen sind Zufall; mit Stufe
+  2 und offenem Raum dieselben Zahlen, kaum eine Aufnahme taucht). Tests in `tests/rock.test.ts` (Seite bleibt über
+  Vorschauen und beim Loslassen, Hebel gegen Fels) und `tests/underground.test.ts` (Brücke, Tauchfahrt mit Wellen,
+  Raumboden). Platzhalter weiter: Abtauchen ohne Schacht, rechteckige Löcher.
 
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).

@@ -18,6 +18,9 @@ import { threePartOutline } from './build';
 export interface RockSpan {
   z0: number;
   z1: number;
+  /** Element und Wand (Lippe, Rückwand, Wand): der Löser hält je Element und Strich eine Seite */
+  id?: string;
+  kind?: 'lip' | 'back' | 'wall';
 }
 
 /** Sicherheitsabstand vor und hinter Fels (Spuren): die Bahn streift die Lippe nicht */
@@ -26,6 +29,7 @@ export const ROCK_MARGIN = 0.12;
 export const CAVE_WALL = 0.6;
 
 interface Slab {
+  id: string;
   outline: Array<[number, number]>;
   minX: number;
   maxX: number;
@@ -37,6 +41,7 @@ interface Slab {
   openings: Array<{ x: number; y: number; r: number }>;
 }
 interface Column {
+  id: string;
   cx: number;
   zc: number;
   r: number;
@@ -44,6 +49,7 @@ interface Column {
   y1: number;
 }
 interface Cave {
+  id: string;
   x: number;
   y: number;
   zc: number;
@@ -77,6 +83,7 @@ export class RockField {
         const xs = outline.map((p) => p[0]);
         const ys = outline.map((p) => p[1]);
         this.slabs.push({
+          id: el.id,
           outline,
           minX: Math.min(...xs),
           maxX: Math.max(...xs),
@@ -87,11 +94,11 @@ export class RockField {
           openings: (el.openings ?? []).map((o) => ({ x: el.x + o.dx, y: el.y + o.dy, r: o.r })),
         });
       } else if (el.kind === 'column') {
-        this.columns.push({ cx: el.x, zc: el.z, r: el.w / 2, y0: el.y, y1: el.y + el.h });
+        this.columns.push({ id: el.id, cx: el.x, zc: el.z, r: el.w / 2, y0: el.y, y1: el.y + el.h });
       } else if (el.kind === 'cave') {
         // Räume „offen ab Stufe“ (Schritt 7): davor liegt der Deckel geschlossen und der Raum ist nicht erreichbar
         if ((el.openFrom ?? 0) > stage) continue;
-        this.caves.push({ x: el.x, y: el.y, zc: el.z, w: el.w, h: el.h, half: d / 2 / LANE_DEPTH });
+        this.caves.push({ id: el.id, x: el.x, y: el.y, zc: el.z, w: el.w, h: el.h, half: d / 2 / LANE_DEPTH });
       }
     }
   }
@@ -104,6 +111,15 @@ export class RockField {
     if (x < s.minX || x > s.maxX || y < s.minY || y > s.maxY || !inPolygon(s.outline, x, y)) return null;
     for (const o of s.openings) if (Math.hypot(x - o.x, y - o.y) <= o.r) return 'opening';
     return 'rock';
+  }
+
+  /**
+   * Seitenwand eines Höhlenkastens an (x, y)? Für den Pinsel zählt nur sie (Tor 2b): den Boden hält er als Boden des Raums
+   * ohnehin ein, die Decke ist offen; sonst sperrte ein Strich entlang des Raumbodens den ganzen Raum
+   */
+  private caveSide(c: Cave, x: number, y: number): boolean {
+    const dx = Math.abs(x - c.x);
+    return dx >= c.w / 2 - CAVE_WALL && dx <= c.w / 2 + CAVE_WALL && y >= c.y - CAVE_WALL && y <= c.y + c.h;
   }
 
   /** Wand oder Boden eines Höhlenkastens an (x, y)? Der Raum dazwischen ist frei; die Decke ist offen (der Deckel ist weg, die Bahn darf von oben hinein; Schritt 7) */
@@ -124,21 +140,21 @@ export class RockField {
       // Spuren: vorn klein, hinten groß; die Lippe liegt vor der Spur des Elements, die Rückwand dahinter
       const lip = s.zc - s.half;
       const wl = toWorld(p, lip);
-      if (this.slabHit(s, wl.x, wl.y) === 'rock') out.push({ z0: lip - ROCK_MARGIN, z1: lip + ROCK_MARGIN });
+      if (this.slabHit(s, wl.x, wl.y) === 'rock') out.push({ z0: lip - ROCK_MARGIN, z1: lip + ROCK_MARGIN, id: s.id, kind: 'lip' });
       const back = s.zc + s.half;
       const wb = toWorld(p, back);
-      if (this.slabHit(s, wb.x, wb.y) !== null) out.push({ z0: back - ROCK_MARGIN, z1: back + ROCK_MARGIN });
+      if (this.slabHit(s, wb.x, wb.y) !== null) out.push({ z0: back - ROCK_MARGIN, z1: back + ROCK_MARGIN, id: s.id, kind: 'back' });
     }
     for (const c of this.columns) {
       const w = toWorld(p, c.zc);
       if (Math.abs(w.x - c.cx) > c.r || w.y < c.y0 || w.y > c.y1) continue;
       const half = c.r / LANE_DEPTH;
-      out.push({ z0: c.zc - half - ROCK_MARGIN, z1: c.zc + half + ROCK_MARGIN });
+      out.push({ z0: c.zc - half - ROCK_MARGIN, z1: c.zc + half + ROCK_MARGIN, id: c.id, kind: 'wall' });
     }
     for (const c of this.caves) {
       const w = toWorld(p, c.zc);
-      if (!this.caveWall(c, w.x, w.y)) continue;
-      out.push({ z0: c.zc - c.half - ROCK_MARGIN, z1: c.zc + c.half + ROCK_MARGIN });
+      if (!this.caveSide(c, w.x, w.y)) continue;
+      out.push({ z0: c.zc - c.half - ROCK_MARGIN, z1: c.zc + c.half + ROCK_MARGIN, id: c.id, kind: 'wall' });
     }
     return out;
   }

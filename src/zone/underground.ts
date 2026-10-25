@@ -6,6 +6,7 @@
  * Raum hinab und der Pinsel sieht dort den Raumboden als Boden. Reine Daten und Funktionen.
  */
 import { LANE_DEPTH, type StagePoint } from '@/track/stage';
+import { ROOM_DIVE, ROOM_MARGIN, type RoomHit } from '@/track/brushTrack';
 import { kindDefaults, type ZoneElement } from './types';
 
 /** offener Raum mit seiner Ausdehnung (x, Spuren) und Boden/Decke (Höhe) */
@@ -61,23 +62,37 @@ export function groundWithRooms(base: (x: number, lane: number) => number, rooms
 }
 
 /**
- * Spuren, auf denen ein Bühnenpunkt in einem offenen Raum liegt (zwischen Boden und Decke, über der Grundfläche): Der
- * Pinsel hält dort die Tiefe im Raum, denn „unten auf dem Bild“ hieße sonst „vorn“ und der Boden am Bühnenrand ist zu.
- * null, wenn der Punkt über der Oberfläche liegt oder kein Raum passt.
+ * Treffer eines Bühnenpunkts über der Grundfläche eines offenen Raums unter dem Boden (Tor 2b): Liegt der Strahl auf der
+ * Raummitte unter der Oberfläche, taucht die Bahn in den Raum, und z0 … z1 sind die Spuren, in denen sie zwischen Raumboden
+ * (1 m darüber) und Oberfläche bleibt (der Deckel ist weg, der Raum ist bis zur Oberfläche offen; `ROOM_MARGIN` Abstand zu den Wänden); ist der Strich unter dem
+ * Raumboden gemalt, sind es alle Spuren des Raums (den Boden hebt der Pinsel an). Darüber fährt die Bahn über das Loch.
+ * null über keinem Raum; ein Kasten über dem Boden ist kein Loch und zählt nicht.
  */
-export function roomLanes(rooms: readonly Room[], p: StagePoint, toWorld: (p: StagePoint, lane: number) => { x: number; y: number }, surface: (x: number, lane: number) => number): { z0: number; z1: number } | null {
+export function roomLanes(rooms: readonly Room[], p: StagePoint, toWorld: (p: StagePoint, lane: number) => { x: number; y: number }, surface: (x: number, lane: number) => number): RoomHit | null {
   for (const r of rooms) {
-    const mid = toWorld(p, (r.lane0 + r.lane1) / 2);
-    if (mid.x < r.x0 || mid.x > r.x1 || mid.y >= surface(mid.x, (r.lane0 + r.lane1) / 2) - 0.3) continue;
-    let z0 = Infinity;
-    let z1 = -Infinity;
-    for (let lane = r.lane0 + 0.05; lane <= r.lane1 - 0.05 + 1e-9; lane += 0.05) {
-      const w = toWorld(p, lane);
-      if (w.y < r.y0 + 1 || w.y > r.y1 - 0.8) continue;
-      z0 = Math.min(z0, lane);
-      z1 = Math.max(z1, lane);
+    const center = (r.lane0 + r.lane1) / 2;
+    const mid = toWorld(p, center);
+    if (mid.x < r.x0 || mid.x > r.x1) continue;
+    const s = surface(mid.x, center);
+    if (r.y1 > s + 0.5) continue;
+    const h = mid.y - s;
+    let z0 = r.lane0 + ROOM_MARGIN;
+    let z1 = Math.max(z0, r.lane1 - ROOM_MARGIN);
+    if (h < -ROOM_DIVE) {
+      let a = Infinity;
+      let b = -Infinity;
+      for (let lane = z0; lane <= z1 + 1e-9; lane += 0.05) {
+        const w = toWorld(p, lane);
+        if (w.y < r.y0 + 1 || w.y > s - ROOM_DIVE) continue;
+        a = Math.min(a, lane);
+        b = Math.max(b, lane);
+      }
+      if (a <= b) {
+        z0 = a;
+        z1 = b;
+      }
     }
-    if (z0 <= z1) return { z0, z1 };
+    return { z0, z1, center, h, floor: r.y0 + 0.05, surface: s };
   }
   return null;
 }

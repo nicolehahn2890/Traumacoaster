@@ -1929,6 +1929,9 @@ export class LevelScene implements Scene {
       screen: [this.w, this.h],
       dpr: window.devicePixelRatio,
       persp: viewState().persp ? viewState().fov : undefined,
+      // Zone und Feld (Etappe 2): das Replay lädt damit Fels und Räume der Zone
+      zone: this.sandbox?.zone?.name,
+      field: this.activeField?.id,
       points: raw.map(([X, Y, ms, cx, cy]) => (cx === undefined ? [+X.toFixed(3), +Y.toFixed(3), Math.round(ms)] : [+X.toFixed(3), +Y.toFixed(3), Math.round(ms), +cx.toFixed(3), +cy.toFixed(3)])),
       before,
       result: this.path ? { nodes: this.path.nodes.length, closed: isClosed(this.path), length: Math.round(this.samples?.length ?? 0), brush: !!this.path.brush } : null,

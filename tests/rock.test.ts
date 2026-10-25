@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LANE_DEPTH, rayToWorld, toStage, type StagePoint } from '@/track/stage';
-import { planBrushTrack, previewBrushTrack } from '@/track/brushTrack';
+import { planBrushTrack, previewBrushTrack, swapCrossing } from '@/track/brushTrack';
 import { sampleTrack } from '@/track/model';
 import { Terrain } from '@/physics/terrain';
 import { TrainSim, type TrainSimOptions } from '@/physics/trainSim';
@@ -130,5 +130,49 @@ describe('Festigkeitsfeld der Zone (Etappe 2, Schritt 5)', () => {
     const without = new TrainSim(samples, path, { ...opts, insideRock: undefined });
     for (let i = 0; i < 3000 && without.phase !== 'failed' && without.phase !== 'done' && without.phase !== 'flying'; i++) without.step(1 / 60);
     expect(without.stats.tunnels).toBe(0);
+  });
+});
+
+describe('Glättung der Tiefenwahl am Fels (Tor 2b)', () => {
+  it('die Seite einer Passage bleibt über Vorschauen und beim Loslassen; die Tiefe läuft ohne Knick an der Lippe vorbei', () => {
+    const rock = new RockField([slab]);
+    const opts = { rock: (p: StagePoint) => rock.spans(p, toWorld) };
+    // Bildhöhe knapp vor der Lippe: ohne Fels läge die Linie in der Lippe, die Seite ist knapp
+    const Y = 4 + 4.2 * 0.5;
+    const pts = flatLine(Y, 30, 150);
+    // Vorschauen wie beim Malen: alle 8 m eine, jede baut auf der letzten auf
+    let pv: ReturnType<typeof previewBrushTrack> = null;
+    const sidesSeen = new Set<string>();
+    for (let k = 20; k <= pts.length; k += 4) {
+      pv = previewBrushTrack(pts.slice(0, k), opts, pv);
+      if (pv) for (const [key, side] of pv.rockSides) sidesSeen.add(`${key.slice(0, key.indexOf('@'))}=${side}`);
+    }
+    expect(pv).not.toBeNull();
+    // nur eine Seite je Element über alle Vorschauen
+    expect([...sidesSeen].filter((s) => s.startsWith('e1=')).length).toBe(1);
+    const plan = planBrushTrack(pts, opts, undefined, pv!)!;
+    expect(plan.rock).toEqual([]);
+    expect([...plan.rockSides.values()]).toEqual([...pv!.rockSides.values()]);
+    // beim Loslassen springt am Berg nichts: Tiefe wie in der letzten Vorschau
+    const m = Math.min(plan.z.length, pv!.z.length);
+    for (let i = 0; i < m; i++) if (Math.abs(plan.line[i].X - 85) < 20) expect(Math.abs(plan.z[i] - pv!.z[i]) / LANE_DEPTH).toBeLessThan(0.3);
+    // kein Knick: höchstens 0,12 Spuren je Meter entlang des Bergs (Anlauf 8 m davor und danach)
+    for (let i = 1; i < plan.z.length; i++) if (Math.abs(plan.line[i].X - 85) < 30) expect(Math.abs(plan.z[i] - plan.z[i - 1]) / LANE_DEPTH).toBeLessThan(0.12);
+  });
+
+  it('Nachbessern: der Hebel „nach hinten legen“ drückt die Bahn nicht in die Lippe, der Fels bleibt frei', () => {
+    const rock = new RockField([slab]);
+    const opts = { rock: (p: StagePoint) => rock.spans(p, toWorld) };
+    const Y = 4 + 4.2 * 0.5;
+    const plan = planBrushTrack(flatLine(Y, 30, 150), opts)!;
+    // wie der Hebel: Mindesttiefe am Berg 3 m hinter die Lösung legen, dann neu wählen
+    for (let i = 0; i < plan.z.length; i++) if (Math.abs(plan.line[i].X - 85) < 14) plan.lower[i] = plan.z[i] + 3;
+    swapCrossing(plan, -1, opts);
+    expect(plan.rock).toEqual([]);
+    const inLip = (lane: number) => lane > lip - ROCK_MARGIN + 1e-3 && lane < lip + ROCK_MARGIN - 1e-3;
+    plan.line.forEach((p, i) => {
+      if (Math.abs(p.X - 85) > 10 || Math.abs(p.X - 85) < 3) return;
+      expect(inLip(plan.z[i] / LANE_DEPTH)).toBe(false);
+    });
   });
 });

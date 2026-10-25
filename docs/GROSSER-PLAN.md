@@ -628,7 +628,7 @@ Rückfragen der Session (25.10.): alle Empfehlungen angenommen (drei Tore; Durch
 bleibt eigenes Element; Entwurf der Basiszone v1 durch die Session; Startart-Knopf wechselt per Tipp; Kettenzugstärke
 als Höhe über der Station).
 
-**Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritte 1 bis 3 und 3b (Aufzug) gebaut am 25.10.2026 (Nachträge in Paket 3, 2 und 4). **Tor 2a bestanden (Florian, 25.10.2026):** Startart-Platzhalter und Aufzug reichen bis zur Stilprobe, der Knopf am Hebel ist verständlich, die Kettenregel passt, das Handy läuft flüssig. Schritte 5 bis 7 gebaut am 25.10.2026 (Nachträge in Paket 5 und 2); als Nächstes Tor 2b.
+**Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritte 1 bis 3 und 3b (Aufzug) gebaut am 25.10.2026 (Nachträge in Paket 3, 2 und 4). **Tor 2a bestanden (Florian, 25.10.2026):** Startart-Platzhalter und Aufzug reichen bis zur Stilprobe, der Knopf am Hebel ist verständlich, die Kettenregel passt, das Handy läuft flüssig. Schritte 5 bis 7 gebaut am 25.10.2026 (Nachträge in Paket 5 und 2). Tor 2b, erster Test (Florian, 25.10.2026): Bahn in Räumen und an Berg und Tunnel unschön und springend; Fix (Glättung der Tiefenwahl an Wänden und Räumen, Nachtrag in Paket 5) gebaut am 25.10.2026, Florian testet erneut.
 
 ### Rückfragen zu Paket 10
 
@@ -1079,6 +1079,15 @@ die gemalten Räume bekommen später echte Öffnungen (Tunnelkapseln in Schritt 
 hieße für den Pinsel „nach vorn“, und am vordersten Bühnenrand ist der Boden zu; darum hält der Löser einen unter der
 Oberfläche gezeichneten Punkt über einem offenen Raum in den Spuren des Raums. So taucht die Bahn ab, wo ein Raum ist, und
 bleibt sonst oben. Platzhalter: rechteckige Löcher, Abtauchen als Knick.
+**Nachtrag 25.10.2026 (Fix zu Tor 2b; `docs/TECH.md` 4h „Glättung der Tiefenwahl“):** Florians erster Test an Tor 2b fand
+die Bahn in Räumen und an Berg und Tunnel unschön und springend. Gelernt: (1) Eine Seitenwahl je Lauf und je Wand kippt
+von Vorschau zu Vorschau und beim Loslassen; sie muss je Passage fallen (ein Vorbeikommen am Element, Lippe und Rückwand
+zusammen) und sich merken, was gezeigt wurde. (2) Ein offener Raum ist für eine Bahn über dem Loch kein tieferer Boden,
+sondern ein Loch: Die Brücke behält ihre Spur, erst die Tauchfahrt nimmt die Raummitte, und der offene Raum reicht bis zur
+Oberfläche (die Decke ist mit dem Deckel weg). (3) Der Fels schlägt die Hebel der Probefahrten, sonst wird eine Passage
+rot, die frei war. (4) Wände und Räume brauchen einen Anlauf (8 m), sonst knickt die Bahn an der Wand ab. Gemessen an 71
+Aufnahmen: Tiefensprünge je berührendem Strich 10,7 statt 12,2, Vorschau-Sprünge 85,3 statt 95,2, blockierte Läufe 0 statt
+6. Florian testet erneut.
 **Status: bestätigt am 24.10.2026.** Graben in Stufen trägt Florians Vorbehalt; Autoscroll wird nach dem Ausprobieren
 entschieden. **Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Der Wasserfall bleibt ein eigenes Element (er ist
 seit Etappe 1 da) und bekommt den Schalter „Fahrt dahinter gedämpft“; die Schalter Schmuck, trägt Stützen und Splash-Zone
