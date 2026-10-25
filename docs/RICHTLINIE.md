@@ -30,7 +30,9 @@ auf `main` auch auf dem Handy unter https://nicolehahn2890.github.io/Traumacoast
    weichen aus); Größen sind per Adresse testbar (`?tip=26&line=15&band=30&dzoom=11`).
 8. **Figuren im Eigenbau** (datengetriebener Cut-out mit Teile-Slots und Reaktions-Zuständen), Spine nur bei Bedarf.
 9. **Assets:** GPT-Image mit transparentem Hintergrund, ein Teil je Bild, mit Metadaten (Maßstab, Fußpunkt,
-   Tiefe, Öffnung, Fundamentflächen); Meshy nur für Wagen und Prüfkörper, nicht für den Look.
+   Tiefe, Öffnung, Fundamentflächen); Meshy sicher für Wagen und Prüfkörper. Nachtrag 25.10.2026 (Florian): für
+   sichtbare Kulissen offen; ob ein gemaltes Teil oder ein 3D-Teil mit gemalter, per Shader umgefärbter Textur besser
+   aussieht, wird an der Stilprobe je Stelle getestet (Abschnitte 3 und 9).
 10. **Erst die Alpen-Zone komplett**, dann aus denselben Systemen die anderen; Level = Ausschnitt einer Zone.
 
 ## 1. Ausgangslage, ehrlich verglichen
@@ -191,9 +193,12 @@ verschmolzen, sonst wird der Holztyp auf dem Handy der teuerste.
 alles im Labor), (2) unsichtbare Tiefen- und Kollisionskörper (Stamm-Zylinder, Felsvolumen; dafür reichen
 Primitive, Meshy ist hier Luxus), (3) sichtbare Meshes nur dort, wo ein Volumen wirklich von mehreren Seiten zu
 sehen ist: Wagen mit Rolls, vielleicht ein Hero-Fels. Ein Meshy-Untergrund als sichtbares Mesh müsste gemalt
-texturiert werden, sonst bricht er den Stil (Bilder 1–3 der ersten Nachricht zeigen genau das: schöne Form,
-falsches Licht); der Höhlenkasten aus vier gemalten Flächen im Labor liest sich bereits als Höhle. Regel:
+texturiert werden; der Höhlenkasten aus vier gemalten Flächen im Labor liest sich bereits als Höhle. Regel:
 **Flächen malen, Volumen nur, wo die Bahn sie braucht.**
+**Nachtrag 25.10.2026 (Florian):** Für sichtbare Kulissen ist das offen. Die Meshy-Modelle aus den GPT-Earle-Teilen fand
+er sehr gut; eine gemalte Textur lässt sich mit Shadern umfärben und so anpassen. Was an welcher Stelle besser aussieht,
+gemaltes Teil oder 3D-Teil mit gemalter Textur, wird an der Stilprobe getestet; die Regel gilt bis dahin sicher nur für
+Funktionsgeometrie und Prüfkörper.
 
 ## 4. Untergrund, Höhlen, Tunnel
 
@@ -284,8 +289,10 @@ Maßstäbe, Berührungen).
   `modul-schema.json`; die Alpha-Konturen aus dem Parallaxentest sind nur ein Anfang.
 - **Umfärbbar:** Elemente in neutraler Palette erzeugen; Zone und Stimmung kommen aus dem Shader. Für Teile, die
   mehrere Materialien haben, eine RGB-Maske (5–15 Minuten je Teil, halbautomatisch).
-- **Meshy/Tripo:** nur für Wagen (echter 3D-Körper für Rolls) und unsichtbare Prüfkörper; die generierten Modelle
-  beleuchten „realistisch“ nach und passen nicht zum flachen Earle-Look (Bild 1–3 der Nachricht zeigen das).
+- **Meshy/Tripo:** sicher für Wagen (echter 3D-Körper für Rolls) und unsichtbare Prüfkörper; für sichtbare Kulissen
+  offen. Nachtrag 25.10.2026 (Florian): Die frühere Begründung, die Modelle beleuchteten sich realistisch und brächen
+  den flachen Look, ist gestrichen; die Meshy-Modelle aus den GPT-Earle-Teilen fand er sehr gut, und gemalte Texturen
+  lassen sich mit Shadern umfärben. Was an welcher Stelle besser aussieht, wird an der Stilprobe getestet (Abschnitt 3).
 - Die Labor-Umwandlung (`public/labs/assets/`, 34 Teile, 2,2 MB WebP) zeigt: alle GPT-Teile sind hart freigestellt
   (0–3 % halbtransparente Pixel), nur Nebel/Lichtschacht sind weich. Beschnittene Kanten (z. B. `env_foothill_a`
   links) müssen im Katalog vermerkt sein.

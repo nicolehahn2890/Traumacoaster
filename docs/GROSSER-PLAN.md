@@ -483,6 +483,11 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
     des Dreiteilers; nachgerüstet als Alt+Pfeile (Öffnung, Shift fein), Plus und Minus (Radius) und Shift+Pfeile
     links/rechts (Dicke von Dreiteiler, Höhlenkasten, Wasser). Gelernt: Jede Code-Änderung lädt die Editor-Seite am Mac
     neu, ungesicherte Einträge gehen dabei verloren; gespeicherte Zonen kommen per Hot-Reload zurück.
+16. Tor 1b bestanden (25.10.): Florian hat den Testausschnitt (Station, Hügel, Fenster-Element, Baustelle) selbst gebaut,
+    das Handy zeigt dasselbe. Seine Fragen dabei (Tunnel an Seite und Front, organischer Boden, Höhlen mit Lagen) sind
+    mit Antwort in Paket 8a festgehalten, mit seiner Korrektur: gemaltes Teil gegen 3D-Teil mit gemalter, per Shader
+    umgefärbter Textur bleibt offen und wird an der Stilprobe je Stelle getestet. Etappe 1 abgeschlossen, Pull Request
+    nach `main`.
 
 ## Paket 10: Etappen und Abnahmen (Vorschlag aus allem Bestätigten)
 
@@ -508,7 +513,7 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
 | **E1 Weltrenderer und Klötzchen-Editor** | Three-Szene hinter Schalter, Pixi-HUD im Kontext, Kamera 18 Grad, Boden, Erdschnitt, Kulissen-Platzhalter mit Tiefenpuffer, vier Bahnprofile, Stützenfamilien instanziert, Wagen-Platzhalter, Licht, Schatten, Nebel, Looks aus dem Labor; Editor Stufe 1 (Platzhalter, Metadaten, Felder, Station, Baustelle, Coins, Zonendatei, Testfahrt); Lesarten-Knopf und Spur-Filter raus | Basiszone-Datei v0 mit einem Testfeld, vom Editor geschrieben | 100-Punkte-Test, Replay grün, Handy 60 fps mit Holz unter 150 Draw Calls, Florian baut selbst einen Testausschnitt, Handy zeigt dasselbe | M (Arbeitsschritte unten) | Richtlinie, Labor |
 | **E2 Bahn und Welt** | Fähigkeiten als Schalter (3.1), Startarten sichtbar (Platzhalter), Aufwertungen als Daten, Station mit Vorgabestück, Häuschen, Hebel und Richtung, Schlangenbereich mit Freiraum und Platzhalter-Figuren, Feld mit Kamerabegrenzung, Fels-Regeln (Öffnungen, Baustellen, Stop-Hinweis), Baustellen in zwei Varianten mit Freilegung, Räume mit „offen ab Stufe“, Autoscroll-Schalter, Wasser mit Schaltern, Fortschrittsstufe mit Looks, Kettenzuglinie | Basiszone v1: alle Bahn- und Weltfähigkeiten mit Platzhaltern spielbar | Checkliste je Fähigkeit in je einem Feld, Replay grün, Handy 60 fps, Florians Spieltest | M | E1 |
 | **E3 Ziele, Rätsel, Humor** | Zielarten-Katalog v1 auf der 3D-Bahn, Magnet-Coins, Tunnel-Meter, Sprungschanze mit Fangtrichter und Vorab-Fahrt, Fangen mit Magnetwagen, Bild im Bild als 2D-Kabine, Glocke, Mühlrad, Tor mit Schalterplatte, Durchbruch, Sterne A plus C mit „Alle an Bord“, Humor-Regeln (Entgleisen selten und groß), Bug-Backlog (Stabilität, Schräglage automatisch, Strichintelligenz, Bahnende, Kreuzungstausch ins Bogenmenü), 150 Level als Inhalt raus | Basiszone v2: jedes Ziel und jedes Element in einem Feld erlebbar | Prüfer-Vorstufe: jedes Ziel einmal erfüllt im Replay, Handy 60 fps auch mit Vorab-Fahrt und Bild im Bild, Florians Spieltest mit Fokus Humor | M | E2 |
-| **E4 Stilprobe** | Stützen-Werkstatt (drei Wege, Hybrid gegen Florians Studien), UI-Werkstatt (drei Varianten, Florian wählt), Funkeln-Shader, Stilproben-Satz (10 bis 15 Teile über das Figma-Konto mit Prüfung), Florians erste Figurenteile mit Farbmasken im Rig, Looks Tag, Abend, Nacht; ein Feld der Basiszone komplett ohne Platzhalter | Stilprobe: ein Feld im Alpen-Look, Art Direction v2 als Dokument (ersetzt `docs/ART.md`) | Standbild vom Handy neben Bild 15 und 04, Stützen je Familie neben der Studie, UI-Variante gewählt, Handy 60 fps mit Shadow Map und Funkeln, Florians Freigabe | M (parallel zu E3 möglich, sobald der Erzeugungsweg steht) | E1, Florians Teile, Erzeugungsweg |
+| **E4 Stilprobe** | Stützen-Werkstatt (drei Wege, Hybrid gegen Florians Studien), UI-Werkstatt (drei Varianten, Florian wählt), Funkeln-Shader, Stilproben-Satz (10 bis 15 Teile über das Figma-Konto mit Prüfung), Florians erste Figurenteile mit Farbmasken im Rig, Looks Tag, Abend, Nacht; ein Feld der Basiszone komplett ohne Platzhalter; Vergleich je Stelle: gemaltes Teil gegen 3D-Teil mit gemalter, per Shader umgefärbter Textur (Florian, 25.10.) | Stilprobe: ein Feld im Alpen-Look, Art Direction v2 als Dokument (ersetzt `docs/ART.md`) | Standbild vom Handy neben Bild 15 und 04, Stützen je Familie neben der Studie, UI-Variante gewählt, Handy 60 fps mit Shadow Map und Funkeln, Florians Freigabe | M (parallel zu E3 möglich, sobald der Erzeugungsweg steht) | E1, Florians Teile, Erzeugungsweg |
 | **E5 Alpen-Satz, Figuren, Karte** | Alpen-Satz (50 bis 70 Teile in Familien) ersetzt die Platzhalter der Basiszone, Katalog und KTX2, Figuren-Editor Stufe 1, Schlange mit Florians Figuren, Wagen Stufe 2 (Alpen-Autos nach Florians Entwurf, Holzzug und weitere über Generator und Meshy), Karte als ein Rad mit Sektoren, Miniaturen und Symbolen, Morph Schritt 1, Boden formen im Sandkasten | Basiszone komplett im Alpen-Look, Karte und Morph laufen | Zone komplett ohne Platzhalter, Morph-Video vom Handy ohne Sprung bei 60 fps, Replay grün, Prüfung „Platzhalter ohne Teil“ leer, Florians Freigabe | L | E3, E4, Florians Wagenentwurf |
 | **E6 Generator und Prüfer** | Rezepte als Layout-Grammatiken, Seeds, Kandidaten im Editor, Lösungsbahn je Level, Prüfer in der CI, Zonen-Bundles mit Vorladen, Speicher-Messung | Zehn Kandidaten-Level in der Basiszone, vom Prüfer bestanden | CI grün mit Prüfer, Handy 60 fps und Speicher im Rahmen, Florian nimmt zehn Kandidaten an oder ändert sie | M | E5 |
 | **E7 Neon-Freizeitpark** | Zweite Zone nur aus Daten, Neonpark-Satz, Looks Nacht und Neon mit Neon-Nebel, Glühen, Punktlichtern, eigene Stützen- und Stationsvarianten, Kostüme, höchstens ein neues interaktives Element; jede nötige Code-Änderung wird als Befund gegen das System notiert und behoben; danach Morph Schritt 2 mit Florian | Zweite Zone spielbar, Liste der Befunde, Morph-Animation final | Zone ohne neuen Engine-Code (Ausnahmen gelistet), 60 fps, Prüfer grün, Florians Freigabe | L | E6, Neonpark-Satz |
@@ -541,7 +546,7 @@ mit Florian. Die Session arbeitet auf einem eigenen Branch und geht am Tor per P
 10. **Tor 1b:** Florian baut selbst einen Testausschnitt (Station, Hügel, Fenster-Element, Baustelle); das Handy zeigt
     dasselbe; Fixes; Doku in `docs/TECH.md` und `docs/HANDOVER.md`; Pull Request nach `main`.
 
-**Stand:** Schritte 1 bis 4 gebaut am 24.10.2026, Tor 1a bestanden am 25.10.2026, Schritte 6 bis 9 gebaut am 25.10.2026 (Nachträge in Paket 1); Schritt 10 (Tor 1b) steht an.
+**Stand:** Schritte 1 bis 4 gebaut am 24.10.2026, Tor 1a bestanden am 25.10.2026, Schritte 6 bis 9 gebaut am 25.10.2026 (Nachträge in Paket 1); Tor 1b bestanden am 25.10.2026, Etappe 1 abgeschlossen, Pull Request nach `main` gestellt.
 
 **Florian parallel zu Etappe 1:** den Erzeugungsweg für Teile mit der Session prüfen (Voraussetzung für E4), erste
 Figurenteile in zwei Ansichten skizzieren, Entwurf der Alpen-Autos, Handy-Tests an den Toren, Entscheidungen an den
@@ -764,10 +769,12 @@ Teil mit echter Tiefe und Seitenansicht (Meshy) sein kann. Antwort der Session: 
 gemalte Öffnungen mit Öffnungsvolumen (Richtlinie 3; heute Platzhalter-Kreise in der Lippe und automatische Portale); der
 Boden ist ein Höhenfeld je x und Spur mit gemalten Rändern (heute flach, weil die Zone noch kein Gelände hat; „Boden
 formen“ in E5); Überhänge und Höhlen kommen aus gemalten Teilen in vielen Tiefenlagen (Höhlenkasten als Platzhalter,
-später vier gemalte Flächen plus Höhlenteile; Untergrund als Ameisenfarm, Paket 5). Ein sichtbares 3D-Teil erlaubt die
-Richtlinie nur, wo ein Volumen von mehreren Seiten zu sehen ist („Hero-Fels“), mit gemalter, unbeleuchteter Textur wie
-die Wagen. **Offen, entscheidet Florian an der Stilprobe (E4):** ein Hero-Fels mit Tunnel als Dreiteiler gegen denselben
-Fels als gemaltes 3D-Teil, nebeneinander auf dem Handy.
+später vier gemalte Flächen plus Höhlenteile; Untergrund als Ameisenfarm, Paket 5). **Florians Korrektur (25.10.):**
+Die Begründung, Meshy-Modelle beleuchteten sich realistisch und brächen den gemalten Look, ist gestrichen; die
+Meshy-Modelle aus den GPT-Earle-Teilen fand er sehr gut, und eine gemalte Textur lässt sich mit Shadern umfärben und so
+anpassen. Ob an einer Stelle ein gemaltes Teil oder ein 3D-Teil mit gemalter Textur besser aussieht, bleibt offen und
+wird an der Stilprobe (E4) je Stelle getestet, zum Beispiel ein Hero-Fels mit Tunnel in beiden Bauweisen nebeneinander
+auf dem Handy. Die Richtlinie trägt den Nachtrag in den Abschnitten 0, 3 und 9.
 
 ## Paket 6: Figuren, Schlange, Fahrgäste
 
@@ -1064,6 +1071,8 @@ Baustellen-Inventar der Zone, hart aufgeklebt auf das gemalte Bild.
    unkonventioneller (Florian, 24.10., Nachtrag).** Ausarbeitung in 0.4 als UI-Werkstatt mit Varianten.
 
 **Status: bestätigt am 24.10.2026**; die zehn Regeln bleiben vorläufig, bis die Stilprobe sie bestätigt oder ändert.
+**Nachtrag 25.10.2026 (Florian):** Gemalte Fläche gegen 3D-Teil mit gemalter, per Shader umgefärbter Textur (Meshy aus den
+GPT-Earle-Teilen) ist keine Regel, sondern ein Test der Stilprobe je Stelle; siehe Paket 8a und Richtlinie 3 und 9.
 
 ## Paket 7: Werkzeuge und Bedienung
 
