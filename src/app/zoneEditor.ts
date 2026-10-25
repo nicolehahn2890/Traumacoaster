@@ -12,8 +12,10 @@
  * Esc abwählen, T Bahntyp der Zone, Cmd/Strg+S speichern; Element: M Fundament, O Öffnung (Alt+Pfeile verschieben sie,
  * Plus und Minus ändern den Radius), A Anker, G Stufe, R Rolle; Station und Schlange: D Richtung; Baustelle:
  * V Variante; Coins: C Form. Felder (Werkzeug „Feld“, aufziehen): Enter aktiv, N Name, Z Ziele (Zeile „finish, height 20,
- * *coins 5“; Stern = Bonus), G Fortschrittsstufe der Zone, U Aufwertung (Gurtstufe), Entf löschen. Der Knopf „Testfahrt“
- * schaltet das gewählte Feld aktiv, wechselt ins Spielen und lässt die Bahn fahren (Schritt 9).
+ * *coins 5“; Stern = Bonus), G Fortschrittsstufe der Zone, U Aufwertungsstufe (Etappe 2, Schritt 1: Satz von Schaltern
+ * aus der Tabelle der Zone; Shift+U bearbeitet diese Stufe als Zeile „kettenzug launch booster, gurt 2, kette 32“),
+ * S Schalter des Felds (Zeile „+launch -tunnel, gurt 3, kette 30, budget 400, höhe 40“), Entf löschen. Der Knopf
+ * „Testfahrt“ schaltet das gewählte Feld aktiv, wechselt ins Spielen und lässt die Bahn fahren (Schritt 9).
  */
 import { Container, Graphics } from 'pixi.js';
 import type { Pt } from '@/core/input';
@@ -27,6 +29,7 @@ import { loadZone, onZoneChange, saveZone } from '@/zone/io';
 import { KIND_DEFAULTS, ZONE_ANCHORS, ZONE_DEPTH_ROLES, ZONE_GOAL_TYPES, formatGoals, newCoinGroup, newElement, newField, newQueue, newSite, newStation, parseGoals, round, type ZoneCoinGroup, type ZoneElement, type ZoneElementKind, type ZoneField, type ZoneFile, type ZoneQueue, type ZoneSite, type ZoneStation } from '@/zone/types';
 import { applyZoneExtras, buildZoneCoins, buildZoneQueue, buildZoneSite, buildZoneStation, itemPosition } from '@/zone/build';
 import { COIN_SHAPES } from '@/zone/groups';
+import { ABILITY_WORDS, ZONE_ABILITIES, describeAbilities, formatFieldLine, formatStageLine, parseFieldLine, parseStageLine, resolveAbilities, zoneUpgrades } from '@/zone/abilities';
 import { toView } from '@/track/stage';
 
 /** Werkzeuge der Palette: Platzhalter-Typen, Feld, Station, Schlange, Baustelle, Coin-Gruppe */
@@ -535,11 +538,42 @@ export class ZoneEditor {
         this.commitField(field);
         return true;
       }
+      const words = ZONE_ABILITIES.map((a) => ABILITY_WORDS[a][0]).join(' ');
+      if (lower === 'u' && ev.shiftKey) {
+        // Shift+U: die Stufe der Zone bearbeiten, die das Feld nennt (Tabelle Stufe → Schalter, Plan 2.4); die Tabelle
+        // wird dabei Teil der Zonendatei (vorher gilt die Vorbelegung)
+        if (field.upgrade === undefined) {
+          this.host.toast.show('Erst mit U eine Stufe wählen', 1.8);
+          return true;
+        }
+        const table = zoneUpgrades(this.zone).map((u) => ({ ...u, abilities: [...u.abilities] }));
+        const i = Math.min(field.upgrade, table.length - 1);
+        const text = this.ask(`Stufe ${i}${table[i].name ? ` „${table[i].name}“` : ''} der Zone: Schalter mit Leerzeichen (alles andere ist aus), dazu gurt 0 bis 4, kette Meter oder frei, wagen Farbe, name Wort. Wörter: ${words}`, formatStageLine(table[i]));
+        if (text === null) return true;
+        const { upgrade, unknown } = parseStageLine(text, table[i]);
+        table[i] = upgrade;
+        this.zone.upgrades = table;
+        if (unknown.length) this.host.toast.show(`Nicht verstanden: ${unknown.join(', ')}`, 2.5);
+        this.commitField(field);
+        return true;
+      }
       if (lower === 'u') {
-        // Aufwertung der Bahn, heute die Gurtstufe: wie die Welt → ohne → Beckengurt → Bügel → Schulterbügel → Rennsitz → wie die Welt
+        // Aufwertungsstufe der Zone (Plan 2.4): alles → Stufe 0 → … → letzte Stufe → alles
+        const n = zoneUpgrades(this.zone).length;
         const next = field.upgrade === undefined ? 0 : field.upgrade + 1;
-        if (next > 4) delete field.upgrade;
+        if (next >= n) delete field.upgrade;
         else field.upgrade = next;
+        this.commitField(field);
+        return true;
+      }
+      if (lower === 's') {
+        // Schalter des Felds (Plan 3.1, 2.1): +wort an, -wort aus, dazu Gurt, Kette, Budget und Höhenlimit über die Stufe hinweg
+        const text = this.ask(`Schalter dieses Felds über seine Stufe hinweg: +wort an, -wort aus, gurt 0 bis 4, kette Meter, budget Meter, höhe Meter (leer = wie die Stufe). Wörter: ${words}`, formatFieldLine(field));
+        if (text === null) return true;
+        const { overrides, unknown } = parseFieldLine(text);
+        for (const key of ['on', 'off', 'belt', 'chain', 'budget', 'maxHeight'] as const) delete field[key];
+        Object.assign(field, overrides);
+        if (unknown.length) this.host.toast.show(`Nicht verstanden: ${unknown.join(', ')}`, 2.5);
         this.commitField(field);
         return true;
       }
@@ -771,11 +805,18 @@ export class ZoneEditor {
   }
 
   private describeField(f: ZoneField): string {
+    const res = resolveAbilities(this.zone, f);
     const meta = [
       f.goals?.length ? `Ziele ${formatGoals(f.goals)}` : 'keine Ziele (Sandkasten)',
       f.stage === undefined ? 'Stufe: alle Elemente' : `Stufe ${f.stage}`,
-      f.upgrade === undefined ? 'Gurt wie die Welt' : `Gurt: ${BELT_NAMES[f.upgrade] ?? f.upgrade}`,
+      res.stage ? `Aufwertung ${res.stageIndex}${res.stage.name ? ` „${res.stage.name}“` : ''}` : 'Aufwertung: alles',
+      `Schalter ${describeAbilities(res.abilities)}`,
+      res.belt === undefined ? 'Gurt wie die Welt' : `Gurt ${BELT_NAMES[res.belt] ?? res.belt}`,
+      `Kette ${res.chain !== undefined ? `${res.chain} m` : 'frei'}`,
     ];
+    if (res.budget) meta.push(`Budget ${res.budget} m`);
+    if (res.maxHeight) meta.push(`Höhe bis ${res.maxHeight} m`);
+    if (f.on?.length || f.off?.length || f.belt !== undefined || f.chain !== undefined) meta.push(`Feld überschreibt ${formatFieldLine({ on: f.on, off: f.off, belt: f.belt, chain: f.chain })}`);
     return `Feld ${f.id}${f.name ? ` „${f.name}“` : ''} · x ${f.x0} bis ${f.x1} m · Höhe ${f.y0} bis ${f.y1} m · ${meta.join(' · ')}${f.id === this.activeFieldId ? ' · aktiv' : ''}`;
   }
 
@@ -810,7 +851,7 @@ export class ZoneEditor {
         : 'Ziehen verschiebt · Bild auf/ab Tiefe · C Form · Pfeile auf/ab Zahl, links/rechts Abstand · Entf löschen';
     } else if (field) {
       this.status.text = this.describeField(field);
-      this.hint.text = 'Enter aktiv schalten (im Spielen hält die Kamera das Feld, Absperrband an den Rändern) · N Name · Z Ziele · G Stufe · U Gurt · Testfahrt fährt im Feld · Entf löschen · Esc abwählen';
+      this.hint.text = 'Enter aktiv schalten (im Spielen hält die Kamera das Feld, Absperrband an den Rändern) · N Name · Z Ziele · G Stufe · U Aufwertung (Shift+U: Stufe der Zone bearbeiten) · S Schalter des Felds · Testfahrt fährt im Feld · Entf löschen · Esc abwählen';
     } else {
       this.status.text = `Bauen · Zone ${this.zone.name} · ${this.zone.elements.length} Elemente · ${this.zone.fields.length} Felder · ${this.zone.stations.length} Stationen · ${this.zone.coinGroups.length} Coin-Gruppen · Spur für Neues: ${lane}`;
       this.hint.text = 'Typ links wählen, dann in die Welt klicken · Klick wählt Element oder Feld · T Bahntyp · Testfahrt fährt die Bahn · Tab Spielen';

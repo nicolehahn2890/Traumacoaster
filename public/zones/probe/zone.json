@@ -3,6 +3,45 @@
   "name": "probe",
   "width": 160,
   "trackType": "steel",
+  "upgrades": [
+    {
+      "name": "Anfang",
+      "abilities": [
+        "chainlift"
+      ],
+      "belt": 0,
+      "chain": 14
+    },
+    {
+      "name": "Mittel",
+      "abilities": [
+        "chainlift",
+        "booster",
+        "brake",
+        "launch"
+      ],
+      "belt": 1,
+      "chain": 24
+    },
+    {
+      "name": "Alles",
+      "abilities": [
+        "chainlift",
+        "launch",
+        "hydro",
+        "swing",
+        "verticalLift",
+        "booster",
+        "brake",
+        "splash",
+        "launchBlock",
+        "roll",
+        "tunnel"
+      ],
+      "belt": 2,
+      "car": "rot"
+    }
+  ],
   "elements": [
     {
       "id": "e1",
@@ -70,7 +109,12 @@
         }
       ],
       "stage": 1,
-      "upgrade": 2
+      "upgrade": 2,
+      "off": [
+        "tunnel"
+      ],
+      "budget": 400,
+      "maxHeight": 40
     }
   ],
   "stations": [

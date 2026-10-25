@@ -240,14 +240,14 @@ describe('Zonendatei: Ziele, Stufen und Prüfzone (Schritt 9)', () => {
     plain.fields.push(newField(plain, 10, 0, 80, 30));
     expect(serializeZone(plain)).not.toContain('"stage"');
     expect(serializeZone(plain)).not.toContain('"goals"');
-    // Unsinn: unbekannter Zieltyp fällt weg, Gurtstufe wird auf 4 begrenzt, negative Stufe fällt weg
+    // Unsinn: unbekannter Zieltyp fällt weg, die Aufwertungsstufe wird auf 9 begrenzt (Index in die Tabelle), negative Stufe fällt weg
     const raw = JSON.parse(text) as { fields: Array<Record<string, unknown>> };
     raw.fields[0].goals = [{ type: 'quatsch', value: 1 }, { type: 'height', value: 'hoch' }, { type: 'loops', value: 2 }];
-    raw.fields[0].upgrade = 7;
+    raw.fields[0].upgrade = 12;
     raw.fields[0].stage = -1;
     const odd = parseZone(raw)!;
     expect(odd.fields[0].goals).toEqual([{ type: 'height' }, { type: 'loops', value: 2 }]);
-    expect(odd.fields[0].upgrade).toBe(4);
+    expect(odd.fields[0].upgrade).toBe(9);
     expect(odd.fields[0].stage).toBeUndefined();
   });
 
@@ -262,6 +262,12 @@ describe('Zonendatei: Ziele, Stufen und Prüfzone (Schritt 9)', () => {
     expect(f.goals).toHaveLength(3);
     expect(f.stage).toBe(1);
     expect(f.upgrade).toBe(2);
+    // Etappe 2, Schritt 1: eigene Stufentabelle und Überschreibungen des Felds
+    expect(zone!.upgrades).toHaveLength(3);
+    expect(zone!.upgrades![2].belt).toBe(2);
+    expect(f.off).toEqual(['tunnel']);
+    expect(f.budget).toBe(400);
+    expect(f.maxHeight).toBe(40);
     expect([zone!.stations.length, zone!.queues.length, zone!.sites.length, zone!.coinGroups.length]).toEqual([1, 1, 1, 1]);
   });
 });

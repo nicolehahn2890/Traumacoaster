@@ -6,6 +6,18 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
 
 ## 1. Wo wir stehen
 
+- **25.10., Etappe 2 begonnen** (Branch `etappe-2-bahn-und-welt` von `main`; die zwölf Arbeitsschritte mit drei Toren stehen in
+  `docs/GROSSER-PLAN.md`, Paket 10, von Florian bestätigt). Technik in `docs/TECH.md` 4h.
+  Schritt 1 gebaut: Fähigkeiten als Schalter und Aufwertungen als Daten (`src/zone/abilities.ts`): Tabelle Stufe → Schalter
+  (mit Gurt, Kettenzugstärke, Wagenvariante) in der Zonendatei, ein Feld wählt die Stufe und überschreibt einzelne Schalter,
+  dazu Streckenbudget und Höhenlimit; Regal, Startarten, Rolle, Tunnel, Gurt, Budget und Höhenlimit folgen dem Feld, in der
+  Zone wird kein Strich mehr zum Berg (Plan 7.5). Editor: U Stufe, Shift+U Stufe der Zone bearbeiten, S Schalter des Felds.
+  Prüfzone mit drei Stufen, Szenario 10 prüft die Schalter im Spiel (zwölf Prüfungen grün, 132 Zeichenaufrufe). Replay `--world`
+  nach Schritt 1: 472 Bahnprofile, keine ungültigen Werte, 13373 Stützen (69 Stellen ohne Fundament, Aufnahmen über Wasser),
+  Abstand Bahn–Strich im Median 2,0 px, kein Fehler. System: Datenmodell, Schalter-Logik. Platzhalter:
+  Vorbelegung der fünf Stufen, Texteingabe im Browser-Dialog, Wagenvariante als Wort. Eigenheiten im Worktree: Die
+  Aufnahmen liegen nur im Haupt-Checkout (Pfad an das Replay geben); Szenarien mit `TC_URL` gegen den eigenen Server
+  starten, sonst nimmt das Skript einen fremden Server auf Port 4173.
 - **24.10., Etappe 1 begonnen** (Branch `etappe-1-weltrenderer`, Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10).
   Schritt 1 gebaut: Weltrenderer hinter `?world=1` (Three-Szene im selben WebGL-Kontext, Pixi zeichnet davor den Himmel und
   darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem

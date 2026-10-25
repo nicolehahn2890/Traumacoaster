@@ -4,11 +4,14 @@
  * (Fundament, Öffnungen, Anschluss, Wachstumsstufe, Tiefenrolle) und die Felder (Rechtecke in Zonenkoordinaten mit
  * Kamerabegrenzung, Absperrband und Zoom-Grenze „Feld passt ins Bild“); Station, Schlangenbereich, Baustellen, Coins
  * und Ziele je Feld kommen in den Schritten 8 und 9 dazu. Der Editor im Spiel schreibt die Datei nach
- * `public/zones/<name>/zone.json`, das Spiel liest sie von dort (auch auf dem Handy).
+ * `public/zones/<name>/zone.json`, das Spiel liest sie von dort (auch auf dem Handy). Etappe 2, Schritt 1: Aufwertungsstufen
+ * als Tabelle der Zone und Fähigkeiten als Schalter je Feld (`./abilities.ts`, Plan 3.1 und 2.4).
  */
 import { parseTrackType, type TrackType } from '@/world/trackTypes';
-import type { GoalType } from '@/levels/types';
+import type { BeltLevel, GoalType } from '@/levels/types';
 import { COIN_SHAPES, type ZoneCoinGroup } from './groups';
+import { ZONE_ABILITIES, type FieldAbilityOverrides, type ZoneAbility, type ZoneUpgrade } from './abilities';
+export type { FieldAbilityOverrides, ZoneAbility, ZoneUpgrade } from './abilities';
 
 /** Zielarten, die ein Feld heute eintragen kann (Katalog v1 aus Paket 4.1, soweit der Prüfer sie schon kennt) */
 export const ZONE_GOAL_TYPES: readonly GoalType[] = ['finish', 'height', 'coins', 'loops', 'turns', 'tunnels', 'launch', 'chainlift', 'boosters', 'airtime', 'speed', 'length', 'maxLength', 'time', 'maxTime', 'rolls', 'maxG', 'minG', 'splash', 'lanes', 'noBrakes', 'drop', 'eject', 'catch', 'flight'];
@@ -63,7 +66,7 @@ export type ZoneDepthRole = 'back' | 'mid' | 'front';
 export const ZONE_DEPTH_ROLES: readonly ZoneDepthRole[] = ['back', 'mid', 'front'];
 
 /** Feld: Rechteck in Zonenkoordinaten (x von x0 bis x1, Höhe von y0 bis y1), aus dem ein Level wird (Plan 2.1, 2.3) */
-export interface ZoneField {
+export interface ZoneField extends FieldAbilityOverrides {
   id: string;
   name?: string;
   x0: number;
@@ -74,7 +77,11 @@ export interface ZoneField {
   goals?: ZoneGoal[];
   /** Fortschrittsstufe der Zone in diesem Level: Elemente mit höherer Wachstumsstufe fehlen; ohne Angabe ist alles da (Plan 2.1) */
   stage?: number;
-  /** Aufwertungsstufe der Bahn: heute die Gurtstufe 0 bis 4; ohne Angabe die der Welt (Plan 2.4; Fähigkeiten als Schalter kommen in E2) */
+  /**
+   * Aufwertungsstufe der Zone (Index in `upgrades`, Plan 2.4): Satz von Schaltern mit Gurt und Kettenzugstärke; ohne Angabe
+   * kann das Feld alles, Gurt wie die Welt. Einzelne Schalter, Gurt, Kette, Budget und Höhenlimit überschreibt das Feld
+   * selbst (Plan 3.1, 2.1: FieldAbilityOverrides)
+   */
   upgrade?: number;
 }
 
@@ -136,6 +143,8 @@ export interface ZoneFile {
   /** Breite der Zone in Metern (x von 0 bis width) */
   width: number;
   trackType: TrackType;
+  /** Aufwertungsstufen (Plan 2.4): Stufe → Satz von Schaltern; ohne Angabe die Vorbelegung DEFAULT_UPGRADES (abilities.ts) */
+  upgrades?: ZoneUpgrade[];
   elements: ZoneElement[];
   fields: ZoneField[];
   stations: ZoneStation[];
@@ -243,6 +252,27 @@ export function parseZone(json: unknown): ZoneFile | null {
   if (o.version !== 1 || typeof o.name !== 'string' || !/^[a-z0-9-]{1,40}$/.test(o.name)) return null;
   const width = num(o.width) && o.width > 0 ? o.width : 300;
   const trackType = parseTrackType(typeof o.trackType === 'string' ? o.trackType : null) ?? 'road';
+  const beltOf = (v: unknown): BeltLevel | undefined => (num(v) ? (Math.max(0, Math.min(4, Math.floor(v))) as BeltLevel) : undefined);
+  const abilityList = (v: unknown): ZoneAbility[] | undefined => {
+    if (!Array.isArray(v)) return undefined;
+    const out = v.filter((a, i, arr) => (ZONE_ABILITIES as readonly string[]).includes(String(a)) && arr.indexOf(a) === i) as ZoneAbility[];
+    return out.length ? out : undefined;
+  };
+  // Aufwertungsstufen (Etappe 2, Schritt 1): Tabelle Stufe → Schalter; fehlt sie, gilt die Vorbelegung
+  let upgrades: ZoneUpgrade[] | undefined;
+  if (Array.isArray(o.upgrades)) {
+    const list: ZoneUpgrade[] = [];
+    for (const raw of o.upgrades) {
+      if (!raw || typeof raw !== 'object') continue;
+      const u = raw as Record<string, unknown>;
+      const up: ZoneUpgrade = { abilities: abilityList(u.abilities) ?? [], belt: beltOf(u.belt) ?? 0 };
+      if (typeof u.name === 'string' && u.name.trim()) up.name = u.name.trim().slice(0, 40);
+      if (num(u.chain) && u.chain > 0) up.chain = u.chain;
+      if (typeof u.car === 'string' && u.car.trim()) up.car = u.car.trim().slice(0, 20);
+      list.push(up);
+    }
+    if (list.length) upgrades = list.slice(0, 10);
+  }
   const elements: ZoneElement[] = [];
   const ids = new Set<string>();
   for (const raw of Array.isArray(o.elements) ? o.elements : []) {
@@ -291,7 +321,17 @@ export function parseZone(json: unknown): ZoneFile | null {
       if (goals.length) field.goals = goals.slice(0, 6);
     }
     if (num(f.stage) && f.stage >= 0) field.stage = Math.min(9, Math.floor(f.stage));
-    if (num(f.upgrade) && f.upgrade >= 0) field.upgrade = Math.min(4, Math.floor(f.upgrade));
+    if (num(f.upgrade) && f.upgrade >= 0) field.upgrade = Math.min(9, Math.floor(f.upgrade));
+    // Überschreibungen des Felds (Plan 3.1, 2.1)
+    const on = abilityList(f.on);
+    if (on) field.on = on;
+    const off = abilityList(f.off);
+    if (off) field.off = off;
+    const belt = beltOf(f.belt);
+    if (belt !== undefined) field.belt = belt;
+    if (num(f.chain) && f.chain > 0) field.chain = f.chain;
+    if (num(f.budget) && f.budget > 0) field.budget = f.budget;
+    if (num(f.maxHeight) && f.maxHeight > 0) field.maxHeight = f.maxHeight;
     fieldIds.add(field.id);
     fields.push(field);
   }
@@ -319,7 +359,7 @@ export function parseZone(json: unknown): ZoneFile | null {
     return site;
   });
   const coinGroups = list<ZoneCoinGroup>('coinGroups', (r) => (num(r.x) && num(r.y) && num(r.z) ? { id: r.id as string, shape: (COIN_SHAPES as readonly string[]).includes(String(r.shape)) ? (r.shape as ZoneCoinGroup['shape']) : 'row', x: r.x, y: r.y, z: r.z, count: num(r.count) ? Math.max(1, Math.min(40, Math.round(r.count))) : 5, spacing: num(r.spacing) ? Math.max(0.5, r.spacing) : 2 } : null));
-  return { version: 1, name: o.name, width, trackType, elements, fields, stations, queues, sites, coinGroups };
+  return { version: 1, name: o.name, width, trackType, ...(upgrades ? { upgrades } : {}), elements, fields, stations, queues, sites, coinGroups };
 }
 
 /** Datei deterministisch schreiben: feste Feldreihenfolge, Elemente nach Kennung sortiert, zwei Nachkommastellen */
@@ -347,8 +387,25 @@ export function serializeZone(zone: ZoneFile): string {
       if (f.goals?.length) out.goals = f.goals.map((g) => ({ type: g.type, ...(g.value !== undefined ? { value: g.value } : {}), ...(g.bonus ? { bonus: true } : {}) }));
       if (f.stage !== undefined) out.stage = f.stage;
       if (f.upgrade !== undefined) out.upgrade = f.upgrade;
+      if (f.on?.length) out.on = [...f.on];
+      if (f.off?.length) out.off = [...f.off];
+      if (f.belt !== undefined) out.belt = f.belt;
+      if (f.chain !== undefined) out.chain = round(f.chain);
+      if (f.budget !== undefined) out.budget = round(f.budget);
+      if (f.maxHeight !== undefined) out.maxHeight = round(f.maxHeight);
       return out;
     });
+  const upgrades = zone.upgrades?.length
+    ? zone.upgrades.map((u) => {
+        const out: Record<string, unknown> = {};
+        if (u.name) out.name = u.name;
+        out.abilities = [...u.abilities];
+        out.belt = u.belt;
+        if (u.chain !== undefined) out.chain = round(u.chain);
+        if (u.car) out.car = u.car;
+        return out;
+      })
+    : undefined;
   const byId = <T extends { id: string }>(items: T[]): T[] => [...items].sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true }));
   const stations = byId(zone.stations).map((s) => ({ id: s.id, x: round(s.x), y: round(s.y), z: round(s.z), dir: s.dir, length: round(s.length) }));
   const queues = byId(zone.queues).map((q) => ({ id: q.id, x0: round(q.x0), x1: round(q.x1), y: round(q.y), z: round(q.z), dir: q.dir }));
@@ -358,5 +415,5 @@ export function serializeZone(zone: ZoneFile): string {
     return out;
   });
   const coinGroups = byId(zone.coinGroups).map((c) => ({ id: c.id, shape: c.shape, x: round(c.x), y: round(c.y), z: round(c.z), count: c.count, spacing: round(c.spacing) }));
-  return JSON.stringify({ version: 1, name: zone.name, width: round(zone.width), trackType: zone.trackType, elements, fields, stations, queues, sites, coinGroups }, null, 2) + '\n';
+  return JSON.stringify({ version: 1, name: zone.name, width: round(zone.width), trackType: zone.trackType, ...(upgrades ? { upgrades } : {}), elements, fields, stations, queues, sites, coinGroups }, null, 2) + '\n';
 }

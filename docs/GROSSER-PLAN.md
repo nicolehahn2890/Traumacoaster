@@ -617,7 +617,7 @@ Rückfragen der Session (25.10.): alle Empfehlungen angenommen (drei Tore; Durch
 bleibt eigenes Element; Entwurf der Basiszone v1 durch die Session; Startart-Knopf wechselt per Tipp; Kettenzugstärke
 als Höhe über der Station).
 
-**Stand:** Arbeitsschritte bestätigt am 25.10.2026, Schritt 1 begonnen.
+**Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritt 1 gebaut am 25.10.2026 (Nachtrag in Paket 3), Schritt 2 begonnen.
 
 ### Rückfragen zu Paket 10
 
@@ -769,6 +769,13 @@ je Feld ist heute die Gurtstufe (Taste U im Editor, `upgrade` in der Zonendatei)
 **Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Der Startart-Knopf am Hebel wechselt per Tipp durch die
 Startarten, die das Feld erlaubt (Name kurz groß eingeblendet); ein Auswahlmenü kommt mit der UI-Werkstatt (E4). Die
 Startarten aus 3.5 werden in Etappe 2 als Platzhalter in den Maßen der Physik gebaut (Schritte 2 und 3 in Paket 10).
+**Stand 25.10.2026 (Etappe 2, Schritt 1 gebaut; `docs/TECH.md` 4h):** Fähigkeiten als Schalter (elf nach 3.1) und die
+Aufwertungsstufen als Tabelle der Zone sind in Datei, Editor und Spiel. Gelernt: (1) Die Vorbelegung der Stufen hat in Stufe i
+den Gurt i, so bedeutet die Aufwertungsstufe eines Felds aus Etappe 1 (damals nur die Gurtstufe) weiter dasselbe, keine Datei
+musste geändert werden. (2) Mit den Schaltern ist „Boden formen“ in der Zone aus (7.5); damit verschwindet der Befund
+„Bergbauer“ (jeder Strich abseits der Bahn wurde zum Berg) für die Basiszone von selbst. (3) Die Startart gehört zum Feld:
+Erlaubt die Stufe die gewählte nicht, springt die Bahn auf die erste erlaubte, und der Knopf wechselt nur durch die
+erlaubten. Platzhalter: Vorbelegung der Stufen, Texteingabe im Browser-Dialog.
 
 ## Paket 8a: Teile und Elemente
 

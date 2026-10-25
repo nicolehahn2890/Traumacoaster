@@ -311,6 +311,28 @@ Politur; alles Gesetzte sind Klötzchen, die später Grafiken ersetzen.
 - Die Bühne nutzt für die Zone das Sandbox-Level (`SandboxConfig.zone`): flacher Boden, Breite der Zone, alle Elemente
   und Startarten frei (Plan Paket 3: die Basiszone kann alles). Tests in `tests/zone.test.ts`.
 
+## 4h. Etappe 2: Bahn und Welt (Branch `etappe-2-bahn-und-welt`)
+Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10 („Etappe 2 in Arbeitsschritten“). Die Aufnahmen des Strich-Rekorders liegen
+nur im Haupt-Checkout; ein Worktree spielt sie mit `npm run strokes:replay -- --world <Haupt-Checkout>/recordings/strokes.jsonl`
+nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL=http://localhost:<Port>/ node scripts/scenario.mjs 10`
+(ohne `TC_URL` nimmt das Skript einen schon laufenden Server auf Port 4173, auch einen fremden).
+- **Fähigkeiten als Schalter, Aufwertungen als Daten** (Schritt 1; `src/zone/abilities.ts`, Plan 3.1, 2.4, 2.1): elf Schalter
+  (Kettenzug, Launch, Hydro, Pendel, Vertikallift, Booster, Bremse, Splash, Launch-Block, Rolle, Tunnel erlaubt), jeder steuert
+  eine Freischaltung des Level-Modells (`ABILITY_UNLOCK`). Die Zonendatei trägt optional `upgrades` (Stufe → `abilities`,
+  `belt` 0–4, `chain` Kettenzugstärke in Metern über der Station, `car` Wagenvariante, `name`); ohne Tabelle gilt
+  `DEFAULT_UPGRADES` (fünf Stufen, Stufe i mit Gurt i, so bedeutet `upgrade` eines Felds aus Etappe 1 dasselbe wie vorher;
+  Stufe 4 „Alles“). Ein Feld nennt `upgrade` (Index in die Tabelle), überschreibt mit `on`, `off`, `belt`, `chain` und trägt
+  `budget` (Streckenbudget) und `maxHeight` (Höhenlimit). `resolveAbilities(zone, field)` ergibt den Satz des Felds (ohne Feld:
+  alles), `zoneUnlocks` daraus die Freischaltungen (nie „Boden formen“: in der Zone wird kein Strich mehr zum Berg, Plan 7.5),
+  `allowedStarts` die Startarten für den Knopf. Im Level (`LevelScene.setActiveField`) folgen Regal, Startarten (eine nicht
+  erlaubte springt auf die erste erlaubte, `ensureStartAllowed`), Rolle, Tunnel, Gurt, Budget und Höhenlimit dem Feld;
+  Kettenzugstärke und Wagenvariante nutzen Schritt 2 und 3. Editor: U wählt die Stufe (alle → 0 … n → alle), Shift+U
+  bearbeitet die Stufe der Zone als Zeile („kettenzug launch booster, gurt 2, kette 32, wagen rot, name Bügel“; die Tabelle
+  wird damit Teil der Datei), S die Überschreibungen des Felds („+launch -tunnel, gurt 3, kette 30, budget 400, höhe 40“);
+  die Statuszeile zeigt den aufgelösten Satz. Prüfzone mit drei Stufen und einem Feld „Tunnel aus, Budget 400 m, Höhe
+  40 m“; Szenario 10 prüft die Schalter im Spiel; Tests in `tests/abilities.test.ts`. Platzhalter: Vorbelegung der Stufen,
+  Texteingabe als Browser-Dialog, Wagenvariante als ein Wort.
+
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).
 - g-Kräfte: f = v²·κ⃗ (Mindestradius 2,5 m; κ⃗ aus `sampleTrack` über ±1,2 m gemittelt, ein Wagen spürt keine kürzeren Spitzen) + a_tan·T + g·ŷ, wobei a_tan die echte Tangentialbeschleunigung des Zugs ist (Hangabtrieb minus Reibung, Kettenzug hält das Tempo, Launch, Booster, Bremse); zerlegt im Wagen-Rahmen (T, U, S) mit Schräglage. So drückt die Kette die Fahrgäste in die Lehne, der Launch in den Sitz, die Bremse nach vorn. Entgleisen bei seitlichem g über dem Limit des Schienentyps (`SKIN_PHYSICS`: Holz 2,0, Hybrid 2,4, Mine 2,2, Stahl 3,0, Gold 3,0, Neon 3,2, Eis 2,6, Geister 2,3, Lava 3,0, Space 3,5), Herausfallen bei kopfüber mit g_v < −0,15 über 0,12 s, Blackout über 7 g (nur ein Merker, kostet den dritten Stern). Entgleisen und Herausfallen übergeben den Zug in den Freiflug (unten), Rückroller und Wasser lassen ihn auf der Schiene ausrollen.

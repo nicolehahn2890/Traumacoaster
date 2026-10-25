@@ -505,6 +505,13 @@ if (want('10')) {
       belt: s.level.restraint ?? null,
       e1Visible: window.tcGame.world.zone.get('e1')?.built.group.visible ?? null,
       e2Visible: window.tcGame.world.zone.get('e2')?.built.group.visible ?? null,
+      // Etappe 2, Schritt 1: Schalter des Felds (Stufe „Alles“ der Prüfzone, Tunnel aus), Budget und Höhenlimit, kein Bergbauer
+      tunnel: s.unlocked.has('tunnel'),
+      launch: s.unlocked.has('launch'),
+      mountain: s.unlocked.has('mountain'),
+      budget: s.level.trackBudget ?? null,
+      maxHeight: s.level.maxHeight ?? null,
+      upgrades: z?.upgrades?.length ?? 0,
     };
   });
   console.log('zone', zone);
@@ -517,6 +524,8 @@ if (want('10')) {
   check(zone.goals === 3 && zone.cells === 3, `Ziele des Felds stehen in der Zielleiste (${zone.goals} Ziele, ${zone.cells} Zellen)`);
   check(zone.belt === 2, `Gurtstufe des Felds gilt für die Fahrt (${zone.belt} = Bügel)`);
   check(zone.e1Visible === true && zone.e2Visible === false, `Fortschrittsstufe 1 zeigt den Dreiteiler und blendet die Kulisse ab Stufe 2 aus (e1 ${zone.e1Visible}, e2 ${zone.e2Visible})`);
+  check(zone.upgrades === 3 && zone.launch === true && zone.tunnel === false && zone.mountain === false, `Schalter des Felds gelten (Stufe „Alles“ mit Tunnel aus: launch ${zone.launch}, tunnel ${zone.tunnel}, Bergbauer ${zone.mountain})`);
+  check(zone.budget === 400 && zone.maxHeight === 40, `Streckenbudget und Höhenlimit des Felds gelten (${zone.budget} m, ${zone.maxHeight} m)`);
   // dieselbe Datei noch einmal gelesen ergibt denselben Stand (deterministisch)
   const again = await page.evaluate(async () => {
     const res = await fetch(`${location.pathname.replace(/[^/]*$/, '')}zones/probe/zone.json`, { cache: 'no-store' });

@@ -41,6 +41,7 @@ import { laneRise, laneScale, nearestLane, rayToWorld, setPerspective, tagRay, t
 import { WorldView } from '@/render/worldView';
 import { HANG_DROP, trackTypeForSkin, type TrackType } from '@/world/trackTypes';
 import type { ZoneField, ZoneFile, ZoneStation } from '@/zone/types';
+import { allowedStarts, resolveAbilities, zoneUnlocks, type ResolvedAbilities } from '@/zone/abilities';
 import { applyZoneExtras, stationPath, zoneCoins } from '@/zone/build';
 import { ZoneEditor } from '@/app/zoneEditor';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
@@ -364,6 +365,8 @@ export class LevelScene implements Scene {
   private zoneEditor: ZoneEditor | null = null;
   /** aktives Feld der Zone: Kamera bleibt darin (weich), Zoom höchstens „Feld passt ins Bild“, Absperrband an den Rändern */
   private activeField: ZoneField | null = null;
+  /** Schalter, Gurt, Kettenzugstärke und Grenzen des aktiven Felds (Etappe 2, Schritt 1; ohne Feld: alles) */
+  private abilities: ResolvedAbilities | null = null;
   private fieldTape = new Graphics();
 
   constructor(levelId: number, sandbox: SandboxConfig | null = null) {
@@ -372,7 +375,9 @@ export class LevelScene implements Scene {
       // Zone: flacher Boden, die Kulissen kommen aus der Zonendatei; die Basiszone kann alles
       this.world = WORLDS[clamp(sandbox.world - 1, 0, 9)];
       this.level = { id: 0, world: this.world.id, name: sandbox.zone.name, hook: '', goals: [], width: sandbox.zone.width, terrain: [{ kind: 'flat' }], cars: 3, passengers: 6 };
-      this.unlocked = unlockedUpTo(150);
+      // Fähigkeiten als Schalter (Etappe 2, Schritt 1): ohne Feld kann die Zone alles, nur „Boden formen“ nicht (Plan 7.5);
+      // die Schalter des aktiven Felds setzt setActiveField
+      this.unlocked = zoneUnlocks(unlockedUpTo(150), resolveAbilities(sandbox.zone, null));
     } else if (sandbox) {
       this.world = WORLDS[clamp(sandbox.world - 1, 0, 9)];
       this.level = {
@@ -386,7 +391,7 @@ export class LevelScene implements Scene {
       this.world = worldOfLevel(levelId);
       this.unlocked = unlockedUpTo(Math.max(storage.progress.highest, levelId - 1));
     }
-    if (unlockAll()) this.unlocked = unlockedUpTo(150);
+    if (unlockAll() && !sandbox?.zone) this.unlocked = unlockedUpTo(150);
     this.terrain = new Terrain(this.level);
     this.skin = this.pickSkin();
   }
@@ -534,6 +539,7 @@ export class LevelScene implements Scene {
     const st = this.zoneStation();
     if (!st) return;
     if (!this.path || this.isStationPieceOnly()) this.setPath(stationPath(st), false);
+    this.ensureStartAllowed();
   }
 
   /** Feld der Zone aktiv schalten (null: ganze Zone): Kamera weich begrenzt, Zoom-Grenze „Feld passt ins Bild“, Absperrband */
@@ -542,7 +548,19 @@ export class LevelScene implements Scene {
     // Ziele, Fortschritts- und Aufwertungsstufe des Felds gelten für dieses Level (Schritt 9): die Zielleiste wertet
     // sie wie im Level aus, die Gurtstufe gilt für die Fahrt, Elemente späterer Wachstumsstufen fehlen in der Welt
     this.level.goals = (field?.goals ?? []).map((g) => ({ type: g.type, ...(g.value !== undefined ? { value: g.value } : {}), ...(g.bonus ? { bonus: true } : {}) }));
-    this.level.restraint = field?.upgrade as BeltLevel | undefined;
+    // Fähigkeiten als Schalter (Etappe 2, Schritt 1): Stufe der Zone plus Überschreibungen des Felds → Freischaltungen
+    // (Regal, Startarten, Rolle, Tunnel), Gurt, Streckenbudget und Höhenlimit; die Kettenzugstärke nutzt Schritt 3
+    const zone = this.sandbox?.zone;
+    if (zone) {
+      const res = resolveAbilities(zone, field);
+      this.abilities = res;
+      this.unlocked = zoneUnlocks(unlockedUpTo(150), res);
+      this.level.restraint = res.belt;
+      this.level.trackBudget = res.budget || undefined;
+      this.level.maxHeight = res.maxHeight || undefined;
+      this.shelfOpen = false;
+      this.buildShelf();
+    }
     this.game.world?.setStage(field?.stage ?? Infinity);
     this.goalsBuiltFor = '';
     this.refreshBeltBadge(false);
@@ -2449,12 +2467,21 @@ export class LevelScene implements Scene {
   private cycleStart(): void {
     if (!this.path) return;
     const available = START_ORDER.filter((s) => this.unlocked.has(START_UNLOCK[s]));
+    if (!available.length) return;
     const idx = available.indexOf(this.path.startType);
     this.pushHistory();
     this.path.startType = available[(idx + 1) % available.length];
     this.redrawTrack();
     this.updateGoals();
     this.toast.show(`${t('startType')}: ${t('start.' + this.path.startType)}`, 1.5);
+  }
+  /** Startart im Feld (Etappe 2, Schritt 1): erlaubt die Stufe die gewählte nicht, nimmt die Bahn die erste erlaubte */
+  private ensureStartAllowed(): void {
+    if (!this.path || !this.abilities) return;
+    const allowed = allowedStarts(this.abilities) as StartType[];
+    if (!allowed.length || allowed.includes(this.path.startType)) return;
+    this.path.startType = allowed[0];
+    if (this.samples) this.redrawTrack();
   }
   private placeElement(kind: ElementKind, st: StagePoint): void {
     if (!this.path || !this.samples) return;
