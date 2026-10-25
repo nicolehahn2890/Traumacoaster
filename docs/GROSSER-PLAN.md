@@ -23,7 +23,7 @@ Autoscroll am Tunnel (wird ausprobiert). Eingabe war `docs/UEBERGABE-PLAN.md`; d
 | 1 | Weltrenderer (Technik, Richtlinie Schritt 2) | **bestätigt**: Technik aus der Richtlinie, Module unter `src/world/`, Tore; Etappe 1 | 24.10.2026 |
 | 8b | Asset-Pipeline und Aufträge | **bestätigt**: Session erzeugt über Florians Figma-Konto (am ersten Auftrag geprüft), automatische Prüfung gegen Auftrag und Leitbilder, eigene Teile je Zone, Katalog, Aufträge in Sätzen | 24.10.2026 |
 | 9 | Produktion vieler Level | **bestätigt**: Vorschlag-Generator, Prüfer mit Lösungsbahn in der CI, zweite Zone „Mystischer Neon-Freizeitpark“ ohne neuen Engine-Code | 24.10.2026 |
-| 10 | Etappen und Abnahmen | **bestätigt**: acht Etappen E1 bis E8 mit vier Prüfungen je Tor, Zwischentor nach E2, Stilprobe parallel zu E3; Nachtrag: kein Kalender, Etappe 1 als Arbeitsschritte in Reihenfolge | 24.10.2026 |
+| 10 | Etappen und Abnahmen | **bestätigt**: acht Etappen E1 bis E8 mit vier Prüfungen je Tor, Zwischentor nach E2, Stilprobe parallel zu E3; Nachtrag: kein Kalender, Etappe 1 als Arbeitsschritte in Reihenfolge; 25.10.: Etappe 2 als zwölf Arbeitsschritte mit drei Toren bestätigt | 24.10.2026 |
 | 11 | Risiken und Grenzen | **bestätigt**: Risikotabelle mit Gegenmaßnahme und Tor, Liste dessen, was bewusst nicht im Plan ist | 24.10.2026 |
 | 12 | Karte und Morph (neu auf Florians Wunsch, 24.10.) | **bestätigt**: ein Rad für alle Zonen in Sektoren, Miniaturen und Symbole, Morph in zwei Schritten mit messbaren Kriterien | 24.10.2026 |
 
@@ -189,7 +189,11 @@ der Runde 2 (die Alpen-Visuals zeigen die Autobahn).
 und Paket 5 (Untergrund) ergänzt; Änderungen daran werden hier mit Datum nachgetragen. Ergänzt am 24.10. aus Runde 3
 (mit Paket 5 und 6 bestätigt): Schlangenbereich mit Freiraum-Volumen, Baustelle mit Variante
 (Verbinden, Durchbruch), Tunnel mit Schalter „Autoscroll zum Ausgang“, Wasser mit Schaltern (Schmuck, trägt Stützen,
-Splash-Zone, Wasserfall), Räume mit „offen ab Stufe“.
+Splash-Zone, Wasserfall), Räume mit „offen ab Stufe“. **Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Die
+Aufwertungsstufen aus 2.4 werden eine Tabelle der Zone (Stufe → Satz von Schaltern nach 3.1 mit Gurt, Kettenzugstärke
+und Wagenvariante); ein Feld wählt die Stufe und kann einzelne Schalter überschreiben; die Kettenzugstärke ist die Höhe
+über der Station in Metern, bis zu der die Kette zieht (Stufe „alles“ ohne Grenze); Streckenbudget und Höhenlimit
+stehen je Feld.
 
 ## Paket 4: Levelziele, Sterne, Humor
 
@@ -552,6 +556,69 @@ mit Florian. Die Session arbeitet auf einem eigenen Branch und geht am Tor per P
 Figurenteile in zwei Ansichten skizzieren, Entwurf der Alpen-Autos, Handy-Tests an den Toren, Entscheidungen an den
 Toren.
 
+### Etappe 2 in Arbeitsschritten (Reihenfolge, ohne Kalender; von Florian bestätigt am 25.10.2026)
+
+Jeder Schritt endet mit `npm test`, `npm run build` und `npm run strokes:replay -- --world` (die Aufnahmen liegen nur im
+Haupt-Checkout, der Worktree liest sie über den Pfad); Prüfzone und Szenario 10 wachsen mit jedem Schritt. Drei Tore:
+2a nach den Bahn-Fähigkeiten, 2b nach Fels und Untergrund (Florian probiert Freilegung und Kamera aus), E2 am Ende.
+Branch `etappe-2-bahn-und-welt` von `main` (Pull Request 4 gemerged). Alles Sichtbare bleibt Klötzchen bis zur Stilprobe.
+Aus der E2-Zeile ist in Etappe 1 schon da: Station mit Vorgabestück, Häuschen, Hebel und Richtung, Schlangenbereich mit
+Figuren und Freiraum-Volumen (ohne Wirkung), Baustellen-Marke mit Variante (ohne Verhalten), Feld mit Kamerabegrenzung,
+Gurtstufe je Feld. Lücken am Code: In der Zone ist alles frei, jeder Strich abseits der Bahn wird zum Berg; der Pinsel
+kennt die Zonenelemente nicht (die Bahn fährt durch jeden Klotz, Wasser sperrt nur Füße); die Startart ist das kleine
+Symbol über dem ersten Knoten; Höhlenkästen unter dem Boden stehen unsichtbar hinter dem geschlossenen Erdschnitt.
+
+1. **Fähigkeiten als Schalter, Aufwertungen als Daten** (3.1, 2.4, 2.1): Zonendatei mit Tabelle Stufe → Satz von
+   Schaltern (Kettenzug, Launch, Hydro, Pendel, Vertikallift, Booster, Bremse, Splash, Launch-Block, Rolle, Tunnel
+   erlaubt, Gurt 0–4, Kettenzugstärke, Wagenvariante); ein Feld wählt die Stufe, überschreibt einzelne Schalter und
+   trägt Streckenbudget und Höhenlimit. Regal, Startarten, Gurt und Bergbauer folgen den Schaltern; „Boden formen“
+   bleibt aus (7.5). Platzhalter: Vorbelegung der Stufen, Texteingabe im Editor.
+2. **Startarten sichtbar, Startart-Knopf am Hebel** (3.5, 3.3): Kette von der Station bis zum Kettenende, Launch-Band
+   mit Lichtern (26 m), Hydro-Band mit Dampf-Marke, Pendel-Puffer, Vertikallift-Turm, in den Maßen der Physik; der
+   kleine Chip wird in der Zone zum großen Knopf am Hebel des Häuschens (Tipp wechselt durch die erlaubten Startarten,
+   Name kurz groß; ein Menü kommt mit der UI-Werkstatt, E4). Platzhalter: alle Formen und Farben.
+3. **Kettenzuglinie, Kettenzugstärke, Wagenvariante** (2.4, 7.4): Stärke je Stufe = Höhe über der Station, bis zu der
+   die Kette zieht (Stufe „alles“ ohne Grenze); gestrichelte Linie beim Zeichnen; endet die Kette unter dem Gipfel,
+   bleibt der Zug stehen und die Probefahrt meldet „Kette reicht nicht“. Wagenvariante als Datum je Stufe
+   (Platzhalter: Farbe der Klötzchen-Wagen).
+4. **Tor 2a** (Handy): Schalter, Startarten, Hebel-Knopf, Kettenzuglinie im Probefeld; Florian entscheidet, ob die
+   Startart-Platzhalter bis zur Stilprobe reichen und der Knopf verständlich ist; 60 fps, Replay grün, Fixes.
+5. **Fels-Regeln** (5.1, 5.2): Festigkeitsfeld aus den Zonenelementen (Dreiteiler fest mit Innenraum als Kanal nur durch
+   Öffnungen, Säule fest, Höhlenkasten mit festen Wänden und freiem Raum, Erdschnitt fest außer in Räumen); der
+   Tiefenlöser nimmt die freie Seite vor oder hinter dem Fels, Öffnungen führen hindurch, sonst rot mit Hinweis „Fels“
+   und Ende der Bahn davor; kein Fuß im Fels; Tunnel-Meter in Öffnungen und Innenraum; Bahn im Fels gedimmt sichtbar;
+   Prüfstriche in der Prüfzone als Test. Platzhalter: runde Öffnungen, Klötzchen.
+6. **Baustellen in zwei Varianten mit Freilegung** (5.1, Richtlinie 4): Verbinden mit Choreografie aus dem Labor und
+   Öffnung im Festigkeitsfeld; Durchbruch nur in der Fahrt (Wand zersplittert bei Mindesttempo, sonst endet die Fahrt
+   davor), Vorab-Fahrt und Zielart in E3; Baustelle mit Ziel-Element und Öffnungsradius als Daten. Platzhalter: Staub,
+   Splitter, Farben, Dauer.
+7. **Untergrund und Looks** (5.2, 2.1, 2.3, Richtlinie 6): Erdschnitt als Element mit Tiefe unter dem Boden, Räume
+   „offen ab Stufe“ hinter dem Deckel, durch Baustellen geöffnete Räume bleiben in späteren Stufen offen; Tabelle
+   Stufe → Look (Tag, Abend, Nacht, Neon), der Himmel folgt dem Look; Regel 2.3 als Hinweis im Editor. Platzhalter:
+   Schichten-Textur, Look-Werte.
+8. **Tor 2b** (Handy): Fels-Hinweis, beide Baustellen, Freilegung mit Kamera, Räume ab Stufe, Looks je Stufe; Florian
+   entscheidet Dauer und Kamera der Freilegung und die Looks; 60 fps mit Shadow Map, Replay grün, Fixes.
+9. **Schlange mit Freiraum, Tunnelkapsel mit Autoscroll-Schalter** (6.3, 5.2, 5.3): Bahn über dem Freiraum angehoben,
+   weich ein- und ausgeleitet, tief darunter frei, Stützen außerhalb; Tunnel als Paar von Öffnungen mit vorgefertigter
+   Kapsel, mit Schalter fährt die Kamera zum Ausgang und der Strich geht dort weiter; Florian probiert beides.
+   Platzhalter: Figuren, Kapselform.
+10. **Wasser mit Schaltern** (5.4): Schmuck, trägt Stützen (Füße bis zum Grund mit Wellenring), Splash-Zone (Eintauchen,
+    leichtes Bremsen, Fontäne, Zielart Splash; ohne Schalter bleibt Wasser Fehlschlag); der Wasserfall bleibt eigenes
+    Element mit „Fahrt dahinter gedämpft“. Platzhalter: Ring, Fontäne, Band.
+11. **Basiszone v1, Prüfzone, Doku:** Entwurf der Basiszone v1 als Checkliste mit einem Feld je Fähigkeit durch die
+    Session, Florian baut ihn im Editor um (Inhalt bleibt seine Entscheidung); Prüfzone mit jeder neuen Eintragsart,
+    Szenario 10 prüft Fels-Stop, Freilegung, Anheben und Schalter, Standbilder je Feld; Doku komplett.
+12. **Tor E2:** Checkliste je Fähigkeit in je einem Feld, Replay grün, Handy 60 fps und unter 150 Zeichenaufrufen im
+    vollsten Feld, Standbilder im Hochformat, Florians Spieltest, Fixes, Pull Request nach `main`.
+
+Nicht in E2 (laut Plan später): Sprungschanze, Rätselelemente, Magnet-Coins, Fangen, Bild im Bild (E3); Stützen-Werkstatt
+und Funkeln (E4); Boden formen (nach der Stilprobe); Graben Stufe 2 (eigenes Tor). Florians Antworten auf die sechs
+Rückfragen der Session (25.10.): alle Empfehlungen angenommen (drei Tore; Durchbruch in E2 nur in der Fahrt; Wasserfall
+bleibt eigenes Element; Entwurf der Basiszone v1 durch die Session; Startart-Knopf wechselt per Tipp; Kettenzugstärke
+als Höhe über der Station).
+
+**Stand:** Arbeitsschritte bestätigt am 25.10.2026, Schritt 1 begonnen.
+
 ### Rückfragen zu Paket 10
 
 1. Spannen und Reihenfolge so annehmen, mit der Stilprobe parallel zu E3, sobald der Figma-Weg steht? **Ja (24.10.);
@@ -699,6 +766,9 @@ Platzhalter mit richtigen Maßen.
 jeder Strich setzt sie fort) sind im Editor und im Spiel; Häuschen und Hebel als Platzhalter; der große Startart-Knopf,
 die sichtbaren Startarten (3.5) und die Fähigkeiten als Schalter kommen in E2. Schritt 9 (25.10.): Die Aufwertungsstufe
 je Feld ist heute die Gurtstufe (Taste U im Editor, `upgrade` in der Zonendatei), ein Platzhalter für die Schalter aus 2.4.
+**Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Der Startart-Knopf am Hebel wechselt per Tipp durch die
+Startarten, die das Feld erlaubt (Name kurz groß eingeblendet); ein Auswahlmenü kommt mit der UI-Werkstatt (E4). Die
+Startarten aus 3.5 werden in Etappe 2 als Platzhalter in den Maßen der Physik gebaut (Schritte 2 und 3 in Paket 10).
 
 ## Paket 8a: Teile und Elemente
 
@@ -947,7 +1017,10 @@ heutige Regel „keine Stützen im Wasser“ gilt damit nur, wo der Schalter „
 2. Autoscroll zum Ausgang als Editor-Schalter zum Ausprobieren: einverstanden? **Ja (24.10.).**
 
 **Status: bestätigt am 24.10.2026.** Graben in Stufen trägt Florians Vorbehalt; Autoscroll wird nach dem Ausprobieren
-entschieden.
+entschieden. **Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Der Wasserfall bleibt ein eigenes Element (er ist
+seit Etappe 1 da) und bekommt den Schalter „Fahrt dahinter gedämpft“; die Schalter Schmuck, trägt Stützen und Splash-Zone
+liegen auf der Wasserfläche. Der Durchbruch wirkt in Etappe 2 nur in der Fahrt (die Wand zersplittert bei Mindesttempo,
+sonst endet die Fahrt davor); die Vorab-Fahrt beim Zeichnen und die Zielart kommen mit E3.
 
 ## Paket 0: Art Direction v2 (Look)
 
