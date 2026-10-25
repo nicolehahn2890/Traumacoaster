@@ -1139,6 +1139,27 @@ erarbeiten; Collagen Metropolenwirbel, Frostfalten, Stammfenster vom 25.10.2026 
 `refs/traumacoaster-gpt explore/`). Fix am selben Tag: freies Gelände rechnet wieder genau wie vor dem Feld (Mindesthöhe
 hart, Anheben nur nahe Höhlen, Abstand und Anlauf nur an Elementwänden; Test dafür). Offen: Ebenen-Probe (gemalte
 Landschaftskörper mit Masken im Feld, Höhle mit Freilegung per Ebenenverschiebung, Vorschlag unten), dann Tor 2b erneut.
+**Vorschlag der Session (25.10.2026, braucht Florians Ja): die Ebenen-Probe.** Grundlage: alle 35 Visuals (vor allem 15,
+18, 21, 24, 25, 27, 33, 35, 37, 40, 42, 50, 51: unten der Querschnitt aus geschichteten Höhlen mit runden Bögen, oben
+die Oberfläche, dahinter Fernen), Florians drei Collagen und GPTs Parallax-Baukasten (`refs/traumacoaster-gpt explore/
+parallax baukasten test/`: 20 freigestellte Landschaftskörper wie großer S-Bogen, Höhlenterrasse, Wiesenmasse,
+Alpengipfel mit Fenster, Tunnelmund, mit Masken und Oberkanten; zehn Szenen, Szene 06 „Kathedrale im Fels“ und 10
+entsprechen den Collagen; Höhlen-Freilegung per Regler). Das Modell: Eine Zone ist ein Stapel **Ebenen**; eine Ebene ist
+ein gemalter **Landschaftskörper** (Bild mit Alphakanal) an einer Tiefe (Spur) mit einer Dicke, dazu wahlweise eine
+Innenwand (die Höhle dahinter, als eigene Ebene weiter hinten), Öffnungen und ein Freilegungszustand. Das Freiraumfeld
+liest Festes aus der Maske (wo gemalt, dort fest, in der Dicke der Ebene; runde, geschwungene Formen sind damit
+selbstverständlich, Leitsatz 2), Höhlen sind der freie Raum zwischen Vorderkörper und Innenwand, Stützen stehen auf dem,
+was die Maske unter ihnen trägt (die Oberkanten des Baukastens sind genau das), der Pinsel bleibt, wie er ist (eine
+Regel, Leitsatz 1 und 3). Freilegen heißt: eine Freilegungsmaske nimmt dem Vorderkörper Fläche (der Auflöse-Shader aus
+Schritt 6 mit Brandkante) oder eine Ebene verschiebt sich; das Feld folgt der Maske, Boden und Erdschnitt werden Ebenen
+wie alles andere (Leitsatz 5). Parallaxe entsteht aus der Tiefe der Ebenen in der Welt (die Kamera ist schon perspektivisch).
+Schritte: (a) Elementart „Körper“ in der Zonendatei (Bild, Tiefe, Dicke, Innenwand, Öffnungen, Freilegung), Feld liest die
+Maske, Renderer zeigt das Bild als Fläche in der Tiefe; (b) Zone „ebenen“ aus den Körpern des Baukastens nach Szene 06
+(Wiese, S-Bogen, Innenwand, Terrasse, Tunnelmund), Pinsel durch die Höhle, Stützen auf der Terrasse, Fahrt mit
+Tunnel-Metern; (c) Freilegung der Höhle per Regler im Editor und als Baustelle; (d) Florian prüft auf dem Handy: Gefühl
+beim Zeichnen, Formen, Verdeckung, Freilegung. Danach ersetzen Körper die Klötzchen (8a), der Boden wird Ebenen; Look
+und neue Malereien kommen mit der Stilprobe (Paket 0). Offen für Florian: zuerst mit den Körpern des Baukastens oder
+zuerst neue Malereien aus seinen Collagen?
 **Status: bestätigt am 24.10.2026.** Graben in Stufen trägt Florians Vorbehalt; Autoscroll wird nach dem Ausprobieren
 entschieden. **Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Der Wasserfall bleibt ein eigenes Element (er ist
 seit Etappe 1 da) und bekommt den Schalter „Fahrt dahinter gedämpft“; die Schalter Schmuck, trägt Stützen und Splash-Zone
