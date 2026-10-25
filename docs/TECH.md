@@ -265,7 +265,9 @@ Politur; alles Gesetzte sind Klötzchen, die später Grafiken ersetzen.
   `openings` (Öffnungen in der Lippe des Dreiteilers, relativ zum Fuß, Radius; die Bahn darf dort hindurch), `anchor`
   (Anschluss am Fuß: Station, Tunnelachse, Wasserfallquelle), `growth` (Wachstumsstufe: ab dieser Fortschrittsstufe da),
   `depthRole` (Rückwand, Mitte, Vorderlippe). Im Editor am gewählten Element: M Fundament, O Öffnung (Dreiteiler), A Anker,
-  G Stufe, R Rolle; Fundament als grüne Oberkante, Anker als Punkt am Fuß, alles in der Statuszeile. Die Wachstumsstufe
+  G Stufe, R Rolle; Fundament als grüne Oberkante, Anker als Punkt am Fuß, alles in der Statuszeile. Seit Tor 1b (25.10.):
+  Alt+Pfeile verschieben die Öffnung (Shift fein, sie bleibt im Element), Plus und Minus ändern ihren Radius, Shift+Pfeile
+  links/rechts die Dicke (Ausdehnung in der Tiefe) von Dreiteiler, Höhlenkasten und Wasser. Die Wachstumsstufe
   schaltet seit Schritt 9 Elemente je Feld (unten); die Tiefenrolle bleibt bis zur Stilprobe ein reines Datum.
 - **Felder** (Schritt 7, Plan 2.1 und 2.3): `fields` in der Zonendatei (`f1`, `f2`, …; x0 bis x1, Höhe y0 bis y1 in
   Zonenkoordinaten, mindestens 20 × 12 m). Werkzeug „Feld“: in der Welt aufziehen (Rechteck auf Spur 0), Klick in ein Feld

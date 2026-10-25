@@ -479,6 +479,10 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
     der CI. Gelernt: Ohne Ziele bleibt die Zone Sandkasten mit Maßband, mit Zielen verhält sie sich wie ein Level; so
     prüft Florian ein Feld, ohne ein Level anzulegen. Platzhalter: Zieleingabe als Textzeile im Browser-Dialog; die
     Rätselziele (4.2), Magnet-Coins und Fangen kommen in E2 und E3, die Fähigkeiten als Schalter (2.4) in E2. Replay `--world`: 382 Aufnahmen, 10695 Stützen, Median 2,0 px, kein Fehler.
+15. Tor 1b, erste Rückmeldung (25.10.): Beim Bauen des Testausschnitts fehlten das Verschieben der Öffnung und die Dicke
+    des Dreiteilers; nachgerüstet als Alt+Pfeile (Öffnung, Shift fein), Plus und Minus (Radius) und Shift+Pfeile
+    links/rechts (Dicke von Dreiteiler, Höhlenkasten, Wasser). Gelernt: Jede Code-Änderung lädt die Editor-Seite am Mac
+    neu, ungesicherte Einträge gehen dabei verloren; gespeicherte Zonen kommen per Hot-Reload zurück.
 
 ## Paket 10: Etappen und Abnahmen (Vorschlag aus allem Bestätigten)
 
@@ -753,6 +757,17 @@ in Paket 0 über die Stilprobe gefunden, nicht vorab festgelegt.
 
 **Status: bestätigt am 24.10.2026.** Die Grafikliste (Entscheidung 8) folgt aus der Basiszone und wird hier mit Datum
 nachgetragen, sobald die Platzhalter stehen.
+
+**Nachtrag 25.10.2026 (Florians Frage aus Tor 1b):** Tunnel sollen wie in den Referenzen auch an der Seite und vorn im Berg
+sitzen, der Boden und die Höhlen sollen organische Formen mit vielen Lagen und Tiefe haben; Frage, ob ein Berg später ein
+Teil mit echter Tiefe und Seitenansicht (Meshy) sein kann. Antwort der Session: Tunnelmünder an Flanke und Front sind
+gemalte Öffnungen mit Öffnungsvolumen (Richtlinie 3; heute Platzhalter-Kreise in der Lippe und automatische Portale); der
+Boden ist ein Höhenfeld je x und Spur mit gemalten Rändern (heute flach, weil die Zone noch kein Gelände hat; „Boden
+formen“ in E5); Überhänge und Höhlen kommen aus gemalten Teilen in vielen Tiefenlagen (Höhlenkasten als Platzhalter,
+später vier gemalte Flächen plus Höhlenteile; Untergrund als Ameisenfarm, Paket 5). Ein sichtbares 3D-Teil erlaubt die
+Richtlinie nur, wo ein Volumen von mehreren Seiten zu sehen ist („Hero-Fels“), mit gemalter, unbeleuchteter Textur wie
+die Wagen. **Offen, entscheidet Florian an der Stilprobe (E4):** ein Hero-Fels mit Tunnel als Dreiteiler gegen denselben
+Fels als gemaltes 3D-Teil, nebeneinander auf dem Handy.
 
 ## Paket 6: Figuren, Schlange, Fahrgäste
 

@@ -8,8 +8,9 @@
  * sind Werkzeuge; die Elemente sind Platzhalter, bis die Grafiken der Zone sie ersetzen.
  *
  * Tasten im Bauen: 1 bis 5 Spur für neue Einträge (vorn bis hinten), Bild auf und Bild ab (oder ] und [) Tiefe des
- * gewählten Eintrags (mit Shift fein), Pfeiltasten Maße, Entf löschen, Esc abwählen, T Bahntyp der Zone, Cmd/Strg+S
- * speichern; Element: M Fundament, O Öffnung, A Anker, G Stufe, R Rolle; Station und Schlange: D Richtung; Baustelle:
+ * gewählten Eintrags (mit Shift fein), Pfeiltasten Maße (Shift+Pfeile links/rechts: Dicke des Volumens), Entf löschen,
+ * Esc abwählen, T Bahntyp der Zone, Cmd/Strg+S speichern; Element: M Fundament, O Öffnung (Alt+Pfeile verschieben sie,
+ * Plus und Minus ändern den Radius), A Anker, G Stufe, R Rolle; Station und Schlange: D Richtung; Baustelle:
  * V Variante; Coins: C Form. Felder (Werkzeug „Feld“, aufziehen): Enter aktiv, N Name, Z Ziele (Zeile „finish, height 20,
  * *coins 5“; Stern = Bonus), G Fortschrittsstufe der Zone, U Aufwertung (Gurtstufe), Entf löschen. Der Knopf „Testfahrt“
  * schaltet das gewählte Feld aktiv, wechselt ins Spielen und lässt die Bahn fahren (Schritt 9).
@@ -625,7 +626,37 @@ export class ZoneEditor {
       this.commit(el);
       return true;
     }
-    if (k === 'ArrowLeft' || k === 'ArrowRight') {
+    const arrow = k === 'ArrowLeft' ? -1 : k === 'ArrowRight' ? 1 : 0;
+    const vert = k === 'ArrowUp' ? 1 : k === 'ArrowDown' ? -1 : 0;
+    if ((arrow || vert) && ev.altKey) {
+      // Alt+Pfeile: Öffnung verschieben (relativ zum Fuß; sie bleibt im Element), mit Shift fein
+      ev.preventDefault();
+      const o = el.openings?.[0];
+      if (!o) {
+        this.host.toast.show('Erst mit O eine Öffnung machen', 1.8);
+        return true;
+      }
+      const step = ev.shiftKey ? 0.1 : 0.5;
+      o.dx = round(Math.max(-el.w / 2 + o.r, Math.min(el.w / 2 - o.r, o.dx + arrow * step)));
+      o.dy = round(Math.max(o.r, Math.min(Math.max(o.r, el.h - o.r), o.dy + vert * step)));
+      this.commit(el);
+      return true;
+    }
+    if ((k === '+' || k === '-') && el.openings?.[0]) {
+      // Plus und Minus: Radius der Öffnung
+      const o = el.openings[0];
+      o.r = round(Math.max(0.8, Math.min(Math.min(el.w, el.h) / 2, o.r + (k === '+' ? 0.2 : -0.2))));
+      this.commit(el);
+      return true;
+    }
+    if (arrow && ev.shiftKey && el.d !== undefined) {
+      // Shift+Pfeile links/rechts: Dicke, die Ausdehnung des Volumens in der Tiefe (Dreiteiler, Höhlenkasten, Wasser)
+      ev.preventDefault();
+      el.d = round(Math.max(0.5, Math.min(40, el.d + arrow * 0.5)));
+      this.commit(el);
+      return true;
+    }
+    if (arrow) {
       ev.preventDefault();
       el.w = round(Math.max(0.2, el.w * (k === 'ArrowRight' ? 1.1 : 1 / 1.1)));
       this.commit(el);
@@ -717,7 +748,7 @@ export class ZoneEditor {
     const size = el.kind === 'water' ? `${el.w} × ${el.d ?? 0} m` : `${el.w} × ${el.h} m${el.d !== undefined ? `, Tiefe ${el.d} m` : ''}`;
     const meta: string[] = [];
     if (el.foundation) meta.push('Fundament');
-    if (el.openings?.length) meta.push(`Öffnung r ${el.openings[0].r} m`);
+    if (el.openings?.length) meta.push(`Öffnung bei ${el.openings[0].dx} m / ${el.openings[0].dy} m hoch, r ${el.openings[0].r} m`);
     if (el.anchor) meta.push(`Anker ${ANCHOR_NAMES[el.anchor]}`);
     if (el.growth) meta.push(`ab Stufe ${el.growth}`);
     if (el.depthRole) meta.push(`Rolle ${ROLE_NAMES[el.depthRole]}`);
@@ -770,7 +801,7 @@ export class ZoneEditor {
       this.hint.text = 'Esc: Werkzeug weg';
     } else if (el) {
       this.status.text = this.describe(el);
-      this.hint.text = 'Ziehen verschiebt · Bild auf/ab (oder [ ]) Tiefe, Shift fein · Pfeile Breite und Höhe · M Fundament · O Öffnung · A Anker · G Stufe · R Rolle · Entf löschen · Esc abwählen · Cmd+S speichern';
+      this.hint.text = `Ziehen verschiebt · Bild auf/ab (oder [ ]) Tiefe, Shift fein · Pfeile Breite und Höhe${el.d !== undefined ? ' · Shift+Pfeile links/rechts Dicke' : ''} · M Fundament · O Öffnung${el.openings?.length ? ' (Alt+Pfeile verschieben, + − Radius)' : ''} · A Anker · G Stufe · R Rolle · Entf löschen · Esc abwählen · Cmd+S speichern`;
     } else if (item) {
       this.status.text = this.describeItem(item);
       this.hint.text = item.kind === 'station' ? 'Ziehen verschiebt · Bild auf/ab Tiefe · D Richtung · Pfeile links/rechts Länge · Entf löschen'

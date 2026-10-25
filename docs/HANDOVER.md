@@ -46,6 +46,11 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Rätselziele, Magnet-Coins, Fangen und die Fähigkeiten als Schalter kommen in E2 und E3. Replay `--world`: 382 Aufnahmen, 10695 Stützen, Median 2,0 px, kein Fehler.
   Als Nächstes Schritt 10, Tor 1b: Florian baut selbst einen Testausschnitt (Station, Hügel, Fenster-Element, Baustelle),
   das Handy zeigt dasselbe, dann Fixes, Doku und der Pull Request nach `main`.
+  Tor 1b, erste Rückmeldung (25.10.): Öffnung verschieben (Alt+Pfeile, Plus und Minus für den Radius) und Dicke des
+  Volumens (Shift+Pfeile links/rechts) fehlten im Editor und sind nachgerüstet. Florians Fragen zu Tunneln an Seite und
+  Front, organischem Boden und Höhlen mit Lagen sind mit Antwort in Paket 8a notiert (Entscheidung an der Stilprobe).
+  Achtung: Jede Code-Änderung lädt die Editor-Seite am Mac neu; ungesicherte Einträge gehen verloren, gespeicherte Zonen
+  kommen per Hot-Reload zurück.
   Links für den Handy-Test: Dev-Server mit `npm run dev` (zeichnet auf), Adresse aus dem
   Vite-Log plus `?scene=start&level=8&world=1&dev=1` und `&track=`, `&aa=0`, `&shadow=0`, `&look=`, Level 32 (Tunnel),
   Level 47 (See).
