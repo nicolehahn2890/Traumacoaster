@@ -1682,6 +1682,14 @@ export function planBrushTrack(points: StagePoint[], options: BrushOptions = {},
   const wMul = new Float64Array(n).fill(1);
   const flat = new Float64Array(n).fill(1);
   const ramps = applyElements(elements, wMul, flat, calm, level);
+  // Spitze (Plan Paket 5, Freiraumfeld c): Was die Vorschau schon fest gezeigt hat (älter als PREVIEW_FREE vor dem Ende),
+  // bleibt beim Loslassen genau so; nur der freie Teil wird neu gelöst. Bei einer Runde wird der Schluss neu gebaut und
+  // die Linie am Ende verändert, dort hält die gezeigte Tiefe weiter nur weich
+  let fixedAtRelease = keptDepth(n, keepDepth);
+  if (shown && !prep.closed) {
+    fixedAtRelease = fixedAtRelease ?? new Float64Array(n).fill(NaN);
+    for (let i = 0; i < Math.min(n - PREVIEW_FREE, shown.length - 3); i++) if (Number.isNaN(fixedAtRelease[i])) fixedAtRelease[i] = shown[i];
+  }
   let hold: Float64Array | null = null;
   let holdW: Float64Array | null = null;
   if (shown && shown.length > 3) {
@@ -1706,7 +1714,7 @@ export function planBrushTrack(points: StagePoint[], options: BrushOptions = {},
     level,
     wMul,
     lower: new Float64Array(n).fill(-Infinity),
-    fixed: keptDepth(n, keepDepth),
+    fixed: fixedAtRelease,
     hold,
     holdW,
     flat,
