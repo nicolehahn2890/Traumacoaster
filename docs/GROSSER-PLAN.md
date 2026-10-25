@@ -136,8 +136,9 @@ Optionen:
 
 **Empfehlung: A**, in drei Ausbaustufen, jede mit Tor. **Bestätigt am 24.10.2026: Option A, Florian bedient den Editor selbst am Mac.**
 **Stand 25.10.2026:** Stufe 1 begonnen (Etappe 1, Schritt 6: Setzen, Ziehen, Tiefe, Maße, Löschen, Speichern, Laden,
-Hot-Reload; Schritt 7: Metadaten je Element und Felder mit Kamerabegrenzung, Absperrband und Zoom-Grenze; `docs/TECH.md`
-4g), Station, Schlange, Baustelle, Coins, Testfahrt und Ziele folgen in den Schritten 8 und 9.
+Hot-Reload; Schritt 7: Metadaten je Element und Felder mit Kamerabegrenzung, Absperrband und Zoom-Grenze; Schritt 8:
+Station, Schlange, Baustelle und Coin-Gruppen als Einträge der Zone; `docs/TECH.md` 4g), Testfahrt, Ziele und Stufen
+folgen in Schritt 9.
 
 1. **Klötzchen-Editor** (gehört zur Etappe Weltrenderer): Platzhalter (Fläche, Kasten, Zylinder, Höhlenkasten, Wasser,
    Station, Baustelle, Coin-Gruppe) setzen, ziehen, in der Tiefe verschieben, Metadaten setzen (Fundament, Öffnung,
@@ -458,6 +459,13 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
     Taste F war schon das Dev-Overlay (Effekte), darum schaltet Enter ein Feld aktiv; Wachstumsstufe und Tiefenrolle
     bleiben bis Schritt 9 reine Daten. Platzhalter: die Öffnung ist ein Kreis, die Oberkante tragfähig als Ganzes; beides
     ersetzen die Metadaten der gemalten Teile (Fundament-Polygon, Öffnungsvolumen). Replay `--world`: 343 Aufnahmen, 9579 Stützen, Median 2,0 px, kein Fehler.
+13. Schritt 8 (25.10.): Stationsanker mit Richtung und Vorgabestück (Plan 3.3; im Spiel beginnt die Bahn am Stück, jeder
+    Strich setzt sie fort, Löschen stellt es wieder her), Häuschen mit Drehkreuz und Geländer, Hebel als Platzhalter;
+    Schlangenbereich mit Eingangsrichtung, sechs Figuren und Freiraum-Volumen (6.3); Baustellen-Marke mit Variante
+    Verbinden oder Durchbruch und Mindesttempo (5.1); Coin-Gruppen in vier Formen als Coins der Bühne (4.4). Gelernt: Vier
+    Platzhalter aus Einzelteilen kosteten mit Schatten über hundert Zeichenaufrufe; verschmolzen zu einer Geometrie je
+    Platzhalter sind es vier. Platzhalter: alle Formen und Farben; Startart-Knopf, Freiraum-Anhebung, Durchbruch und
+    Magnet-Coins kommen in E2 und E3. Replay `--world`: 364 Aufnahmen, 10162 Stützen, Median 2,0 px, kein Fehler.
 
 ## Paket 10: Etappen und Abnahmen (Vorschlag aus allem Bestätigten)
 
@@ -516,7 +524,7 @@ mit Florian. Die Session arbeitet auf einem eigenen Branch und geht am Tor per P
 10. **Tor 1b:** Florian baut selbst einen Testausschnitt (Station, Hügel, Fenster-Element, Baustelle); das Handy zeigt
     dasselbe; Fixes; Doku in `docs/TECH.md` und `docs/HANDOVER.md`; Pull Request nach `main`.
 
-**Stand:** Schritte 1 bis 4 gebaut am 24.10.2026, Tor 1a bestanden am 25.10.2026, Schritte 6 und 7 gebaut am 25.10.2026 (Nachträge in Paket 1); Schritt 8 steht an.
+**Stand:** Schritte 1 bis 4 gebaut am 24.10.2026, Tor 1a bestanden am 25.10.2026, Schritte 6 bis 8 gebaut am 25.10.2026 (Nachträge in Paket 1); Schritt 9 steht an.
 
 **Florian parallel zu Etappe 1:** den Erzeugungsweg für Teile mit der Session prüfen (Voraussetzung für E4), erste
 Figurenteile in zwei Ansichten skizzieren, Entwurf der Alpen-Autos, Handy-Tests an den Toren, Entscheidungen an den
@@ -665,6 +673,9 @@ Platzhalter mit richtigen Maßen.
 2. Stützen-Werkstatt mit Weg C als Start: einverstanden? **Ja (24.10.).**
 
 **Status: bestätigt am 24.10.2026.**
+**Stand 25.10.2026 (Etappe 1, Schritt 8):** Stationsanker mit Richtung und Vorgabestück (14 m, offene Pinsel-Bahn,
+jeder Strich setzt sie fort) sind im Editor und im Spiel; Häuschen und Hebel als Platzhalter; der große Startart-Knopf,
+die sichtbaren Startarten (3.5) und die Fähigkeiten als Schalter kommen in E2.
 
 ## Paket 8a: Teile und Elemente
 

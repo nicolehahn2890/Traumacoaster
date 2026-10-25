@@ -7,6 +7,9 @@
  * `public/zones/<name>/zone.json`, das Spiel liest sie von dort (auch auf dem Handy).
  */
 import { parseTrackType, type TrackType } from '@/world/trackTypes';
+import { COIN_SHAPES, type ZoneCoinGroup } from './groups';
+
+export type { ZoneCoinGroup } from './groups';
 
 export type ZoneElementKind = 'flat' | 'threePart' | 'column' | 'cave' | 'water' | 'waterfall' | 'portal';
 export const ZONE_KINDS: readonly ZoneElementKind[] = ['flat', 'threePart', 'column', 'cave', 'water', 'waterfall', 'portal'];
@@ -59,6 +62,39 @@ export interface ZoneField {
   y1: number;
 }
 
+/** Stationsanker (Plan 3.3): Anfang des geraden Vorgabestücks auf der Bahnlinie, Richtung und Länge */
+export interface ZoneStation {
+  id: string;
+  x: number;
+  y: number;
+  z: number;
+  /** 1: Fahrt nach rechts, −1: nach links */
+  dir: 1 | -1;
+  /** Länge des Vorgabestücks (Meter, Start 14) */
+  length: number;
+}
+
+/** Schlangenbereich (Plan 6.3): Streifen auf dem Boden mit Reihenfolge (Eingang am Ende in Richtung dir) und Freiraum darüber */
+export interface ZoneQueue {
+  id: string;
+  x0: number;
+  x1: number;
+  y: number;
+  z: number;
+  dir: 1 | -1;
+}
+
+/** Baustelle (Plan 5.1): Anschlusspunkt, Variante Verbinden oder Durchbruch (mit Mindesttempo) */
+export interface ZoneSite {
+  id: string;
+  x: number;
+  y: number;
+  z: number;
+  variant: 'connect' | 'breakthrough';
+  /** Durchbruch: nötiges Tempo (m/s) */
+  energy?: number;
+}
+
 export interface ZoneFile {
   version: 1;
   name: string;
@@ -67,6 +103,10 @@ export interface ZoneFile {
   trackType: TrackType;
   elements: ZoneElement[];
   fields: ZoneField[];
+  stations: ZoneStation[];
+  queues: ZoneQueue[];
+  sites: ZoneSite[];
+  coinGroups: ZoneCoinGroup[];
 }
 
 export interface KindDefaults {
@@ -95,7 +135,31 @@ export function kindDefaults(kind: ZoneElementKind): KindDefaults {
 }
 
 export function emptyZone(name: string, width = 300, trackType: TrackType = 'road'): ZoneFile {
-  return { version: 1, name, width, trackType, elements: [], fields: [] };
+  return { version: 1, name, width, trackType, elements: [], fields: [], stations: [], queues: [], sites: [], coinGroups: [] };
+}
+
+/** nächste freie Kennung mit Präfix (s1, q1, b1, c1, …) */
+export function nextId(prefix: string, taken: Array<{ id: string }>): string {
+  const ids = new Set(taken.map((t) => t.id));
+  let n = taken.length + 1;
+  while (ids.has(`${prefix}${n}`)) n++;
+  return `${prefix}${n}`;
+}
+
+export function newStation(zone: ZoneFile, x: number, y: number, z: number): ZoneStation {
+  return { id: nextId('s', zone.stations), x: round(x), y: round(y), z: round(z), dir: 1, length: 14 };
+}
+
+export function newQueue(zone: ZoneFile, x: number, y: number, z: number): ZoneQueue {
+  return { id: nextId('q', zone.queues), x0: round(x - 10), x1: round(x), y: round(y), z: round(z), dir: 1 };
+}
+
+export function newSite(zone: ZoneFile, x: number, y: number, z: number): ZoneSite {
+  return { id: nextId('b', zone.sites), x: round(x), y: round(y), z: round(z), variant: 'connect' };
+}
+
+export function newCoinGroup(zone: ZoneFile, x: number, y: number, z: number): ZoneCoinGroup {
+  return { id: nextId('c', zone.coinGroups), shape: 'row', x: round(x), y: round(y), z: round(z), count: 5, spacing: 2 };
 }
 
 /** nächste freie Feldkennung f1, f2, … */
@@ -182,7 +246,31 @@ export function parseZone(json: unknown): ZoneFile | null {
     fieldIds.add(field.id);
     fields.push(field);
   }
-  return { version: 1, name: o.name, width, trackType, elements, fields };
+  const dirOf = (v: unknown): 1 | -1 => (v === -1 ? -1 : 1);
+  const list = <T extends { id: string }>(key: string, make: (r: Record<string, unknown>) => T | null): T[] => {
+    const out: T[] = [];
+    const seen = new Set<string>();
+    for (const raw of Array.isArray(o[key]) ? (o[key] as unknown[]) : []) {
+      if (!raw || typeof raw !== 'object') continue;
+      const r = raw as Record<string, unknown>;
+      if (typeof r.id !== 'string' || seen.has(r.id)) continue;
+      const item = make(r);
+      if (!item) continue;
+      seen.add(item.id);
+      out.push(item);
+    }
+    return out;
+  };
+  const stations = list<ZoneStation>('stations', (r) => (num(r.x) && num(r.y) && num(r.z) ? { id: r.id as string, x: r.x, y: r.y, z: r.z, dir: dirOf(r.dir), length: num(r.length) && r.length >= 6 ? r.length : 14 } : null));
+  const queues = list<ZoneQueue>('queues', (r) => (num(r.x0) && num(r.x1) && num(r.y) && num(r.z) ? { id: r.id as string, x0: Math.min(r.x0, r.x1), x1: Math.max(r.x0, r.x1), y: r.y, z: r.z, dir: dirOf(r.dir) } : null));
+  const sites = list<ZoneSite>('sites', (r) => {
+    if (!num(r.x) || !num(r.y) || !num(r.z)) return null;
+    const site: ZoneSite = { id: r.id as string, x: r.x, y: r.y, z: r.z, variant: r.variant === 'breakthrough' ? 'breakthrough' : 'connect' };
+    if (num(r.energy) && r.energy > 0) site.energy = r.energy;
+    return site;
+  });
+  const coinGroups = list<ZoneCoinGroup>('coinGroups', (r) => (num(r.x) && num(r.y) && num(r.z) ? { id: r.id as string, shape: (COIN_SHAPES as readonly string[]).includes(String(r.shape)) ? (r.shape as ZoneCoinGroup['shape']) : 'row', x: r.x, y: r.y, z: r.z, count: num(r.count) ? Math.max(1, Math.min(40, Math.round(r.count))) : 5, spacing: num(r.spacing) ? Math.max(0.5, r.spacing) : 2 } : null));
+  return { version: 1, name: o.name, width, trackType, elements, fields, stations, queues, sites, coinGroups };
 }
 
 /** Datei deterministisch schreiben: feste Feldreihenfolge, Elemente nach Kennung sortiert, zwei Nachkommastellen */
@@ -209,5 +297,14 @@ export function serializeZone(zone: ZoneFile): string {
       Object.assign(out, { x0: round(f.x0), x1: round(f.x1), y0: round(f.y0), y1: round(f.y1) });
       return out;
     });
-  return JSON.stringify({ version: 1, name: zone.name, width: round(zone.width), trackType: zone.trackType, elements, fields }, null, 2) + '\n';
+  const byId = <T extends { id: string }>(items: T[]): T[] => [...items].sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true }));
+  const stations = byId(zone.stations).map((s) => ({ id: s.id, x: round(s.x), y: round(s.y), z: round(s.z), dir: s.dir, length: round(s.length) }));
+  const queues = byId(zone.queues).map((q) => ({ id: q.id, x0: round(q.x0), x1: round(q.x1), y: round(q.y), z: round(q.z), dir: q.dir }));
+  const sites = byId(zone.sites).map((b) => {
+    const out: Record<string, unknown> = { id: b.id, x: round(b.x), y: round(b.y), z: round(b.z), variant: b.variant };
+    if (b.energy) out.energy = round(b.energy);
+    return out;
+  });
+  const coinGroups = byId(zone.coinGroups).map((c) => ({ id: c.id, shape: c.shape, x: round(c.x), y: round(c.y), z: round(c.z), count: c.count, spacing: round(c.spacing) }));
+  return JSON.stringify({ version: 1, name: zone.name, width: round(zone.width), trackType: zone.trackType, elements, fields, stations, queues, sites, coinGroups }, null, 2) + '\n';
 }

@@ -7,9 +7,10 @@
  * Tab wechselt zwischen Bauen (der Editor nimmt die Eingabe) und Spielen (normales Zeichnen und Fahren). Alles hier
  * sind Werkzeuge; die Elemente sind Platzhalter, bis die Grafiken der Zone sie ersetzen.
  *
- * Tasten im Bauen: 1 bis 5 Spur für neue Elemente (vorn bis hinten), Bild auf und Bild ab (oder ] und [) Tiefe des
- * gewählten Elements (mit Shift fein), Pfeiltasten Breite und Höhe, Entf löschen, Esc abwählen, T Bahntyp der Zone,
- * Cmd/Strg+S speichern.
+ * Tasten im Bauen: 1 bis 5 Spur für neue Einträge (vorn bis hinten), Bild auf und Bild ab (oder ] und [) Tiefe des
+ * gewählten Eintrags (mit Shift fein), Pfeiltasten Maße, Entf löschen, Esc abwählen, T Bahntyp der Zone, Cmd/Strg+S
+ * speichern; Element: M Fundament, O Öffnung, A Anker, G Stufe, R Rolle; Station und Schlange: D Richtung; Baustelle:
+ * V Variante; Coins: C Form. Felder (Werkzeug „Feld“, aufziehen): Enter aktiv, Entf löschen.
  */
 import { Container, Graphics } from 'pixi.js';
 import type { Pt } from '@/core/input';
@@ -20,8 +21,15 @@ import type { WorldRenderer } from '@/world/renderer';
 import type { WorldView } from '@/render/worldView';
 import { TRACK_TYPES, type TrackType } from '@/world/trackTypes';
 import { loadZone, onZoneChange, saveZone } from '@/zone/io';
-import { KIND_DEFAULTS, ZONE_ANCHORS, ZONE_DEPTH_ROLES, newElement, newField, round, type ZoneElement, type ZoneElementKind, type ZoneField, type ZoneFile } from '@/zone/types';
+import { KIND_DEFAULTS, ZONE_ANCHORS, ZONE_DEPTH_ROLES, newCoinGroup, newElement, newField, newQueue, newSite, newStation, round, type ZoneCoinGroup, type ZoneElement, type ZoneElementKind, type ZoneField, type ZoneFile, type ZoneQueue, type ZoneSite, type ZoneStation } from '@/zone/types';
+import { applyZoneExtras, buildZoneCoins, buildZoneQueue, buildZoneSite, buildZoneStation, itemPosition } from '@/zone/build';
+import { COIN_SHAPES } from '@/zone/groups';
 import { toView } from '@/track/stage';
+
+/** Werkzeuge der Palette: Platzhalter-Typen, Feld, Station, Schlange, Baustelle, Coin-Gruppe */
+type Tool = ZoneElementKind | 'field' | 'station' | 'queue' | 'site' | 'coins';
+/** gewählter Eintrag der Zone, an der Kennung erkannt (e…, s…, q…, b…, c…) */
+type Item = { kind: 'element'; el: ZoneElement } | { kind: 'station'; st: ZoneStation } | { kind: 'queue'; q: ZoneQueue } | { kind: 'site'; b: ZoneSite } | { kind: 'coins'; c: ZoneCoinGroup };
 
 export interface ZoneEditorHost {
   view: WorldView;
@@ -31,10 +39,22 @@ export interface ZoneEditorHost {
   redrawTrack(): void;
   /** Feld aktiv schalten (Kamerabegrenzung, Zoom-Grenze, Absperrband) oder null für die ganze Zone */
   setActiveField(field: ZoneField | null): void;
+  /** Coins der Zone neu in die Bühne setzen */
+  refreshCoins(): void;
+  /** Vorgabestück der Station neu setzen (wenn noch nichts gezeichnet ist) */
+  refreshStation(): void;
 }
 
 const ANCHOR_NAMES = { station: 'Station', tunnel: 'Tunnelachse', waterfall: 'Wasserfallquelle' } as const;
 const ROLE_NAMES = { back: 'Rückwand', mid: 'Mitte', front: 'Vorderlippe' } as const;
+const SHAPE_NAMES = { row: 'Reihe', arc: 'Bogen', ring: 'Ring', column: 'Säule' } as const;
+const EXTRA_TOOLS: Array<{ kind: Tool; label: string }> = [
+  { kind: 'field', label: 'Feld' },
+  { kind: 'station', label: 'Station' },
+  { kind: 'queue', label: 'Schlange' },
+  { kind: 'site', label: 'Baustelle' },
+  { kind: 'coins', label: 'Coins' },
+];
 
 const TYPE_NAMES: Record<TrackType, string> = { road: 'Straße', steel: 'Stahl', wood: 'Holz', hanging: 'Hängebahn' };
 const BTN = { width: 118, height: 30, size: 13, color: PAPER, textColor: INK };
@@ -45,7 +65,7 @@ export class ZoneEditor {
   readonly buttons: Button[] = [];
   zone: ZoneFile;
   mode: 'build' | 'play' = 'build';
-  private tool: ZoneElementKind | 'field' | null = null;
+  private tool: Tool | null = null;
   private selectedId: string | null = null;
   /** gewähltes Feld und das aktive Feld (Kamera, Absperrband) */
   private selectedFieldId: string | null = null;
@@ -55,7 +75,7 @@ export class ZoneEditor {
   /** Feld aufziehen: erste Ecke (Welt, Spur 0) und aktuelle Ecke */
   private fieldDrag: { ax: number; ay: number; bx: number; by: number } | null = null;
   private dirty = false;
-  private readonly palette: Array<{ kind: ZoneElementKind | 'field'; label: string; btn: Button }> = [];
+  private readonly palette: Array<{ kind: Tool; label: string; btn: Button }> = [];
   private readonly modeBtn = new Button('', BTN);
   private readonly saveBtn = new Button('Speichern', BTN);
   private readonly typeBtn = new Button('', BTN);
@@ -66,7 +86,7 @@ export class ZoneEditor {
 
   constructor(private readonly host: ZoneEditorHost, zone: ZoneFile) {
     this.zone = zone;
-    for (const def of [...KIND_DEFAULTS.map((d) => ({ kind: d.kind as ZoneElementKind | 'field', label: d.label })), { kind: 'field' as const, label: 'Feld' }]) {
+    for (const def of [...KIND_DEFAULTS.map((d) => ({ kind: d.kind as Tool, label: d.label })), ...EXTRA_TOOLS]) {
       const btn = new Button(def.label, BTN);
       btn.onTap = () => this.chooseTool(def.kind);
       this.palette.push({ kind: def.kind, label: def.label, btn });
@@ -95,19 +115,111 @@ export class ZoneEditor {
 
   private applyZone(): void {
     this.host.world.setZone(this.zone.elements);
-    this.host.world.selectZoneElement(this.selectedId && this.find(this.selectedId) ? this.selectedId : null);
+    applyZoneExtras(this.host.world, this.zone);
+    this.host.world.selectZoneElement(this.selectedId && this.item(this.selectedId) ? this.selectedId : null);
   }
 
   private find(id: string): ZoneElement | undefined {
     return this.zone.elements.find((e) => e.id === id);
   }
 
+  /** Eintrag der Zone zu einer Kennung */
+  private item(id: string): Item | null {
+    const z = this.zone;
+    const el = z.elements.find((e) => e.id === id);
+    if (el) return { kind: 'element', el };
+    const st = z.stations.find((s) => s.id === id);
+    if (st) return { kind: 'station', st };
+    const q = z.queues.find((x) => x.id === id);
+    if (q) return { kind: 'queue', q };
+    const b = z.sites.find((x) => x.id === id);
+    if (b) return { kind: 'site', b };
+    const c = z.coinGroups.find((x) => x.id === id);
+    if (c) return { kind: 'coins', c };
+    return null;
+  }
+
   private get selected(): ZoneElement | undefined {
     return this.selectedId ? this.find(this.selectedId) : undefined;
   }
 
+  private get selectedItem(): Item | null {
+    return this.selectedId ? this.item(this.selectedId) : null;
+  }
+
+  /** Lage eines Eintrags (Schlange: Mitte des Streifens) */
+  private posOf(item: Item): { x: number; y: number; z: number } {
+    return itemPosition(item.kind === 'element' ? item.el : item.kind === 'station' ? item.st : item.kind === 'queue' ? item.q : item.kind === 'site' ? item.b : item.c);
+  }
+
+  private idOf(item: Item): string {
+    return item.kind === 'element' ? item.el.id : item.kind === 'station' ? item.st.id : item.kind === 'queue' ? item.q.id : item.kind === 'site' ? item.b.id : item.c.id;
+  }
+
+  /** Eintrag verschieben (x, y) und in der Tiefe (z) */
+  private moveItem(item: Item, x: number, y: number, z: number): void {
+    switch (item.kind) {
+      case 'element':
+        Object.assign(item.el, { x, y, z });
+        break;
+      case 'station':
+        Object.assign(item.st, { x, y, z });
+        break;
+      case 'queue': {
+        const half = (item.q.x1 - item.q.x0) / 2;
+        Object.assign(item.q, { x0: round(x - half), x1: round(x + half), y, z });
+        break;
+      }
+      case 'site':
+        Object.assign(item.b, { x, y, z });
+        break;
+      default:
+        Object.assign(item.c, { x, y, z });
+    }
+  }
+
+  /** Eintrag neu bauen, Datei als geändert merken, Bühne nachziehen (Coins, Vorgabestück) */
+  private commitItem(item: Item): void {
+    const w = this.host.world;
+    switch (item.kind) {
+      case 'element':
+        w.updateZoneElement(item.el);
+        break;
+      case 'station':
+        w.addZoneBuilt(item.st.id, buildZoneStation(item.st), itemPosition(item.st));
+        this.host.refreshStation();
+        break;
+      case 'queue':
+        w.addZoneBuilt(item.q.id, buildZoneQueue(item.q), itemPosition(item.q));
+        break;
+      case 'site':
+        w.addZoneBuilt(item.b.id, buildZoneSite(item.b), itemPosition(item.b));
+        break;
+      default:
+        w.addZoneBuilt(item.c.id, buildZoneCoins(item.c), itemPosition(item.c));
+        this.host.refreshCoins();
+    }
+    this.dirty = true;
+    this.refreshLabels();
+  }
+
+  private removeItem(item: Item): void {
+    const id = this.idOf(item);
+    const z = this.zone;
+    if (item.kind === 'element') z.elements = z.elements.filter((e) => e.id !== id);
+    else if (item.kind === 'station') z.stations = z.stations.filter((e) => e.id !== id);
+    else if (item.kind === 'queue') z.queues = z.queues.filter((e) => e.id !== id);
+    else if (item.kind === 'site') z.sites = z.sites.filter((e) => e.id !== id);
+    else z.coinGroups = z.coinGroups.filter((e) => e.id !== id);
+    this.host.world.removeZoneElement(id);
+    if (item.kind === 'coins') this.host.refreshCoins();
+    if (item.kind === 'station') this.host.refreshStation();
+    this.dirty = true;
+    this.select(null);
+  }
+
   // ------------------------------------------------------------------ Bedienung
-  private chooseTool(kind: ZoneElementKind | 'field'): void {
+  private chooseTool(kind: Tool): void {
     this.tool = this.tool === kind ? null : kind;
     this.refreshLabels();
   }
@@ -184,18 +296,16 @@ export class ZoneEditor {
     return this.host.world.pickZoneElement((p.x / c.width) * 2 - 1, 1 - (p.y / c.height) * 2);
   }
 
-  /** Klick: Element setzen (mit Werkzeug), Element wählen, sonst ein Feld unter dem Zeiger; true = verbraucht */
+  /** Klick: Eintrag setzen (mit Werkzeug), Eintrag wählen, sonst ein Feld unter dem Zeiger; true = verbraucht */
   tap(p: Pt): boolean {
     if (!this.active || this.overHud(p)) return false;
     if (this.tool && this.tool !== 'field') {
       const w = this.worldAt(p, this.placeLane);
-      const el = newElement(this.zone, this.tool, w.x, w.y, this.placeLane);
-      this.zone.elements.push(el);
-      this.host.world.addZoneElement(el);
+      const id = this.place(this.tool, w.x, w.y, this.placeLane);
       this.dirty = true;
       this.tool = null;
       this.selectField(null);
-      this.select(el.id);
+      this.select(id);
       return true;
     }
     if (this.tool === 'field') return true;
@@ -211,6 +321,45 @@ export class ZoneEditor {
     return true;
   }
 
+  /** neuen Eintrag eines Werkzeugs setzen; liefert seine Kennung */
+  private place(tool: Exclude<Tool, 'field'>, x: number, y: number, z: number): string {
+    const w = this.host.world;
+    switch (tool) {
+      case 'station': {
+        const st = newStation(this.zone, x, y, z);
+        this.zone.stations.push(st);
+        w.addZoneBuilt(st.id, buildZoneStation(st), itemPosition(st));
+        this.host.refreshStation();
+        return st.id;
+      }
+      case 'queue': {
+        const q = newQueue(this.zone, x, y, z);
+        this.zone.queues.push(q);
+        w.addZoneBuilt(q.id, buildZoneQueue(q), itemPosition(q));
+        return q.id;
+      }
+      case 'site': {
+        const b = newSite(this.zone, x, y, z);
+        this.zone.sites.push(b);
+        w.addZoneBuilt(b.id, buildZoneSite(b), itemPosition(b));
+        return b.id;
+      }
+      case 'coins': {
+        const c = newCoinGroup(this.zone, x, y, z);
+        this.zone.coinGroups.push(c);
+        w.addZoneBuilt(c.id, buildZoneCoins(c), itemPosition(c));
+        this.host.refreshCoins();
+        return c.id;
+      }
+      default: {
+        const el = newElement(this.zone, tool, x, y, z);
+        this.zone.elements.push(el);
+        w.addZoneElement(el);
+        return el.id;
+      }
+    }
+  }
+
   dragStart(p: Pt): boolean {
     if (!this.active || this.overHud(p)) return false;
     if (this.tool === 'field') {
@@ -222,10 +371,11 @@ export class ZoneEditor {
     const id = this.pick(p);
     this.selectField(null);
     this.select(id);
-    if (!id) return true;
-    const el = this.find(id)!;
-    const w = this.worldAt(p, el.z);
-    this.drag = { id, dx: w.x - el.x, dy: w.y - el.y };
+    const item = id ? this.item(id) : null;
+    if (!id || !item) return true;
+    const pos = this.posOf(item);
+    const w = this.worldAt(p, pos.z);
+    this.drag = { id, dx: w.x - pos.x, dy: w.y - pos.y };
     return true;
   }
 
@@ -239,13 +389,14 @@ export class ZoneEditor {
       return true;
     }
     if (!this.drag) return true;
-    const el = this.find(this.drag.id);
-    if (!el) return true;
-    const w = this.worldAt(p, el.z);
+    const item = this.item(this.drag.id);
+    if (!item) return true;
+    const pos = this.posOf(item);
+    const w = this.worldAt(p, pos.z);
     const x = round(w.x - this.drag.dx);
     const y = round(w.y - this.drag.dy);
-    this.host.world.nudgeZoneElement(el.id, x, y, el.z);
-    this.status.text = this.describe({ ...el, x, y });
+    this.host.world.nudgeZoneElement(this.drag.id, x, y, pos.z);
+    this.status.text = `${this.describeItem(item)} → x ${x} m · Höhe ${y} m`;
     return true;
   }
 
@@ -265,12 +416,12 @@ export class ZoneEditor {
       return true;
     }
     if (!this.drag) return true;
-    const el = this.find(this.drag.id);
-    if (el) {
-      const w = this.worldAt(p, el.z);
-      el.x = round(w.x - this.drag.dx);
-      el.y = round(w.y - this.drag.dy);
-      this.commit(el);
+    const item = this.item(this.drag.id);
+    if (item) {
+      const pos = this.posOf(item);
+      const w = this.worldAt(p, pos.z);
+      this.moveItem(item, round(w.x - this.drag.dx), round(w.y - this.drag.dy), pos.z);
+      this.commitItem(item);
     }
     this.drag = null;
     return true;
@@ -322,15 +473,49 @@ export class ZoneEditor {
       }
       return false;
     }
-    const el = this.selected;
-    if (!el) return false;
+    const item = this.selectedItem;
+    if (!item) return false;
     if (k === 'Delete' || k === 'Backspace') {
-      this.zone.elements = this.zone.elements.filter((e) => e.id !== el.id);
-      this.host.world.removeZoneElement(el.id);
-      this.dirty = true;
-      this.select(null);
+      this.removeItem(item);
       return true;
     }
+    const fineStep = ev.shiftKey;
+    if (k === '[' || k === ']' || k === 'PageUp' || k === 'PageDown') {
+      ev.preventDefault();
+      const step = fineStep ? 0.1 : 0.5;
+      const back = k === ']' || k === 'PageUp';
+      const pos = this.posOf(item);
+      this.moveItem(item, pos.x, pos.y, round(Math.max(-2.5, Math.min(2.5, pos.z + (back ? step : -step)))));
+      this.commitItem(item);
+      return true;
+    }
+    if (item.kind !== 'element') {
+      const lower = k.toLowerCase();
+      const arrow = k === 'ArrowLeft' ? -1 : k === 'ArrowRight' ? 1 : 0;
+      const vert = k === 'ArrowUp' ? 1 : k === 'ArrowDown' ? -1 : 0;
+      if (arrow || vert) ev.preventDefault();
+      if (item.kind === 'station') {
+        if (lower === 'd') item.st.dir = item.st.dir === 1 ? -1 : 1;
+        else if (arrow) item.st.length = round(Math.max(6, item.st.length + arrow * 2));
+        else return false;
+      } else if (item.kind === 'queue') {
+        if (lower === 'd') item.q.dir = item.q.dir === 1 ? -1 : 1;
+        else if (arrow) item.q.x0 = round(Math.min(item.q.x1 - 2, item.q.x0 - arrow * 2));
+        else return false;
+      } else if (item.kind === 'site') {
+        if (lower === 'v') item.b.variant = item.b.variant === 'connect' ? 'breakthrough' : 'connect';
+        else if (vert) item.b.energy = round(Math.max(2, (item.b.energy ?? 10) + vert * 2));
+        else return false;
+      } else {
+        if (lower === 'c') item.c.shape = COIN_SHAPES[(COIN_SHAPES.indexOf(item.c.shape) + 1) % COIN_SHAPES.length];
+        else if (vert) item.c.count = Math.max(1, Math.min(40, item.c.count + vert));
+        else if (arrow) item.c.spacing = round(Math.max(0.5, item.c.spacing + arrow * 0.5));
+        else return false;
+      }
+      this.commitItem(item);
+      return true;
+    }
+    const el = item.el;
     // Metadaten (Plan 2.1, 8a.1)
     const lower = k.toLowerCase();
     if (lower === 'm') {
@@ -366,15 +551,6 @@ export class ZoneEditor {
       const next = ZONE_DEPTH_ROLES[i + 1];
       if (next) el.depthRole = next;
       else delete el.depthRole;
-      this.commit(el);
-      return true;
-    }
-    const fine = ev.shiftKey;
-    if (k === '[' || k === ']' || k === 'PageUp' || k === 'PageDown') {
-      ev.preventDefault();
-      const step = fine ? 0.1 : 0.5;
-      const back = k === ']' || k === 'PageUp';
-      el.z = round(Math.max(-2.5, Math.min(2.5, el.z + (back ? step : -step))));
       this.commit(el);
       return true;
     }
@@ -449,14 +625,15 @@ export class ZoneEditor {
       rectOf(f.x0, f.y0, f.x1, f.y1, sel ? 0xffd23f : 0x2a1f3d, active ? 3 : 2, sel ? 1 : active ? 0.8 : 0.35);
     }
     if (this.fieldDrag) rectOf(this.fieldDrag.ax, this.fieldDrag.ay, this.fieldDrag.bx, this.fieldDrag.by, 0xffd23f, 2, 0.9);
-    const el = this.selected;
-    if (!el) return;
-    const b = this.host.world.zoneElementScreenBox(el.id);
+    if (!this.selectedId) return;
+    const b = this.host.world.zoneElementScreenBox(this.selectedId);
     if (!b) return;
     const pad = 4;
     g.rect(b.minX - pad, b.minY - pad, b.maxX - b.minX + 2 * pad, b.maxY - b.minY + 2 * pad).stroke({ width: 4, color: 0x2a1f3d, alpha: 0.5 });
     g.rect(b.minX - pad, b.minY - pad, b.maxX - b.minX + 2 * pad, b.maxY - b.minY + 2 * pad).stroke({ width: 2, color: 0xffd23f });
     // Fundament: grüne Oberkante; Anker: Punkt am Fuß
+    const el = this.selected;
+    if (!el) return;
     if (el.foundation) g.moveTo(b.minX, b.minY - pad).lineTo(b.maxX, b.minY - pad).stroke({ width: 4, color: 0x5ad85a });
     if (el.anchor) {
       const a = screen(el.x, el.y);
@@ -476,6 +653,21 @@ export class ZoneEditor {
     return `${def?.label ?? el.kind} ${el.id} · x ${el.x} m · Höhe ${el.y} m · Spur ${el.z > 0 ? '+' : ''}${el.z} · ${size}${meta.length ? ' · ' + meta.join(' · ') : ''}`;
   }
 
+  private describeItem(item: Item): string {
+    switch (item.kind) {
+      case 'element':
+        return this.describe(item.el);
+      case 'station':
+        return `Station ${item.st.id} · x ${item.st.x} m · Höhe ${item.st.y} m · Spur ${item.st.z} · Richtung ${item.st.dir === 1 ? 'rechts' : 'links'} · Vorgabestück ${item.st.length} m`;
+      case 'queue':
+        return `Schlange ${item.q.id} · x ${item.q.x0} bis ${item.q.x1} m · Höhe ${item.q.y} m · Spur ${item.q.z} · Eingang ${item.q.dir === 1 ? 'rechts' : 'links'} · Freiraum 5 m`;
+      case 'site':
+        return `Baustelle ${item.b.id} · x ${item.b.x} m · Höhe ${item.b.y} m · Spur ${item.b.z} · ${item.b.variant === 'connect' ? 'Verbinden' : `Durchbruch ab ${item.b.energy ?? 10} m/s`}`;
+      default:
+        return `Coins ${item.c.id} · ${SHAPE_NAMES[item.c.shape]} · ${item.c.count} Stück im Abstand ${item.c.spacing} m · x ${item.c.x} m · Höhe ${item.c.y} m · Spur ${item.c.z}`;
+    }
+  }
+
   private describeField(f: ZoneField): string {
     return `Feld ${f.id}${f.name ? ` „${f.name}“` : ''} · x ${f.x0} bis ${f.x1} m · Höhe ${f.y0} bis ${f.y1} m${f.id === this.activeFieldId ? ' · aktiv' : ''}`;
   }
@@ -486,6 +678,7 @@ export class ZoneEditor {
     this.typeBtn.setText(`Bahn: ${TYPE_NAMES[this.zone.trackType]}`);
     this.saveBtn.setText(this.dirty ? 'Speichern •' : 'Speichern');
     const el = this.selected;
+    const item = this.selectedItem;
     const field = this.selectedField;
     const lane = this.placeLane > 0 ? `+${this.placeLane}` : `${this.placeLane}`;
     const activeField = this.activeFieldId ? this.zone.fields.find((f) => f.id === this.activeFieldId) : undefined;
@@ -502,11 +695,17 @@ export class ZoneEditor {
     } else if (el) {
       this.status.text = this.describe(el);
       this.hint.text = 'Ziehen verschiebt · Bild auf/ab (oder [ ]) Tiefe, Shift fein · Pfeile Breite und Höhe · M Fundament · O Öffnung · A Anker · G Stufe · R Rolle · Entf löschen · Esc abwählen · Cmd+S speichern';
+    } else if (item) {
+      this.status.text = this.describeItem(item);
+      this.hint.text = item.kind === 'station' ? 'Ziehen verschiebt · Bild auf/ab Tiefe · D Richtung · Pfeile links/rechts Länge · Entf löschen'
+        : item.kind === 'queue' ? 'Ziehen verschiebt · Bild auf/ab Tiefe · D Eingang · Pfeile links/rechts Länge · Entf löschen'
+        : item.kind === 'site' ? 'Ziehen verschiebt · Bild auf/ab Tiefe · V Verbinden/Durchbruch · Pfeile auf/ab Tempo · Entf löschen'
+        : 'Ziehen verschiebt · Bild auf/ab Tiefe · C Form · Pfeile auf/ab Zahl, links/rechts Abstand · Entf löschen';
     } else if (field) {
       this.status.text = this.describeField(field);
       this.hint.text = 'Enter aktiv schalten (im Spielen hält die Kamera das Feld, Absperrband an den Rändern) · Entf löschen · Esc abwählen';
     } else {
-      this.status.text = `Bauen · Zone ${this.zone.name} · ${this.zone.elements.length} Elemente · ${this.zone.fields.length} Felder · Spur für Neues: ${lane}`;
+      this.status.text = `Bauen · Zone ${this.zone.name} · ${this.zone.elements.length} Elemente · ${this.zone.fields.length} Felder · ${this.zone.stations.length} Stationen · ${this.zone.coinGroups.length} Coin-Gruppen · Spur für Neues: ${lane}`;
       this.hint.text = 'Typ links wählen, dann in die Welt klicken · Klick wählt Element oder Feld · T Bahntyp · Tab Spielen';
     }
     this.status.visible = this.hint.visible = true;

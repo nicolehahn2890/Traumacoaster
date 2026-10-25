@@ -40,7 +40,8 @@ import { cutIndexNear, retractIndex } from '@/track/strokeBuffer';
 import { laneRise, laneScale, nearestLane, rayToWorld, setPerspective, tagRay, toStage, toView, viewState, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
 import { HANG_DROP, trackTypeForSkin, type TrackType } from '@/world/trackTypes';
-import type { ZoneField, ZoneFile } from '@/zone/types';
+import type { ZoneField, ZoneFile, ZoneStation } from '@/zone/types';
+import { applyZoneExtras, stationPath, zoneCoins } from '@/zone/build';
 import { ZoneEditor } from '@/app/zoneEditor';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
 import { hexNum, shade } from '@/render/paint';
@@ -424,8 +425,24 @@ export class LevelScene implements Scene {
         // Zone: Bahntyp der Datei (die Adresse ?track= geht vor), Elemente in die Welt, mit ?editor=1 der Editor
         game.world.trackOverride = game.world.trackOverride ?? zone.trackType;
         game.world.setZone(zone.elements);
+        applyZoneExtras(game.world, zone);
+        this.level.coins = zoneCoins(zone);
         if (EDITOR_URL) {
-          this.zoneEditor = new ZoneEditor({ view: this.view, world: game.world, toast: this.toast, redrawTrack: () => this.redrawTrack(), setActiveField: (f) => this.setActiveField(f) }, zone);
+          this.zoneEditor = new ZoneEditor(
+            {
+              view: this.view,
+              world: game.world,
+              toast: this.toast,
+              redrawTrack: () => this.redrawTrack(),
+              setActiveField: (f) => this.setActiveField(f),
+              refreshCoins: () => {
+                this.level.coins = zoneCoins(zone);
+                this.view.trackR.setCoins(this.level.coins);
+              },
+              refreshStation: () => this.resetStationPiece(),
+            },
+            zone,
+          );
           this.ui.addChild(this.zoneEditor.hud);
         } else {
           // ohne Editor (Handy): ?field=<Kennung> wählt ein Feld der Zone, sonst das erste
@@ -467,6 +484,7 @@ export class LevelScene implements Scene {
     this.setupInput();
     const draft = this.sandbox?.saved?.path ?? (this.sandbox ? undefined : storage.draft(this.level.id));
     if (draft && draft.nodes.length >= 2 && 'inZ' in draft.nodes[0]) this.setPath(clonePath(draft), false);
+    else this.resetStationPiece();
     this.resize(game.width, game.height);
     this.fitCamera(true);
     this.updateGoals();
@@ -488,9 +506,34 @@ export class LevelScene implements Scene {
     return this.view?.background;
   }
 
+  /** Station der Zone für die Bahn: die im aktiven Feld, sonst die erste; null ohne Station */
+  private zoneStation(): ZoneStation | null {
+    const zone = this.sandbox?.zone;
+    if (!zone || !zone.stations.length) return null;
+    const f = this.activeField;
+    return (f && zone.stations.find((s) => s.x >= f.x0 && s.x <= f.x1 && s.y >= f.y0 && s.y <= f.y1)) ?? zone.stations[0];
+  }
+
+  /** Ist die Bahn nur das Vorgabestück der Station (noch nichts gezeichnet)? */
+  private isStationPieceOnly(): boolean {
+    const p = this.path;
+    return !!p && p.nodes.length === 2 && p.nodes[0].kind === 'station' && p.closed === false && !!p.brush;
+  }
+
+  /**
+   * Vorgabestück der Station setzen (Plan 3.3: Bahnstart vorgegeben, gerade, 14 m): beim Betreten, nach dem Löschen und
+   * wenn der Editor die Station verschiebt, solange noch nichts gezeichnet ist
+   */
+  private resetStationPiece(): void {
+    const st = this.zoneStation();
+    if (!st) return;
+    if (!this.path || this.isStationPieceOnly()) this.setPath(stationPath(st), false);
+  }
+
   /** Feld der Zone aktiv schalten (null: ganze Zone): Kamera weich begrenzt, Zoom-Grenze „Feld passt ins Bild“, Absperrband */
   private setActiveField(field: ZoneField | null): void {
     this.activeField = field;
+    this.resetStationPiece();
     const cam = this.view.camera;
     if (field) {
       const b = { minX: field.x0, maxX: field.x1, minY: field.y0, maxY: field.y1 };
@@ -679,11 +722,17 @@ export class LevelScene implements Scene {
           this.strokeKind = 'extend';
           this.toast.show(t('extendHint'), 1.2);
         } else if (near && nearPx < 30) this.strokeKind = 'overdraw';
-        else if (this.reading === 'lanes' && !isClosed(this.path)) {
-          // Ebenen: jeder Strich setzt die offene Bahn fort (wie im Bahnbau-Labor), auch wenn er auf der Höhe einer neu
-          // gewählten Ebene oder sonstwo beginnt; er wird an das Bahnende gezogen
+        else if ((this.reading === 'lanes' || this.zoneStation()) && !isClosed(this.path)) {
+          // Ebenen und Zone mit Station: jeder Strich setzt die offene Bahn fort (wie im Bahnbau-Labor), auch wenn er
+          // sonstwo beginnt; er wird an das Bahnende gezogen
           this.strokeKind = 'extend';
           this.toast.show(t('extendHint'), 1.2);
+        } else if (this.zoneStation()) {
+          // Zone mit Station: Die Bahn beginnt immer am Vorgabestück; eine fertige Runde wird nicht ersetzt, sondern gelöscht
+          this.toast.show('Die Bahn beginnt an der Station: Löschen setzt das Vorgabestück zurück', 2.2);
+          this.stroke = null;
+          this.drag = { kind: 'none' };
+          return;
         } else if (this.onStage(st) && this.unlocked.has('mountain') && this.terrainEditable() && !this.nearStation(st)) this.strokeKind = 'terrain';
         else {
           this.strokeKind = 'new';
@@ -2241,6 +2290,8 @@ export class LevelScene implements Scene {
     if (this.mode !== 'draw' || !this.path) return;
     this.pushHistory();
     this.setPath(null, false);
+    // Zone mit Station: das Vorgabestück bleibt
+    this.resetStationPiece();
     this.toast.show(t('clear'), 1.2);
   }
 

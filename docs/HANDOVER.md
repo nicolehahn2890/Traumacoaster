@@ -33,8 +33,12 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Bahntyp, Speichern über den Dev-Server, Hot-Reload bei jeder Dateiänderung, Tab zum Spielen), TECH.md 4g. Replay `--world`: 322 Aufnahmen, 9185 Stützen, Median 2,0 px, kein Fehler.
   Schritt 7 gebaut (25.10.): Metadaten je Element in Datei und Editor (Fundament M, Öffnung O, Anker A, Wachstumsstufe G,
   Tiefenrolle R), Felder aufziehen (Werkzeug „Feld“, Enter schaltet aktiv) mit weicher Kamerabegrenzung, Zoom-Grenze „Feld
-  passt ins Bild“ und Absperrband an den Rändern; ohne Editor wählt `?field=` das Feld. Als Nächstes Schritt 8
-  (Stationsanker mit Richtung, Vorgabestück, Häuschen, Hebel; Schlangenbereich; Baustellen-Marke; Coin-Gruppen). Replay `--world`: 343 Aufnahmen, 9579 Stützen, Median 2,0 px, kein Fehler.
+  passt ins Bild“ und Absperrband an den Rändern; ohne Editor wählt `?field=` das Feld. Replay `--world`: 343 Aufnahmen, 9579 Stützen, Median 2,0 px, kein Fehler.
+  Schritt 8 gebaut (25.10.): Stationsanker mit Richtung und Vorgabestück (im Spiel beginnt die Bahn dort, Löschen stellt
+  das Stück wieder her), Häuschen- und Hebel-Platzhalter, Schlangenbereich mit Figuren und Freiraum, Baustellen-Marke
+  (Verbinden, Durchbruch), Coin-Gruppen (Reihe, Bogen, Ring, Säule) als Coins der Bühne; alle als verschmolzene
+  Platzhalter. Als Nächstes Schritt 9 (Testfahrt aus dem Editor, Ziele je Level, Fortschritts- und Aufwertungsstufe,
+  deterministisches Laden, Standbild-Test). Replay `--world`: 364 Aufnahmen, 10162 Stützen, Median 2,0 px, kein Fehler.
   Links für den Handy-Test: Dev-Server mit `npm run dev` (zeichnet auf), Adresse aus dem
   Vite-Log plus `?scene=start&level=8&world=1&dev=1` und `&track=`, `&aa=0`, `&shadow=0`, `&look=`, Level 32 (Tunnel),
   Level 47 (See).

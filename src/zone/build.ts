@@ -3,9 +3,66 @@
  * aus `src/world/elements.ts` gebaut. Dreiteiler bekommen vorerst eine Rechteck-Silhouette ohne Öffnung (die Öffnungen
  * und die anderen Metadaten kommen in Schritt 7).
  */
+import { Color, DoubleSide, Group, Mesh, SphereGeometry } from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildCave, buildColumn, buildFlat, buildPortal, buildThreePart, buildWater, buildWaterfall, type BuiltElement } from '@/world/elements';
 import type { Foundation } from '@/world/foundations';
-import { kindDefaults, type ZoneElement } from './types';
+import { paintedMaterial } from '@/world/looks';
+import { buildQueuePlaceholder, buildSitePlaceholder, buildStationPlaceholder } from '@/world/stationElements';
+import { createNode, type TrackPath } from '@/track/model';
+import { coinsOfGroup, type ZoneCoinGroup } from './groups';
+import { kindDefaults, type ZoneElement, type ZoneFile, type ZoneQueue, type ZoneSite, type ZoneStation } from './types';
+
+export const buildZoneStation = (s: ZoneStation): BuiltElement => buildStationPlaceholder(s.x, s.y, s.z, s.dir, s.length);
+export const buildZoneQueue = (q: ZoneQueue): BuiltElement => buildQueuePlaceholder(q.x0, q.x1, q.y, q.z, q.dir);
+export const buildZoneSite = (b: ZoneSite): BuiltElement => buildSitePlaceholder(b.x, b.y, b.z, b.variant);
+
+/** Coin-Gruppe als durchscheinende Kugeln in einer Geometrie (Marke zum Greifen im Editor; die Coins zeichnet die Bühne) */
+export function buildZoneCoins(c: ZoneCoinGroup): BuiltElement {
+  const m = paintedMaterial({ color: new Color('#ffd23f'), transparent: true, opacity: 0.35, depthWrite: false, side: DoubleSide });
+  const parts = coinsOfGroup(c).map((p) => new SphereGeometry(0.7, 10, 8).translate(p.x, p.y, -p.lane * 8.4));
+  const geo = mergeGeometries(parts, false)!;
+  for (const p of parts) p.dispose();
+  const g = new Group();
+  g.name = 'element-coins';
+  g.add(new Mesh(geo, m));
+  return {
+    kind: 'flat',
+    group: g,
+    dispose() {
+      geo.dispose();
+      m.dispose();
+    },
+  };
+}
+
+/** alle Coins der Zone für die Bühne (Fangradius wie heute) */
+export function zoneCoins(zone: ZoneFile): Array<{ x: number; y: number; lane: number }> {
+  return zone.coinGroups.flatMap((g) => coinsOfGroup(g));
+}
+
+/** Position eines Eintrags der Zone (für das Ziehen); Schlange: Mitte des Streifens */
+export function itemPosition(item: ZoneElement | ZoneStation | ZoneQueue | ZoneSite | ZoneCoinGroup): { x: number; y: number; z: number } {
+  if ('x0' in item) return { x: (item.x0 + item.x1) / 2, y: item.y, z: item.z };
+  return { x: item.x, y: item.y, z: item.z };
+}
+
+/** gerades Vorgabestück der Station als offene Pinsel-Bahn: Stationsknoten am Anker, Ende dir · length weiter */
+export function stationPath(s: ZoneStation): TrackPath {
+  const a = createNode(s.x, s.y, s.z, 'station');
+  const b = createNode(s.x + s.dir * s.length, s.y, s.z);
+  a.outX = (s.dir * s.length) / 3;
+  b.inX = (-s.dir * s.length) / 3;
+  return { nodes: [a, b], elements: [], startType: 'chainlift', templates: {}, closed: false, brush: true };
+}
+
+/** Station, Schlangen, Baustellen und Coin-Gruppen der Zone in die Welt setzen (ohne die Kulissen) */
+export function applyZoneExtras(world: { addZoneBuilt(id: string, built: BuiltElement, origin: { x: number; y: number; z: number }): void }, zone: ZoneFile): void {
+  for (const s of zone.stations) world.addZoneBuilt(s.id, buildZoneStation(s), itemPosition(s));
+  for (const q of zone.queues) world.addZoneBuilt(q.id, buildZoneQueue(q), itemPosition(q));
+  for (const b of zone.sites) world.addZoneBuilt(b.id, buildZoneSite(b), itemPosition(b));
+  for (const c of zone.coinGroups) world.addZoneBuilt(c.id, buildZoneCoins(c), itemPosition(c));
+}
 
 /** Silhouette eines Dreiteiler-Platzhalters: Rechteck mit abgeschrägten Schultern (bis zu den Bildern der Zone) */
 export function threePartOutline(el: ZoneElement): Array<[number, number]> {

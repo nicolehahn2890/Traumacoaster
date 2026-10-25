@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Mesh } from 'three';
 import { FIELD_MIN_H, FIELD_MIN_W, KIND_DEFAULTS, ZONE_KINDS, emptyZone, newElement, newElementId, newField, parseZone, serializeZone, type ZoneFile } from '@/zone/types';
-import { buildZoneElement, topAt } from '@/zone/build';
+import { buildZoneCoins, buildZoneElement, buildZoneQueue, buildZoneSite, buildZoneStation, stationPath, topAt, zoneCoins } from '@/zone/build';
+import { coinsOfGroup } from '@/zone/groups';
+import { newCoinGroup, newQueue, newSite, newStation } from '@/zone/types';
 
 describe('Zonendatei (Schritt 6)', () => {
   it('leere Zone, neue Elemente mit Platzhalter-Maßen und eindeutigen Kennungen', () => {
@@ -123,5 +125,85 @@ describe('Zonendatei: Metadaten und Felder (Schritt 7)', () => {
     expect(topAt(el, 70)).toBeNull();
     solid.dispose();
     holed.dispose();
+  });
+});
+
+describe('Zonendatei: Station, Schlange, Baustelle, Coins (Schritt 8)', () => {
+  it('Einträge mit eigenen Kennungen überleben Schreiben und Lesen', () => {
+    const zone = emptyZone('basiszone');
+    const st = newStation(zone, 20, 0, 0);
+    zone.stations.push(st);
+    st.dir = -1;
+    st.length = 18;
+    zone.queues.push(newQueue(zone, 40, 0, -1));
+    const site = newSite(zone, 90, 2, 1);
+    site.variant = 'breakthrough';
+    site.energy = 12;
+    zone.sites.push(site);
+    const c = newCoinGroup(zone, 60, 3, 0);
+    c.shape = 'arc';
+    zone.coinGroups.push(c);
+    expect([st.id, zone.queues[0].id, site.id, c.id]).toEqual(['s1', 'q1', 'b1', 'c1']);
+    const back = parseZone(JSON.parse(serializeZone(zone)))!;
+    expect(back.stations[0]).toEqual({ id: 's1', x: 20, y: 0, z: 0, dir: -1, length: 18 });
+    expect(back.queues[0]).toEqual({ id: 'q1', x0: 30, x1: 40, y: 0, z: -1, dir: 1 });
+    expect(back.sites[0]).toEqual({ id: 'b1', x: 90, y: 2, z: 1, variant: 'breakthrough', energy: 12 });
+    expect(back.coinGroups[0]).toEqual({ id: 'c1', shape: 'arc', x: 60, y: 3, z: 0, count: 5, spacing: 2 });
+    // alte Dateien ohne diese Listen lesen sich leer
+    const old = parseZone({ version: 1, name: 'alt', elements: [] })!;
+    expect(old.stations).toEqual([]);
+    expect(old.coinGroups).toEqual([]);
+  });
+
+  it('Coin-Gruppen: Reihe, Bogen, Ring und Säule liefern ihre Zahl an Coins auf der Spur der Gruppe', () => {
+    const base = { id: 'c1', x: 50, y: 3, z: 1, count: 5, spacing: 2 } as const;
+    const row = coinsOfGroup({ ...base, shape: 'row' });
+    expect(row.length).toBe(5);
+    expect(row.map((c) => c.x)).toEqual([46, 48, 50, 52, 54]);
+    expect(row.every((c) => c.y === 3 && c.lane === 1)).toBe(true);
+    const arc = coinsOfGroup({ ...base, shape: 'arc' });
+    expect(arc[2].y).toBeCloseTo(5, 6);
+    expect(arc[0].y).toBeCloseTo(3, 6);
+    const ring = coinsOfGroup({ ...base, shape: 'ring' });
+    expect(ring.length).toBe(5);
+    for (const c of ring) expect(Math.hypot(c.x - 50, c.y - 5)).toBeCloseTo(2, 1);
+    const col = coinsOfGroup({ ...base, shape: 'column' });
+    expect(col.map((c) => c.y)).toEqual([3, 5, 7, 9, 11]);
+    const zone = emptyZone('basiszone');
+    zone.coinGroups.push({ ...base, shape: 'row' }, { ...base, id: 'c2', shape: 'column', count: 2 });
+    expect(zoneCoins(zone).length).toBe(7);
+  });
+
+  it('Vorgabestück: offene Pinsel-Bahn vom Stationsknoten gerade in Fahrtrichtung', () => {
+    const st = { id: 's1', x: 20, y: 1, z: 0.5, dir: -1 as const, length: 14 };
+    const p = stationPath(st);
+    expect(p.nodes.length).toBe(2);
+    expect(p.nodes[0].kind).toBe('station');
+    expect(p.nodes[1].x).toBe(6);
+    expect(p.nodes[1].y).toBe(1);
+    expect(p.nodes[1].z).toBe(0.5);
+    expect(p.nodes[0].outX).toBeCloseTo(-14 / 3, 9);
+    expect(p.nodes[1].inX).toBeCloseTo(14 / 3, 9);
+    expect(p.closed).toBe(false);
+    expect(p.brush).toBe(true);
+  });
+
+  it('Platzhalter für Station, Schlange, Baustelle und Coins sind Gruppen mit Teilen', () => {
+    const zone = emptyZone('basiszone');
+    const parts = (b: { group: { traverse(cb: (o: unknown) => void): void } }): number => {
+      let n = 0;
+      b.group.traverse((o) => {
+        if ((o as Mesh).geometry) n++;
+      });
+      return n;
+    };
+    // verschmolzen: ein Mesh je Platzhalter, plus eins je durchscheinendem Teil (Freiraum, Durchbruchwand)
+    expect(parts(buildZoneStation(newStation(zone, 20, 0, 0)))).toBe(1);
+    expect(parts(buildZoneQueue(newQueue(zone, 40, 0, 0)))).toBe(2);
+    expect(parts(buildZoneSite({ ...newSite(zone, 60, 0, 0), variant: 'breakthrough' }))).toBe(2);
+    expect(parts(buildZoneSite(newSite(zone, 60, 0, 0)))).toBe(1);
+    expect(parts(buildZoneCoins(newCoinGroup(zone, 80, 2, 0)))).toBe(1);
+    const st = buildZoneStation(newStation(zone, 20, 0, 0));
+    expect((st.group.children[0] as Mesh).geometry.getAttribute('position').count).toBeGreaterThan(200);
   });
 });

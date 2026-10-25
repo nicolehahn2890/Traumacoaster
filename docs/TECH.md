@@ -275,6 +275,21 @@ Politur; alles Gesetzte sind Klötzchen, die später Grafiken ersetzen.
   (`Camera.fitZoom` als `minZoom`), Absperrband an den Rändern links, rechts und oben (gelb-schwarz gestrichelt in der
   Ansicht auf Spur 0, `LevelScene.drawFieldTape`). Im Bauen bleibt die Kamera frei. Hochformat- und Querformat-Rahmen
   des Felds (Plan 2.3) zeigt der Editor noch nicht.
+- **Station, Schlange, Baustelle, Coins** (Schritt 8; `src/zone/types.ts`, `src/zone/build.ts`, `src/zone/groups.ts`,
+  `src/world/stationElements.ts`): eigene Listen der Zonendatei mit Kennungen `s1`, `q1`, `b1`, `c1`. Stationsanker
+  (Plan 3.3): Anfang des geraden Vorgabestücks auf der Bahnlinie, Richtung (D), Länge (Pfeile, Start 14 m); Platzhalter
+  Bahnsteig mit Pfeil, Häuschen mit Drehkreuz-Pfosten und Geländer, Hebel für die Startart (Knopf kommt in E2). Im Spiel
+  (`LevelScene.resetStationPiece`): Die Station des aktiven Felds (sonst die erste) setzt das Vorgabestück als offene
+  Pinsel-Bahn (`stationPath`); jeder Strich setzt sie fort, eine fertige Runde wird nicht durch einen neuen Strich
+  ersetzt, Löschen stellt das Vorgabestück wieder her. Schlangenbereich (Plan 6.3): Streifen x0 bis x1 mit Eingang in
+  Richtung dir, sechs Platzhalter-Figuren, Freiraum-Volumen fünf Meter als durchscheinender Kasten (das Anheben der Bahn
+  kommt in E2). Baustelle (Plan 5.1): Pfosten mit gelb-schwarzem Band um den Anschlusspunkt, Variante Verbinden oder
+  Durchbruch (V) mit Mindesttempo (Pfeile); das Verhalten kommt in E2 und E3. Coin-Gruppen (Plan 4.4): Form Reihe, Bogen,
+  Ring, Säule (C), Zahl und Abstand (Pfeile); `coinsOfGroup` macht daraus die Coins der Bühne (`level.coins`, Fangradius
+  wie heute), in der Welt eine durchscheinende Marke zum Greifen. Jeder Platzhalter ist eine verschmolzene Geometrie
+  mit Farbe je Ecke (ein Zeichenaufruf plus einer je durchscheinendem Teil; als Einzelteile kosteten vier Platzhalter
+  mit Schatten über hundert Aufrufe). Alle Einträge lassen sich wie Elemente wählen, ziehen, in der Tiefe schieben und
+  löschen (Treffer über die Kennung).
 - Die Bühne nutzt für die Zone das Sandbox-Level (`SandboxConfig.zone`): flacher Boden, Breite der Zone, alle Elemente
   und Startarten frei (Plan Paket 3: die Basiszone kann alles). Tests in `tests/zone.test.ts`.
 

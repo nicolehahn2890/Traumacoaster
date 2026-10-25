@@ -49,8 +49,8 @@ export class WorldRenderer {
   private levelData: { terrain: Terrain; world: WorldDef; night: boolean } | null = null;
   private elements: BuiltElement[] = [];
   private portals: PortalLike[] = [];
-  /** Elemente der Zonendatei (Editor): gebaut je Kennung, in einer eigenen Gruppe für Treffer */
-  private readonly zone = new Map<string, { el: ZoneElement; built: BuiltElement }>();
+  /** Einträge der Zonendatei (Editor): gebaut je Kennung mit Ursprung (für das Ziehen), in einer eigenen Gruppe für Treffer */
+  private readonly zone = new Map<string, { origin: { x: number; y: number; z: number }; built: BuiltElement }>();
   private readonly zoneGroup = new Group();
   private selectedId: string | null = null;
   private readonly raycaster = new Raycaster();
@@ -181,23 +181,27 @@ export class WorldRenderer {
   }
 
   // ------------------------------------------------------------------ Zone (Editor)
-  /** alle Elemente der Zone neu bauen */
+  /** alle Elemente der Zone neu bauen (Station, Schlange, Baustelle und Coins setzt der Editor über addZoneBuilt) */
   setZone(elements: ZoneElement[]): void {
     this.clearZone();
     for (const el of elements) this.addZoneElement(el);
   }
 
   addZoneElement(el: ZoneElement): void {
-    this.removeZoneElement(el.id);
-    const built = buildZoneElement(el);
-    built.group.userData.elementId = el.id;
-    this.zoneGroup.add(built.group);
-    this.zone.set(el.id, { el: { ...el }, built });
-    this.refreshFoundations();
+    this.addZoneBuilt(el.id, buildZoneElement(el), el);
   }
 
   updateZoneElement(el: ZoneElement): void {
     this.addZoneElement(el);
+  }
+
+  /** beliebigen gebauten Eintrag unter einer Kennung in die Zone setzen (ersetzt einen gleichnamigen) */
+  addZoneBuilt(id: string, built: BuiltElement, origin: { x: number; y: number; z: number }): void {
+    this.removeZoneElement(id);
+    built.group.userData.elementId = id;
+    this.zoneGroup.add(built.group);
+    this.zone.set(id, { origin: { x: origin.x, y: origin.y, z: origin.z }, built });
+    this.refreshFoundations();
   }
 
   removeZoneElement(id: string): void {
@@ -214,7 +218,7 @@ export class WorldRenderer {
   nudgeZoneElement(id: string, x: number, y: number, z: number): void {
     const e = this.zone.get(id);
     if (!e) return;
-    e.built.group.position.set(x - e.el.x, y - e.el.y, laneToZ(z) - laneToZ(e.el.z));
+    e.built.group.position.set(x - e.origin.x, y - e.origin.y, laneToZ(z) - laneToZ(e.origin.z));
     e.built.group.updateMatrixWorld(true);
   }
 
