@@ -6,7 +6,10 @@
  * Three legt den Kontext an (stencil für Pixi-Masken); Pixi bekommt Zeichenfläche und Kontext beim Start (Game.init).
  * Dazu Licht mit Shadow Map, Nebel und Looks (light.ts, looks.ts) und die Kulissen des Levels (levelElements.ts).
  */
-import { Color, Fog, Group, PCFSoftShadowMap, Scene, SRGBColorSpace, WebGLRenderer } from 'three';
+import { Box3, Color, Fog, Group, PCFSoftShadowMap, Raycaster, Scene, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, type Object3D } from 'three';
+import type { ZoneElement } from '@/zone/types';
+import { buildZoneElement } from '@/zone/build';
+import { laneToZ, zToLane } from './camera';
 import type { Terrain } from '@/physics/terrain';
 import type { WorldDef } from '@/levels/types';
 import type { TrackSamples } from '@/track/model';
@@ -46,6 +49,11 @@ export class WorldRenderer {
   private levelData: { terrain: Terrain; world: WorldDef; night: boolean } | null = null;
   private elements: BuiltElement[] = [];
   private portals: PortalLike[] = [];
+  /** Elemente der Zonendatei (Editor): gebaut je Kennung, in einer eigenen Gruppe für Treffer */
+  private readonly zone = new Map<string, { el: ZoneElement; built: BuiltElement }>();
+  private readonly zoneGroup = new Group();
+  private selectedId: string | null = null;
+  private readonly raycaster = new Raycaster();
   /** Look aus der Adresse überstimmt Tag und Nacht des Levels */
   readonly lookOverride: LookName | null;
   private look: LookName = 'day';
@@ -63,7 +71,8 @@ export class WorldRenderer {
 
   constructor(opts: WorldRendererOptions = {}) {
     this.canvas = document.createElement('canvas');
-    this.scene.add(this.train.group);
+    this.zoneGroup.name = 'zone';
+    this.scene.add(this.train.group, this.zoneGroup);
     this.three = new WebGLRenderer({ canvas: this.canvas, antialias: opts.antialias ?? true, stencil: true, alpha: false, powerPreference: 'high-performance' });
     this.three.outputColorSpace = SRGBColorSpace;
     // Pixi hat den Himmel schon gemalt: Three löscht nur Tiefe und Stencil. Die Löschfarbe bleibt transparent schwarz,
@@ -161,7 +170,97 @@ export class WorldRenderer {
     const { terrain, world } = this.levelData;
     this.elements = elementsFromTerrain(terrain, world, this.portals);
     for (const e of this.elements) this.scene.add(e.group);
-    this.foundations = [new TerrainFoundation(terrain), ...this.elements.flatMap((e) => (e.foundation ? [e.foundation] : []))];
+    this.refreshFoundations();
+  }
+
+  /** Fundamente: Terrain, Kulissen des Levels und Elemente der Zone (Höhlenböden tragen, Wasser sperrt) */
+  private refreshFoundations(): void {
+    const t = this.levelData ? [new TerrainFoundation(this.levelData.terrain)] : [];
+    const fromElements = (list: Iterable<BuiltElement>): Foundation[] => [...list].flatMap((e) => (e.foundation ? [e.foundation] : []));
+    this.foundations = [...t, ...fromElements(this.elements), ...fromElements([...this.zone.values()].map((z) => z.built))];
+  }
+
+  // ------------------------------------------------------------------ Zone (Editor)
+  /** alle Elemente der Zone neu bauen */
+  setZone(elements: ZoneElement[]): void {
+    this.clearZone();
+    for (const el of elements) this.addZoneElement(el);
+  }
+
+  addZoneElement(el: ZoneElement): void {
+    this.removeZoneElement(el.id);
+    const built = buildZoneElement(el);
+    built.group.userData.elementId = el.id;
+    this.zoneGroup.add(built.group);
+    this.zone.set(el.id, { el: { ...el }, built });
+    this.refreshFoundations();
+  }
+
+  updateZoneElement(el: ZoneElement): void {
+    this.addZoneElement(el);
+  }
+
+  removeZoneElement(id: string): void {
+    const z = this.zone.get(id);
+    if (!z) return;
+    this.zoneGroup.remove(z.built.group);
+    z.built.dispose();
+    this.zone.delete(id);
+    this.refreshFoundations();
+    if (this.selectedId === id) this.selectZoneElement(null);
+  }
+
+  /** Element beim Ziehen nur verschieben (ohne Neubau); am Ende des Zugs baut updateZoneElement neu */
+  nudgeZoneElement(id: string, x: number, y: number, z: number): void {
+    const e = this.zone.get(id);
+    if (!e) return;
+    e.built.group.position.set(x - e.el.x, y - e.el.y, laneToZ(z) - laneToZ(e.el.z));
+    e.built.group.updateMatrixWorld(true);
+  }
+
+  /** Bildschirm-Kasten (Pixel) um ein Element der Zone, für den Auswahlrahmen des Editors; null ohne Element */
+  zoneElementScreenBox(id: string): { minX: number; minY: number; maxX: number; maxY: number } | null {
+    const e = this.zone.get(id);
+    if (!e) return null;
+    e.built.group.updateMatrixWorld(true);
+    const box = new Box3().setFromObject(e.built.group);
+    if (box.isEmpty()) return null;
+    const out = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    const c = new Vector3();
+    for (let i = 0; i < 8; i++) {
+      c.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z);
+      const p = this.camera.toScreen(c.x, c.y, zToLane(c.z));
+      out.minX = Math.min(out.minX, p.x);
+      out.maxX = Math.max(out.maxX, p.x);
+      out.minY = Math.min(out.minY, p.y);
+      out.maxY = Math.max(out.maxY, p.y);
+    }
+    return out;
+  }
+
+  clearZone(): void {
+    for (const id of [...this.zone.keys()]) this.removeZoneElement(id);
+    this.selectZoneElement(null);
+  }
+
+  /** gewähltes Element (null: keines); den Rahmen zeichnet der Editor in Pixi aus zoneElementScreenBox */
+  selectZoneElement(id: string | null): void {
+    this.selectedId = id && this.zone.has(id) ? id : null;
+  }
+
+  /** Element unter einem Bildpunkt (NDC −1 … 1), sonst null */
+  pickZoneElement(nx: number, ny: number): string | null {
+    if (!this.zone.size) return null;
+    this.raycaster.setFromCamera(new Vector2(nx, ny), this.camera.active);
+    const hits = this.raycaster.intersectObjects(this.zoneGroup.children, true);
+    for (const hit of hits) {
+      let o: Object3D | null = hit.object;
+      while (o) {
+        if (typeof o.userData.elementId === 'string') return o.userData.elementId;
+        o = o.parent;
+      }
+    }
+    return null;
   }
 
   /** Tunnelportale der aktuellen Bahn (Ein- und Austritte in Berge): die Berge bekommen dort ihre Öffnungen */
@@ -176,6 +275,7 @@ export class WorldRenderer {
   clearLevel(): void {
     this.clearTrack();
     this.clearTrain();
+    this.clearZone();
     this.levelData = null;
     this.portals = [];
     this.buildElements();

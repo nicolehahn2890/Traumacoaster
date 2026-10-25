@@ -41,7 +41,7 @@ export class Game {
       preference: 'webgl',
     };
     // ?world=1: Der Weltrenderer legt Zeichenfläche und Kontext an, Pixi zeichnet in denselben Kontext (?aa=0 ohne Glättung)
-    if (params.get('world') === '1') {
+    if (params.get('world') === '1' || params.has('zone')) {
       const { WorldRenderer } = await import('@/world/renderer');
       this.world = new WorldRenderer({ antialias: params.get('aa') !== '0', shadows: params.get('shadow') !== '0', look: parseLook(params.get('look')) });
       // ?track=road|steel|wood|hanging: Bahntyp zum Vergleich erzwingen (sonst nach dem Skin des Levels)

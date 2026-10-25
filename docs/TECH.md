@@ -236,6 +236,33 @@ Chunk, 527 kB, 132 kB gzip); ohne Schalter ist das Spiel unverändert.
   Dreiecken und endlichen Werten sowie der Abstand der Bahnknoten zum Strich im Bild der Weltkamera, Median und Maximum, der
   Rundenschluss zählt mit): 250 Bahnprofile gebaut, keine ungültigen Werte; Abstand der Bahnknoten zum Strich bei 227 Aufnahmen mit fester Kamera im Median der Mediane 2,3 px (das Maximum lag in fortgesetzten Bahnen, deren alte Knoten nicht zum Strich gehören; seit Schritt 3 zählen nur neue Striche).
 
+## 4g. Zonendatei und Klötzchen-Editor (`?zone=<name>&editor=1`, Etappe 1, Schritt 6)
+Platzhalter-Werkzeug (Plan Paket 2.2, Stufe 1): Florian baut die Basiszone am Mac mit Maus, Trackpad und Tastatur, ohne
+Politur; alles Gesetzte sind Klötzchen, die später Grafiken ersetzen.
+- **Zonendatei** (`src/zone/types.ts`): `public/zones/<name>/zone.json`, Version 1 mit Name, Breite, Bahntyp und Elementen
+  (Kennung `e1`, `e2`, …, Typ nach Plan 8a.1: Kulisse, Dreiteiler, Säule, Höhlenkasten, Wasser, Wasserfall, Portal; Fußpunkt
+  x, y in Metern, Tiefe z in Spuren, Breite, Höhe, Tiefe, Farbe, Beschriftung). `parseZone` prüft beim Lesen und lässt
+  kaputte Elemente weg, `serializeZone` schreibt deterministisch (feste Feldreihenfolge, Elemente nach Kennung, zwei
+  Nachkommastellen), damit Diffs lesbar bleiben. Platzhalter-Maße je Typ in `KIND_DEFAULTS`. Felder, Station,
+  Schlangenbereich, Baustellen, Coins und Metadaten je Element kommen in den Schritten 7 bis 9.
+- **Laden, Speichern, Hot-Reload** (`src/zone/io.ts`, `vite.config.ts`): Das Spiel lädt die Datei statisch (auch gebaut,
+  auch auf dem Handy: `?zone=basiszone` öffnet die Zone als Werkstatt mit flachem Boden, allem freigeschaltet und den
+  Elementen in der Welt). Speichern geht nur im Dev-Server am Mac über `POST /__zone/<name>` (Zonen-Speicher in
+  `vite.config.ts`, schreibt die Datei). Ein eigener Wächter meldet jede Änderung der Datei auf der Platte als Ereignis
+  `tc:zone`, und das laufende Spiel lädt die Zone neu, ohne die Seite zu laden (Vites Wächter lässt `public/zones` aus,
+  sonst lüde er die ganze Seite neu); so sieht man Änderungen von Hand oder aus einer zweiten Sitzung sofort.
+- **Editor** (`src/app/zoneEditor.ts`, nur mit `?editor=1`): Palette links (ein Typ, dann Klick in die Welt setzt das
+  Element auf der gewählten Spur, Tasten 1 bis 5 wählen sie), Klick wählt, Ziehen verschiebt in der Spur-Ebene (der Strahl
+  durch den Mauszeiger trifft die Ebene wie beim Pinsel, `rayToWorld`), Bild auf und ab (oder `]` `[`) schieben in der
+  Tiefe (Shift fein), Pfeiltasten ändern Breite und Höhe, Entf löscht, Esc wählt ab, T wechselt den Bahntyp der Zone,
+  Cmd+S speichert, Tab wechselt zwischen Bauen und Spielen (normales Zeichnen und Fahren in der Zone). Treffer über einen
+  Three-Raycaster auf die Elementgruppe (`WorldRenderer.pickZoneElement`), der Auswahlrahmen ist ein Pixi-Rahmen um den
+  projizierten Kasten des Elements (`zoneElementScreenBox`), beim Ziehen wird die Gruppe nur verschoben und erst beim
+  Loslassen neu gebaut. Höhlenböden tragen Stützen, Wasser sperrt sie (`refreshFoundations`). Kein Rückgängig, keine
+  Mehrfachauswahl, kein Drehen (Stufe 1).
+- Die Bühne nutzt für die Zone das Sandbox-Level (`SandboxConfig.zone`): flacher Boden, Breite der Zone, alle Elemente
+  und Startarten frei (Plan Paket 3: die Basiszone kann alles). Tests in `tests/zone.test.ts`.
+
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).
 - g-Kräfte: f = v²·κ⃗ (Mindestradius 2,5 m; κ⃗ aus `sampleTrack` über ±1,2 m gemittelt, ein Wagen spürt keine kürzeren Spitzen) + a_tan·T + g·ŷ, wobei a_tan die echte Tangentialbeschleunigung des Zugs ist (Hangabtrieb minus Reibung, Kettenzug hält das Tempo, Launch, Booster, Bremse); zerlegt im Wagen-Rahmen (T, U, S) mit Schräglage. So drückt die Kette die Fahrgäste in die Lehne, der Launch in den Sitz, die Bremse nach vorn. Entgleisen bei seitlichem g über dem Limit des Schienentyps (`SKIN_PHYSICS`: Holz 2,0, Hybrid 2,4, Mine 2,2, Stahl 3,0, Gold 3,0, Neon 3,2, Eis 2,6, Geister 2,3, Lava 3,0, Space 3,5), Herausfallen bei kopfüber mit g_v < −0,15 über 0,12 s, Blackout über 7 g (nur ein Merker, kostet den dritten Stern). Entgleisen und Herausfallen übergeben den Zug in den Freiflug (unten), Rückroller und Wasser lassen ihn auf der Schiene ausrollen.

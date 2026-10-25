@@ -40,6 +40,8 @@ import { cutIndexNear, retractIndex } from '@/track/strokeBuffer';
 import { laneRise, laneScale, nearestLane, rayToWorld, setPerspective, tagRay, toStage, toView, viewState, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
 import { HANG_DROP, trackTypeForSkin, type TrackType } from '@/world/trackTypes';
+import type { ZoneFile } from '@/zone/types';
+import { ZoneEditor } from '@/app/zoneEditor';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
 import { hexNum, shade } from '@/render/paint';
 import { StartScene } from './start';
@@ -51,6 +53,8 @@ export interface SandboxConfig {
   world: number;
   width: number;
   saved?: SavedTrack;
+  /** Zone aus der Zonendatei: flacher Boden, alles freigeschaltet, Elemente aus der Datei (mit ?editor=1 der Editor) */
+  zone?: ZoneFile;
 }
 
 type Mode = 'draw' | 'ride' | 'result';
@@ -139,6 +143,8 @@ const PERSP_URL = typeof location !== 'undefined' && new URLSearchParams(locatio
 /** mit dem Weltrenderer (?world=1) ist die Perspektive Standard; ?persp=0 zeigt dort zum Vergleich die Bühne */
 const PERSP_OFF = typeof location !== 'undefined' && new URLSearchParams(location.search).get('persp') === '0';
 const FOV_URL = urlNum('fov', 18);
+/** ?editor=1: Klötzchen-Editor der Zone (nur mit ?zone=, am Mac) */
+const EDITOR_URL = typeof location !== 'undefined' && new URLSearchParams(location.search).get('editor') === '1';
 /** ?scroll=0: kein Autoscroll beim Zeichnen (automatische Tests zeichnen in festen Bildschirmkoordinaten) */
 const AUTOSCROLL = typeof location === 'undefined' || new URLSearchParams(location.search).get('scroll') !== '0';
 /** Zeichen-Zoom auf dem Handy: mindestens so viele Pixel pro Bühnen-Meter (eine Spur rund 5 mm); der Rest des Levels
@@ -353,10 +359,17 @@ export class LevelScene implements Scene {
   private toast = new Toast();
   private resultPanel: Container | null = null;
   private uiButtons: Button[] = [];
+  /** Klötzchen-Editor der Zone (?zone=…&editor=1) */
+  private zoneEditor: ZoneEditor | null = null;
 
   constructor(levelId: number, sandbox: SandboxConfig | null = null) {
     this.sandbox = sandbox;
-    if (sandbox) {
+    if (sandbox?.zone) {
+      // Zone: flacher Boden, die Kulissen kommen aus der Zonendatei; die Basiszone kann alles
+      this.world = WORLDS[clamp(sandbox.world - 1, 0, 9)];
+      this.level = { id: 0, world: this.world.id, name: sandbox.zone.name, hook: '', goals: [], width: sandbox.zone.width, terrain: [{ kind: 'flat' }], cars: 3, passengers: 6 };
+      this.unlocked = unlockedUpTo(150);
+    } else if (sandbox) {
       this.world = WORLDS[clamp(sandbox.world - 1, 0, 9)];
       this.level = {
         id: 0, world: this.world.id, name: t('sandbox'), hook: '', goals: [], width: sandbox.width,
@@ -403,6 +416,16 @@ export class LevelScene implements Scene {
     if (game.world) {
       this.view.setWorldMode(game.world);
       game.world.showLevel(this.terrain, this.world, night);
+      const zone = this.sandbox?.zone;
+      if (zone) {
+        // Zone: Bahntyp der Datei (die Adresse ?track= geht vor), Elemente in die Welt, mit ?editor=1 der Editor
+        game.world.trackOverride = game.world.trackOverride ?? zone.trackType;
+        game.world.setZone(zone.elements);
+        if (EDITOR_URL) {
+          this.zoneEditor = new ZoneEditor({ view: this.view, world: game.world, toast: this.toast, redrawTrack: () => this.redrawTrack() }, zone);
+          this.ui.addChild(this.zoneEditor.hud);
+        }
+      }
     }
     setPerspective(game.world ? !PERSP_OFF : PERSP_URL, FOV_URL);
     this.view.overlay.addChild(this.laneGlow, this.spotLayer, this.ink, this.ghost, this.overlay, this.endMarker);
@@ -410,7 +433,7 @@ export class LevelScene implements Scene {
     this.laneHud.addChild(this.laneHudG);
     this.hud.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn);
     this.ui.addChild(this.hud, this.laneHud, this.toast);
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, ...this.laneBtns.map((l) => l.btn)];
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, ...this.laneBtns.map((l) => l.btn), ...(this.zoneEditor?.buttons ?? [])];
     this.speedBtn.visible = false;
     this.buildLanePanel();
     this.buildLengthUI();
@@ -426,7 +449,7 @@ export class LevelScene implements Scene {
     this.shelfBtn.onTap = () => this.toggleShelf();
     this.speedBtn.onTap = () => this.cycleRideSpeed();
     this.saveBtn.onTap = () => this.saveSandbox();
-    this.levelTitle.text = this.sandbox ? `${t('sandbox')} · ${this.world.name}` : `${t('level', { n: this.level.id })} · ${this.level.name}`;
+    this.levelTitle.text = this.sandbox?.zone ? `Zone ${this.sandbox.zone.name}` : this.sandbox ? `${t('sandbox')} · ${this.world.name}` : `${t('level', { n: this.level.id })} · ${this.level.name}`;
     this.beltBadge.addChild(this.beltIconG, this.beltText);
     this.beltText.anchor.set(0.5, 0);
     this.beltText.position.set(0, 18);
@@ -515,6 +538,7 @@ export class LevelScene implements Scene {
     const H = this.handlers;
     H.dragStart = (p) => {
       if (this.mode !== 'draw') return;
+      if (this.zoneEditor?.dragStart(p)) return;
       if (this.shelfOpen) {
         const item = this.shelfItemAt(p);
         if (item) {
@@ -629,6 +653,7 @@ export class LevelScene implements Scene {
       this.drawOverlay();
     };
     H.dragMove = (p) => {
+      if (this.zoneEditor?.dragMove(p)) return;
       if (this.mode !== 'draw') return;
       const st = tagRay(this.view.camera.toStage(p.x, p.y));
       switch (this.drag.kind) {
@@ -679,6 +704,7 @@ export class LevelScene implements Scene {
     };
     H.dragEnd = (p) => {
       if (this.mode !== 'draw') return;
+      if (this.zoneEditor?.dragEnd(p)) return;
       const st = this.view.camera.toStage(p.x, p.y);
       this.pointerScreen = null;
       switch (this.drag.kind) {
@@ -695,6 +721,7 @@ export class LevelScene implements Scene {
     };
     H.tap = (p) => {
       if (this.isOverUI(p)) return;
+      if (this.mode === 'draw' && this.zoneEditor?.tap(p)) return;
       if (this.mode === 'ride') {
         this.stopRide();
         return;
@@ -812,7 +839,8 @@ export class LevelScene implements Scene {
     };
     H.twoFingerTap = () => this.undo();
     H.threeFingerTap = () => this.redo();
-    H.key = (k) => {
+    H.key = (k, ev) => {
+      if (this.mode === 'draw' && this.zoneEditor?.key(k, ev)) return;
       if (k === ' ') this.mode === 'draw' ? this.startRide() : this.stopRide();
       if (k === 'Escape') this.mode === 'draw' ? this.leave() : this.stopRide();
       if ((k === 'Delete' || k === 'Backspace') && this.selected >= 0) this.deleteNode(this.selected);
@@ -3253,6 +3281,7 @@ export class LevelScene implements Scene {
     this.laneHud.position.set(w - R - 46, h - B - 120);
     this.shelf.position.set(w - R - 10, h - B - 120);
     this.placeHint();
+    this.zoneEditor?.resize(w, h);
     this.speedText.position.set(w / 2, h - B - (portrait ? 120 : 108));
     this.toast.position.set(w / 2, h * 0.42);
     this.resultPanel?.position.set(w / 2, h / 2);
@@ -3320,6 +3349,7 @@ export class LevelScene implements Scene {
     this.sticker.update(dt);
     this.view.update(dt);
     this.game.world?.setCamera(this.view.cameraView());
+    this.zoneEditor?.update();
     // Perspektive: Griffe, Ende-Marker, Spur-Schein und Schwachstellen liegen in der Ansicht und wandern mit der Kamera
     if (this.view.viewMoved && this.mode === 'draw') {
       this.drawOverlay();

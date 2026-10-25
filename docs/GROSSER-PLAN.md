@@ -135,6 +135,9 @@ Optionen:
 | D: 2D-Leveleditor (Kacheln, Ebenen) | bekannt | fertig | unsere Zone ist 3D aus Flächen; Tiefe, Fundamente, Öffnungen passen nicht |
 
 **Empfehlung: A**, in drei Ausbaustufen, jede mit Tor. **Bestätigt am 24.10.2026: Option A, Florian bedient den Editor selbst am Mac.**
+**Stand 25.10.2026:** Stufe 1 begonnen (Etappe 1, Schritt 6: Setzen, Ziehen, Tiefe, Maße, Löschen, Speichern, Laden,
+Hot-Reload; `docs/TECH.md` 4g), Metadaten, Felder, Station, Schlange, Baustelle, Coins, Testfahrt und Ziele folgen in
+den Schritten 7 bis 9.
 
 1. **Klötzchen-Editor** (gehört zur Etappe Weltrenderer): Platzhalter (Fläche, Kasten, Zylinder, Höhlenkasten, Wasser,
    Station, Baustelle, Coin-Gruppe) setzen, ziehen, in der Tiefe verschieben, Metadaten setzen (Fundament, Öffnung,
@@ -442,6 +445,14 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
     kommen aus den Bildern der Basiszone). Regel aus dem Tor für alle Stände: Platzhalter immer dazusagen
     (`docs/HANDOVER.md`, Abschnitt 5). Weiter mit Schritt 6. Replay `--world` nach den Fixes: 306 Bahnprofile (Florians Handy-Striche vom 25.10. sind aufgezeichnet, 261 → über 300 Aufnahmen), 8835 Stützen, 64 Stellen ohne Fundament (neue Aufnahmen über Wasser), Median 2,0 px, kein Fehler.
 
+11. Schritt 6 (25.10.): Zonendatei Version 1 und Klötzchen-Editor Stufe 1 (`docs/TECH.md` 4g): Palette der Platzhalter
+    aus 8a.1, Setzen, Ziehen in der Spur-Ebene, Tiefe und Maße per Tasten, Löschen, Bahntyp der Zone, Speichern über den
+    Dev-Server, Hot-Reload bei jeder Änderung der Datei, Tab zum Spielen in der Zone. Gelernt: Vites eigener Wächter lädt
+    bei Änderungen unter `public/` die ganze Seite neu, darum ein eigener Wächter für `public/zones` mit Ereignis an
+    das Spiel; ein Three-Linienrahmen (ein Pixel) ist als Auswahl kaum zu sehen, der Rahmen ist ein Pixi-Kasten um die
+    projizierte Hülle. Platzhalter: alle Klötzchen, ihre Maße und Farben. Replay `--world` unverändert grün (322
+    Aufnahmen mit Florians Handy-Strichen, 9185 Stützen, Median 2,0 px, kein Fehler).
+
 ## Paket 10: Etappen und Abnahmen (Vorschlag aus allem Bestätigten)
 
 ### Grundsätze
@@ -499,7 +510,7 @@ mit Florian. Die Session arbeitet auf einem eigenen Branch und geht am Tor per P
 10. **Tor 1b:** Florian baut selbst einen Testausschnitt (Station, Hügel, Fenster-Element, Baustelle); das Handy zeigt
     dasselbe; Fixes; Doku in `docs/TECH.md` und `docs/HANDOVER.md`; Pull Request nach `main`.
 
-**Stand:** Schritte 1 bis 4 gebaut am 24.10.2026, Tor 1a bestanden am 25.10.2026 (Nachträge in Paket 1); Schritt 6 in Arbeit.
+**Stand:** Schritte 1 bis 4 gebaut am 24.10.2026, Tor 1a bestanden am 25.10.2026, Schritt 6 gebaut am 25.10.2026 (Nachträge in Paket 1); Schritt 7 steht an.
 
 **Florian parallel zu Etappe 1:** den Erzeugungsweg für Teile mit der Session prüfen (Voraussetzung für E4), erste
 Figurenteile in zwei Ansichten skizzieren, Entwurf der Alpen-Autos, Handy-Tests an den Toren, Entscheidungen an den

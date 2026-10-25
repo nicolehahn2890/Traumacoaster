@@ -5,6 +5,8 @@ import { loadArtOverrides } from './assets/manifest';
 import { storage } from './core/storage';
 import { StartScene } from './app/scenes/start';
 import { LevelScene } from './app/scenes/level';
+import { emptyZone } from './zone/types';
+import { loadZone } from './zone/io';
 
 type BootWindow = Window & { tcBootDone?: () => void; tcBootError?: (msg: string) => void; tcGame?: Game };
 
@@ -40,11 +42,16 @@ async function boot(): Promise<void> {
   const scene = params.get('scene');
   const showSplash = scene === 'splash' || (levelParam <= 0 && scene !== 'start' && !seen);
   // Das illudiy-Logo nur laden, wenn der Splash auch gezeigt wird (parallel zu Schriften und Texturen)
-  const [, , logo] = await Promise.all([loadArtOverrides(), loadFonts(), showSplash ? SplashScene.preload() : Promise.resolve(null)]);
+  // ?zone=<name>: die Zone (public/zones/<name>/zone.json) als Werkstatt öffnen, mit ?editor=1 im Klötzchen-Editor
+  const zoneName = params.get('zone');
+  const [, , logo, zone] = await Promise.all([loadArtOverrides(), loadFonts(), showSplash && !zoneName ? SplashScene.preload() : Promise.resolve(null), zoneName ? loadZone(zoneName) : Promise.resolve(null)]);
   const game = new Game();
   await game.init();
   (window as BootWindow).tcBootDone?.();
-  if (showSplash) game.goto(() => new SplashScene(logo), true);
+  if (zoneName) {
+    const z = zone ?? emptyZone(zoneName);
+    game.goto(() => new LevelScene(0, { world: 1, width: z.width, zone: z }), true);
+  } else if (showSplash) game.goto(() => new SplashScene(logo), true);
   else if (levelParam > 0) game.goto(() => new LevelScene(levelParam), true);
   else game.goto(() => new StartScene(), true);
   try {

@@ -27,8 +27,12 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Tor 1a, erste Runde (25.10.): Florian hat alle Links auf dem Handy gesehen (3D und Schatten besser). Fixes: Hängebahn
   mit dem Balken auf dem Strich und der Gondel darunter (Regel: der Strich ist immer genau dort, wo gezeichnet wird),
   Berge ohne feste Spur als gestaffelte Scheiben je Spur statt als ein tiefer Klotz, dunkle Tunnelmünder. **Tor 1a
-  bestanden (25.10.):** Leistung reicht, Kantenglättung bleibt an, Berge als Platzhalter eingeordnet. Weiter mit
-  Schritt 6 (Klötzchen-Editor am Mac). Links für den Handy-Test: Dev-Server mit `npm run dev` (zeichnet auf), Adresse aus dem
+  bestanden (25.10.):** Leistung reicht, Kantenglättung bleibt an, Berge als Platzhalter eingeordnet.
+  Schritt 6 gebaut (25.10.): Zonendatei `public/zones/basiszone/zone.json` (Version 1: Name, Breite, Bahntyp, Elemente
+  nach Plan 8a.1), Klötzchen-Editor am Mac unter `?zone=basiszone&editor=1` (Palette, Setzen, Ziehen, Tiefe, Maße, Löschen,
+  Bahntyp, Speichern über den Dev-Server, Hot-Reload bei jeder Dateiänderung, Tab zum Spielen), TECH.md 4g. Als Nächstes
+  Schritt 7 (Metadaten je Platzhalter, Level-Feld mit Kamerabegrenzung und Absperrband, Zoom-Grenze). Replay `--world`: 322 Aufnahmen, 9185 Stützen, Median 2,0 px, kein Fehler.
+  Links für den Handy-Test: Dev-Server mit `npm run dev` (zeichnet auf), Adresse aus dem
   Vite-Log plus `?scene=start&level=8&world=1&dev=1` und `&track=`, `&aa=0`, `&shadow=0`, `&look=`, Level 32 (Tunnel),
   Level 47 (See).
 - **24.10., spät: der große Plan steht.** `docs/GROSSER-PLAN.md` ist Paket für Paket mit Florian abgestimmt und in

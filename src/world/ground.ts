@@ -17,8 +17,8 @@ export const GROUND_BACK = LANE_MAX + 0.5;
 export const GROUND_FRONT = LANE_MIN - 0.5;
 /** Boden links und rechts über die Levelbreite hinaus (Meter, wie der Terrain-Renderer der Bühne) */
 export const GROUND_MARGIN = 220;
-/** Erdschnitt reicht so weit unter die Bodenlinie (Meter) */
-export const EARTH_DEPTH = 60;
+/** Erdschnitt reicht so weit unter die Bodenlinie (Meter): auch weit herausgezoomt (ganze Zone im Bild) endet er nicht sichtbar */
+export const EARTH_DEPTH = 200;
 /** Abtastung des Höhenfelds */
 const X_STEP = 2;
 const LANE_STEP = 0.125;
