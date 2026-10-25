@@ -47,7 +47,9 @@ describe('Festigkeitsfeld der Zone (Etappe 2, Schritt 5)', () => {
     expect(rock.solid(50, 11, 0)).toBe(false);
     // Höhle: Wand, Boden und Decke fest, Raum frei und Tunnel
     expect(rock.solid(140 - 15, 6, -1)).toBe(true);
-    expect(rock.solid(140, 12, -1)).toBe(true);
+    // die Decke ist offen (der Deckel ist weg, Schritt 7), der Boden fest
+    expect(rock.solid(140, 12, -1)).toBe(false);
+    expect(rock.solid(140, 0.2, -1)).toBe(true);
     expect(rock.solid(140, 6, -1)).toBe(false);
     expect(rock.tunnel(140, 6, -1)).toBe(true);
     expect(rock.tunnel(140, 6, 1)).toBe(false);

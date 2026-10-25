@@ -84,7 +84,7 @@ vec3 recolor(vec3 c) {
 `;
 
 const REVEAL_GLSL = `
-uniform float uReveal, uRevealR;
+uniform float uReveal, uRevealR, uRevealXZ;
 uniform vec3 uRevealC;
 varying vec3 vWorldPos;
 float rvHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -96,8 +96,10 @@ float rvNoise(vec2 p) {
 `;
 const REVEAL_FRAG = `
   if (uReveal > 0.0) {
-    float dd = distance(vWorldPos.xy, uRevealC.xy);
-    float nn = rvNoise(vWorldPos.xy * 0.9) * 0.7 + rvNoise(vWorldPos.xy * 3.1) * 0.3;
+    vec2 q = uRevealXZ > 0.5 ? vWorldPos.xz : vWorldPos.xy;
+    vec2 qc = uRevealXZ > 0.5 ? uRevealC.xz : uRevealC.xy;
+    float dd = distance(q, qc);
+    float nn = rvNoise(q * 0.9) * 0.7 + rvNoise(q * 3.1) * 0.3;
     float edge = uRevealR * uReveal * (0.6 + 0.8 * nn);
     if (dd < edge) discard;
     if (dd < edge + 1.2) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.72, 0.3), 0.85 * (1.0 - (dd - edge) / 1.2));
@@ -107,6 +109,8 @@ export interface RevealUniforms {
   uReveal: { value: number };
   uRevealC: { value: Vector3 };
   uRevealR: { value: number };
+  /** 1: Abstand in der Bodenebene (x, z) statt in der Wandebene (x, y) */
+  uRevealXZ: { value: number };
 }
 
 /**
@@ -114,7 +118,7 @@ export interface RevealUniforms {
  * die Fläche mit wachsendem Radius uRevealR · uReveal auf, mit Rausch-Schwelle und Brandkante. Eigene Uniforms je Material.
  */
 export function revealMaterial(params: MeshLambertMaterialParameters = {}): MeshLambertMaterial & { reveal: RevealUniforms } {
-  const reveal: RevealUniforms = { uReveal: { value: 0 }, uRevealC: { value: new Vector3() }, uRevealR: { value: 4 } };
+  const reveal: RevealUniforms = { uReveal: { value: 0 }, uRevealC: { value: new Vector3() }, uRevealR: { value: 4 }, uRevealXZ: { value: 0 } };
   const m = new MeshLambertMaterial(params) as MeshLambertMaterial & { reveal: RevealUniforms };
   m.reveal = reveal;
   m.customProgramCacheKey = () => 'painted-reveal';

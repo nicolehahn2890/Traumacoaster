@@ -43,6 +43,11 @@
       "lift": 15
     }
   ],
+  "looks": [
+    "day",
+    "dusk",
+    "night"
+  ],
   "elements": [
     {
       "id": "e1",
@@ -85,6 +90,18 @@
       "h": 0,
       "d": 8,
       "color": "#3ec7c2"
+    },
+    {
+      "id": "e4",
+      "kind": "cave",
+      "x": 140,
+      "y": -14,
+      "z": -1,
+      "w": 24,
+      "h": 10,
+      "d": 12,
+      "color": "#5a4a3a",
+      "openFrom": 2
     }
   ],
   "fields": [

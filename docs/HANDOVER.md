@@ -56,6 +56,16 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Öffnung im Feld, Wand in der Fahrt. Platzhalter: Ping, Staub, Splitter, Dauer, Kreisöffnung. Tests 261 grün, Replay
   unverändert grün, Szenario 10 mit 16 Prüfungen grün (135 Zeichenaufrufe; höhere Werte traten nur direkt nach
   Code-Änderungen während des Neuladens auf).
+  Schritt 7 gebaut: Untergrund und Looks (`src/zone/underground.ts`, TECH.md 4h). Räume (Höhlenkästen) sind „offen ab
+  Stufe“: davor unsichtbar und gedeckelt, ab der Stufe mit Loch im Boden und Fenster im Erdschnitt, der Pinsel darf
+  hinab, eine Verbinden-Baustelle über dem Raum nimmt den Deckel (Freilegung auf dem Boden, Bahnende taucht ab). Looks je
+  Stufe aus der Zonendatei (Tag, Abend, Nacht, Neon), der Himmel folgt mit Tag oder Nacht. Editor: L Look, O am Raum
+  Öffnungsstufe, Hinweis nach Regel 2.3. System: Öffnungsstufe, Löcher und Fenster, Boden-Funktion, Look-Tabelle.
+  Platzhalter: rechteckige Löcher, Abtauchen als Knick, Himmel nur Tag oder Nacht, Lichtschächte und Nebel fehlen.
+  Gelernt: Ein nach unten gezeichneter Strich hieße für den Pinsel „nach vorn“; darum hält der Löser einen Punkt unter
+  der Oberfläche über einem offenen Raum in dessen Spuren (sonst landete die Bahn am Bühnenrand statt im Raum). Tests 267
+  grün, Build grün, Replay `--world` unverändert grün (475 Profile, Median 2,0 px), Szenario 10 mit 17 Prüfungen grün
+  (135 Zeichenaufrufe). Als Nächstes Tor 2b (Handy-Test).
 - **24.10., Etappe 1 begonnen** (Branch `etappe-1-weltrenderer`, Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10).
   Schritt 1 gebaut: Weltrenderer hinter `?world=1` (Three-Szene im selben WebGL-Kontext, Pixi zeichnet davor den Himmel und
   darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem

@@ -5,7 +5,8 @@
  * Vorderkante steht der Erdschnitt: eine senkrechte Fläche mit Erdschichten, oben entlang des Bodens, ohne Räume
  * (Paket 2.3: geschlossen, bis der Untergrund freigespielt ist). Beleuchtet wie das Labor (light.ts), unbeschattet bis Schritt 4.
  */
-import { BufferGeometry, Float32BufferAttribute, FrontSide, Group, Mesh, ShadowMaterial, type Texture } from 'three';
+import { BufferGeometry, Float32BufferAttribute, FrontSide, Group, Mesh, Path, ShadowMaterial, Shape, ShapeGeometry, type Texture } from 'three';
+import type { GroundHole } from '@/zone/underground';
 import { paintedMaterial } from './looks';
 import type { Terrain } from '@/physics/terrain';
 import { LANE_MAX, LANE_MIN } from '@/track/stage';
@@ -35,8 +36,11 @@ export interface GroundMeshes {
   dispose(): void;
 }
 
-/** Boden-Höhenfeld und Erdschnitt aus dem Terrain bauen */
-export function buildGround(terrain: Terrain, groundTex: Texture, strataTex: Texture): GroundMeshes {
+/**
+ * Boden-Höhenfeld und Erdschnitt aus dem Terrain bauen; holes (Etappe 2, Schritt 7): offene Räume unter dem Boden bekommen ein
+ * Loch im Boden über ihrer Grundfläche und ein Fenster im Erdschnitt davor (Plan 5.2: Räume „offen ab Stufe“)
+ */
+export function buildGround(terrain: Terrain, groundTex: Texture, strataTex: Texture, holes: readonly GroundHole[] = []): GroundMeshes {
   const x0 = -GROUND_MARGIN;
   const x1 = terrain.width + GROUND_MARGIN;
   const nx = Math.ceil((x1 - x0) / X_STEP) + 1;
@@ -59,8 +63,11 @@ export function buildGround(terrain: Terrain, groundTex: Texture, strataTex: Tex
     }
   }
   const idx: number[] = [];
+  const inHole = (x: number, lane: number) => holes.some((h) => x >= h.x0 && x <= h.x1 && lane >= h.lane0 && lane <= h.lane1);
   for (let j = 0; j < nz - 1; j++) {
     for (let i = 0; i < nx - 1; i++) {
+      // Zellen über einem offenen Raum fehlen: dort ist der Deckel weg
+      if (holes.length && inHole(x0 + (i + 0.5) * X_STEP, GROUND_BACK - (j + 0.5) * LANE_STEP)) continue;
       const a = j * nx + i;
       const b = a + 1;
       const c = a + nx;
@@ -83,40 +90,36 @@ export function buildGround(terrain: Terrain, groundTex: Texture, strataTex: Tex
   catcher.receiveShadow = true;
   catcher.renderOrder = 1;
 
-  // Erdschnitt an der Vorderkante: oben der Boden der vordersten Reihe, unten EARTH_DEPTH tiefer
+  // Erdschnitt an der Vorderkante: eine Fläche, oben entlang des Bodens der vordersten Reihe, unten EARTH_DEPTH tiefer,
+  // mit rechteckigen Fenstern vor offenen Räumen (Schritt 7)
   const Zf = laneToZ(GROUND_FRONT);
-  const cpos = new Float32Array(nx * 2 * 3);
-  const cuv = new Float32Array(nx * 2 * 2);
-  for (let i = 0; i < nx; i++) {
+  const shape = new Shape();
+  shape.moveTo(x0, terrain.groundHeight(x0, GROUND_FRONT));
+  for (let i = 1; i < nx; i++) {
     const x = x0 + i * X_STEP;
-    const top = terrain.groundHeight(x, GROUND_FRONT);
-    const bottom = -EARTH_DEPTH;
-    cpos[i * 6] = x;
-    cpos[i * 6 + 1] = top;
-    cpos[i * 6 + 2] = Zf;
-    cpos[i * 6 + 3] = x;
-    cpos[i * 6 + 4] = bottom;
-    cpos[i * 6 + 5] = Zf;
-    cuv[i * 4] = x / STRATA_TILE;
-    cuv[i * 4 + 1] = top / STRATA_TILE;
-    cuv[i * 4 + 2] = x / STRATA_TILE;
-    cuv[i * 4 + 3] = bottom / STRATA_TILE;
+    shape.lineTo(x, terrain.groundHeight(x, GROUND_FRONT));
   }
-  const cidx: number[] = [];
-  for (let i = 0; i < nx - 1; i++) {
-    const t0 = i * 2;
-    const b0 = t0 + 1;
-    const t1 = t0 + 2;
-    const b1 = t0 + 3;
-    // Vorderseite zum Betrachter
-    cidx.push(t0, b0, t1, t1, b0, b1);
+  shape.lineTo(x0 + (nx - 1) * X_STEP, -EARTH_DEPTH);
+  shape.lineTo(x0, -EARTH_DEPTH);
+  shape.closePath();
+  for (const h of holes) {
+    const top = Math.min(h.y1, terrain.groundHeight((h.x0 + h.x1) / 2, GROUND_FRONT) - 0.3);
+    if (top - h.y0 < 0.5) continue;
+    const w = new Path();
+    w.moveTo(h.x0, h.y0);
+    w.lineTo(h.x1, h.y0);
+    w.lineTo(h.x1, top);
+    w.lineTo(h.x0, top);
+    w.closePath();
+    shape.holes.push(w);
   }
-  const cutGeo = new BufferGeometry();
-  cutGeo.setAttribute('position', new Float32BufferAttribute(cpos, 3));
-  cutGeo.setAttribute('uv', new Float32BufferAttribute(cuv, 2));
-  cutGeo.setIndex(cidx);
+  const cutGeo = new ShapeGeometry(shape);
+  const cuvAttr = cutGeo.getAttribute('uv');
+  for (let k = 0; k < cuvAttr.count; k++) cuvAttr.setXY(k, cuvAttr.getX(k) / STRATA_TILE, cuvAttr.getY(k) / STRATA_TILE);
+  cuvAttr.needsUpdate = true;
   const cutMat = paintedMaterial({ map: strataTex, side: FrontSide });
   const cut = new Mesh(cutGeo, cutMat);
+  cut.position.z = Zf;
   cut.receiveShadow = true;
 
   const group = new Group();

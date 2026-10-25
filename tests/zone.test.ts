@@ -256,7 +256,9 @@ describe('Zonendatei: Ziele, Stufen und Prüfzone (Schritt 9)', () => {
     const zone = parseZone(JSON.parse(text));
     expect(zone).not.toBeNull();
     expect(serializeZone(zone!)).toBe(text);
-    expect(zone!.elements.map((e) => e.id)).toEqual(['e1', 'e2', 'e3']);
+    expect(zone!.elements.map((e) => e.id)).toEqual(['e1', 'e2', 'e3', 'e4']);
+    expect(zone!.elements[3]).toMatchObject({ kind: 'cave', openFrom: 2 });
+    expect(zone!.looks).toEqual(['day', 'dusk', 'night']);
     expect(zone!.elements[1].growth).toBe(2);
     const f = zone!.fields[0];
     expect(f.goals).toHaveLength(3);

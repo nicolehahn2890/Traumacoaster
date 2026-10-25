@@ -30,6 +30,8 @@ import { KIND_DEFAULTS, ZONE_ANCHORS, ZONE_DEPTH_ROLES, ZONE_GOAL_TYPES, formatG
 import { applyZoneExtras, buildZoneCoins, buildZoneQueue, buildZoneSite, buildZoneStation, itemPosition } from '@/zone/build';
 import { COIN_SHAPES } from '@/zone/groups';
 import { SITE_OPENING_R, siteTarget } from '@/zone/sites';
+import { openRooms } from '@/zone/underground';
+import { LOOK_NAMES } from '@/world/looks';
 import { ABILITY_WORDS, ZONE_ABILITIES, describeAbilities, formatFieldLine, formatStageLine, parseFieldLine, parseStageLine, resolveAbilities, zoneUpgrades } from '@/zone/abilities';
 import { toView } from '@/track/stage';
 
@@ -70,6 +72,7 @@ const EXTRA_TOOLS: Array<{ kind: Tool; label: string }> = [
 ];
 
 const TYPE_NAMES: Record<TrackType, string> = { road: 'Straße', steel: 'Stahl', wood: 'Holz', hanging: 'Hängebahn' };
+const LOOK_LABEL = { day: 'Tag', dusk: 'Abend', night: 'Nacht', neon: 'Neon' } as const;
 const BTN = { width: 118, height: 30, size: 13, color: PAPER, textColor: INK };
 
 export class ZoneEditor {
@@ -572,6 +575,19 @@ export class ZoneEditor {
         this.commitField(field);
         return true;
       }
+      if (lower === 'l') {
+        // Look der Fortschrittsstufe dieses Felds (Plan 2.1, Richtlinie 6): Tag → Abend → Nacht → Neon
+        if (field.stage === undefined) {
+          this.host.toast.show('Erst mit G eine Stufe wählen', 1.8);
+          return true;
+        }
+        const looks = [...(this.zone.looks ?? [])];
+        while (looks.length <= field.stage) looks.push('day');
+        looks[field.stage] = LOOK_NAMES[(LOOK_NAMES.indexOf(looks[field.stage]) + 1) % LOOK_NAMES.length];
+        this.zone.looks = looks;
+        this.commitField(field);
+        return true;
+      }
       if (lower === 's') {
         // Schalter des Felds (Plan 3.1, 2.1): +wort an, -wort aus, dazu Gurt, Kette, Budget und Höhenlimit über die Stufe hinweg
         const text = this.ask(`Schalter dieses Felds über seine Stufe hinweg: +wort an, -wort aus, gurt 0 bis 4, kette Meter, budget Meter, höhe Meter (leer = wie die Stufe). Wörter: ${words}`, formatFieldLine(field));
@@ -637,6 +653,12 @@ export class ZoneEditor {
       return true;
     }
     if (lower === 'o') {
+      if (el.kind === 'cave') {
+        // Raum „offen ab Stufe“ (Plan 5.2): immer → 1 → 2 → 3 → immer
+        el.openFrom = ((el.openFrom ?? 0) + 1) % 4 || undefined;
+        this.commit(el);
+        return true;
+      }
       if (el.kind !== 'threePart') {
         this.host.toast.show('Öffnungen gibt es nur beim Dreiteiler', 1.8);
         return true;
@@ -794,6 +816,7 @@ export class ZoneEditor {
     if (el.anchor) meta.push(`Anker ${ANCHOR_NAMES[el.anchor]}`);
     if (el.growth) meta.push(`ab Stufe ${el.growth}`);
     if (el.depthRole) meta.push(`Rolle ${ROLE_NAMES[el.depthRole]}`);
+    if (el.kind === 'cave') meta.push(el.openFrom ? `offen ab Stufe ${el.openFrom}` : 'immer offen');
     return `${def?.label ?? el.kind} ${el.id} · x ${el.x} m · Höhe ${el.y} m · Spur ${el.z > 0 ? '+' : ''}${el.z} · ${size}${meta.length ? ' · ' + meta.join(' · ') : ''}`;
   }
 
@@ -822,6 +845,9 @@ export class ZoneEditor {
       res.belt === undefined ? 'Gurt wie die Welt' : `Gurt ${BELT_NAMES[res.belt] ?? res.belt}`,
       `Kette ${res.chain !== undefined ? `${res.chain} m` : 'frei'}`,
     ];
+    const look = f.stage !== undefined ? this.zone.looks?.[f.stage] ?? 'day' : 'day';
+    meta.push(`Look ${LOOK_LABEL[look]}`);
+    if (f.y0 < 0) meta.push(openRooms(this.zone.elements, f.stage ?? Infinity).length ? 'Untergrund offen' : 'Untergrund gedeckelt (Regel 2.3: höchstens ein Fünftel des Felds)');
     if (res.budget) meta.push(`Budget ${res.budget} m`);
     if (res.maxHeight) meta.push(`Höhe bis ${res.maxHeight} m`);
     if (f.on?.length || f.off?.length || f.belt !== undefined || f.chain !== undefined) meta.push(`Feld überschreibt ${formatFieldLine({ on: f.on, off: f.off, belt: f.belt, chain: f.chain })}`);
@@ -850,7 +876,7 @@ export class ZoneEditor {
       this.hint.text = 'Esc: Werkzeug weg';
     } else if (el) {
       this.status.text = this.describe(el);
-      this.hint.text = `Ziehen verschiebt · Bild auf/ab (oder [ ]) Tiefe, Shift fein · Pfeile Breite und Höhe${el.d !== undefined ? ' · Shift+Pfeile links/rechts Dicke' : ''} · M Fundament · O Öffnung${el.openings?.length ? ' (Alt+Pfeile verschieben, + − Radius)' : ''} · A Anker · G Stufe · R Rolle · Entf löschen · Esc abwählen · Cmd+S speichern`;
+      this.hint.text = `Ziehen verschiebt · Bild auf/ab (oder [ ]) Tiefe, Shift fein · Pfeile Breite und Höhe${el.d !== undefined ? ' · Shift+Pfeile links/rechts Dicke' : ''} · M Fundament · O ${el.kind === 'cave' ? 'offen ab Stufe' : 'Öffnung'}${el.openings?.length ? ' (Alt+Pfeile verschieben, + − Radius)' : ''} · A Anker · G Stufe · R Rolle · Entf löschen · Esc abwählen · Cmd+S speichern`;
     } else if (item) {
       this.status.text = this.describeItem(item);
       this.hint.text = item.kind === 'station' ? 'Ziehen verschiebt · Bild auf/ab Tiefe · D Richtung · Pfeile links/rechts Länge · Entf löschen'
@@ -859,7 +885,7 @@ export class ZoneEditor {
         : 'Ziehen verschiebt · Bild auf/ab Tiefe · C Form · Pfeile auf/ab Zahl, links/rechts Abstand · Entf löschen';
     } else if (field) {
       this.status.text = this.describeField(field);
-      this.hint.text = 'Enter aktiv schalten (im Spielen hält die Kamera das Feld, Absperrband an den Rändern) · N Name · Z Ziele · G Stufe · U Aufwertung (Shift+U: Stufe der Zone bearbeiten) · S Schalter des Felds · Testfahrt fährt im Feld · Entf löschen · Esc abwählen';
+      this.hint.text = 'Enter aktiv schalten (im Spielen hält die Kamera das Feld, Absperrband an den Rändern) · N Name · Z Ziele · G Stufe · L Look der Stufe · U Aufwertung (Shift+U: Stufe der Zone bearbeiten) · S Schalter des Felds · Testfahrt fährt im Feld · Entf löschen · Esc abwählen';
     } else {
       this.status.text = `Bauen · Zone ${this.zone.name} · ${this.zone.elements.length} Elemente · ${this.zone.fields.length} Felder · ${this.zone.stations.length} Stationen · ${this.zone.coinGroups.length} Coin-Gruppen · Spur für Neues: ${lane}`;
       this.hint.text = 'Typ links wählen, dann in die Welt klicken · Klick wählt Element oder Feld · T Bahntyp · Testfahrt fährt die Bahn · Tab Spielen';

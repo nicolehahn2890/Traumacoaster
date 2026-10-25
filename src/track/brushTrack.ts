@@ -115,6 +115,8 @@ export interface BrushOptions {
   noCut?: boolean;
   /** Fang (Etappe 2, Schritt 6): das Ende der offenen Linie gleitet auf diesen Bühnenpunkt und hält dort diese Spur (Baustelle) */
   endSnap?: { X: number; Y: number; lane: number };
+  /** Räume unter dem Boden (Schritt 7): Spuren, auf denen ein Punkt in einem offenen Raum liegt; dort bleibt die Tiefe im Raum */
+  underground?: (p: StagePoint) => { z0: number; z1: number } | null;
 }
 
 /** verbotener Tiefenbereich (Spuren) */
@@ -132,6 +134,7 @@ interface Opts {
   rock: ((p: StagePoint) => RockSpan[]) | null;
   noCut: boolean;
   endSnap: { X: number; Y: number; lane: number } | null;
+  underground: ((p: StagePoint) => { z0: number; z1: number } | null) | null;
 }
 
 const withDefaults = (o: BrushOptions): Opts => ({
@@ -143,6 +146,7 @@ const withDefaults = (o: BrushOptions): Opts => ({
   rock: o.rock ?? null,
   noCut: !!o.noCut,
   endSnap: o.endSnap ?? null,
+  underground: o.underground ?? null,
 });
 
 export interface LineCrossing {
@@ -967,6 +971,15 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
       // vor oder hinter dem Fels bleiben
       if (rockUp[i] < upper[i]) upper[i] = Math.max(low[i], rockUp[i]);
       if (rockLo[i] > low[i]) low[i] = Math.min(upper[i], rockLo[i]);
+      // in einem offenen Raum unter dem Boden (Schritt 7): Tiefe auf die Spuren des Raums, Wunsch in seiner Mitte
+      if (o.underground) {
+        const r = o.underground(line[i]);
+        if (r) {
+          low[i] = Math.max(Z_MIN, r.z0 * LANE_DEPTH);
+          upper[i] = Math.max(low[i], Math.min(Z_MAX, r.z1 * LANE_DEPTH));
+          target[i] = (low[i] + upper[i]) / 2;
+        }
+      }
     }
     for (let i = 0; i < n; i++) if (calm[i] > 0) target[i] = calm[i] * upper[0] + (1 - calm[i]) * target[i];
     // Looping und Hügel: Wunschtiefe gerade von Fuß zu Fuß (Tiefe der letzten Lösung, vor der ersten die Wunschtiefe)

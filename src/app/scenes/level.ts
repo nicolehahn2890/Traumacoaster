@@ -44,6 +44,8 @@ import type { ZoneElement, ZoneField, ZoneFile, ZoneSite, ZoneStation } from '@/
 import { LIFT_HEIGHT_DEFAULT, allowedStarts, resolveAbilities, zoneUnlocks, type ResolvedAbilities } from '@/zone/abilities';
 import { RockField } from '@/zone/rock';
 import { SITE_OPENING_R, SITE_REACH, siteAnchor, siteTarget, siteWalls, withSiteOpenings } from '@/zone/sites';
+import { groundHoles, openRooms, roomAt, roomLanes, type Room } from '@/zone/underground';
+import type { LookName } from '@/world/looks';
 import { applyZoneExtras, stationPath, zoneCoins } from '@/zone/build';
 import { ZoneEditor } from '@/app/zoneEditor';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
@@ -385,6 +387,8 @@ export class LevelScene implements Scene {
   /** Festigkeitsfeld der Zone (Etappe 2, Schritt 5): fester Fels aus den Elementen bis zur Fortschrittsstufe; null ohne Zone */
   private rock: RockField | null = null;
   private rockToastAt = -10;
+  /** offene Räume unter dem Boden zur Stufe des Felds (Schritt 7): dort ist der Raumboden der Boden des Pinsels */
+  private rooms: Room[] = [];
   /** offene Baustellen dieser Sitzung (Etappe 2, Schritt 6): Verbinden nach der Freilegung, Durchbruch nach dem Zersplittern */
   private readonly openedSites = new Set<string>();
   /** laufende Freilegung: Ping, Kamera heraus, Lippe löst sich auf, Staub, Öffnung, Kamera zurück */
@@ -563,8 +567,23 @@ export class LevelScene implements Scene {
   /** Festigkeitsfeld neu aus den Elementen der Zone (nach Änderungen im Editor und beim Feldwechsel: die Stufe blendet Elemente aus) */
   private refreshRock(): void {
     const zone = this.sandbox?.zone;
-    this.rock = zone ? new RockField(this.derivedElements(), this.activeField?.stage ?? Infinity) : null;
+    const stage = this.activeField?.stage ?? Infinity;
+    const derived = this.derivedElements();
+    this.rock = zone ? new RockField(derived, stage) : null;
     this.view.rock = this.rock;
+    // Untergrund (Schritt 7): offene Räume, Löcher im Boden und Fenster im Erdschnitt
+    this.rooms = zone ? openRooms(derived, stage) : [];
+    this.game.world?.setGroundHoles(groundHoles(this.rooms, (x) => this.terrain.groundHeight(x, 0)));
+  }
+
+  /** Look der Fortschrittsstufe des Felds (Plan 2.1, Richtlinie 6): Licht, Umfärben, Nebel der Welt und der Himmel der Bühne */
+  private applyLook(field: ZoneField | null): void {
+    const zone = this.sandbox?.zone;
+    const world = this.game.world;
+    if (!zone || !world) return;
+    const look: LookName = (field?.stage !== undefined ? zone.looks?.[field.stage] : undefined) ?? 'day';
+    if (!world.lookOverride) world.setLook(look);
+    this.view.sky.setWorld(this.world, look === 'night' || look === 'neon');
   }
 
   /** Elemente der Zone mit den Öffnungen der offenen Verbinden-Baustellen (Schritt 6; die Zonendatei bleibt unverändert) */
@@ -600,7 +619,8 @@ export class LevelScene implements Scene {
   private startReveal(site: ZoneSite, el: ZoneElement): void {
     const cam = this.view.camera.target;
     this.reveal = { site, el, t: 0, cam: { x: cam.x, y: cam.y, zoom: cam.zoom }, dusted: false };
-    this.game.world?.beginReveal(el.id, { x: site.x, y: site.y }, (site.r ?? SITE_OPENING_R) + 0.8);
+    if (el.kind === 'cave') this.game.world?.beginGroundReveal({ x: site.x, z: site.z }, Math.max(el.w / 2, 4));
+    else this.game.world?.beginReveal(el.id, { x: site.x, y: site.y }, (site.r ?? SITE_OPENING_R) + 0.8);
     this.toast.show(t('site.reveal'), 1.2);
     audio.play('impact');
   }
@@ -634,11 +654,15 @@ export class LevelScene implements Scene {
       const derived = this.derivedElements().find((e) => e.id === r.el.id);
       if (derived) world?.updateZoneElement(derived);
       this.refreshRock();
-      // das Bahnende rutscht durch die Öffnung in den Innenraum: Der nächste Strich beginnt hinter der Lippe (Plan 5.2)
+      // das Bahnende rutscht durch die Öffnung in den Innenraum (Dreiteiler) oder taucht in den Raum ab (Schritt 7): Der
+      // nächste Strich beginnt hinter der Lippe oder im Raum (Plan 5.2)
       const end = this.path?.nodes[this.path.nodes.length - 1];
       if (this.path && end && !isClosed(this.path) && Math.hypot(end.x - r.site.x, end.y - r.site.y) < 2) {
         const half = (r.el.d ?? 7.5) / 2 / LANE_DEPTH;
-        end.z = r.el.z - half + 0.25;
+        if (r.el.kind === 'cave') {
+          end.y = r.el.y + r.el.h - 2;
+          end.z = r.el.z;
+        } else end.z = r.el.z - half + 0.25;
         this.redrawTrack();
       }
       this.view.camera.setTarget(r.cam.x, r.cam.y, r.cam.zoom);
@@ -694,6 +718,7 @@ export class LevelScene implements Scene {
     }
     this.game.world?.setStage(field?.stage ?? Infinity);
     this.refreshRock();
+    this.applyLook(field);
     this.goalsBuiltFor = '';
     this.refreshBeltBadge(false);
     this.updateGoals();
@@ -1556,7 +1581,7 @@ export class LevelScene implements Scene {
   }
 
   private strokeOptions() {
-    const ground = (x: number, z: number) => (this.allowTunnels ? this.terrain.groundHeight(x, z) : this.terrain.surfaceHeight(x, z));
+    const ground = (x: number, z: number) => (this.groundAt(x, z));
     return {
       single: this.singleStroke,
       fit: FIT_MODE,
@@ -2011,7 +2036,7 @@ export class LevelScene implements Scene {
 
   private brushOptions() {
     return {
-      ground: (x: number, z: number) => (this.allowTunnels ? this.terrain.groundHeight(x, z) : this.terrain.surfaceHeight(x, z)),
+      ground: (x: number, z: number) => (this.groundAt(x, z)),
       clearance: this.groundClearance,
       // Rundenschluss ab 8 m Bühne oder 60 px, je nachdem, was weiter ist
       closeSnap: Math.max(8, 60 / this.view.camera.zoom),
@@ -2019,6 +2044,8 @@ export class LevelScene implements Scene {
       tolerance: Math.max(0.4, 8 / this.view.camera.zoom),
       // Fels der Zone (Schritt 5): verbotene Tiefen je Linienpunkt, gedeutet mit dem Strahl der Kamera
       rock: this.rock && !this.rock.empty ? (p: StagePoint) => this.rock!.spans(p, (q, lane) => rayToWorld(q, lane)) : undefined,
+      // offene Räume (Schritt 7): ein Punkt unter der Oberfläche über einem Raum bleibt in dessen Spuren
+      underground: this.rooms.length ? (p: StagePoint) => roomLanes(this.rooms, p, (q, lane) => rayToWorld(q, lane), (x, lane) => this.terrain.groundHeight(x, lane)) : undefined,
     };
   }
 
@@ -2544,6 +2571,9 @@ export class LevelScene implements Scene {
 
   // ------------------------------------------------------------------ Knoten-Editing (3D)
   private groundAt(x: number, z: number): number {
+    // über einem offenen Raum ist der Raumboden der Boden (Schritt 7)
+    const r = roomAt(this.rooms, x, z);
+    if (r) return r.y0 + 0.05;
     return this.allowTunnels ? this.terrain.groundHeight(x, z) : this.terrain.surfaceHeight(x, z);
   }
   private moveNode(i: number, st: StagePoint): void {

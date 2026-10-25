@@ -420,6 +420,27 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   „Fels“; und eine Öffnung lädt den Pinsel nicht ein, nur das Verschieben des Bahnendes bringt die Fortsetzung hinter die
   Lippe. Tests in `tests/sites.test.ts`. Platzhalter: Ping, Staub, Splitter, Dauer der Choreografie (Florian prüft sie an
   Tor 2b), Öffnung als Kreis.
+- **Untergrund: Räume „offen ab Stufe“, Looks je Stufe** (Schritt 7; `src/zone/underground.ts`, Plan 5.2, 2.1, 2.3,
+  Richtlinie 4 und 6). Ein Höhlenkasten trägt `openFrom` (Fortschrittsstufe; ohne Angabe immer offen). Geschlossen ist er
+  unsichtbar (`WorldRenderer.setStage` prüft Wachstums- und Öffnungsstufe), nicht im Festigkeitsfeld und für den Pinsel
+  unerreichbar (der Boden darüber ist zu). Offen: `openRooms` liefert Grundfläche (x, Spuren), Boden und Decke; der Boden
+  (`buildGround`, `holes`) lässt die Zellen über dem Raum weg und der Erdschnitt ist eine Fläche (`ShapeGeometry`) mit
+  einem rechteckigen Fenster vor dem Raum (`groundHoles`, nur für Räume unter dem Boden, Fenster bis 0,3 m unter die
+  Oberfläche); `WorldRenderer.setGroundHoles` baut den Boden neu, wenn sich die Löcher ändern. Der Pinsel sieht über einem
+  offenen Raum den Raumboden als Boden (`LevelScene.groundAt`, `roomAt`) und darf hinab; weil „unten auf dem Bild“ für
+  den Pinsel sonst „vorn“ hieße (und am Bühnenrand der Boden zu ist), hält `BrushOptions.underground` (`roomLanes`) einen
+  unter der Oberfläche gezeichneten Punkt über einem Raum in dessen Spuren, Wunschtiefe in der Raummitte; im Festigkeitsfeld hat ein Raum
+  Wände und Boden, aber keine Decke mehr (der Deckel ist weg), der Raum zählt als Tunnel. Eine Verbinden-Baustelle über
+  einem Raum zielt auf den Raum (`siteTarget`); die Freilegung läuft auf dem Boden (`beginGroundReveal`, Auflösen in der
+  Bodenebene, `uRevealXZ`), danach gilt der Raum als offen (`withSiteOpenings` setzt `openFrom` 0 für die Sitzung), Boden
+  und Erdschnitt bekommen Loch und Fenster, und das Bahnende taucht in den Raum ab (2 m unter der Decke; der Strich geht
+  dort weiter). Looks: `looks` der Zonendatei (Stufe → Tag, Abend, Nacht, Neon); `applyLook` setzt beim Feldwechsel den
+  Look der Welt (`?look=` geht vor) und schaltet den Himmel der Bühne für Nacht und Neon auf Nacht (ein eigener Himmel je
+  Look kommt mit dem Himmel in der Welt, Nachtrag zu Schritt 4). Editor: L wechselt den Look der Stufe des Felds, O am
+  Raum die Öffnungsstufe; das Feld meldet nach Regel 2.3 „Untergrund gedeckelt“, wenn es unter den Boden reicht und zur
+  Stufe kein Raum offen ist. Prüfzone: Raum e4 (offen ab Stufe 2), Looks Tag/Abend/Nacht; Tests in
+  `tests/underground.test.ts`. Platzhalter: rechteckige Löcher und Fenster, Abtauchen als Knick statt Schacht, Himmel nur
+  Tag oder Nacht, die Lichtschächte und der Nebel der Räume aus dem Labor fehlen noch.
 
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).

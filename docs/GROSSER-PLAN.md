@@ -194,7 +194,8 @@ Aufwertungsstufen aus 2.4 werden eine Tabelle der Zone (Stufe → Satz von Schal
 und Wagenvariante); ein Feld wählt die Stufe und kann einzelne Schalter überschreiben; die Kettenzugstärke ist die Höhe
 über der Station in Metern, bis zu der die Kette zieht (Stufe „alles“ ohne Grenze); Streckenbudget und Höhenlimit
 stehen je Feld. **Stand 25.10.2026:** gebaut in Etappe 2, Schritte 1 und 3 (`docs/TECH.md` 4h); die Kettenzugstärke wirkt in
-der Fahrt und zeichnet die Linie, die Wagenvariante färbt die Platzhalter-Wagen.
+der Fahrt und zeichnet die Linie, die Wagenvariante färbt die Platzhalter-Wagen. Schritt 7: Looks je Fortschrittsstufe als
+`looks` der Zonendatei (Tag, Abend, Nacht, Neon), Räume mit „offen ab Stufe“ (`openFrom`).
 
 ## Paket 4: Levelziele, Sterne, Humor
 
@@ -627,7 +628,7 @@ Rückfragen der Session (25.10.): alle Empfehlungen angenommen (drei Tore; Durch
 bleibt eigenes Element; Entwurf der Basiszone v1 durch die Session; Startart-Knopf wechselt per Tipp; Kettenzugstärke
 als Höhe über der Station).
 
-**Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritte 1 bis 3 und 3b (Aufzug) gebaut am 25.10.2026 (Nachträge in Paket 3, 2 und 4). **Tor 2a bestanden (Florian, 25.10.2026):** Startart-Platzhalter und Aufzug reichen bis zur Stilprobe, der Knopf am Hebel ist verständlich, die Kettenregel passt, das Handy läuft flüssig. Schritte 5 und 6 gebaut am 25.10.2026 (Nachträge in Paket 5), Schritt 7 begonnen.
+**Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritte 1 bis 3 und 3b (Aufzug) gebaut am 25.10.2026 (Nachträge in Paket 3, 2 und 4). **Tor 2a bestanden (Florian, 25.10.2026):** Startart-Platzhalter und Aufzug reichen bis zur Stilprobe, der Knopf am Hebel ist verständlich, die Kettenregel passt, das Handy läuft flüssig. Schritte 5 bis 7 gebaut am 25.10.2026 (Nachträge in Paket 5 und 2); als Nächstes Tor 2b.
 
 ### Rückfragen zu Paket 10
 
@@ -1068,6 +1069,16 @@ als Daten; die Öffnung gilt in der Sitzung, nicht in der Datei (7 bringt „off
 Pinsel nicht ein; erst das Verschieben des Bahnendes in den Innenraum lässt die Fortsetzung hinter der Lippe beginnen,
 wie 5.2 es beschreibt. (3) Der Durchbruch ist für den Strich durchlässig und nur in der Fahrt eine Wand; so bleibt das
 Zeichnen frei und die Vorab-Fahrt aus E3 kann später zeigen, ob das Tempo reicht.
+**Stand 25.10.2026 (Etappe 2, Schritt 7 gebaut; `docs/TECH.md` 4h):** Räume „offen ab Stufe“ nach 5.2 mit Deckel (Loch im
+Boden, Fenster im Erdschnitt) und Freilegung durch eine Baustelle über dem Raum; Looks je Stufe nach 2.1. Gelernt: (1) Der
+Erdschnitt als eine Fläche mit Fenstern (statt eines Streifenbands) macht die Ameisenfarm aus Richtlinie 4 ohne Masken:
+der Raum dahinter wird durch das Fenster sichtbar, der Tiefenpuffer erledigt den Rest. (2) Für den Pinsel ist ein offener
+Raum einfach ein tieferer Boden über seiner Grundfläche; so bleibt die Regel „Erdschnitt fest außer in Räumen“ im selben
+Mechanismus wie Boden und Berg. (3) Die Decke eines offenen Raums darf nicht fest sein, sonst käme die Bahn nie hinein;
+die gemalten Räume bekommen später echte Öffnungen (Tunnelkapseln in Schritt 9). (4) Ein nach unten gezeichneter Strich
+hieße für den Pinsel „nach vorn“, und am vordersten Bühnenrand ist der Boden zu; darum hält der Löser einen unter der
+Oberfläche gezeichneten Punkt über einem offenen Raum in den Spuren des Raums. So taucht die Bahn ab, wo ein Raum ist, und
+bleibt sonst oben. Platzhalter: rechteckige Löcher, Abtauchen als Knick.
 **Status: bestätigt am 24.10.2026.** Graben in Stufen trägt Florians Vorbehalt; Autoscroll wird nach dem Ausprobieren
 entschieden. **Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Der Wasserfall bleibt ein eigenes Element (er ist
 seit Etappe 1 da) und bekommt den Schalter „Fahrt dahinter gedämpft“; die Schalter Schmuck, trägt Stützen und Splash-Zone

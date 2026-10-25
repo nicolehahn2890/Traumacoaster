@@ -6,7 +6,7 @@
  * Three legt den Kontext an (stencil für Pixi-Masken); Pixi bekommt Zeichenfläche und Kontext beim Start (Game.init).
  * Dazu Licht mit Shadow Map, Nebel und Looks (light.ts, looks.ts) und die Kulissen des Levels (levelElements.ts).
  */
-import { Box3, Color, Fog, Group, PCFSoftShadowMap, Raycaster, Scene, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, type Object3D, BoxGeometry, DoubleSide, Euler, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, type Material } from 'three';
+import { Box3, Color, Fog, Group, PCFSoftShadowMap, Raycaster, Scene, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, type Object3D, BoxGeometry, DoubleSide, Euler, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, type Material, FrontSide } from 'three';
 import type { ZoneElement } from '@/zone/types';
 import { buildZoneElement } from '@/zone/build';
 import { laneToZ, zToLane } from './camera';
@@ -28,6 +28,7 @@ import { buildStartPlaceholder, type BuiltStart } from './startElements';
 import { carColor } from './train';
 import { liftRange } from '@/physics/trainSim';
 import type { StartType } from '@/track/model';
+import type { GroundHole } from '@/zone/underground';
 import type { TrackType } from './trackTypes';
 import { WorldTrain, type RailFrame } from './train';
 import { TerrainFoundation, type Foundation } from './foundations';
@@ -57,7 +58,9 @@ export class WorldRenderer {
   private elements: BuiltElement[] = [];
   private portals: PortalLike[] = [];
   /** Einträge der Zonendatei (Editor): gebaut je Kennung mit Ursprung (für das Ziehen), in einer eigenen Gruppe für Treffer */
-  private readonly zone = new Map<string, { origin: { x: number; y: number; z: number }; built: BuiltElement; growth: number }>();
+  private readonly zone = new Map<string, { origin: { x: number; y: number; z: number }; built: BuiltElement; growth: number; openFrom: number }>();
+  /** Löcher im Boden und Fenster im Erdschnitt der offenen Räume (Schritt 7) */
+  private holes: GroundHole[] = [];
   /** Fortschrittsstufe der Zone im Spiel: Einträge mit höherer Wachstumsstufe sind unsichtbar (Infinity: alle da, Editor) */
   private stage = Infinity;
   private readonly zoneGroup = new Group();
@@ -200,6 +203,20 @@ export class WorldRenderer {
     lip.material = mat;
   }
 
+  /** Freilegung eines Raums (Schritt 7): der Boden über dem Raum löst sich um den Anschlusspunkt auf (Abstand in der Bodenebene) */
+  beginGroundReveal(center: { x: number; z: number }, radius: number): void {
+    this.endReveal();
+    const ground = this.level?.ground;
+    if (!ground) return;
+    const base = ground.material as MeshLambertMaterial;
+    const mat = revealMaterial({ map: base.map, side: FrontSide });
+    mat.reveal.uRevealC.value.set(center.x, 0, laneToZ(center.z));
+    mat.reveal.uRevealR.value = radius;
+    mat.reveal.uRevealXZ.value = 1;
+    this.revealing = { lip: ground, prev: ground.material, mat };
+    ground.material = mat;
+  }
+
   setReveal(progress: number): void {
     if (this.revealing) this.revealing.mat.reveal.uReveal.value = progress;
   }
@@ -242,13 +259,35 @@ export class WorldRenderer {
   showLevel(terrain: Terrain, world: WorldDef, night = false): void {
     this.clearLevel();
     this.levelData = { terrain, world, night };
-    const groundTex = groundBandsTexture(world.palette.ground[0], 'rgba(255,245,170,0.55)', world.id);
-    const earth = strataTexture(mix('#7a5540', world.palette.ground[1], 0.3), world.id + 100);
-    this.level = buildGround(terrain, groundTex, earth);
-    this.scene.add(this.level.group);
+    this.buildLevelGround();
     this.buildElements();
     this.setLook(this.lookOverride ?? (night ? 'night' : 'day'));
   }
+
+  /** Boden und Erdschnitt (neu) bauen, mit den Löchern der offenen Räume */
+  private buildLevelGround(): void {
+    if (this.level) {
+      this.scene.remove(this.level.group);
+      this.level.dispose();
+      this.level = null;
+    }
+    if (!this.levelData) return;
+    const { terrain, world } = this.levelData;
+    const groundTex = groundBandsTexture(world.palette.ground[0], 'rgba(255,245,170,0.55)', world.id);
+    const earth = strataTexture(mix('#7a5540', world.palette.ground[1], 0.3), world.id + 100);
+    this.level = buildGround(terrain, groundTex, earth, this.holes);
+    this.scene.add(this.level.group);
+  }
+
+  /** Löcher im Boden und Fenster im Erdschnitt der offenen Räume setzen (Schritt 7); baut den Boden neu, wenn sie sich ändern */
+  setGroundHoles(holes: GroundHole[]): void {
+    const key = (h: GroundHole[]) => h.map((x) => `${x.x0},${x.x1},${x.lane0},${x.lane1},${x.y0},${x.y1}`).join('|');
+    if (key(holes) === key(this.holes)) return;
+    this.holes = holes;
+    this.buildLevelGround();
+  }
+
+
 
   /** Kulissen des Levels (Berge als Dreiteiler mit Tunnelöffnungen, Wasser, Wasserfälle, Deko) und Fundamente neu bauen */
   private buildElements(): void {
@@ -279,13 +318,13 @@ export class WorldRenderer {
   }
 
   addZoneElement(el: ZoneElement): void {
-    this.addZoneBuilt(el.id, buildZoneElement(el), el, el.growth ?? 0);
+    this.addZoneBuilt(el.id, buildZoneElement(el), el, el.growth ?? 0, el.kind === 'cave' ? el.openFrom ?? 0 : 0);
   }
 
-  /** Fortschrittsstufe setzen: Einträge, die erst später wachsen, verschwinden (Plan 2.1 Wachstumsstufen) */
+  /** Fortschrittsstufe setzen: Einträge, die erst später wachsen, und Räume, die erst später offen sind, verschwinden (Plan 2.1, 5.2) */
   setStage(stage: number): void {
     this.stage = stage;
-    for (const e of this.zone.values()) e.built.group.visible = e.growth <= stage;
+    for (const e of this.zone.values()) e.built.group.visible = e.growth <= stage && e.openFrom <= stage;
   }
 
   updateZoneElement(el: ZoneElement): void {
@@ -293,12 +332,12 @@ export class WorldRenderer {
   }
 
   /** beliebigen gebauten Eintrag unter einer Kennung in die Zone setzen (ersetzt einen gleichnamigen) */
-  addZoneBuilt(id: string, built: BuiltElement, origin: { x: number; y: number; z: number }, growth = 0): void {
+  addZoneBuilt(id: string, built: BuiltElement, origin: { x: number; y: number; z: number }, growth = 0, openFrom = 0): void {
     this.removeZoneElement(id);
     built.group.userData.elementId = id;
-    built.group.visible = growth <= this.stage;
+    built.group.visible = growth <= this.stage && openFrom <= this.stage;
     this.zoneGroup.add(built.group);
-    this.zone.set(id, { origin: { x: origin.x, y: origin.y, z: origin.z }, built, growth });
+    this.zone.set(id, { origin: { x: origin.x, y: origin.y, z: origin.z }, built, growth, openFrom });
     this.refreshFoundations();
   }
 
@@ -381,6 +420,7 @@ export class WorldRenderer {
     this.stage = Infinity;
     this.levelData = null;
     this.portals = [];
+    this.holes = [];
     this.buildElements();
     if (!this.level) return;
     this.scene.remove(this.level.group);

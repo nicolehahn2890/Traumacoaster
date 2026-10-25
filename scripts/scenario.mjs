@@ -521,6 +521,10 @@ if (want('10')) {
       car: s.abilities?.car ?? null,
       // Schritt 5: Festigkeitsfeld der Prüfzone (Dreiteiler e1 fest, sein Fenster frei und Tunnel)
       // Schritt 6: zwei Baustellen (Durchbruch b1, Verbinden b2 auf dem Dreiteiler), noch keine offen, Wand für die Fahrt
+      // Schritt 7: Raum e4 offen ab Stufe 2 (im Feld der Stufe 1 unsichtbar, kein Loch), Look der Stufe 1 ist Abend
+      e4Visible: window.tcGame.world.zone.get('e4')?.built.group.visible ?? null,
+      rooms: s.rooms.length,
+      look: window.tcGame.world.currentLook,
       sites: z?.sites.map((b) => b.variant).join(',') ?? '',
       opened: s.openedSites.size,
       rock: !!s.rock && s.rock.solid(85, 8, 0.554) && !s.rock.solid(85, 4, 0.554) && s.rock.solid(85, 4, 1.446) && !s.rock.solid(85, 8, 1) && s.rock.tunnel(85, 8, 1) && !s.rock.solid(85, 8, 0),
@@ -528,7 +532,7 @@ if (want('10')) {
   });
   console.log('zone', zone);
   check(zone.world, 'Weltrenderer läuft mit ?zone=');
-  check(zone.name === 'probe' && JSON.stringify(zone.counts) === '[3,1,1,1,2,1]', `Prüfzone geladen (Elemente, Felder, Station, Schlange, Baustelle, Coins: ${JSON.stringify(zone.counts)})`);
+  check(zone.name === 'probe' && JSON.stringify(zone.counts) === '[4,1,1,1,2,1]', `Prüfzone geladen (Elemente, Felder, Station, Schlange, Baustelle, Coins: ${JSON.stringify(zone.counts)})`);
   check(zone.path === 2 && zone.first === 'station' && zone.startX === 24, `Vorgabestück der Station steht (Knoten ${zone.path}, Start ${zone.first} bei x ${zone.startX})`);
   check(zone.coins === 5, `Coins der Gruppe in der Bühne (${zone.coins})`);
   check(zone.field === 'f1' && zone.minZoom > 3, `Feld f1 aktiv mit Zoom-Grenze (${zone.minZoom.toFixed(2)} px/m)`);
@@ -542,6 +546,7 @@ if (want('10')) {
   check(zone.chain === 20 && zone.chainLine && zone.car === 'rot', `Kettenzuglinie bei ${zone.chain} m mit Beschriftung (${zone.chainLine}), Wagenvariante ${zone.car}`);
   check(zone.rock === true, `Festigkeitsfeld: Lippe fest mit freiem Fenster, Rückwand fest, Innenraum frei und Tunnel (${zone.rock})`);
   check(zone.sites === 'breakthrough,connect' && zone.opened === 0, `Baustellen Durchbruch und Verbinden, noch geschlossen (${zone.sites}, offen ${zone.opened})`);
+  check(zone.e4Visible === false && zone.rooms === 0 && zone.look === 'dusk', `Raum ab Stufe 2 in Stufe 1 gedeckelt (sichtbar ${zone.e4Visible}, offene Räume ${zone.rooms}), Look der Stufe ${zone.look}`);
   // dieselbe Datei noch einmal gelesen ergibt denselben Stand (deterministisch)
   const again = await page.evaluate(async () => {
     const res = await fetch(`${location.pathname.replace(/[^/]*$/, '')}zones/probe/zone.json`, { cache: 'no-store' });
@@ -551,7 +556,7 @@ if (want('10')) {
     const canon = (o) => JSON.stringify(Object.fromEntries(Object.entries(o).sort(([a], [b]) => (a < b ? -1 : 1))));
     return { fileElements: file.elements.length, sameStation: canon(file.stations[0]) === canon(z.stations[0]), sameField: canon(file.fields[0]) === canon(z.fields[0]) };
   });
-  check(again.fileElements === 3 && again.sameStation && again.sameField, 'Zonendatei und geladener Stand stimmen überein');
+  check(again.fileElements === 4 && again.sameStation && again.sameField, 'Zonendatei und geladener Stand stimmen überein');
   await page.screenshot({ path: 'screenshots/scenario-10-zone.png' });
 }
 

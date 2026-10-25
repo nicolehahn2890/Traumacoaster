@@ -89,6 +89,8 @@ export class RockField {
       } else if (el.kind === 'column') {
         this.columns.push({ cx: el.x, zc: el.z, r: el.w / 2, y0: el.y, y1: el.y + el.h });
       } else if (el.kind === 'cave') {
+        // Räume „offen ab Stufe“ (Schritt 7): davor liegt der Deckel geschlossen und der Raum ist nicht erreichbar
+        if ((el.openFrom ?? 0) > stage) continue;
         this.caves.push({ x: el.x, y: el.y, zc: el.z, w: el.w, h: el.h, half: d / 2 / LANE_DEPTH });
       }
     }
@@ -104,10 +106,10 @@ export class RockField {
     return 'rock';
   }
 
-  /** Wand, Boden oder Decke eines Höhlenkastens an (x, y)? (der Raum dazwischen ist frei) */
+  /** Wand oder Boden eines Höhlenkastens an (x, y)? Der Raum dazwischen ist frei; die Decke ist offen (der Deckel ist weg, die Bahn darf von oben hinein; Schritt 7) */
   private caveWall(c: Cave, x: number, y: number): boolean {
-    const inBox = Math.abs(x - c.x) <= c.w / 2 + CAVE_WALL && y >= c.y - CAVE_WALL && y <= c.y + c.h + CAVE_WALL;
-    const inRoom = Math.abs(x - c.x) < c.w / 2 - CAVE_WALL && y > c.y + CAVE_WALL && y < c.y + c.h - CAVE_WALL;
+    const inBox = Math.abs(x - c.x) <= c.w / 2 + CAVE_WALL && y >= c.y - CAVE_WALL && y <= c.y + c.h;
+    const inRoom = Math.abs(x - c.x) < c.w / 2 - CAVE_WALL && y > c.y + CAVE_WALL;
     return inBox && !inRoom;
   }
 

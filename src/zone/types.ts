@@ -11,6 +11,7 @@ import { parseTrackType, type TrackType } from '@/world/trackTypes';
 import type { BeltLevel, GoalType } from '@/levels/types';
 import { COIN_SHAPES, type ZoneCoinGroup } from './groups';
 import { ZONE_ABILITIES, type FieldAbilityOverrides, type ZoneAbility, type ZoneUpgrade } from './abilities';
+import { LOOK_NAMES, type LookName } from '@/world/looks';
 export type { FieldAbilityOverrides, ZoneAbility, ZoneUpgrade } from './abilities';
 
 /** Zielarten, die ein Feld heute eintragen kann (Katalog v1 aus Paket 4.1, soweit der Prüfer sie schon kennt) */
@@ -53,6 +54,8 @@ export interface ZoneElement {
   growth?: number;
   /** Tiefenrolle einer Kulisse: Rückwand (hinter der Bahn), Mitte, Vorderlippe (vor der Bahn) */
   depthRole?: ZoneDepthRole;
+  /** Höhlenkasten: offen ab dieser Fortschrittsstufe (Plan 5.2; ohne Angabe immer offen); davor liegt der Deckel geschlossen */
+  openFrom?: number;
 }
 
 export interface ZoneOpening {
@@ -149,6 +152,8 @@ export interface ZoneFile {
   trackType: TrackType;
   /** Aufwertungsstufen (Plan 2.4): Stufe → Satz von Schaltern; ohne Angabe die Vorbelegung DEFAULT_UPGRADES (abilities.ts) */
   upgrades?: ZoneUpgrade[];
+  /** Look je Fortschrittsstufe (Plan 2.1, Richtlinie 6): Tag, Abend, Nacht, Neon; ohne Angabe Tag */
+  looks?: LookName[];
   elements: ZoneElement[];
   fields: ZoneField[];
   stations: ZoneStation[];
@@ -278,6 +283,7 @@ export function parseZone(json: unknown): ZoneFile | null {
     }
     if (list.length) upgrades = list.slice(0, 10);
   }
+  const looks = Array.isArray(o.looks) ? (o.looks.filter((l) => (LOOK_NAMES as readonly string[]).includes(String(l))) as LookName[]).slice(0, 10) : [];
   const elements: ZoneElement[] = [];
   const ids = new Set<string>();
   for (const raw of Array.isArray(o.elements) ? o.elements : []) {
@@ -302,6 +308,7 @@ export function parseZone(json: unknown): ZoneFile | null {
     if ((ZONE_ANCHORS as readonly string[]).includes(String(e.anchor))) el.anchor = e.anchor as ZoneAnchor;
     if (num(e.growth) && e.growth > 0) el.growth = Math.floor(e.growth);
     if ((ZONE_DEPTH_ROLES as readonly string[]).includes(String(e.depthRole))) el.depthRole = e.depthRole as ZoneDepthRole;
+    if (el.kind === 'cave' && num(e.openFrom) && e.openFrom > 0) el.openFrom = Math.floor(e.openFrom);
     ids.add(el.id);
     elements.push(el);
   }
@@ -367,7 +374,7 @@ export function parseZone(json: unknown): ZoneFile | null {
     return site;
   });
   const coinGroups = list<ZoneCoinGroup>('coinGroups', (r) => (num(r.x) && num(r.y) && num(r.z) ? { id: r.id as string, shape: (COIN_SHAPES as readonly string[]).includes(String(r.shape)) ? (r.shape as ZoneCoinGroup['shape']) : 'row', x: r.x, y: r.y, z: r.z, count: num(r.count) ? Math.max(1, Math.min(40, Math.round(r.count))) : 5, spacing: num(r.spacing) ? Math.max(0.5, r.spacing) : 2 } : null));
-  return { version: 1, name: o.name, width, trackType, ...(upgrades ? { upgrades } : {}), elements, fields, stations, queues, sites, coinGroups };
+  return { version: 1, name: o.name, width, trackType, ...(upgrades ? { upgrades } : {}), ...(looks.length ? { looks } : {}), elements, fields, stations, queues, sites, coinGroups };
 }
 
 /** Datei deterministisch schreiben: feste Feldreihenfolge, Elemente nach Kennung sortiert, zwei Nachkommastellen */
@@ -384,6 +391,7 @@ export function serializeZone(zone: ZoneFile): string {
       if (e.anchor) out.anchor = e.anchor;
       if (e.growth) out.growth = e.growth;
       if (e.depthRole) out.depthRole = e.depthRole;
+      if (e.kind === 'cave' && e.openFrom) out.openFrom = e.openFrom;
       return out;
     });
   const fields = [...zone.fields]
@@ -427,5 +435,5 @@ export function serializeZone(zone: ZoneFile): string {
     return out;
   });
   const coinGroups = byId(zone.coinGroups).map((c) => ({ id: c.id, shape: c.shape, x: round(c.x), y: round(c.y), z: round(c.z), count: c.count, spacing: round(c.spacing) }));
-  return JSON.stringify({ version: 1, name: zone.name, width: round(zone.width), trackType: zone.trackType, ...(upgrades ? { upgrades } : {}), elements, fields, stations, queues, sites, coinGroups }, null, 2) + '\n';
+  return JSON.stringify({ version: 1, name: zone.name, width: round(zone.width), trackType: zone.trackType, ...(upgrades ? { upgrades } : {}), ...(zone.looks?.length ? { looks: [...zone.looks] } : {}), elements, fields, stations, queues, sites, coinGroups }, null, 2) + '\n';
 }
