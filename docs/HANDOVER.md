@@ -180,6 +180,10 @@ ansehen.
 
 ## 5. Regeln und Eigenheiten
 
+- **Platzhalter immer dazusagen (Florian, 25.10.):** Bei jedem Stand, jeder Antwort und jedem Standbild steht dabei, was
+  nur vorläufig oder Platzhalter ist (Klötzchen, Farben, Formen aus den Level-Daten, Labor-Werte) und was gesetztes
+  System ist (Kamera, Tiefenpuffer, Dreiteiler-Prinzip, Profile aus dem Bahnmodell, Instanzen, Schatten, Looks). Nichts
+  Vorläufiges so zeigen, als wäre es der Look.
 - Keine Modell- oder Werkzeugnamen in Dateien, Commits oder Kommentaren. Die Attributionszeilen am Ende
   der Commit-Nachricht gibt die jeweilige Session vor.
 - `art-src/` (Quellbilder der Kacheln) ist nicht im Repository; das Archiv ist die Figma-Datei
