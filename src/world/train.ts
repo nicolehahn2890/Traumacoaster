@@ -11,7 +11,7 @@ import type { Vec3 } from '@/core/math3';
 import type { CarState } from '@/physics/trainSim';
 import { CAR } from '@/physics/passengers';
 import { laneToZ } from './camera';
-import { HANG_LIFT } from './trackBuilder';
+import { HANG_DROP } from './trackTypes';
 import { paintedMaterial } from './looks';
 
 /** Wagenfarben wie in der Bühnendarstellung: erster Wagen rosa, dann im Wechsel */
@@ -43,7 +43,7 @@ function part(geo: BufferGeometry, color: Color, x: number, y: number, z: number
 
 /**
  * ein Wagen als eine Geometrie in lokalen Koordinaten: x Fahrtrichtung, y oben, z Seite (Betrachterseite positiv);
- * hanging: Gondel ohne Räder, mit zwei Hängern und Laufwerk am Tragbalken (HANG_LIFT über der Bahnlinie)
+ * hanging: Gondel ohne Räder, mit zwei Hängern und Laufwerk am Tragbalken, der HANG_DROP über der Gondel liegt
  */
 function carMesh(index: number, total: number, hanging: boolean): Mesh {
   const body = index === 0 ? FIRST : BODY[index % BODY.length];
@@ -65,8 +65,8 @@ function carMesh(index: number, total: number, hanging: boolean): Mesh {
   for (const row of CAR.rows) for (const z of [-0.28, 0.28]) box(0.5, 0.12, 0.46, floor, row, y0 + 0.14, z); // Sitze
   if (hanging) {
     const top = y0 + CAR.rearWallH;
-    for (const a of [-0.6, 0.6]) box(0.14, HANG_LIFT - top + 0.2, 0.14, INK, a, (top + HANG_LIFT + 0.2) / 2, 0); // Hänger
-    box(1.6, 0.3, 0.9, INK, 0, HANG_LIFT + 0.15, 0); // Laufwerk am Tragbalken
+    for (const a of [-0.6, 0.6]) box(0.14, HANG_DROP - top + 0.2, 0.14, INK, a, (top + HANG_DROP + 0.2) / 2, 0); // Hänger
+    box(1.6, 0.3, 0.9, INK, 0, HANG_DROP + 0.15, 0); // Laufwerk am Tragbalken
   } else {
     for (const a of [-0.8, 0.8]) for (const z of [-hw * 0.8, hw * 0.8]) parts.push(part(new CylinderGeometry(0.2, 0.2, 0.1, 10).rotateX(Math.PI / 2), INK, a, 0.12, z)); // Räder
   }
@@ -87,9 +87,12 @@ function carMesh(index: number, total: number, hanging: boolean): Mesh {
 export class WorldTrain {
   readonly group = new Group();
   private cars: Mesh[] = [];
+  /** Hängebahn: die Gondeln hängen HANG_DROP unter der Bahnlinie */
+  private hanging = false;
 
   build(count: number, hanging = false): void {
     this.clear();
+    this.hanging = hanging;
     for (let i = 0; i < count; i++) {
       const car = carMesh(i, count, hanging);
       car.visible = false;
@@ -131,7 +134,8 @@ export class WorldTrain {
       n.normalize();
       s.crossVectors(t, n).normalize();
       m.makeBasis(t, n, s);
-      m.setPosition(st.x, st.y, laneToZ(st.z));
+      const drop = this.hanging ? HANG_DROP : 0;
+      m.setPosition(st.x - n.x * drop, st.y - n.y * drop, laneToZ(st.z) - n.z * drop);
       car.matrix.copy(m);
       car.matrixWorldNeedsUpdate = true;
       car.visible = true;

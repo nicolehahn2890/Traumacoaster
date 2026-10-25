@@ -4,6 +4,13 @@
  */
 export type TrackType = 'road' | 'steel' | 'wood' | 'hanging';
 
+/**
+ * Hängebahn: Der gezeichnete Strich ist der Tragbalken (die Bahnlinie der Physik), die Gondel hängt so tief darunter
+ * (Meter: Hänger plus Wagenhöhe). Der Pinsel hält den Strich entsprechend höher über dem Boden (Tor 1a, Florian:
+ * der Strich muss immer genau da sein, wo gezeichnet wird).
+ */
+export const HANG_DROP = 2.4;
+
 export const TRACK_TYPES: readonly TrackType[] = ['road', 'steel', 'wood', 'hanging'];
 
 export function parseTrackType(s: string | null | undefined): TrackType | null {

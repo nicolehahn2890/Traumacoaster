@@ -39,6 +39,7 @@ import { applyOverdraw, nearestOnTrack } from '@/track/overdraw';
 import { cutIndexNear, retractIndex } from '@/track/strokeBuffer';
 import { laneRise, laneScale, nearestLane, rayToWorld, setPerspective, tagRay, toStage, toView, viewState, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
+import { HANG_DROP, trackTypeForSkin, type TrackType } from '@/world/trackTypes';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
 import { hexNum, shade } from '@/render/paint';
 import { StartScene } from './start';
@@ -939,6 +940,16 @@ export class LevelScene implements Scene {
 
   // ------------------------------------------------------------------ Strich → Bahn
   /** Lesart (Einstellung, Umschalter unten links; die Adresse kann sie erzwingen) */
+  /** Bahntyp der Welt (Adresse vor Skin); ohne Weltrenderer der des Skins */
+  private get trackType(): TrackType {
+    return this.game?.world?.trackOverride ?? trackTypeForSkin(this.skin);
+  }
+
+  /** Mindesthöhe des Strichs über dem Boden: bei der Hängebahn hängt die Gondel HANG_DROP unter dem Strich */
+  private get groundClearance(): number {
+    return this.trackType === 'hanging' ? HANG_DROP + 0.8 : 0.8;
+  }
+
   /** Lesart: Pinsel; ?stage, ?single und ?lanes erzwingen die alten Lesarten (Szenarien, Replay-Vergleiche) */
   private get reading(): StrokeReading {
     return STROKE_MODE_URL ?? 'brush';
@@ -1222,7 +1233,7 @@ export class LevelScene implements Scene {
       single: this.singleStroke,
       fit: FIT_MODE,
       groundHeight: ground,
-      groundClearance: 0.8,
+      groundClearance: this.groundClearance,
       maxHeight: this.level.maxHeight ?? 0,
       allowTurns: this.unlocked.has('turn'),
       allowLoops: this.unlocked.has('loop'),
@@ -1664,7 +1675,7 @@ export class LevelScene implements Scene {
   private brushOptions() {
     return {
       ground: (x: number, z: number) => (this.allowTunnels ? this.terrain.groundHeight(x, z) : this.terrain.surfaceHeight(x, z)),
-      clearance: 0.8,
+      clearance: this.groundClearance,
       // Rundenschluss ab 8 m Bühne oder 60 px, je nachdem, was weiter ist
       closeSnap: Math.max(8, 60 / this.view.camera.zoom),
       // beim Nachbessern gibt die Linie höchstens 8 Bildschirm-Pixel nach

@@ -11,7 +11,7 @@ import { BoxGeometry, CylinderGeometry, Group, InstancedMesh, Matrix4, Quaternio
 import type { TrackSamples } from '@/track/model';
 import { ATTACH, MAT, SUPPORT_SPACING } from './trackBuilder';
 import type { TrackFrame } from './trackMesh';
-import type { TrackType } from './trackTypes';
+import { HANG_DROP, type TrackType } from './trackTypes';
 import { footBelow, type FootKind, type Foundation } from './foundations';
 import { zToLane } from './camera';
 
@@ -76,9 +76,10 @@ export function planWorldSupports(samples: TrackSamples, frames: TrackFrame[], t
     if (insideMountain(f.p.x, f.p.y, laneHere)) continue; // Tunnel
     const A = f.p.clone().addScaledVector(f.n, attach);
     // Fuß unter der Bahnlinie suchen (nicht unter dem Anschluss: bei niedriger Bahn läge der schon im Boden, und die
-    // Stelle zählt dann als zu kurz, nicht als schwebend); Hängebahn: der Pfeiler steht neben der Bahn
+    // Stelle zählt dann als zu kurz, nicht als schwebend); Hängebahn: unter der Gondel, der Pfeiler steht neben der Bahn
     const probeZ = hanging ? A.z + 2.4 * side : A.z;
-    const hit = footBelow(foundations, A.x, f.p.y + 0.5, zToLane(probeZ));
+    const probeY = hanging ? f.p.y - HANG_DROP + 0.5 : f.p.y + 0.5;
+    const hit = footBelow(foundations, A.x, probeY, zToLane(probeZ));
     if (!hit) {
       stats.floating++;
       continue;

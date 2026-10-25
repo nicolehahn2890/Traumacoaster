@@ -9,10 +9,10 @@ import type { TrackPath, TrackSamples } from '@/track/model';
 import type { CarState } from '@/physics/trainSim';
 import type { PassengerView } from '@/physics/passengers';
 import type { CharacterDef } from '@/editor/characters';
-import { LANE_MAX, LANE_MIN, setView, viewDistance, viewScale, viewState } from '@/track/stage';
+import { LANE_DEPTH, LANE_MAX, LANE_MIN, setView, viewDistance, viewScale, viewState } from '@/track/stage';
 import type { CameraView } from '@/world/camera';
 import type { WorldRenderer } from '@/world/renderer';
-import { trackTypeForSkin } from '@/world/trackTypes';
+import { HANG_DROP, trackTypeForSkin } from '@/world/trackTypes';
 import { Camera } from './camera';
 import { Sky } from './sky';
 import { GlowLayer } from './shaders/glowLayer';
@@ -163,8 +163,21 @@ export class WorldView {
   /** onRails: Der Zug fährt auf der Bahn (nicht im Flug nach einem Fehlschlag); die Wagen liegen dann auf den Schienen */
   updateTrain(cars: CarState[], passengers: PassengerView[], dt: number, onRails = true): void {
     const rail = onRails ? (s: number) => this.trackR.railFrame(s) : undefined;
-    this.trainR.update(cars, passengers, dt, rail);
+    this.trainR.update(this.hangCars(cars, rail), passengers, dt, rail);
     this.worldR?.updateTrain(cars, rail ?? null);
+  }
+
+  /**
+   * Hängebahn in der Welt: Die Gondel hängt HANG_DROP unter der Bahnlinie, also auch die Fahrgäste der Bühne (die
+   * Weltdarstellung versetzt ihre Gondeln selbst); sonst die Wagen unverändert
+   */
+  private hangCars(cars: CarState[], rail?: (s: number) => { U: { x: number; y: number; z: number } } | null): CarState[] {
+    if (this.worldR?.currentType !== 'hanging') return cars;
+    return cars.map((c) => {
+      const fr = rail?.(c.s);
+      const U = fr ? fr.U : { x: c.upx, y: c.upy, z: c.upz };
+      return { ...c, x: c.x - U.x * HANG_DROP, y: c.y - U.y * HANG_DROP, z: c.z - (U.z * HANG_DROP) / LANE_DEPTH };
+    });
   }
 
   /** Effekte an/aus (Dev-Overlay, Einstellung): Leuchtebenen (der Spur-Filter mit Punktraster ist seit Etappe 1 weg) */
@@ -199,7 +212,7 @@ export class WorldView {
   /** Stehender Zug (Zeichenmodus): Pose setzen und Cut-out-Clips fortschreiben */
   updateStandingTrain(cars: CarState[], passengers: PassengerView[], dt: number): void {
     const rail = (s: number) => this.trackR.railFrame(s);
-    this.trainR.update(cars, passengers, dt, rail);
+    this.trainR.update(this.hangCars(cars, rail), passengers, dt, rail);
     this.trainR.idleUpdate(dt);
     this.worldR?.updateTrain(cars, rail);
   }

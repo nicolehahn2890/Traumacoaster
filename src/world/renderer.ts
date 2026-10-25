@@ -94,6 +94,11 @@ export class WorldRenderer {
     return this.look;
   }
 
+  /** Bahntyp der letzten Bahn (Adresse vor Skin) */
+  get currentType(): TrackType {
+    return this.type;
+  }
+
   /** der geteilte WebGL-Kontext (für Pixi) */
   get context(): WebGL2RenderingContext {
     return this.three.getContext() as WebGL2RenderingContext;

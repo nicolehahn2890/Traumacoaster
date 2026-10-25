@@ -2,9 +2,9 @@
  * Die Bahnprofile der vier Typen (Richtlinie 3a, Tiefen-Labor) als Meshes entlang der Rahmen des Bahnmodells.
  * Straße: Betonplatte, Asphalt, helle Ränder, Mittelstreifen, Brüstung hinten. Stahl: zwei cremefarbene Rohre, blaues
  * Rückgrat, orange Schwellen, Streben. Holz: Schichtholzstapel unter Flachstahl-Schienen, Schwellen, Laschen, Handlauf
- * hinten mit Pfosten. Hängebahn: Tragbalken mit Rippen HANG_LIFT über der Bahnlinie, an der die Gondeln hängen (die
- * Physik fährt unverändert auf der Bahnlinie). Farben sind Platzhalter aus dem Labor; Umfärben per Shader kommt mit den
- * Looks (Schritt 4). Materialien werden geteilt und nie freigegeben, Geometrien je Bahn.
+ * hinten mit Pfosten. Hängebahn: Tragbalken mit Rippen auf der Bahnlinie (dem Strich), die Gondeln hängen HANG_DROP
+ * darunter (train.ts). Farben sind Platzhalter aus dem Labor; Umfärben per Shader kommt mit den Looks (Schritt 4).
+ * Materialien werden geteilt und nie freigegeben, Geometrien je Bahn.
  */
 import { BoxGeometry, CanvasTexture, ClampToEdgeWrapping, DoubleSide, Group, Mesh, RepeatWrapping, SRGBColorSpace, type MeshLambertMaterial } from 'three';
 import { paintedMaterial } from './looks';
@@ -48,10 +48,8 @@ function dashMaterial(): MeshLambertMaterial {
   return (dashMat = paintedMaterial({ map: t, transparent: true, side: DoubleSide, depthWrite: false }));
 }
 
-/** Hängebahn: der Tragbalken liegt so hoch über der Bahnlinie (Wagenhöhe plus Hänger) */
-export const HANG_LIFT = 2.4;
 /** Anschlusshöhe der Stützen relativ zur Bahnmitte je Typ (Meter): unter der Bahn, bei der Hängebahn über dem Balken */
-export const ATTACH: Record<TrackType, number> = { road: -0.58, steel: -0.92, wood: -0.66, hanging: HANG_LIFT + 0.58 };
+export const ATTACH: Record<TrackType, number> = { road: -0.58, steel: -0.92, wood: -0.66, hanging: 0.58 };
 /** Abstand der Stützen entlang der Bahn je Typ (Meter) */
 export const SUPPORT_SPACING: Record<TrackType, number> = { road: 9, steel: 7, wood: 5.4, hanging: 10 };
 
@@ -94,10 +92,9 @@ function buildWood(g: Group, frames: TrackFrame[], length: number): void {
 }
 
 function buildHanging(g: Group, frames: TrackFrame[], length: number): void {
-  const b = HANG_LIFT;
-  sweep(g, frames, rect(-0.32, b, 0.32, b + 0.56), MAT.steelBlue, { closed: true, uScale: 3 }); // Tragbalken oben
-  sweep(g, frames, [{ x: -0.36, y: b + 0.57 }, { x: 0.36, y: b + 0.57 }], MAT.cream); // helle Oberkante
-  g.add(alongTrack(frames, length, new BoxGeometry(0.12, 0.72, 0.92), MAT.ink, 2.0, { x: 0, y: b + 0.28 })); // Rippen
+  sweep(g, frames, rect(-0.32, 0, 0.32, 0.56), MAT.steelBlue, { closed: true, uScale: 3 }); // Tragbalken auf dem Strich
+  sweep(g, frames, [{ x: -0.36, y: 0.57 }, { x: 0.36, y: 0.57 }], MAT.cream); // helle Oberkante
+  g.add(alongTrack(frames, length, new BoxGeometry(0.12, 0.72, 0.92), MAT.ink, 2.0, { x: 0, y: 0.28 })); // Rippen
 }
 
 /** Bahn eines Typs als Gruppe (Schienen, Schwellen, Streben) */

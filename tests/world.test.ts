@@ -7,7 +7,8 @@ import { planBrushTrack } from '@/track/brushTrack';
 import { railBanksFor, sampleTrack, type TrackPath } from '@/track/model';
 import { Terrain } from '@/physics/terrain';
 import { rect, ring, sweepGeometry, trackFrames } from '@/world/trackMesh';
-import { ATTACH, HANG_LIFT, SUPPORT_SPACING, buildTrack } from '@/world/trackBuilder';
+import { ATTACH, SUPPORT_SPACING, buildTrack } from '@/world/trackBuilder';
+import { HANG_DROP } from '@/world/trackTypes';
 import { TerrainFoundation } from '@/world/foundations';
 import { buildWorldSupports, planWorldSupports, SUPPORT_MIN_H } from '@/world/supports';
 import { buildCave, buildColumn, buildFlat, buildPortal, buildThreePart, buildWater, buildWaterfall } from '@/world/elements';
@@ -249,8 +250,10 @@ describe('Weltrenderer: Stützen auf Fundamentflächen (Schritt 3)', () => {
       });
       expect(parts).toBeGreaterThanOrEqual(3);
     }
-    // Hängebahn: der Tragbalken liegt HANG_LIFT über der Bahnlinie, die Stützen greifen darüber
-    expect(ATTACH.hanging).toBeGreaterThan(HANG_LIFT);
+    // Hängebahn: der Tragbalken liegt auf der Bahnlinie (dem Strich), die Stützen greifen darüber, die Gondel hängt darunter
+    expect(ATTACH.hanging).toBeGreaterThan(0);
+    expect(ATTACH.hanging).toBeLessThan(1);
+    expect(HANG_DROP).toBeGreaterThan(2);
     expect(ATTACH.wood).toBeLessThan(0);
   });
 
@@ -351,6 +354,17 @@ describe('Weltrenderer: Kulissen-Platzhalter und Looks (Schritt 4)', () => {
     expect(water.foundation!.blocks!(150, -1)).toBe(true);
     expect(water.foundation!.blocks!(150, 1)).toBe(false);
     for (const e of withPortals) e.dispose();
+    // Berg ohne Spur: fünf Scheiben gestaffelt, aber nur drei Meshes; die Öffnung gehört zur Scheibe ihrer Spur
+    const wide = new Terrain({ width: 200, terrain: [{ kind: 'flat' }, { kind: 'mountain', x: 55, width: 34, height: 18 }] } as never);
+    const stack = elementsFromTerrain(wide, world, [{ x: 44, y: 3, z: 1.8 }, { x: 66, y: 3, z: 1.8 }]);
+    const mountain = stack.find((e) => e.kind === 'threePart')!;
+    expect(mountain.group.children.length).toBe(3);
+    expect(mountain.openings!.length).toBe(2);
+    expect(stack.filter((e) => e.kind === 'portal').length).toBe(2);
+    const lipVerts = (mountain.group.children[1] as Mesh).geometry.getAttribute('position').count;
+    const backVerts = (mountain.group.children[0] as Mesh).geometry.getAttribute('position').count;
+    expect(lipVerts).toBeGreaterThan(backVerts);
+    for (const e of stack) e.dispose();
   });
 
   it('Looks: Presets setzen die Umfärbe-Uniforms, Adresse wird geprüft', () => {

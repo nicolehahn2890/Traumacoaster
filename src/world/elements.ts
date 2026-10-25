@@ -6,7 +6,8 @@
  * Tiefenvolumen), Höhlenkasten (offene Front, Boden tragfähig), Wasserfläche (Stützen verboten), Wasserfall (Band),
  * Portal (Ring um eine Öffnung). Koordinaten: x entlang der Bühne, y Höhe, z Tiefe in Spuren.
  */
-import { BoxGeometry, CanvasTexture, Color, CylinderGeometry, DoubleSide, Group, Mesh, MeshLambertMaterial, Path, PlaneGeometry, Shape, ShapeGeometry, SRGBColorSpace, TorusGeometry, type Material, type MeshLambertMaterialParameters } from 'three';
+import { BoxGeometry, CanvasTexture, CircleGeometry, Color, CylinderGeometry, DoubleSide, Group, Mesh, MeshLambertMaterial, Path, PlaneGeometry, Shape, ShapeGeometry, SRGBColorSpace, TorusGeometry, type Material, type MeshLambertMaterialParameters } from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { LANE_DEPTH } from '@/track/stage';
 import { laneToZ } from './camera';
 import type { Foundation, FootHit } from './foundations';
@@ -135,6 +136,57 @@ export function buildThreePart(outline: Array<[number, number]>, z: number, dept
   return finish('threePart', g, [back.material as Material, lipMat, dark], { openings: [...openings] });
 }
 
+/** eine Scheibe eines Bergstapels: Silhouette (Welt-XY) auf Spur z mit ihren Öffnungen */
+export interface MountainLayer {
+  outline: Array<[number, number]>;
+  z: number;
+  openings: Opening[];
+}
+
+/**
+ * Bergstapel: ein Dreiteiler je Spur, hintereinander gestaffelt wie die Silhouetten der Bühne (ein Berg ohne feste Spur
+ * steht auf allen fünf); Rückwände, Lippen und Böden aller Scheiben sind zu je einer Geometrie verschmolzen, also drei
+ * Zeichenaufrufe für den ganzen Berg. Die Bahn jeder Spur verschwindet hinter der Lippe ihrer Scheibe und tritt an den
+ * Öffnungen dieser Scheibe aus; die Scheiben davor verdecken sie zusätzlich, wo ihre Silhouette hoch genug ist.
+ */
+export function buildMountainStack(layers: MountainLayer[], thickness: number, color: string, interior = '#14101a'): BuiltElement {
+  const backs: ShapeGeometry[] = [];
+  const lips: ShapeGeometry[] = [];
+  const floors: BoxGeometry[] = [];
+  const openings: Opening[] = [];
+  for (const layer of layers) {
+    const Zc = laneToZ(layer.z);
+    backs.push(new ShapeGeometry(shapeOf(layer.outline)).translate(0, 0, Zc - thickness / 2) as ShapeGeometry);
+    lips.push(new ShapeGeometry(shapeOf(layer.outline, layer.openings)).translate(0, 0, Zc + thickness / 2) as ShapeGeometry);
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    for (const [px, py] of layer.outline) {
+      minX = Math.min(minX, px);
+      maxX = Math.max(maxX, px);
+      minY = Math.min(minY, py);
+    }
+    floors.push(new BoxGeometry(maxX - minX, 0.2, thickness).translate((minX + maxX) / 2, minY + 0.1, Zc) as BoxGeometry);
+    openings.push(...layer.openings);
+  }
+  const g = new Group();
+  const mats: Material[] = [];
+  const add = (parts: BufferGeometryLike[], material: MeshLambertMaterial): void => {
+    if (!parts.length) return;
+    const merged = mergeGeometries(parts, false);
+    for (const p of parts) p.dispose();
+    if (!merged) return;
+    g.add(new Mesh(merged, material));
+    mats.push(material);
+  };
+  add(backs, mat(new Color(color).multiplyScalar(0.7).getStyle()));
+  add(lips, mat(color));
+  add(floors, mat(interior));
+  return finish('threePart', g, mats, { openings });
+}
+
+type BufferGeometryLike = ShapeGeometry | BoxGeometry;
+
 /** Säule oder Stamm: Zylinder mit Fuß bei (x, y); depthOnly schreibt nur Tiefe (unsichtbares Volumen hinter einem gemalten Stamm) */
 export function buildColumn(x: number, y: number, z: number, r: number, h: number, color: string, depthOnly = false): BuiltElement {
   const m = depthOnly ? new MeshLambertMaterial({ colorWrite: false }) : mat(color);
@@ -207,14 +259,27 @@ export function buildWaterfall(x: number, yBottom: number, z: number, w: number,
   return built;
 }
 
-/** Portal, Tunnelmund: Ring um die Öffnung (x, y) auf Spur z; die Anschlussachse der Bahn läuft durch den Ring hinter die Lippe */
-export function buildPortal(x: number, y: number, z: number, r: number, thickness: number, color: string): BuiltElement {
+/**
+ * Portal, Tunnelmund: Ring um die Öffnung (x, y) auf Spur z, dahinter eine dunkle Scheibe als Mund (so liest sich die
+ * Öffnung als Loch, nicht als Delle); die Anschlussachse der Bahn läuft durch den Ring hinter die Lippe
+ */
+export function buildPortal(x: number, y: number, z: number, r: number, thickness: number, color: string, mouth = true): BuiltElement {
   const m = mat(color);
   const mesh = new Mesh(new TorusGeometry(r, thickness, 8, 24), m);
   mesh.position.set(x, y, laneToZ(z));
   const g = new Group();
   g.add(mesh);
-  return finish('portal', g, [m], { openings: [{ x, y, r }] });
+  const mats: Material[] = [m];
+  if (mouth) {
+    const dark = mat('#0b0910');
+    const disc = new Mesh(new CircleGeometry(r, 24), dark);
+    disc.position.set(x, y, laneToZ(z) - 0.6);
+    g.add(disc);
+    mats.push(dark);
+  }
+  const built = finish('portal', g, mats, { openings: [{ x, y, r }] });
+  for (const c of g.children) if (c !== mesh) (c as Mesh).castShadow = false;
+  return built;
 }
 
 /** Spurabstand in Metern (für Maße in der Tiefe) */

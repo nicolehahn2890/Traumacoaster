@@ -173,9 +173,13 @@ Chunk, 527 kB, 132 kB gzip); ohne Schalter ist das Spiel unverändert.
 - **Licht** (`src/world/light.ts`): Umgebungslicht 0,92, Himmelslicht 0,15, Richtungslicht 0,22 von hinten oben links (wie im
   Labor), Lambert-Materialien überall; Schatten, Nebel und Looks ab Schritt 4.
 - **Holz und Hängebahn** (Schritt 3, `trackBuilder.ts`): Holz mit Schichtholzstapeln unter Flachstahl-Schienen bei ±0,55 m,
-  Schwellen alle 1 m, Laschen alle 3 m, Handlauf hinten mit Pfosten; Hängebahn mit Tragbalken und Rippen `HANG_LIFT` = 2,4 m
-  über der Bahnlinie, denn die Physik fährt unverändert auf der Bahnlinie: Die Gondel hängt mit zwei Hängern und einem
-  Laufwerk am Balken (`WorldTrain.build(count, hanging)`), die Stützen greifen über den Balken (`ATTACH.hanging` = 2,98 m).
+  Schwellen alle 1 m, Laschen alle 3 m, Handlauf hinten mit Pfosten. Hängebahn: Der Tragbalken mit Rippen liegt **auf der
+  Bahnlinie**, also genau auf dem Strich (Tor 1a, 25.10.: Florian will den Strich immer dort, wo er zeichnet; die erste
+  Fassung hatte den Balken 2,4 m über dem Strich und die Gondel auf dem Strich). Die Gondel hängt `HANG_DROP` = 2,4 m
+  darunter (`src/world/trackTypes.ts`): die Welt versetzt ihre Gondel-Geometrie (`WorldTrain`, Hänger und Laufwerk bis zum
+  Balken), die Bühne versetzt die Wagenzustände für ihre Fahrgäste (`WorldView.hangCars`), die Physik fährt unverändert auf
+  der Linie. Der Pinsel hält den Strich bei der Hängebahn `HANG_DROP` + 0,8 m über dem Boden (`LevelScene.groundClearance`),
+  die Stützen greifen über den Balken (`ATTACH.hanging` = 0,58 m) und suchen ihren Fuß unter der Gondel.
 - **Stützen auf Fundamentflächen** (Schritt 3, `src/world/foundations.ts`, `src/world/supports.ts`): Ein Fundament meldet die
   höchste tragende Fläche unter einem Punkt (`surfaceBelow`); Etappe 1 kennt das Terrain (Boden plus Berg, Wasser trägt
   nicht), Kulissen und Höhlenböden melden ihre Flächen später über Metadaten statt über den Alpha-Scan des Labors.
@@ -199,8 +203,12 @@ Chunk, 527 kB, 132 kB gzip); ohne Schalter ist das Spiel unverändert.
   (Zylinder, wahlweise nur Tiefe ohne Farbe als unsichtbares Volumen), Höhlenkasten (Rückwand, Boden, Decke, Seiten; der
   Boden ist ein Fundament), Wasserfläche (waagerecht, durchscheinend, sperrt Füße über `Foundation.blocks`), Wasserfall
   (Band), Portal (Ring um eine Öffnung). `src/world/levelElements.ts` bildet die heutigen Level-Daten darauf ab: Berge als
-  Dreiteiler über ihre Spur ±0,45 (ohne Spur über alle), mit Öffnungen an den Tunnelportalen der Bahn (`setTunnelPortals`
-  aus `TrackRenderer.draw`, Radius 2 m wie der Platzhalter-Kreis der Bühne) und einem Portalring davor; Seen und Flüsse
+  Dreiteiler je Spur (Scheibe ±0,45 Spuren um die Spur); ein Berg ohne feste Spur steht wie auf der Bühne gestaffelt auf
+  allen fünf Spuren (`buildMountainStack`: Rückwände, Lippen und Böden aller Scheiben zu drei Geometrien verschmolzen,
+  drei Zeichenaufrufe je Berg; Tor 1a: als ein 41 m tiefer Klotz lag seine Vorderseite im geneigten Bild zehn Meter unter
+  der Rückseite, die Bahn schwebte sichtbar dazwischen), mit Öffnungen je Scheibe an den Tunnelportalen der Bahn dieser
+  Spur (`setTunnelPortals` aus `TrackRenderer.draw`, ±0,6 Spuren, Radius 2 m wie der Platzhalter-Kreis der Bühne) und
+  einem Portalring davor, hinter dem eine dunkle Scheibe den Tunnelmund als Loch lesbar macht; Seen und Flüsse
   als Wasserflächen (Breite minus 3 m), Wasserfälle als Bänder, Deko-Bauten als beschriftete Flächen. Die Bühne blendet
   ihre Berge, Wasser und Deko aus (`cover`).
 - **Licht, Schatten, Nebel, Looks als Module** (Schritt 4): `light.ts` (`WorldLights`: Umgebungs-, Himmels- und

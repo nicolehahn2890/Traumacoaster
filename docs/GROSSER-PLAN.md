@@ -427,6 +427,17 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
    den Berg); der Himmel liegt noch in Pixi und folgt nur dem Nacht-Level, nicht dem Look (Nachtrag für Schritt 4 der
    Richtlinie: Himmel in die Welt, sobald ferne Kulissen kommen). Level 32 mit Bahn durch den Berg: 106 Zeichenaufrufe,
    120 fps am Mac. Replay `--world`: unverändert (250 Profile, 7410 Stützen, Median 2,0 px, kein Fehler).
+10. **Tor 1a, erste Runde (25.10., Florians Handy-Test aller Links):** 3D-Optik und Schatten machen es besser. Zwei
+    Befunde: (a) Die Hängebahn passte nicht, weil der Balken 2,4 m über dem Strich lag; **Regel von Florian: Der Strich
+    muss immer genau da sein, wo gezeichnet wird.** Behoben: Der Balken liegt auf dem Strich, die Gondel hängt
+    `HANG_DROP` = 2,4 m darunter (Welt und Bühnen-Fahrgäste versetzt, Pinsel hält 3,2 m Abstand zum Boden, Stützen suchen
+    den Fuß unter der Gondel). (b) Die Berge waren nicht verständlich. Befund beim Nachstellen: Ein Berg ohne feste Spur
+    (Level 32) war ein einziger 41 m tiefer Dreiteiler; im geneigten Bild liegt seine Vorderseite zehn Meter unter der
+    Rückseite, die Bahn schwebte sichtbar dazwischen, und der Tunnel war nicht zu sehen. Behoben: Ein solcher Berg steht
+    wie auf der Bühne als Scheibe je Spur gestaffelt (zu drei Zeichenaufrufen verschmolzen), jede Scheibe mit den
+    Öffnungen der Bahn ihrer Spur; die Tunnelmünder bekommen eine dunkle Scheibe hinter dem Ring. Offen am Tor: fps-Werte vom Handy, Kantenglättung an oder aus, was an den Bergen unklar ist (Aussehen, das
+    Verschwinden der Bahn hinter der Lippe oder der Dreiteiler-Gedanke selbst); die gedimmt sichtbare Bahn im Berg kommt
+    mit den Fels-Regeln in E2 (Paket 5.2). Replay `--world` nach den Fixes: 306 Bahnprofile (Florians Handy-Striche vom 25.10. sind aufgezeichnet, 261 → über 300 Aufnahmen), 8835 Stützen, 64 Stellen ohne Fundament (neue Aufnahmen über Wasser), Median 2,0 px, kein Fehler.
 
 ## Paket 10: Etappen und Abnahmen (Vorschlag aus allem Bestätigten)
 
