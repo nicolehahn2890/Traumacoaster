@@ -530,6 +530,16 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   im Median 0,77 statt 1,17 Spuren, ohne Zonenregeln 0,41 statt 0,94; Tiefensprünge und Vorschau-Sprünge unverändert (12,5
   und 51,8 je berührendem Strich; ohne Zonenregeln 11,3 und 43,4). Der Rest des Wackelns sind die 15 m der Spitze und
   Kreuzungen, an denen der neue Strang vor oder hinter den alten muss; der alte bewegt sich nicht mehr.
+  **Freies Gelände wie vor dem Feld** (Florians Rückmeldung 25.10.: Tunnel und Fels besser, das Zeichnen im Freien
+  schlechter als davor): Die Erde zählte bis `LIFT_MAX` 2 m unter der Oberfläche als frei (angehoben), damit die Kette
+  am Lochrand nicht reißt; das schob die Bodenschranke auf niedrigen Strichen um bis zu 0,7 Spuren nach hinten, dazu hielt
+  der Wunsch `FIELD_GAP` Abstand von der Bodenschranke und der Anlauf kündigte sie an. Jetzt gilt die Mindesthöhe über
+  der Erde hart und exakt wie in den Levels (die Enden der Abschnitte werden zwischen zwei Abtastungen genau gesucht,
+  `WallKind` nennt, was begrenzt), Erde ist nur bis `LIFT_REACH` 6 m vor und hinter einer Höhle und bis `LIFT_MAX` unter
+  der Oberfläche frei, Abstand (`FIELD_GAP`, `CHAIN_MARGIN`) und Anlauf gibt es nur an Elementwänden und Höhlen. Test:
+  ein Strich mit Hügel, Tal und tiefem Stück weit weg von Elementen ergibt mit Feld dieselbe Tiefe wie ohne (unter 5 cm).
+  Gemessen an 159 Aufnahmen: Loslassen im Median 0,46 Spuren mit und 0,40 ohne Zonenregeln (vorher 0,77 und 0,41),
+  Vorschau-Sprünge 55,1 und 48,2, nichts blockiert oder abgeschnitten.
   **Pinsel auf dem Feld** (`BrushOptions.field`: `free`, `solid`, `floor`; ohne Feld gilt in den Levels der Boden wie
   bisher): je Linienpunkt die freien Abschnitte, daraus `chooseChain` eine Kette über den ganzen Strich (dynamisches
   Programm): je Punkt kostet ein Abschnitt den Abstand der Wunschtiefe (Bildhöhe über der Erde) zu ihm in Spuren, eine

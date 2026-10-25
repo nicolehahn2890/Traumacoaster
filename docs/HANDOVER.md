@@ -105,6 +105,13 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Teil und ein Rundenschluss werden neu gelöst. Sprung beim Loslassen an 119 Aufnahmen im Median 0,77 statt 1,17 Spuren
   (ohne Zone 0,41 statt 0,94). Tests 277 grün, Build grün, Replay `--world` unverändert, Szenario 10 grün. Offen aus dem
   Freiraumfeld-Vorschlag: Ebenen-Boden und Räume im Editor (braucht Florians Bild der Ebenen), dann Tor 2b erneut.
+  Florians Rückmeldung zum Feld (25.10.): Tunnel und Fels besser, aber das Zeichnen im Freien schlechter als davor; die
+  Höhlen meint er wie seine Referenzen (runde, geschwungene, parallaktische Ebenen, siehe `refs/traumacoaster-gpt
+  explore/`, Collagen vom 25.10. und Parallax-Baukasten). Fix (25.10., TECH.md 4h „Freies Gelände wie vor dem Feld“):
+  Mindesthöhe über der Erde wieder hart und exakt wie in den Levels, Anheben nur nahe Höhlen, Abstand und Anlauf nur an
+  Elementwänden; Test, dass das Feld im freien Gelände dieselbe Tiefe liefert wie ohne Feld. Messung an 159 Aufnahmen:
+  Loslassen 0,46 Spuren mit und 0,40 ohne Zonenregeln. Tests 278 grün, Build grün. Nächster Vorschlag (Plan Paket 5):
+  Ebenen-Probe mit gemalten Landschaftskörpern aus dem Parallax-Baukasten im Feld.
 - **24.10., Etappe 1 begonnen** (Branch `etappe-1-weltrenderer`, Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10).
   Schritt 1 gebaut: Weltrenderer hinter `?world=1` (Three-Szene im selben WebGL-Kontext, Pixi zeichnet davor den Himmel und
   darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem

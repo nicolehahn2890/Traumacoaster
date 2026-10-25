@@ -87,15 +87,19 @@ describe('Freiraumfeld (Tor 2b, Plan Paket 5)', () => {
     expect(free.touched).toBe(false);
     expect(free.intervals.length).toBe(1);
     expect(free.intervals[0].a).toBeCloseTo(-2, 6);
-    // knapp unter der vordersten Bodenlinie gemalt: vorn noch frei (die Bahn wird angehoben), weiter hinten Erde
-    const low = f.freeLanes(toStage(40, -0.5, -2), toWorld, 0.8);
-    expect(low.intervals.length).toBe(1);
-    expect(low.intervals[0].a).toBeCloseTo(-2, 6);
-    expect(low.intervals[0].b).toBeLessThan(-1.5);
-    // tief unter der vordersten Bodenlinie: kein freier Abschnitt, Notspur vorn
+    // unter der Mindesthöhe über der vordersten Bodenlinie gemalt: wie in den Levels kein freier Abschnitt, Notspur vorn
+    // (die Bahn wird angehoben); fern von Höhlen gilt die Mindesthöhe hart
+    const low = f.freeLanes(toStage(40, 0.3, -2), toWorld, 0.8);
+    expect(low.intervals).toEqual([]);
+    expect(low.fallback).toBeCloseTo(-2, 6);
     const deep = f.freeLanes(toStage(40, -3, -2), toWorld, 0.8);
     expect(deep.intervals).toEqual([]);
     expect(deep.fallback).toBeCloseTo(-2, 6);
+    // die Bodenschranke ist genau die Mindesthöhe: bei Bildhöhe 8 endet der freie Abschnitt, wo der Strahl 0,8 m über der Erde liegt
+    const open = f.freeLanes({ X: 40, Y: 8 }, toWorld, 0.8);
+    expect(open.intervals.length).toBe(1);
+    expect(open.intervals[0].bKind).toBe('earth');
+    expect(open.intervals[0].b).toBeCloseTo((8 - 0.8) / 4.2, 2);
     // im Fels einer hohen Säule über alle Spuren: nichts frei und keine Notspur (blockiert)
     const wall = new FreeField([{ ...column, x: 85, w: 60, h: 40 }], 0, () => 0);
     const blocked = wall.freeLanes(toStage(85, 5, 0), toWorld, 0.8);

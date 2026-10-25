@@ -1132,7 +1132,13 @@ sonst klebt die Bahn an der Wand, an der sie hereinkam. Gemessen an 98 Aufnahmen
 Sprünge etwa wie mit den Sonderregeln (11,3 je Strich, Vorschau 51,0; ohne Zonenregeln 11,2 und 40,1). Stützen und Fahrt lesen das Feld (25.10.2026):
 Füße auf allem, was trägt, kein Fuß im Festen, Tunnel-Meter unter einer Decke; das alte Festigkeitsfeld ist weg. Spitze
 (25.10.2026): Beim Loslassen bleibt, was die Vorschau fest gezeigt hat; Sprung beim Loslassen im Median 0,77 statt 1,17
-Spuren (119 Aufnahmen). Offen: Ebenen-Boden und Räume im Editor (Florians Bild der Ebenen, Leitsatz 5), dann Tor 2b erneut.
+Spuren (119 Aufnahmen). **Florians Rückmeldung (25.10.2026):** Tunnel und Fels besser, das Zeichnen im Freien schlechter
+als vor dem Feld; die Höhlen sind wie seine Referenzen gemeint (runde, geschwungene Formen aus vielen parallaktischen
+Ebenen, verdeckt durch Ebenen davor; Höhlen brechen durch Ebenenverschiebung und Effekte auf, wie genau ist noch zu
+erarbeiten; Collagen Metropolenwirbel, Frostfalten, Stammfenster vom 25.10.2026 und der Parallax-Baukasten in
+`refs/traumacoaster-gpt explore/`). Fix am selben Tag: freies Gelände rechnet wieder genau wie vor dem Feld (Mindesthöhe
+hart, Anheben nur nahe Höhlen, Abstand und Anlauf nur an Elementwänden; Test dafür). Offen: Ebenen-Probe (gemalte
+Landschaftskörper mit Masken im Feld, Höhle mit Freilegung per Ebenenverschiebung, Vorschlag unten), dann Tor 2b erneut.
 **Status: bestätigt am 24.10.2026.** Graben in Stufen trägt Florians Vorbehalt; Autoscroll wird nach dem Ausprobieren
 entschieden. **Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Der Wasserfall bleibt ein eigenes Element (er ist
 seit Etappe 1 da) und bekommt den Schalter „Fahrt dahinter gedämpft“; die Schalter Schmuck, trägt Stützen und Splash-Zone

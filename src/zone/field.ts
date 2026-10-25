@@ -32,20 +32,28 @@ export const BOX_WALL = 0.6;
 /** so tief (Meter) unter der Oberfläche beginnt eine Höhle für den Pinsel */
 export const CAVE_DIVE = 0.3;
 /**
- * so tief (Meter) darf ein Strich in die Erde reichen und gilt noch als frei: die Bahn wird dort auf die Oberfläche
- * angehoben (wie bisher „unten gezeichnet: vorn und angehoben“). Tiefer ist nur noch die Notspur mit der kleinsten
- * Eindringtiefe frei. Elemente sperren immer hart
+ * Nahe einer Höhle (bis LIFT_REACH Meter vor und hinter ihrer Grundfläche) darf ein Strich bis LIFT_MAX Meter in die Erde
+ * reichen und gilt noch als frei: die Bahn wird dort auf die Oberfläche angehoben, so reißt die Kette am Lochrand nicht.
+ * Überall sonst gilt die Mindesthöhe über der Erde hart wie in den Levels (unten gezeichnet heißt vorn), tiefer bleibt nur
+ * die Notspur mit der kleinsten nötigen Anhebung. Elemente sperren immer hart
  */
 export const LIFT_MAX = 2;
+export const LIFT_REACH = 6;
 /** Spurschritt der Abtastung am Strahl */
 const STEP = 0.05;
 /** eine Decke bis zu dieser Höhe (Meter) über einem Punkt macht ihn zum Tunnel */
 export const CEILING = 12;
 
+/** was einen freien Abschnitt am Strahl begrenzt: die Erde (Mindesthöhe über dem Boden), ein Element, der Bühnenrand */
+export type WallKind = 'earth' | 'element' | 'edge';
+
 /** freier Tiefen-Abschnitt am Strahl (Spuren, vorn klein) */
 export interface FreeInterval {
   a: number;
   b: number;
+  /** was den Abschnitt vorn (a) und hinten (b) begrenzt */
+  aKind: WallKind;
+  bKind: WallKind;
   /** Höhle: unter der Oberfläche oder im Innenraum eines Dreiteilers (Kennung des Raums oder Elements) */
   cave: string | null;
   /** die Höhle zieht an: der Strahl liegt auch auf ihrer mittleren Spur in ihr (der Strich ist hinein gemalt) */
@@ -227,52 +235,60 @@ export class FreeField {
 
   /**
    * Freie Tiefen-Abschnitte am Strahl eines Bühnenpunkts (Spuren). toWorld deutet den Punkt auf einer Spur (der Strahl
-   * der Kamera). Frei ist eine Spur, wenn der Punkt dort in keinem Element liegt und bis clearance Meter darunter kein
-   * Element ist; Erde bis LIFT_MAX unter der Oberfläche zählt als frei (die Bahn wird angehoben). Abschnitte in einer
-   * Höhle sind eigene Abschnitte, mit `attract`, wenn der Strahl auch auf der mittleren Spur der Höhle in ihr liegt.
+   * der Kamera). Frei ist eine Spur, wenn der Punkt dort in keinem Element liegt, bis clearance Meter darunter kein
+   * Element und keine Erde ist (Mindesthöhe über dem Boden wie in den Levels); nahe einer Höhle zählt Erde bis LIFT_MAX
+   * unter der Oberfläche als frei (die Bahn wird angehoben). Abschnitte in einer Höhle sind eigene Abschnitte, mit
+   * `attract`, wenn der Strahl auch auf der mittleren Spur der Höhle in ihr liegt; die Enden nennen, was sie begrenzt.
    */
   freeLanes(p: StagePoint, toWorld: (p: StagePoint, lane: number) => { x: number; y: number }, clearance: number): FreeLanes {
     const count = Math.round((LANE_MAX - LANE_MIN) / STEP) + 1;
-    const intervals: FreeInterval[] = [];
     let touched = false;
-    let cur: FreeInterval | null = null;
     let bestPen = Infinity;
     let fallback: number | null = null;
     const caves = new Map<string, { center: number; hit: boolean }>();
     const belowCaves = new Map<string, number>();
-    for (let k = 0; k < count; k++) {
-      const lane = LANE_MIN + k * STEP;
+    /** frei an dieser Spur? sonst, was sperrt */
+    const probe = (lane: number): { free: boolean; blocker: WallKind; cave: { id: string; center: number } | null } => {
       const w = toWorld(p, lane);
       const kind = this.solidKind(w.x, w.y, lane);
-      const kindBelow = kind === 'none' ? this.solidKind(w.x, w.y - clearance, lane) : kind;
-      let free = kind !== 'element' && kindBelow !== 'element';
-      if (kind === 'element' || kindBelow === 'element') touched = true;
-      if (kind === 'earth') {
-        // in der Erde: bis LIFT_MAX frei (angehoben auf die Oberfläche, wenn dort kein Element steht), sonst Notspur
-        // mit der kleinsten Eindringtiefe
+      if (kind === 'element') return { free: false, blocker: 'element', cave: null };
+      const below = this.solidKind(w.x, w.y - clearance, lane);
+      if (below === 'element') return { free: false, blocker: 'element', cave: null };
+      if (kind === 'earth' || below === 'earth') {
         const top = this.earth(w.x, lane);
-        const pen = top - w.y;
-        // angehoben wird auf die Oberfläche; steht dort ein Element, geht auch das nicht
+        const need = top + clearance - w.y;
         const liftable = this.solidKind(w.x, top + clearance * 0.5, lane) !== 'element';
-        if (pen > LIFT_MAX || !liftable) {
-          free = false;
-          if (liftable && pen < bestPen) {
-            bestPen = pen;
+        const nearCave = this.cavities.some((c) => w.x >= c.x0 - LIFT_REACH && w.x <= c.x1 + LIFT_REACH && lane >= c.lane0 - 0.35 && lane <= c.lane1 + 0.35);
+        if (!(nearCave && liftable && top - w.y <= LIFT_MAX)) {
+          if (liftable && need < bestPen) {
+            bestPen = need;
             fallback = lane;
           }
+          return { free: false, blocker: 'earth', cave: null };
         }
       }
-      if (!free) {
+      return { free: true, blocker: 'edge', cave: this.caveAt(w.x, w.y, lane) };
+    };
+    const intervals: FreeInterval[] = [];
+    let cur: FreeInterval | null = null;
+    let lastBlocker: WallKind = 'edge';
+    for (let k = 0; k < count; k++) {
+      const lane = LANE_MIN + k * STEP;
+      const r = probe(lane);
+      if (r.blocker === 'element') touched = true;
+      if (!r.free) {
+        if (cur) cur.bKind = r.blocker;
         cur = null;
+        lastBlocker = r.blocker;
         continue;
       }
-      const cave = this.caveAt(w.x, w.y, lane);
-      const id = cave?.id ?? null;
-      if (cave) {
+      const w = toWorld(p, lane);
+      const id = r.cave?.id ?? null;
+      if (r.cave) {
         touched = true;
-        const entry = caves.get(cave.id) ?? { center: cave.center, hit: false };
-        if (Math.abs(lane - cave.center) < STEP * 0.6) entry.hit = true;
-        caves.set(cave.id, entry);
+        const entry = caves.get(r.cave.id) ?? { center: r.cave.center, hit: false };
+        if (Math.abs(lane - r.cave.center) < STEP * 0.6) entry.hit = true;
+        caves.set(r.cave.id, entry);
       } else {
         // Höhle unter dem Strahl, deren Grundfläche der Punkt trifft, der Strich aber noch darüber liegt
         const c = this.cavities.find((q) => w.x >= q.x0 && w.x <= q.x1 && lane >= q.lane0 && lane <= q.lane1);
@@ -280,11 +296,27 @@ export class FreeField {
       }
       if (cur && cur.cave === id) cur.b = lane;
       else {
-        cur = { a: lane, b: lane, cave: id, attract: false };
+        cur = { a: lane, b: lane, aKind: cur ? 'edge' : lastBlocker, bKind: 'edge', cave: id, attract: false };
         intervals.push(cur);
       }
     }
-    for (const iv of intervals) if (iv.cave) iv.attract = caves.get(iv.cave)?.hit ?? false;
+    // Enden genau suchen (zwischen letzter freier und erster gesperrter Spur), damit die Schranke am Boden exakt die
+    // Mindesthöhe ist wie in den Levels und nicht eine Abtastung davor
+    const refine = (freeLane: number, blockedLane: number): number => {
+      let f = freeLane;
+      let bl = blockedLane;
+      for (let k = 0; k < 6; k++) {
+        const mid = (f + bl) / 2;
+        if (probe(mid).free) f = mid;
+        else bl = mid;
+      }
+      return f;
+    };
+    for (const iv of intervals) {
+      if (iv.aKind !== 'edge' && iv.a - STEP >= LANE_MIN - 1e-9) iv.a = refine(iv.a, iv.a - STEP);
+      if (iv.bKind !== 'edge' && iv.b + STEP <= LANE_MAX + 1e-9) iv.b = refine(iv.b, iv.b + STEP);
+      if (iv.cave) iv.attract = caves.get(iv.cave)?.hit ?? false;
+    }
     // Höhle unter dem Strahl ohne Abschnitt in ihr, oder mit Abschnitt, der nicht anzieht: Mitte und Höhe darüber
     let below: FreeLanes['below'] = null;
     for (const [id, center] of belowCaves) {

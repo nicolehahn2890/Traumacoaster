@@ -87,6 +87,26 @@ describe('Pinsel im Freiraumfeld (Tor 2b, Plan Paket 5)', () => {
     expect(maxStep(plan, 60, 110)).toBeLessThan(0.12);
   });
 
+  it('im freien Gelände rechnet der Pinsel mit Feld genau wie ohne: die Bodenschranke ist die Mindesthöhe, kein Abstand, kein Anlauf', () => {
+    // ein Strich mit Hügel, Tal und einem Stück knapp über der Bodenlinie, weit weg von jedem Element
+    const pts: StagePoint[] = [];
+    for (let x = 0; x <= 160; x += 2) pts.push({ X: x, Y: 5 + 4 * Math.sin(x / 11) + (x > 90 && x < 120 ? -4.2 : 0) });
+    const plain = planBrushTrack(pts)!;
+    const empty = new FreeField([], 0, () => 0);
+    const withField = planBrushTrack(pts, fieldOpts(empty))!;
+    expect(withField.rock).toEqual([]);
+    expect(withField.z.length).toBe(plain.z.length);
+    let maxDiff = 0;
+    for (let i = 0; i < plain.z.length; i++) maxDiff = Math.max(maxDiff, Math.abs(withField.z[i] - plain.z[i]));
+    expect(maxDiff).toBeLessThan(0.05);
+    // auch mit einem Berg weit abseits (x 85 liegt nicht im Weg: der Strich läuft dort über der Oberkante)
+    const far = new FreeField([{ ...slab, x: 400 }], 0, () => 0);
+    const withFar = planBrushTrack(pts, fieldOpts(far))!;
+    maxDiff = 0;
+    for (let i = 0; i < plain.z.length; i++) maxDiff = Math.max(maxDiff, Math.abs(withFar.z[i] - plain.z[i]));
+    expect(maxDiff).toBeLessThan(0.05);
+  });
+
   it('ohne freie Tiefe ist der Strich blockiert: Vorschau markiert rot, beim Loslassen endet die Bahn davor', () => {
     // eine hohe Säule über alle Spuren: nirgends vorbei
     const wall: ZoneElement = { ...column, x: 85, w: 60, h: 40 };

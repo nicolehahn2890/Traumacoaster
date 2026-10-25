@@ -996,6 +996,9 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
   const fieldUp = new Float64Array(n).fill(Infinity);
   /** Mitte des gewählten Abschnitts (Meter): in einer Höhle der Wunsch (die Schranken sind weiter, sie umfassen Berührendes) */
   const fieldMid = new Float64Array(n);
+  /** Abstand des Wunschs von der vorderen und hinteren Schranke (Meter): nur an Elementwänden, am Boden wie in den Levels keiner */
+  const gapLo = new Float64Array(n);
+  const gapUp = new Float64Array(n);
   /** Höhle unter dem Strich, in die er noch nicht hinein reicht: Mitte (Meter) und Zug dorthin 0 … 1 */
   const caveBelow = new Float64Array(n);
   const caveBelowW = new Float64Array(n);
@@ -1031,14 +1034,31 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
     // Strich zieht ihn nahe der Oberfläche auf ihre Mitte, damit die Tauchfahrt in ihrer Spur beginnt (Florians Magnet)
     if (lanes) {
       const base = Float64Array.from(target);
+      // 1: der Wunsch wurde von einer Elementwand oder einer Höhle verschoben (nur das kündigt sich im Anlauf an; die
+      // Bodenschranke wirkt wie in den Levels allein über die Schranke)
+      const shifted = new Uint8Array(n);
       for (let i = 0; i < n; i++) {
         if (!fieldOn[i]) continue;
-        if (noRead[i]) target[i] = Math.max(low[i], Math.min(upper[i], fieldMid[i]));
-        else {
-          if (caveBelowW[i] > 0) target[i] += (caveBelow[i] - target[i]) * caveBelowW[i];
-          const gap = Math.min(FIELD_GAP, (upper[i] - low[i]) / 2);
-          target[i] = Math.max(low[i] + gap, Math.min(upper[i] - gap, target[i]));
+        if (noRead[i]) {
+          target[i] = Math.max(low[i], Math.min(upper[i], fieldMid[i]));
+          continue;
         }
+        let t = target[i];
+        if (caveBelowW[i] > 0) {
+          t += (caveBelow[i] - t) * caveBelowW[i];
+          shifted[i] = 1;
+        }
+        const half = (upper[i] - low[i]) / 2;
+        const lo = low[i] + Math.min(gapLo[i], half);
+        const up = upper[i] - Math.min(gapUp[i], half);
+        if (t < lo) {
+          if (gapLo[i] > 0) shifted[i] = 1;
+          t = lo;
+        } else if (t > up) {
+          if (gapUp[i] > 0) shifted[i] = 1;
+          t = up;
+        }
+        target[i] = t;
       }
       // Anlauf: Was Wände und Höhlen an der Wunschtiefe ändern, kündigt sich rückwärts entlang der Linie an (je Meter mit
       // RAMP_DECAY abklingend), damit die Bahn nicht erst an der Wand abbiegt, sondern weich hinläuft. In einer Höhle gibt
@@ -1050,7 +1070,7 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
           carry = 0;
           continue;
         }
-        const own = fieldOn[i] && !noRead[i] ? target[i] - base[i] : 0;
+        const own = fieldOn[i] && !noRead[i] && shifted[i] ? target[i] - base[i] : 0;
         if (Math.abs(own) >= Math.abs(carry)) carry = own;
         else {
           carry *= RAMP_DECAY;
@@ -1346,6 +1366,9 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
       b: number;
       a0: number;
       b0: number;
+      /** Elementwand vorn bzw. hinten (dort Abstand und Anlauf; am Boden und Bühnenrand nicht) */
+      wallLo: boolean;
+      wallUp: boolean;
       cave: boolean;
       attract: boolean;
     }
@@ -1354,15 +1377,18 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
       for (const iv of l.intervals) {
         const a0 = iv.a * LANE_DEPTH;
         const b0 = iv.b * LANE_DEPTH;
-        let a = Math.max(Z_MIN, a0 + M);
-        let b = Math.min(Z_MAX, b0 - M);
+        const wallLo = iv.aKind === 'element';
+        const wallUp = iv.bKind === 'element';
+        // knapp vor Elementwänden; die Bodenschranke ist genau die Mindesthöhe wie in den Levels
+        let a = Math.max(Z_MIN, a0 + (wallLo ? M : 0));
+        let b = Math.min(Z_MAX, b0 - (wallUp ? M : 0));
         // schmaler als der doppelte Abstand (etwa am vordersten Bühnenrand): auf die Mitte gefaltet, nicht weg
         if (b < a) a = b = Math.max(Z_MIN, Math.min(Z_MAX, (a0 + b0) / 2));
-        out.push({ a, b, a0, b0, cave: !!iv.cave, attract: iv.attract });
+        out.push({ a, b, a0, b0, wallLo, wallUp, cave: !!iv.cave, attract: iv.attract });
       }
       if (!out.length && l.fallback !== null) {
         const f = Math.max(Z_MIN, Math.min(Z_MAX, l.fallback * LANE_DEPTH));
-        out.push({ a: f, b: f, a0: f, b0: f, cave: false, attract: false });
+        out.push({ a: f, b: f, a0: f, b0: f, wallLo: false, wallUp: false, cave: false, attract: false });
       }
       return out;
     });
@@ -1425,11 +1451,21 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
       // sind ein zusammenhängender Freiraum); so wechselt die Bahn dort weich statt an einem Punkt
       let a = op.a;
       let b = op.b;
-      for (let q = k - 1; q >= 0 && touch(opts[i][q], opts[i][q + 1]); q--) a = Math.min(a, opts[i][q].a);
-      for (let q = k + 1; q < opts[i].length && touch(opts[i][q - 1], opts[i][q]); q++) b = Math.max(b, opts[i][q].b);
+      let wallLo = op.wallLo;
+      let wallUp = op.wallUp;
+      for (let q = k - 1; q >= 0 && touch(opts[i][q], opts[i][q + 1]); q--) {
+        a = Math.min(a, opts[i][q].a);
+        wallLo = opts[i][q].wallLo;
+      }
+      for (let q = k + 1; q < opts[i].length && touch(opts[i][q - 1], opts[i][q]); q++) {
+        b = Math.max(b, opts[i][q].b);
+        wallUp = opts[i][q].wallUp;
+      }
       fieldLow[i] = a;
       fieldUp[i] = b;
       fieldMid[i] = (op.a + op.b) / 2;
+      gapLo[i] = wallLo ? FIELD_GAP : 0;
+      gapUp[i] = wallUp ? FIELD_GAP : 0;
       noRead[i] = op.cave && op.attract ? 1 : 0;
       if (l.below && !noRead[i]) {
         caveBelow[i] = l.below.center * LANE_DEPTH;
