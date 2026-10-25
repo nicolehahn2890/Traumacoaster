@@ -39,6 +39,10 @@ import { applyOverdraw, nearestOnTrack } from '@/track/overdraw';
 import { cutIndexNear, retractIndex } from '@/track/strokeBuffer';
 import { laneRise, laneScale, nearestLane, rayToWorld, setPerspective, tagRay, toStage, toView, viewState, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
+import { HANG_DROP, trackTypeForSkin, type TrackType } from '@/world/trackTypes';
+import type { ZoneField, ZoneFile, ZoneStation } from '@/zone/types';
+import { applyZoneExtras, stationPath, zoneCoins } from '@/zone/build';
+import { ZoneEditor } from '@/app/zoneEditor';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
 import { hexNum, shade } from '@/render/paint';
 import { StartScene } from './start';
@@ -50,6 +54,8 @@ export interface SandboxConfig {
   world: number;
   width: number;
   saved?: SavedTrack;
+  /** Zone aus der Zonendatei: flacher Boden, alles freigeschaltet, Elemente aus der Datei (mit ?editor=1 der Editor) */
+  zone?: ZoneFile;
 }
 
 type Mode = 'draw' | 'ride' | 'result';
@@ -133,10 +139,13 @@ const STROKE_MODE_URL: StrokeReading | null = (() => {
   const q = new URLSearchParams(location.search);
   return q.has('brush') ? 'brush' : q.has('stage') ? 'stage' : q.has('single') ? 'single' : q.has('lanes') ? 'lanes' : null;
 })();
-const STROKE_MODES: StrokeReading[] = ['brush', 'stage', 'single', 'lanes'];
 /** ?persp=1: Perspektive (Richtlinie, Schritt 1: Spur-Ebenen um das Kameraziel skaliert, Strich als Strahl je Spur gedeutet), ?fov=18 Bildwinkel in Grad */
 const PERSP_URL = typeof location !== 'undefined' && new URLSearchParams(location.search).get('persp') === '1';
+/** mit dem Weltrenderer (?world=1) ist die Perspektive Standard; ?persp=0 zeigt dort zum Vergleich die Bühne */
+const PERSP_OFF = typeof location !== 'undefined' && new URLSearchParams(location.search).get('persp') === '0';
 const FOV_URL = urlNum('fov', 18);
+/** ?editor=1: Klötzchen-Editor der Zone (nur mit ?zone=, am Mac) */
+const EDITOR_URL = typeof location !== 'undefined' && new URLSearchParams(location.search).get('editor') === '1';
 /** ?scroll=0: kein Autoscroll beim Zeichnen (automatische Tests zeichnen in festen Bildschirmkoordinaten) */
 const AUTOSCROLL = typeof location === 'undefined' || new URLSearchParams(location.search).get('scroll') !== '0';
 /** Zeichen-Zoom auf dem Handy: mindestens so viele Pixel pro Bühnen-Meter (eine Spur rund 5 mm); der Rest des Levels
@@ -326,7 +335,6 @@ export class LevelScene implements Scene {
   /** Dev-Modus: Bahntyp durchschalten */
   private skinBtn = new Button('DEV', { width: 150, height: 40, size: 15, color: '#2a1f3d' });
   /** Umschalter der Lesart (Bühne / Ein Strich), zum Ausprobieren */
-  private modeBtn = new Button('', { width: 96, height: 36, size: 14, color: '#2a1f3d' });
   /** Lesart „Ebenen“: Ebenenleiste links (hinten oben, vorne unten) und die für den nächsten Strich gewählte Ebene */
   private lanePanel = new Container();
   private laneBtns: Array<{ lane: number; btn: Button }> = [];
@@ -352,10 +360,20 @@ export class LevelScene implements Scene {
   private toast = new Toast();
   private resultPanel: Container | null = null;
   private uiButtons: Button[] = [];
+  /** Klötzchen-Editor der Zone (?zone=…&editor=1) */
+  private zoneEditor: ZoneEditor | null = null;
+  /** aktives Feld der Zone: Kamera bleibt darin (weich), Zoom höchstens „Feld passt ins Bild“, Absperrband an den Rändern */
+  private activeField: ZoneField | null = null;
+  private fieldTape = new Graphics();
 
   constructor(levelId: number, sandbox: SandboxConfig | null = null) {
     this.sandbox = sandbox;
-    if (sandbox) {
+    if (sandbox?.zone) {
+      // Zone: flacher Boden, die Kulissen kommen aus der Zonendatei; die Basiszone kann alles
+      this.world = WORLDS[clamp(sandbox.world - 1, 0, 9)];
+      this.level = { id: 0, world: this.world.id, name: sandbox.zone.name, hook: '', goals: [], width: sandbox.zone.width, terrain: [{ kind: 'flat' }], cars: 3, passengers: 6 };
+      this.unlocked = unlockedUpTo(150);
+    } else if (sandbox) {
       this.world = WORLDS[clamp(sandbox.world - 1, 0, 9)];
       this.level = {
         id: 0, world: this.world.id, name: t('sandbox'), hook: '', goals: [], width: sandbox.width,
@@ -398,16 +416,51 @@ export class LevelScene implements Scene {
     await initPhysics();
     const night = this.world.id === 6 || this.world.id === 8 || this.world.id === 10 || (this.unlocked.has('nightMode') && this.level.id === 25);
     this.view = new WorldView(this.world, this.terrain, this.skin, night);
-    setPerspective(PERSP_URL, FOV_URL);
+    // Weltrenderer: Boden und Erdschnitt aus dem Terrain, Himmel vor der Welt; Perspektive dort Standard
+    if (game.world) {
+      this.view.setWorldMode(game.world);
+      game.world.showLevel(this.terrain, this.world, night);
+      const zone = this.sandbox?.zone;
+      if (zone) {
+        // Zone: Bahntyp der Datei (die Adresse ?track= geht vor), Elemente in die Welt, mit ?editor=1 der Editor
+        game.world.trackOverride = game.world.trackOverride ?? zone.trackType;
+        game.world.setZone(zone.elements);
+        applyZoneExtras(game.world, zone);
+        this.level.coins = zoneCoins(zone);
+        if (EDITOR_URL) {
+          this.zoneEditor = new ZoneEditor(
+            {
+              view: this.view,
+              world: game.world,
+              toast: this.toast,
+              redrawTrack: () => this.redrawTrack(),
+              setActiveField: (f) => this.setActiveField(f),
+              refreshCoins: () => {
+                this.level.coins = zoneCoins(zone);
+                this.view.trackR.setCoins(this.level.coins);
+              },
+              refreshStation: () => this.resetStationPiece(),
+              startRide: () => this.startRide(),
+            },
+            zone,
+          );
+          this.ui.addChild(this.zoneEditor.hud);
+        } else {
+          // ohne Editor (Handy): ?field=<Kennung> wählt ein Feld der Zone, sonst das erste
+          const want = new URLSearchParams(location.search).get('field');
+          this.setActiveField(zone.fields.find((f) => f.id === want) ?? zone.fields[0] ?? null);
+        }
+      }
+    }
+    this.view.overlay.addChild(this.fieldTape);
+    setPerspective(game.world ? !PERSP_OFF : PERSP_URL, FOV_URL);
     this.view.overlay.addChild(this.laneGlow, this.spotLayer, this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
     this.laneHud.addChild(this.laneHudG);
-    this.hud.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn);
+    this.hud.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn);
     this.ui.addChild(this.hud, this.laneHud, this.toast);
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn, ...this.laneBtns.map((l) => l.btn)];
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, ...this.laneBtns.map((l) => l.btn), ...(this.zoneEditor?.buttons ?? [])];
     this.speedBtn.visible = false;
-    this.modeBtn.setText(t(`strokeMode.btn.${this.reading}`));
-    this.modeBtn.onTap = () => this.toggleStrokeMode();
     this.buildLanePanel();
     this.buildLengthUI();
     this.skinBtn.visible = unlockAll();
@@ -422,7 +475,7 @@ export class LevelScene implements Scene {
     this.shelfBtn.onTap = () => this.toggleShelf();
     this.speedBtn.onTap = () => this.cycleRideSpeed();
     this.saveBtn.onTap = () => this.saveSandbox();
-    this.levelTitle.text = this.sandbox ? `${t('sandbox')} · ${this.world.name}` : `${t('level', { n: this.level.id })} · ${this.level.name}`;
+    this.levelTitle.text = this.sandbox?.zone ? `Zone ${this.sandbox.zone.name}` : this.sandbox ? `${t('sandbox')} · ${this.world.name}` : `${t('level', { n: this.level.id })} · ${this.level.name}`;
     this.beltBadge.addChild(this.beltIconG, this.beltText);
     this.beltText.anchor.set(0.5, 0);
     this.beltText.position.set(0, 18);
@@ -432,6 +485,7 @@ export class LevelScene implements Scene {
     this.setupInput();
     const draft = this.sandbox?.saved?.path ?? (this.sandbox ? undefined : storage.draft(this.level.id));
     if (draft && draft.nodes.length >= 2 && 'inZ' in draft.nodes[0]) this.setPath(clonePath(draft), false);
+    else this.resetStationPiece();
     this.resize(game.width, game.height);
     this.fitCamera(true);
     this.updateGoals();
@@ -444,7 +498,94 @@ export class LevelScene implements Scene {
     this.stopRide();
     if (this.path && !this.sandbox) storage.saveDraft(this.level.id, this.path);
     setPerspective(false);
+    this.game.world?.clearLevel();
     this.view.destroy();
+  }
+
+  /** Hintergrund vor der Three-Welt (Weltrenderer): der Himmel */
+  get background(): Container | undefined {
+    return this.view?.background;
+  }
+
+  /** Ziele im Spiel: im Level immer, in der Zone sobald das aktive Feld welche einträgt (sonst Sandkasten mit Maßband) */
+  private get hasGoals(): boolean {
+    return !this.sandbox || this.level.goals.length > 0;
+  }
+
+  /** Station der Zone für die Bahn: die im aktiven Feld, sonst die erste; null ohne Station */
+  private zoneStation(): ZoneStation | null {
+    const zone = this.sandbox?.zone;
+    if (!zone || !zone.stations.length) return null;
+    const f = this.activeField;
+    return (f && zone.stations.find((s) => s.x >= f.x0 && s.x <= f.x1 && s.y >= f.y0 && s.y <= f.y1)) ?? zone.stations[0];
+  }
+
+  /** Ist die Bahn nur das Vorgabestück der Station (noch nichts gezeichnet)? */
+  private isStationPieceOnly(): boolean {
+    const p = this.path;
+    return !!p && p.nodes.length === 2 && p.nodes[0].kind === 'station' && p.closed === false && !!p.brush;
+  }
+
+  /**
+   * Vorgabestück der Station setzen (Plan 3.3: Bahnstart vorgegeben, gerade, 14 m): beim Betreten, nach dem Löschen und
+   * wenn der Editor die Station verschiebt, solange noch nichts gezeichnet ist
+   */
+  private resetStationPiece(): void {
+    const st = this.zoneStation();
+    if (!st) return;
+    if (!this.path || this.isStationPieceOnly()) this.setPath(stationPath(st), false);
+  }
+
+  /** Feld der Zone aktiv schalten (null: ganze Zone): Kamera weich begrenzt, Zoom-Grenze „Feld passt ins Bild“, Absperrband */
+  private setActiveField(field: ZoneField | null): void {
+    this.activeField = field;
+    // Ziele, Fortschritts- und Aufwertungsstufe des Felds gelten für dieses Level (Schritt 9): die Zielleiste wertet
+    // sie wie im Level aus, die Gurtstufe gilt für die Fahrt, Elemente späterer Wachstumsstufen fehlen in der Welt
+    this.level.goals = (field?.goals ?? []).map((g) => ({ type: g.type, ...(g.value !== undefined ? { value: g.value } : {}), ...(g.bonus ? { bonus: true } : {}) }));
+    this.level.restraint = field?.upgrade as BeltLevel | undefined;
+    this.game.world?.setStage(field?.stage ?? Infinity);
+    this.goalsBuiltFor = '';
+    this.refreshBeltBadge(false);
+    this.updateGoals();
+    this.resetStationPiece();
+    const cam = this.view.camera;
+    if (field) {
+      const b = { minX: field.x0, maxX: field.x1, minY: field.y0, maxY: field.y1 };
+      cam.softBounds = b;
+      cam.minZoom = Math.max(1, cam.fitZoom(b));
+      cam.fitBounds(b, 0.02, 30);
+    } else {
+      cam.softBounds = null;
+      cam.minZoom = 3;
+    }
+    this.drawFieldTape();
+  }
+
+  /** Absperrband an den Rändern des aktiven Felds (links, rechts, oben), in der Ansicht auf Spur 0 */
+  private drawFieldTape(): void {
+    const g = this.fieldTape;
+    g.clear();
+    const f = this.activeField;
+    if (!f) return;
+    const corners = [toView(f.x0, f.y0, 0), toView(f.x0, f.y1, 0), toView(f.x1, f.y1, 0), toView(f.x1, f.y0, 0)];
+    const edge = (a: { X: number; Y: number }, b: { X: number; Y: number }) => {
+      const len = Math.hypot(b.X - a.X, b.Y - a.Y);
+      const n = Math.max(2, Math.round(len / 2.5));
+      for (let i = 0; i < n; i++) {
+        const t0 = i / n;
+        const t1 = (i + 1) / n;
+        g.moveTo(a.X + (b.X - a.X) * t0, a.Y + (b.Y - a.Y) * t0).lineTo(a.X + (b.X - a.X) * t1, a.Y + (b.Y - a.Y) * t1).stroke({ width: 0.5, color: i % 2 ? 0x2a1f3d : 0xffd23f, alpha: 0.9 });
+      }
+    };
+    edge(corners[0], corners[1]);
+    edge(corners[1], corners[2]);
+    edge(corners[2], corners[3]);
+  }
+
+  /** Kamera im Level halten: im aktiven Feld weich, sonst die harten Grenzen des Levels */
+  private clampCamera(): void {
+    if (this.activeField) return;
+    this.view.camera.clampTo({ minX: -40, maxX: this.level.width + 40, minY: -30, maxY: 160 });
   }
 
   private leave(): void {
@@ -505,6 +646,7 @@ export class LevelScene implements Scene {
     const H = this.handlers;
     H.dragStart = (p) => {
       if (this.mode !== 'draw') return;
+      if (this.zoneEditor?.dragStart(p)) return;
       if (this.shelfOpen) {
         const item = this.shelfItemAt(p);
         if (item) {
@@ -594,11 +736,17 @@ export class LevelScene implements Scene {
           this.strokeKind = 'extend';
           this.toast.show(t('extendHint'), 1.2);
         } else if (near && nearPx < 30) this.strokeKind = 'overdraw';
-        else if (this.reading === 'lanes' && !isClosed(this.path)) {
-          // Ebenen: jeder Strich setzt die offene Bahn fort (wie im Bahnbau-Labor), auch wenn er auf der Höhe einer neu
-          // gewählten Ebene oder sonstwo beginnt; er wird an das Bahnende gezogen
+        else if ((this.reading === 'lanes' || this.zoneStation()) && !isClosed(this.path)) {
+          // Ebenen und Zone mit Station: jeder Strich setzt die offene Bahn fort (wie im Bahnbau-Labor), auch wenn er
+          // sonstwo beginnt; er wird an das Bahnende gezogen
           this.strokeKind = 'extend';
           this.toast.show(t('extendHint'), 1.2);
+        } else if (this.zoneStation()) {
+          // Zone mit Station: Die Bahn beginnt immer am Vorgabestück; eine fertige Runde wird nicht ersetzt, sondern gelöscht
+          this.toast.show('Die Bahn beginnt an der Station: Löschen setzt das Vorgabestück zurück', 2.2);
+          this.stroke = null;
+          this.drag = { kind: 'none' };
+          return;
         } else if (this.onStage(st) && this.unlocked.has('mountain') && this.terrainEditable() && !this.nearStation(st)) this.strokeKind = 'terrain';
         else {
           this.strokeKind = 'new';
@@ -619,6 +767,7 @@ export class LevelScene implements Scene {
       this.drawOverlay();
     };
     H.dragMove = (p) => {
+      if (this.zoneEditor?.dragMove(p)) return;
       if (this.mode !== 'draw') return;
       const st = tagRay(this.view.camera.toStage(p.x, p.y));
       switch (this.drag.kind) {
@@ -669,6 +818,7 @@ export class LevelScene implements Scene {
     };
     H.dragEnd = (p) => {
       if (this.mode !== 'draw') return;
+      if (this.zoneEditor?.dragEnd(p)) return;
       const st = this.view.camera.toStage(p.x, p.y);
       this.pointerScreen = null;
       switch (this.drag.kind) {
@@ -685,6 +835,7 @@ export class LevelScene implements Scene {
     };
     H.tap = (p) => {
       if (this.isOverUI(p)) return;
+      if (this.mode === 'draw' && this.zoneEditor?.tap(p)) return;
       if (this.mode === 'ride') {
         this.stopRide();
         return;
@@ -802,7 +953,8 @@ export class LevelScene implements Scene {
     };
     H.twoFingerTap = () => this.undo();
     H.threeFingerTap = () => this.redo();
-    H.key = (k) => {
+    H.key = (k, ev) => {
+      if (this.mode === 'draw' && this.zoneEditor?.key(k, ev)) return;
       if (k === ' ') this.mode === 'draw' ? this.startRide() : this.stopRide();
       if (k === 'Escape') this.mode === 'draw' ? this.leave() : this.stopRide();
       if ((k === 'Delete' || k === 'Backspace') && this.selected >= 0) this.deleteNode(this.selected);
@@ -930,8 +1082,19 @@ export class LevelScene implements Scene {
 
   // ------------------------------------------------------------------ Strich → Bahn
   /** Lesart (Einstellung, Umschalter unten links; die Adresse kann sie erzwingen) */
+  /** Bahntyp der Welt (Adresse vor Skin); ohne Weltrenderer der des Skins */
+  private get trackType(): TrackType {
+    return this.game?.world?.trackOverride ?? trackTypeForSkin(this.skin);
+  }
+
+  /** Mindesthöhe des Strichs über dem Boden: bei der Hängebahn hängt die Gondel HANG_DROP unter dem Strich */
+  private get groundClearance(): number {
+    return this.trackType === 'hanging' ? HANG_DROP + 0.8 : 0.8;
+  }
+
+  /** Lesart: Pinsel; ?stage, ?single und ?lanes erzwingen die alten Lesarten (Szenarien, Replay-Vergleiche) */
   private get reading(): StrokeReading {
-    return STROKE_MODE_URL ?? storage.settings.strokeMode ?? 'brush';
+    return STROKE_MODE_URL ?? 'brush';
   }
   private get singleStroke(): boolean {
     return this.reading === 'single';
@@ -939,16 +1102,6 @@ export class LevelScene implements Scene {
   private get brushMode(): boolean {
     return this.reading === 'brush';
   }
-  /** Pinsel → Bühne → Ein Strich → Pinsel */
-  private toggleStrokeMode(): void {
-    const next = STROKE_MODES[(STROKE_MODES.indexOf(this.reading) + 1) % STROKE_MODES.length];
-    storage.updateSettings({ strokeMode: next });
-    this.modeBtn.setText(t(`strokeMode.btn.${this.reading}`));
-    this.toast.show(t(`strokeMode.${this.reading}`), 2.2);
-    this.armedLane = null;
-    this.refreshLanePanel();
-  }
-
   /** Lesart „Ebenen“: fünf Knöpfe links (hinten oben), Tipp wählt die Ebene für den nächsten Strich */
   private buildLanePanel(): void {
     const top = label(t('lanes.back'), 12, INK, true);
@@ -1197,7 +1350,7 @@ export class LevelScene implements Scene {
     const y0 = cam.y;
     // panBy nimmt die Fingerbewegung: Zeiger am rechten Rand heißt Welt nach links schieben
     cam.panBy(-this.scrollV.x * step, -this.scrollV.y * step);
-    cam.clampTo({ minX: -40, maxX: this.level.width + 40, minY: -30, maxY: 160 });
+    this.clampCamera();
     cam.snap();
     // an der Levelgrenze steht die Kamera: dort kein Tempo ansammeln
     if (Math.abs(cam.x - x0) < 1e-6) this.scrollV.x = 0;
@@ -1222,7 +1375,7 @@ export class LevelScene implements Scene {
       single: this.singleStroke,
       fit: FIT_MODE,
       groundHeight: ground,
-      groundClearance: 0.8,
+      groundClearance: this.groundClearance,
       maxHeight: this.level.maxHeight ?? 0,
       allowTurns: this.unlocked.has('turn'),
       allowLoops: this.unlocked.has('loop'),
@@ -1664,7 +1817,7 @@ export class LevelScene implements Scene {
   private brushOptions() {
     return {
       ground: (x: number, z: number) => (this.allowTunnels ? this.terrain.groundHeight(x, z) : this.terrain.surfaceHeight(x, z)),
-      clearance: 0.8,
+      clearance: this.groundClearance,
       // Rundenschluss ab 8 m Bühne oder 60 px, je nachdem, was weiter ist
       closeSnap: Math.max(8, 60 / this.view.camera.zoom),
       // beim Nachbessern gibt die Linie höchstens 8 Bildschirm-Pixel nach
@@ -2039,6 +2192,8 @@ export class LevelScene implements Scene {
       return;
     }
     this.view.terrainR.redraw();
+    // Weltrenderer: Boden und Erdschnitt folgen dem geformten Gelände
+    this.game.world?.showLevel(this.terrain, this.world);
     this.afterEdit();
   }
 
@@ -2078,7 +2233,7 @@ export class LevelScene implements Scene {
       this.samples = null;
       this.stats = null;
       this.scheduleInspect();
-      this.view.trackR.clear();
+      this.view.clearTrack();
       this.drawOverlay();
       this.refreshLaneHud();
       return;
@@ -2101,7 +2256,7 @@ export class LevelScene implements Scene {
     if (!this.path || !this.samples || this.samples.count < 2) {
       this.standCars = [];
       this.standViews = [];
-      this.view.trainR.clear();
+      this.view.clearTrain();
       return;
     }
     const opts = simOptionsForLevel(this.level, this.path, this.terrain, this.skin, this.allowTunnels);
@@ -2149,6 +2304,8 @@ export class LevelScene implements Scene {
     if (this.mode !== 'draw' || !this.path) return;
     this.pushHistory();
     this.setPath(null, false);
+    // Zone mit Station: das Vorgabestück bleibt
+    this.resetStationPiece();
     this.toast.show(t('clear'), 1.2);
   }
 
@@ -2593,7 +2750,7 @@ export class LevelScene implements Scene {
 
   // ------------------------------------------------------------------ Ziele / Hinweise
   private updateGoals(): void {
-    if (this.sandbox) {
+    if (!this.hasGoals) {
       // Sandkasten: das Maßband zeigt Länge, Höhe, Loopings und Kehren dauerhaft
       this.goalsBar.removeChildren();
       this.goalCells = [];
@@ -2603,6 +2760,8 @@ export class LevelScene implements Scene {
       else this.measure.clear();
       return;
     }
+    // Zone mit Zielen: das Maßband nur noch während des Strichs (wie im Level)
+    if (this.sandbox) this.measure.pin(false);
     const ts = this.stats ?? { length: 0, maxHeight: 0, loops: 0, turns: 0, lanes: 0, rolls: 0, maxDrop: 0 };
     const ride = this.sim?.stats ?? null;
     const finished = this.sim?.phase === 'done';
@@ -2614,7 +2773,7 @@ export class LevelScene implements Scene {
   /** Zielleiste einmal je Level und Format bauen (Zellen bleiben, nur die Haken ändern sich) */
   private buildGoalsBar(): void {
     const portrait = this.h > this.w;
-    const key = `${this.level.id}:${portrait ? 'p' : 'l'}:${this.w}`;
+    const key = `${this.level.id}:${this.activeField?.id ?? ''}:${portrait ? 'p' : 'l'}:${this.w}`;
     if (this.goalsBuiltFor === key) return;
     this.goalsBuiltFor = key;
     this.goalsBar.removeChildren();
@@ -2676,7 +2835,7 @@ export class LevelScene implements Scene {
     const now = performance.now();
     if (!force && now - this.liveGoalTimer < 100) return;
     this.liveGoalTimer = now;
-    if (!this.sandbox) {
+    if (this.hasGoals) {
       this.buildGoalsBar();
       this.refreshGoals(evaluate(this.level, path, stats, null, false, true), true);
     }
@@ -2809,7 +2968,6 @@ export class LevelScene implements Scene {
     this.hint.visible = false;
     this.shelfBtn.visible = false;
     this.speedBtn.visible = true;
-    this.modeBtn.visible = false;
     this.laneHud.visible = false;
     this.refreshLanePanel();
     this.refreshLengthUI(true);
@@ -2831,7 +2989,7 @@ export class LevelScene implements Scene {
     this.sim = null;
     this.passengers?.dispose();
     this.passengers = null;
-    this.view.trainR.clear();
+    this.view.clearTrain();
     this.view.effects.clear();
     this.view.trackR.updateCoins([], 0);
     if (this.resultPanel) {
@@ -2843,7 +3001,6 @@ export class LevelScene implements Scene {
     this.timeScale = 1;
     this.speedText.text = '';
     this.speedBtn.visible = false;
-    this.modeBtn.visible = true;
     this.shelfBtn.visible = true;
     this.refreshLanePanel();
     this.refreshLengthUI(true);
@@ -2864,7 +3021,7 @@ export class LevelScene implements Scene {
     this.hud.removeChild(old);
     old.destroy({ children: true });
     this.playBtn = btn;
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.modeBtn, ...this.laneBtns.map((l) => l.btn)];
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, ...this.laneBtns.map((l) => l.btn)];
     this.ui.addChild(this.toast);
   }
 
@@ -3077,9 +3234,9 @@ export class LevelScene implements Scene {
     if (this.passengers) Object.assign(this.sim.stats, this.passengers.stats);
     const ev = evaluate(this.level, this.path, this.stats, this.sim.stats, finished, allSeated);
     this.updateGoals();
-    const success = !this.sandbox && ev.requiredDone;
+    const success = this.hasGoals && ev.requiredDone;
     let unlockedNow: ElementId[] = [];
-    if (success) {
+    if (success && !this.sandbox) {
       const before = unlockedUpTo(storage.progress.highest);
       storage.setStars(this.level.id, ev.stars);
       const after = unlockedUpTo(storage.progress.highest);
@@ -3100,27 +3257,27 @@ export class LevelScene implements Scene {
     const c = new Container();
     const portrait = this.h > this.w;
     const w = Math.min(this.w - 24, portrait ? 360 : 520);
-    const goalsCount = this.sandbox ? 0 : this.level.goals.length;
+    const goalsCount = this.hasGoals ? this.level.goals.length : 0;
     const hasNext = success && !this.sandbox && this.level.id < LEVELS.length;
     const h = Math.min(this.h - 20, 300 + goalsCount * 26 + (unlockedNow.length ? 40 : 0) + (hasNext ? 60 : 0));
     c.addChild(panelBg(w, h));
     let y = -h / 2 + 40;
-    const title = label(this.sandbox ? t('ride') : success ? t('success') : t('failed'), 32, success ? '#2f7a4a' : '#d64545', true);
+    const title = label(!this.hasGoals ? t('ride') : success ? t('success') : t('failed'), 32, success ? '#2f7a4a' : '#d64545', true);
     title.position.set(0, y);
     c.addChild(title);
     y += 36;
-    if (!this.sandbox) {
+    if (this.hasGoals) {
       const sg = new Graphics();
       for (let i = 0; i < 3; i++) star(sg, (i - 1) * 46, y + 6, 18, i < ev.stars);
       c.addChild(sg);
       y += 40;
     }
     const seatedOk = hasNegativeGoals(this.level) || (this.passengers?.allSeated ?? true);
-    const msg = label(finished && seatedOk ? (success || this.sandbox ? '' : t('goalsMissing')) : this.failMessage(sim.failReason), 16, INK, false, { wordWrap: true, wordWrapWidth: w - 50 });
+    const msg = label(finished && seatedOk ? (success || !this.hasGoals ? '' : t('goalsMissing')) : this.failMessage(sim.failReason), 16, INK, false, { wordWrap: true, wordWrapWidth: w - 50 });
     msg.position.set(0, y + 6);
     c.addChild(msg);
     y += msg.text ? msg.height + 14 : 4;
-    if (!this.sandbox) {
+    if (this.hasGoals) {
       ev.goals.forEach((r) => {
         const g = new Graphics();
         check(g, -w / 2 + 34, y, 9, r.done);
@@ -3222,7 +3379,6 @@ export class LevelScene implements Scene {
     this.clearBtn.position.set(w - R - 36, safeTop + 26);
     this.saveBtn.position.set(w - R - 92, safeTop + 26);
     this.skinBtn.position.set(L + 88, h - B - 50);
-    this.modeBtn.position.set(L + 62, h - B - (this.skinBtn.visible ? 96 : 50));
     this.lanePanel.position.set(L + 36, h * 0.52);
     // schmaler Bildschirm: über der Höhe des Play-Knopfs (sonst stieße die Anzeige an ihn)
     const pillY = h - B - (this.skinBtn.visible ? 142 : w < 520 ? 150 : 96);
@@ -3243,6 +3399,7 @@ export class LevelScene implements Scene {
     this.laneHud.position.set(w - R - 46, h - B - 120);
     this.shelf.position.set(w - R - 10, h - B - 120);
     this.placeHint();
+    this.zoneEditor?.resize(w, h);
     this.speedText.position.set(w / 2, h - B - (portrait ? 120 : 108));
     this.toast.position.set(w / 2, h * 0.42);
     this.resultPanel?.position.set(w / 2, h / 2);
@@ -3296,7 +3453,7 @@ export class LevelScene implements Scene {
       this.endMarker.scale.set(1 + 0.15 * Math.sin(this.time * 5));
       if (this.selected >= 0 && this.drag.kind === 'none') this.drawOverlay();
       if (this.standCars.length) this.view.updateStandingTrain(this.standCars, this.standViews, dt);
-      this.view.camera.clampTo({ minX: -40, maxX: this.level.width + 40, minY: -30, maxY: 160 });
+      this.clampCamera();
     } else if (this.mode === 'ride') {
       this.spotLayer.visible = false;
       this.updateRide(dt);
@@ -3309,6 +3466,9 @@ export class LevelScene implements Scene {
     }
     this.sticker.update(dt);
     this.view.update(dt);
+    this.game.world?.setCamera(this.view.cameraView());
+    this.zoneEditor?.update();
+    if (this.activeField && this.view.viewMoved) this.drawFieldTape();
     // Perspektive: Griffe, Ende-Marker, Spur-Schein und Schwachstellen liegen in der Ansicht und wandern mit der Kamera
     if (this.view.viewMoved && this.mode === 'draw') {
       this.drawOverlay();

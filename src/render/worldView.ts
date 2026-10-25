@@ -9,10 +9,12 @@ import type { TrackPath, TrackSamples } from '@/track/model';
 import type { CarState } from '@/physics/trainSim';
 import type { PassengerView } from '@/physics/passengers';
 import type { CharacterDef } from '@/editor/characters';
-import { LANE_MAX, LANE_MIN, setView, viewDistance, viewScale, viewState } from '@/track/stage';
+import { LANE_DEPTH, LANE_MAX, LANE_MIN, setView, viewDistance, viewScale, viewState } from '@/track/stage';
+import type { CameraView } from '@/world/camera';
+import type { WorldRenderer } from '@/world/renderer';
+import { HANG_DROP, trackTypeForSkin } from '@/world/trackTypes';
 import { Camera } from './camera';
 import { Sky } from './sky';
-import { LaneFilter } from './shaders/laneFilter';
 import { GlowLayer } from './shaders/glowLayer';
 import { fxEnabled } from '@/core/fx';
 import { TerrainRenderer } from './terrainRenderer';
@@ -35,9 +37,8 @@ export class WorldView {
   readonly effects: Effects;
   private paper: TilingSprite;
   private laneContainers = new Map<number, Container>();
-  /** Leuchtebene je Spur (additiv, weichgezeichnet) und Spur-Filter (Stippling) */
+  /** Leuchtebene je Spur (additiv, weichgezeichnet) */
   private glows = new Map<number, GlowLayer>();
-  private laneFilters = new Map<number, LaneFilter>();
   private fxOn = false;
   private time = 0;
   /** letzte Kameralage, für die die Bahn in Perspektive projiziert wurde */
@@ -46,6 +47,9 @@ export class WorldView {
   viewMoved = false;
   private worldDef: WorldDef;
   private night: boolean;
+  /** Weltrenderer (?world=1): Himmel wird vor der Three-Welt gezeichnet; Boden, Schienen und Wagen kommen aus der Welt */
+  private worldMode = false;
+  private worldR: WorldRenderer | null = null;
 
   constructor(worldDef: WorldDef, terrain: Terrain, skin: string, night = false, fx: boolean | null = null) {
     this.worldDef = worldDef;
@@ -77,9 +81,6 @@ export class WorldView {
       );
       this.laneContainers.set(z, lane);
       this.world.addChild(lane);
-      // Spur-Filter: Stippling auf den Schattenseiten (Luftperspektive machen die Renderer selbst)
-      const pal = worldDef.palette;
-      this.laneFilters.set(z, new LaneFilter({ stipple: pal.stipple, sky: pal.sky[1], depth: 0 }));
     }
     this.trackR.glowTargets = new Map([...this.glows].map(([z, g]) => [z, g.container]));
     this.applyFx();
@@ -95,6 +96,35 @@ export class WorldView {
   get isNight(): boolean {
     return this.night;
   }
+
+  /**
+   * Weltrenderer an: Der Himmel verlässt die Bühne und wird als Hintergrund vor der Three-Welt gezeichnet
+   * (Scene.background); Bodenstreifen, Berge, Wasser und Deko der Spuren bleiben aus, denn Boden und Kulissen zeichnet
+   * die Welt.
+   */
+  setWorldMode(world: WorldRenderer | null): void {
+    const on = !!world;
+    this.worldMode = on;
+    this.worldR = world;
+    if (on) this.root.removeChild(this.sky.container);
+    else if (!this.sky.container.parent) this.root.addChildAt(this.sky.container, 0);
+    for (const g of this.terrainR.layers.strip.values()) g.visible = !on;
+    for (const c of this.terrainR.layers.cover.values()) c.visible = !on;
+    this.trackR.setWorldMode(on);
+    this.trainR.setWorldMode(on);
+  }
+
+  /** Hintergrund hinter der Three-Welt (nur mit Weltrenderer): der Himmel */
+  get background(): Container | undefined {
+    return this.worldMode ? this.sky.container : undefined;
+  }
+
+  /** Kameralage dieses Bildes für den Weltrenderer: Ziel mit Wackeln, Zoom, Bildgröße, Perspektive */
+  cameraView(): CameraView {
+    const c = this.camera;
+    const v = viewState();
+    return { cx: c.x + c.ox, cy: c.y + c.oy, zoom: c.zoom, width: c.width, height: c.height, persp: v.persp, fov: v.fov };
+  }
   get def(): WorldDef {
     return this.worldDef;
   }
@@ -102,6 +132,22 @@ export class WorldView {
   setTrack(path: TrackPath, samples: TrackSamples, skin: string, terrain: Terrain, allowTunnels: boolean, preview = false): void {
     const portals = this.trackR.draw(path, samples, skin, terrain, allowTunnels, preview);
     if (!preview) this.terrainR.setTunnelPortals(portals);
+    // Weltrenderer: Profil aus denselben Abtastpunkten und derselben Schräglage wie die Schienen der Bühne; die Berge
+    // bekommen an den Portalen ihre Öffnungen
+    if (!preview) this.worldR?.setTunnelPortals(portals);
+    this.worldR?.setTrack(samples, this.trackR.railBanks, trackTypeForSkin(skin), preview, (x, y, z) => terrain.insideMountain(x, y, z));
+  }
+
+  /** Bahn löschen (Bühne und Welt) */
+  clearTrack(): void {
+    this.trackR.clear();
+    this.worldR?.clearTrack();
+  }
+
+  /** Zug entfernen (Bühne und Welt) */
+  clearTrain(): void {
+    this.trainR.clear();
+    this.worldR?.clearTrain();
   }
 
   /** Streben wachsen (0 … 1) nach dem Loslassen des Strichs */
@@ -111,14 +157,30 @@ export class WorldView {
 
   buildTrain(cars: number, riders: CharacterDef[], perCar: number): void {
     this.trainR.build(cars, riders, perCar);
+    this.worldR?.buildTrain(cars);
   }
 
   /** onRails: Der Zug fährt auf der Bahn (nicht im Flug nach einem Fehlschlag); die Wagen liegen dann auf den Schienen */
   updateTrain(cars: CarState[], passengers: PassengerView[], dt: number, onRails = true): void {
-    this.trainR.update(cars, passengers, dt, onRails ? (s) => this.trackR.railFrame(s) : undefined);
+    const rail = onRails ? (s: number) => this.trackR.railFrame(s) : undefined;
+    this.trainR.update(this.hangCars(cars, rail), passengers, dt, rail);
+    this.worldR?.updateTrain(cars, rail ?? null);
   }
 
-  /** Effekte an/aus (Dev-Overlay, Einstellung): Spur-Filter und Leuchtebenen */
+  /**
+   * Hängebahn in der Welt: Die Gondel hängt HANG_DROP unter der Bahnlinie, also auch die Fahrgäste der Bühne (die
+   * Weltdarstellung versetzt ihre Gondeln selbst); sonst die Wagen unverändert
+   */
+  private hangCars(cars: CarState[], rail?: (s: number) => { U: { x: number; y: number; z: number } } | null): CarState[] {
+    if (this.worldR?.currentType !== 'hanging') return cars;
+    return cars.map((c) => {
+      const fr = rail?.(c.s);
+      const U = fr ? fr.U : { x: c.upx, y: c.upy, z: c.upz };
+      return { ...c, x: c.x - U.x * HANG_DROP, y: c.y - U.y * HANG_DROP, z: c.z - (U.z * HANG_DROP) / LANE_DEPTH };
+    });
+  }
+
+  /** Effekte an/aus (Dev-Overlay, Einstellung): Leuchtebenen (der Spur-Filter mit Punktraster ist seit Etappe 1 weg) */
   setFx(on: boolean): void {
     this.fxOn = on;
     this.applyFx();
@@ -129,10 +191,6 @@ export class WorldView {
   }
 
   private applyFx(): void {
-    for (const [z, lane] of this.laneContainers) {
-      const f = this.laneFilters.get(z);
-      lane.filters = this.fxOn && f ? [f] : [];
-    }
     for (const g of this.glows.values()) g.enabled = this.fxOn;
   }
 
@@ -153,8 +211,10 @@ export class WorldView {
 
   /** Stehender Zug (Zeichenmodus): Pose setzen und Cut-out-Clips fortschreiben */
   updateStandingTrain(cars: CarState[], passengers: PassengerView[], dt: number): void {
-    this.trainR.update(cars, passengers, dt, (s) => this.trackR.railFrame(s));
+    const rail = (s: number) => this.trackR.railFrame(s);
+    this.trainR.update(this.hangCars(cars, rail), passengers, dt, rail);
     this.trainR.idleUpdate(dt);
+    this.worldR?.updateTrain(cars, rail);
   }
 
   resize(w: number, h: number): void {

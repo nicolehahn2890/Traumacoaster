@@ -71,15 +71,23 @@ export const clampLane = (z: number): number => clamp(Math.round(z), LANE_MIN, L
 /** Luftperspektive: 0 vorne (satt) → 1 hinten (hell) */
 export const laneAtmosphere = (z: number): number => (z - LANE_MIN) / (LANE_MAX - LANE_MIN);
 
-// ------------------------------------------------------------------ Perspektive (Richtlinie, Schritt 1)
+// ------------------------------------------------------------------ Perspektive (Richtlinie, Schritt 1; Kamera exakt seit Etappe 1)
 /**
- * Hinter einem Schalter (?persp=1): Die Spur-Ebenen bleiben bildparallel wie auf der Bühne, bekommen aber je Tiefe
- * einen Maßstab s(z) = D / (D + DEPTH_VIEW · z) um das Kameraziel herum. D ist der Kameraabstand in Metern, der
- * beim Zoomen mitfährt (Kamerafahrt: D = halbe Bildhöhe in Metern / tan(fov/2)). DEPTH_VIEW ist der Spurabstand
- * entlang der Blickrichtung der um atan(LANE_RISE/LANE_DEPTH) geneigten Kamera, deren Ortho-Bild die Bühne ist.
- * Ohne Perspektive ist s = 1 und alles hier fällt auf toStage/toWorld zurück.
+ * Hinter einem Schalter (?persp=1; mit dem Weltrenderer ?world=1 Standard): Die Bühne ist das Ortho-Bild einer um
+ * CAMERA_TILT = atan(LANE_RISE / LANE_DEPTH) = 26,57° nach unten geneigten Kamera, senkrecht um 1/cos gestreckt, damit
+ * ein senkrechter Meter so lang bleibt wie ein waagerechter (Richtlinie 2.1). Mit Perspektive steht dieselbe Kamera im
+ * Abstand D vor dem Kameraziel (cx, cy) auf der Spur-0-Ebene und fährt beim Zoomen heran (Kamerafahrt:
+ * D = halbe Bildhöhe in Metern / tan(fov/2)). Ein Weltpunkt (x, y, z) erscheint um das Ziel mit dem Faktor D / W
+ * skaliert; W ist seine Tiefe entlang der Blickrichtung: W = D + DEPTH_VIEW·z − (y − cy)·sin(Neigung). Spuren rücken je
+ * DEPTH_VIEW nach hinten, was über dem Ziel liegt, rückt der geneigten Kamera näher. Das ist genau die Projektion des
+ * Weltrenderers (src/world/camera.ts, Test tests/world.test.ts); die Spur-Container der Bühnendarstellung skalieren
+ * einheitlich mit dem Maßstab auf Zielhöhe (viewScale) und korrigieren jeden Punkt über toLaneOf nach. Ohne Perspektive
+ * ist D unendlich, und alles hier fällt auf toStage/toWorld zurück.
  */
-export const DEPTH_VIEW = LANE_DEPTH * Math.cos(Math.atan(LANE_RISE / LANE_DEPTH));
+export const CAMERA_TILT = Math.atan(LANE_RISE / LANE_DEPTH);
+const TILT_SIN = Math.sin(CAMERA_TILT);
+/** Spurabstand entlang der Blickrichtung der geneigten Kamera (Meter) */
+export const DEPTH_VIEW = LANE_DEPTH * Math.cos(CAMERA_TILT);
 
 export interface ViewState {
   persp: boolean;
@@ -115,16 +123,32 @@ export function viewDistance(zoom: number, screenHeight: number, fov = view.fov)
   return screenHeight / 2 / zoom / Math.tan((fov * Math.PI) / 360);
 }
 
-/** Maßstab einer Tiefe z (Spuren) relativ zur Spur 0 */
+const perspOn = (): boolean => view.persp && Number.isFinite(view.D);
+
+/** Tiefe eines Weltpunkts (Höhe y, Tiefe z in Spuren) entlang der Blickrichtung, von der Kamera aus (Meter) */
+export function viewDepth(y: number, z: number): number {
+  return view.D + DEPTH_VIEW * z - (y - view.cy) * TILT_SIN;
+}
+
+/** Maßstab eines Weltpunkts relativ zum Kameraziel (1 am Ziel, kleiner hinten und unten) */
+export function pointScale(y: number, z: number): number {
+  if (!perspOn()) return 1;
+  return view.D / viewDepth(y, z);
+}
+
+/** Maßstab einer Spur-Ebene z auf Zielhöhe (y = cy) relativ zur Spur 0: der Maßstab der Spur-Container */
 export function viewScale(z: number): number {
-  if (!view.persp || !Number.isFinite(view.D)) return 1;
+  if (!perspOn()) return 1;
   return view.D / (view.D + DEPTH_VIEW * z);
 }
 
-/** Maßstab einer Zwischentiefe z relativ zum Spur-Container lane (der selbst viewScale(lane) trägt) */
-export function laneRatioFor(z: number, lane: number): number {
-  if (!view.persp) return 1;
-  return viewScale(z) / viewScale(lane);
+/**
+ * Maßstab einer Zwischentiefe z (auf Höhe y, sonst auf Zielhöhe) relativ zum Spur-Container lane (der selbst
+ * viewScale(lane) trägt)
+ */
+export function laneRatioFor(z: number, lane: number, y = view.cy): number {
+  if (!perspOn()) return 1;
+  return pointScale(y, z) / viewScale(lane);
 }
 
 /** Maßstab einer Zwischentiefe relativ zu ihrem nächsten Spur-Container */
@@ -139,16 +163,16 @@ export function laneRatio(z: number): number {
  */
 export function toLaneOf(x: number, y: number, z: number, lane: number): StagePoint {
   const p = toStage(x, y, z);
-  if (!view.persp) return p;
-  const r = laneRatioFor(z, lane);
+  if (!perspOn()) return p;
+  const r = laneRatioFor(z, lane, y);
   return { X: view.cx + (p.X - view.cx) * r, Y: view.cy + (p.Y - view.cy) * r };
 }
 
-/** Welt → Bühne der Ansicht: wie toStage, um das Kameraziel mit s(z) skaliert (Griffe, Treffer, Effekte) */
+/** Welt → Bühne der Ansicht: wie toStage, um das Kameraziel mit dem Maßstab des Punkts skaliert (Griffe, Treffer, Effekte) */
 export function toView(x: number, y: number, z: number): StagePoint {
   const p = toStage(x, y, z);
-  if (!view.persp) return p;
-  const s = viewScale(z);
+  if (!perspOn()) return p;
+  const s = pointScale(y, z);
   return { X: view.cx + (p.X - view.cx) * s, Y: view.cy + (p.Y - view.cy) * s };
 }
 
@@ -162,11 +186,18 @@ export function tagRay(p: StagePoint): StagePoint {
   return view.persp ? { X: p.X, Y: p.Y, cx: view.cx, cy: view.cy } : { X: p.X, Y: p.Y };
 }
 
-/** Strahl auf Tiefe z (Spuren) → Welt; ohne Strahl oder Perspektive wie toWorld */
+/**
+ * Strahl auf Tiefe z (Spuren) → Welt: Der Strahl durch den Bildpunkt schneidet die senkrechte Spur-Ebene z. Aus
+ * Yi·W = (dy + rise(z))·D (Yi Bildhöhe über dem Ziel, dy Höhe über dem Ziel) folgt dy, daraus W und die Breite.
+ * Ohne Strahl oder Perspektive wie toWorld.
+ */
 export function rayToWorld(p: StagePoint, z: number): { x: number; y: number } {
-  if (!view.persp || p.cx === undefined || p.cy === undefined) return toWorld(p.X, p.Y, z);
-  const s = viewScale(z);
-  return toWorld(p.cx + (p.X - p.cx) / s, p.cy + (p.Y - p.cy) / s, z);
+  if (!perspOn() || p.cx === undefined || p.cy === undefined) return toWorld(p.X, p.Y, z);
+  const D = view.D;
+  const Yi = p.Y - p.cy;
+  const dy = (Yi * (D + DEPTH_VIEW * z) - laneRise(z) * D) / (D + Yi * TILT_SIN);
+  const W = D + DEPTH_VIEW * z - dy * TILT_SIN;
+  return toWorld(p.cx + ((p.X - p.cx) * W) / D, p.cy + dy + laneRise(z), z);
 }
 
 /** Zwischenpunkt zweier Strahlen (Lage und Kamera linear) */

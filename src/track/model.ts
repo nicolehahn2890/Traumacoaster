@@ -473,6 +473,18 @@ export function railBanks(samples: TrackSamples, speed: (i: number) => number): 
 /** Länge (Meter), über die die Schräglage der Schienen ausgeglichen wird (siehe railBanks) */
 export const RAIL_ROLL_SMOOTH = 9;
 
+/** Auslegungstempo (m/s) für die Schräglage der Schienen: Fall vom höchsten Punkt, gedämpft, plus Grundtempo */
+export function designSpeed(samples: TrackSamples, i: number, maxY: number): number {
+  return Math.sqrt(Math.max(0, 2 * 9.81 * (maxY - samples.y[i]))) * 0.8 + 2;
+}
+
+/** Schräglage der Schienen einer Abtastung mit dem Auslegungstempo: dieselbe Rechnung für Bühne und Welt */
+export function railBanksFor(samples: TrackSamples): Float64Array {
+  let maxY = 0;
+  for (let i = 0; i < samples.count; i++) maxY = Math.max(maxY, samples.y[i]);
+  return railBanks(samples, (i) => designSpeed(samples, i, maxY));
+}
+
 /**
  * Glatte Folge b zu Werten a: min Σ w·(b − a)² + mu·Σ (b[i+1] − b[i])² (tridiagonal, Thomas-Verfahren). Geschlossen:
  * mit einem Polster aus dem Umlauf auf beiden Seiten gelöst, das weit genug ist, dass die Enden nicht mehr wirken.

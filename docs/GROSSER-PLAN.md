@@ -135,6 +135,11 @@ Optionen:
 | D: 2D-Leveleditor (Kacheln, Ebenen) | bekannt | fertig | unsere Zone ist 3D aus Flächen; Tiefe, Fundamente, Öffnungen passen nicht |
 
 **Empfehlung: A**, in drei Ausbaustufen, jede mit Tor. **Bestätigt am 24.10.2026: Option A, Florian bedient den Editor selbst am Mac.**
+**Stand 25.10.2026:** Stufe 1 begonnen (Etappe 1, Schritt 6: Setzen, Ziehen, Tiefe, Maße, Löschen, Speichern, Laden,
+Hot-Reload; Schritt 7: Metadaten je Element und Felder mit Kamerabegrenzung, Absperrband und Zoom-Grenze; Schritt 8:
+Station, Schlange, Baustelle und Coin-Gruppen als Einträge der Zone; Schritt 9: Ziele, Fortschritts- und
+Aufwertungsstufe je Feld, Testfahrt-Knopf, Prüfzone mit Determinismus-Test und Standbild-Szenario; `docs/TECH.md` 4g).
+Stufe 1 des Editors ist damit gebaut; Tor 1b prüft sie.
 
 1. **Klötzchen-Editor** (gehört zur Etappe Weltrenderer): Platzhalter (Fläche, Kasten, Zylinder, Höhlenkasten, Wasser,
    Station, Baustelle, Coin-Gruppe) setzen, ziehen, in der Tiefe verschieben, Metadaten setzen (Fundament, Öffnung,
@@ -367,6 +372,11 @@ optional). Florians „maximal drei, meistens zwei“ passt genau.
 
 **Status: bestätigt am 24.10.2026.** Offen bleibt nur, was ausdrücklich so markiert ist (Schleifen nach Entscheidung
 4, Flugweite als Bonus-Variante, Zustieg unterwegs); das wird in Paket 3 und 6 geklärt.
+**Stand 25.10.2026 (Etappe 1, Schritt 9):** Ziele lassen sich je Feld der Zone eintragen (Katalog v1 = die Zieltypen,
+die der heutige Prüfer kennt: Ankommen, Höhe, Coins, Loopings, Kurven, Tunnel, Startarten, Booster, Airtime, Tempo,
+Länge, Zeit, Schrauben, g-Kräfte, Splash, Spuren, ohne Bremse, Drop, Abflug, Fangen, Flugweite; Stern = Bonusziel) und
+werden im aktiven Feld live wie im Level gewertet. Platzhalter: die Rätselziele aus 4.2 (Glocke, Mühlrad, Tor, Sprung,
+Durchbruch), Magnet-Coins und das Fangen mit Bild-im-Bild kommen in E2 und E3; die Zieleingabe ist eine Textzeile.
 
 ## Paket 1: Weltrenderer (Technik gesetzt, Einordnung als Etappe 1)
 
@@ -388,6 +398,96 @@ Tiefenfehler, Handy-Messung mit allen vier Bahntypen (60 fps Ziel, Holz unter 15
 Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
 
 **Status: bestätigt am 24.10.2026** (mit Paket 10).
+
+**Stand 24.10.2026, Etappe 1, Schritt 1 gebaut** (Branch `etappe-1-weltrenderer`; Technik in `docs/TECH.md` 4e und 4f):
+`src/world/` mit Renderer im geteilten Kontext, Kamera-Adapter, Boden und Erdschnitt, Schalter `?world=1`. Gelernt:
+1. Pixi und Three teilen den Kontext mit `resetState` je Bild wie dokumentiert, aber Pixi setzt die Löschfarbe nach dem
+   Reset nicht neu: Three muss sie transparent lassen, sonst sind Pixis Filter-Texturen deckend schwarz (Risiko „zwei Renderer
+   im selben Kontext“ aus Paket 11: gefunden und behoben, die Szenarien prüfen das Bild am Tor 1a).
+2. Die Perspektive aus Schritt 1 der Richtlinie rechnete die Spur-Ebenen bildparallel; die echte geneigte Kamera skaliert
+   zusätzlich mit der Höhe über dem Kameraziel (bei 10 m und D = 170 m rund 2,6 %). `toView` und `rayToWorld` sind jetzt die
+   exakte Kamera, die Spur-Container der Bühnendarstellung korrigieren jeden Punkt nach; der Pinsel deutet den Strich also
+   genau so, wie der Weltrenderer ihn zeigt.
+3. Kantenglättung: Die Richtlinie nennt `antialias: false`, Labor und Spiel liefen bisher mit Glättung (auch Florians
+   Handy-Messung im Labor). Der Kontext startet mit Glättung, `?aa=0` schaltet sie ab; am Tor 1a wird beides gemessen, Florian
+   entscheidet.
+4. Boden als Höhenfeld zeigt Hügel je Spur als Terrassen (so rechnet die Physik); ob der Boden der Basiszone je Spur oder
+   als Fläche beschrieben wird, klärt das Zonen-Datenmodell (Paket 2, Schritt 6/7).
+5. Im Übergang bleiben Schienen, Stützen, Zug, Berge und Wasser in Pixi über der Welt: ohne Tiefenpuffer scheint eine Bahn
+   hinter einem vorderen Hügel bis Schritt 2 durch, Berge und Wasser liegen in Perspektive bis zu ein paar Pixel neben dem
+   Boden (bis Schritt 4).
+6. Replay mit Perspektive nach dem Umbau: 261 Aufnahmen, Pinsel 87 von 250 Fahrten geschafft (vorher mit der bildparallelen Näherung 88, ohne Perspektive 90), kein Fehler, die Ausfallgründe verteilen sich wie vorher.
+7. Schritt 2 (24.10.): Straße und Stahl als Profile entlang des Bahnmodells mit der Schräglage der Bühnen-Schienen,
+   Wagen-Platzhalter mit Sitzen, Licht aus dem Labor. Gelernt: Ein Wagen aus Einzelteilen kostete 16 Zeichenaufrufe (drei
+   Wagen fast die Hälfte des Budgets); als eine Geometrie mit Farbe je Ecke ist es einer. Bahn und Zug: 108 Zeichenaufrufe
+   mit Pixi-HUD und Pixi-Stützen am Mac, 120 fps. Replay `--world`: 250 Bahnprofile aus den Aufnahmen gebaut, keine ungültigen Werte, Abstand der Bahnknoten zum Strich im Median 2,3 px (bei 17 px/m etwa 14 cm: die Fit-Toleranz des Pinsels).
+8. Schritt 3 (24.10.): Holz und Hängebahn als Profile, vier Stützenfamilien als Instanzen (je Familie höchstens fünf
+   Zeichenaufrufe; Holzbahn mit Böcken 96 Zeichenaufrufe statt 469 Einzelteile im Labor), Füße über Fundamentflächen statt
+   Alpha-Scan (Terrain als erstes Fundament, Wasser trägt nicht; Kulissen melden ihre Flächen in Schritt 4 und 7 über
+   Metadaten). Gelernt: Die Hängebahn braucht im Spiel den Tragbalken über der Bahnlinie (die Physik fährt auf der Linie,
+   die Gondel hängt darunter am Balken), nicht wie im Labor die Bahnlinie als Balken; der Fuß wird unter der Bahnlinie
+   gesucht, nicht unter dem Anschluss, sonst gilt eine niedrige Bahn als schwebend statt als zu kurz. Replay `--world` mit
+   Stützen: 250 Bahnprofile und 7410 Stützen aus den Aufnahmen gebaut, keine Stelle ohne Fundament (flache Level), keine ungültigen Werte; Abstand der Bahnknoten zum Strich bei 191 neuen Strichen im Median 2,0 px, Maximum 159 px (Knoten des Rundenschlusses, der bis 10 m neben dem Strich liegen darf).
+9. Schritt 4 (24.10.): Kulissen-Platzhalter nach 8a.1 mit Tiefenpuffer (Kulisse, Dreiteiler, Säule, Höhlenkasten,
+   Wasser, Wasserfall, Portal), Berge der Level als Dreiteiler mit Öffnungen an den Tunnelportalen (die Bahn fährt hinter
+   der Lippe, verdeckt ohne Maske: Richtlinie 3 bestätigt sich im Spiel), Seen als Wasserflächen, die Füße sperren; Licht,
+   Shadow Map (1024², Kasten folgt der Kamera, `?shadow=0`), Schattenfänger, Nebel und vier Looks als Module, Umfärben
+   auf allen Flächen (`?look=`). Lesarten-Knopf und Spur-Filter sind raus (Paket 7, Entscheidung 7). Gelernt: Ein
+   Dreiteiler braucht keine Seitenwände (die Silhouette läuft am Rand auf den Boden aus; Wände ragten als Klingen über
+   den Berg); der Himmel liegt noch in Pixi und folgt nur dem Nacht-Level, nicht dem Look (Nachtrag für Schritt 4 der
+   Richtlinie: Himmel in die Welt, sobald ferne Kulissen kommen). Level 32 mit Bahn durch den Berg: 106 Zeichenaufrufe,
+   120 fps am Mac. Replay `--world`: unverändert (250 Profile, 7410 Stützen, Median 2,0 px, kein Fehler).
+10. **Tor 1a, erste Runde (25.10., Florians Handy-Test aller Links):** 3D-Optik und Schatten machen es besser. Zwei
+    Befunde: (a) Die Hängebahn passte nicht, weil der Balken 2,4 m über dem Strich lag; **Regel von Florian: Der Strich
+    muss immer genau da sein, wo gezeichnet wird.** Behoben: Der Balken liegt auf dem Strich, die Gondel hängt
+    `HANG_DROP` = 2,4 m darunter (Welt und Bühnen-Fahrgäste versetzt, Pinsel hält 3,2 m Abstand zum Boden, Stützen suchen
+    den Fuß unter der Gondel). (b) Die Berge waren nicht verständlich. Befund beim Nachstellen: Ein Berg ohne feste Spur
+    (Level 32) war ein einziger 41 m tiefer Dreiteiler; im geneigten Bild liegt seine Vorderseite zehn Meter unter der
+    Rückseite, die Bahn schwebte sichtbar dazwischen, und der Tunnel war nicht zu sehen. Behoben: Ein solcher Berg steht
+    wie auf der Bühne als Scheibe je Spur gestaffelt (zu drei Zeichenaufrufen verschmolzen), jede Scheibe mit den
+    Öffnungen der Bahn ihrer Spur; die Tunnelmünder bekommen eine dunkle Scheibe hinter dem Ring. Die gedimmt sichtbare
+    Bahn im Berg kommt mit den Fels-Regeln in E2 (Paket 5.2).
+    **Tor 1a bestanden (Florian, 25.10.):** Leistung am Handy reicht, Kantenglättung bleibt an (jederzeit per `?aa=0`
+    nachjustierbar), die Berge sind als Platzhalter eingeordnet (Dreiteiler-Prinzip bleibt, Form, Farbe und Staffelung
+    kommen aus den Bildern der Basiszone). Regel aus dem Tor für alle Stände: Platzhalter immer dazusagen
+    (`docs/HANDOVER.md`, Abschnitt 5). Weiter mit Schritt 6. Replay `--world` nach den Fixes: 306 Bahnprofile (Florians Handy-Striche vom 25.10. sind aufgezeichnet, 261 → über 300 Aufnahmen), 8835 Stützen, 64 Stellen ohne Fundament (neue Aufnahmen über Wasser), Median 2,0 px, kein Fehler.
+
+11. Schritt 6 (25.10.): Zonendatei Version 1 und Klötzchen-Editor Stufe 1 (`docs/TECH.md` 4g): Palette der Platzhalter
+    aus 8a.1, Setzen, Ziehen in der Spur-Ebene, Tiefe und Maße per Tasten, Löschen, Bahntyp der Zone, Speichern über den
+    Dev-Server, Hot-Reload bei jeder Änderung der Datei, Tab zum Spielen in der Zone. Gelernt: Vites eigener Wächter lädt
+    bei Änderungen unter `public/` die ganze Seite neu, darum ein eigener Wächter für `public/zones` mit Ereignis an
+    das Spiel; ein Three-Linienrahmen (ein Pixel) ist als Auswahl kaum zu sehen, der Rahmen ist ein Pixi-Kasten um die
+    projizierte Hülle. Platzhalter: alle Klötzchen, ihre Maße und Farben. Replay `--world` unverändert grün (322
+    Aufnahmen mit Florians Handy-Strichen, 9185 Stützen, Median 2,0 px, kein Fehler).
+12. Schritt 7 (25.10.): Metadaten je Platzhalter nach 2.1 und 8a.1 (Fundament, Öffnungen, Anschluss, Wachstumsstufe,
+    Tiefenrolle) in Datei und Editor, Felder als Rechtecke in Zonenkoordinaten mit weicher Kamerabegrenzung (Rückstoß
+    nach dem Ziehen), Zoom-Grenze „Feld passt ins Bild“ und Absperrband an den Rändern; `docs/TECH.md` 4g. Gelernt: Die
+    Taste F war schon das Dev-Overlay (Effekte), darum schaltet Enter ein Feld aktiv; Wachstumsstufe und Tiefenrolle
+    bleiben bis Schritt 9 reine Daten. Platzhalter: die Öffnung ist ein Kreis, die Oberkante tragfähig als Ganzes; beides
+    ersetzen die Metadaten der gemalten Teile (Fundament-Polygon, Öffnungsvolumen). Replay `--world`: 343 Aufnahmen, 9579 Stützen, Median 2,0 px, kein Fehler.
+13. Schritt 8 (25.10.): Stationsanker mit Richtung und Vorgabestück (Plan 3.3; im Spiel beginnt die Bahn am Stück, jeder
+    Strich setzt sie fort, Löschen stellt es wieder her), Häuschen mit Drehkreuz und Geländer, Hebel als Platzhalter;
+    Schlangenbereich mit Eingangsrichtung, sechs Figuren und Freiraum-Volumen (6.3); Baustellen-Marke mit Variante
+    Verbinden oder Durchbruch und Mindesttempo (5.1); Coin-Gruppen in vier Formen als Coins der Bühne (4.4). Gelernt: Vier
+    Platzhalter aus Einzelteilen kosteten mit Schatten über hundert Zeichenaufrufe; verschmolzen zu einer Geometrie je
+    Platzhalter sind es vier. Platzhalter: alle Formen und Farben; Startart-Knopf, Freiraum-Anhebung, Durchbruch und
+    Magnet-Coins kommen in E2 und E3. Replay `--world`: 364 Aufnahmen, 10162 Stützen, Median 2,0 px, kein Fehler.
+14. Schritt 9 (25.10.): Ziele je Feld (Katalog v1: die Zieltypen des heutigen Prüfers, als Zeile mit Typ, Wert und Stern
+    für Bonus; 4.1), Fortschrittsstufe je Feld (Elemente mit größerer Wachstumsstufe fehlen in diesem Level; 2.1) und
+    Aufwertung je Feld (heute die Gurtstufe; 2.4), Testfahrt-Knopf im Editor (gewähltes Feld aktiv, Spielen, Fahrt),
+    Prüfzone mit Determinismus-Test (Lesen und Schreiben ergeben dieselbe Datei) und Szenario 10 als Standbild-Test in
+    der CI. Gelernt: Ohne Ziele bleibt die Zone Sandkasten mit Maßband, mit Zielen verhält sie sich wie ein Level; so
+    prüft Florian ein Feld, ohne ein Level anzulegen. Platzhalter: Zieleingabe als Textzeile im Browser-Dialog; die
+    Rätselziele (4.2), Magnet-Coins und Fangen kommen in E2 und E3, die Fähigkeiten als Schalter (2.4) in E2. Replay `--world`: 382 Aufnahmen, 10695 Stützen, Median 2,0 px, kein Fehler.
+15. Tor 1b, erste Rückmeldung (25.10.): Beim Bauen des Testausschnitts fehlten das Verschieben der Öffnung und die Dicke
+    des Dreiteilers; nachgerüstet als Alt+Pfeile (Öffnung, Shift fein), Plus und Minus (Radius) und Shift+Pfeile
+    links/rechts (Dicke von Dreiteiler, Höhlenkasten, Wasser). Gelernt: Jede Code-Änderung lädt die Editor-Seite am Mac
+    neu, ungesicherte Einträge gehen dabei verloren; gespeicherte Zonen kommen per Hot-Reload zurück.
+16. Tor 1b bestanden (25.10.): Florian hat den Testausschnitt (Station, Hügel, Fenster-Element, Baustelle) selbst gebaut,
+    das Handy zeigt dasselbe. Seine Fragen dabei (Tunnel an Seite und Front, organischer Boden, Höhlen mit Lagen) sind
+    mit Antwort in Paket 8a festgehalten, mit seiner Korrektur: gemaltes Teil gegen 3D-Teil mit gemalter, per Shader
+    umgefärbter Textur bleibt offen und wird an der Stilprobe je Stelle getestet. Etappe 1 abgeschlossen, Pull Request
+    nach `main`.
 
 ## Paket 10: Etappen und Abnahmen (Vorschlag aus allem Bestätigten)
 
@@ -413,7 +513,7 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
 | **E1 Weltrenderer und Klötzchen-Editor** | Three-Szene hinter Schalter, Pixi-HUD im Kontext, Kamera 18 Grad, Boden, Erdschnitt, Kulissen-Platzhalter mit Tiefenpuffer, vier Bahnprofile, Stützenfamilien instanziert, Wagen-Platzhalter, Licht, Schatten, Nebel, Looks aus dem Labor; Editor Stufe 1 (Platzhalter, Metadaten, Felder, Station, Baustelle, Coins, Zonendatei, Testfahrt); Lesarten-Knopf und Spur-Filter raus | Basiszone-Datei v0 mit einem Testfeld, vom Editor geschrieben | 100-Punkte-Test, Replay grün, Handy 60 fps mit Holz unter 150 Draw Calls, Florian baut selbst einen Testausschnitt, Handy zeigt dasselbe | M (Arbeitsschritte unten) | Richtlinie, Labor |
 | **E2 Bahn und Welt** | Fähigkeiten als Schalter (3.1), Startarten sichtbar (Platzhalter), Aufwertungen als Daten, Station mit Vorgabestück, Häuschen, Hebel und Richtung, Schlangenbereich mit Freiraum und Platzhalter-Figuren, Feld mit Kamerabegrenzung, Fels-Regeln (Öffnungen, Baustellen, Stop-Hinweis), Baustellen in zwei Varianten mit Freilegung, Räume mit „offen ab Stufe“, Autoscroll-Schalter, Wasser mit Schaltern, Fortschrittsstufe mit Looks, Kettenzuglinie | Basiszone v1: alle Bahn- und Weltfähigkeiten mit Platzhaltern spielbar | Checkliste je Fähigkeit in je einem Feld, Replay grün, Handy 60 fps, Florians Spieltest | M | E1 |
 | **E3 Ziele, Rätsel, Humor** | Zielarten-Katalog v1 auf der 3D-Bahn, Magnet-Coins, Tunnel-Meter, Sprungschanze mit Fangtrichter und Vorab-Fahrt, Fangen mit Magnetwagen, Bild im Bild als 2D-Kabine, Glocke, Mühlrad, Tor mit Schalterplatte, Durchbruch, Sterne A plus C mit „Alle an Bord“, Humor-Regeln (Entgleisen selten und groß), Bug-Backlog (Stabilität, Schräglage automatisch, Strichintelligenz, Bahnende, Kreuzungstausch ins Bogenmenü), 150 Level als Inhalt raus | Basiszone v2: jedes Ziel und jedes Element in einem Feld erlebbar | Prüfer-Vorstufe: jedes Ziel einmal erfüllt im Replay, Handy 60 fps auch mit Vorab-Fahrt und Bild im Bild, Florians Spieltest mit Fokus Humor | M | E2 |
-| **E4 Stilprobe** | Stützen-Werkstatt (drei Wege, Hybrid gegen Florians Studien), UI-Werkstatt (drei Varianten, Florian wählt), Funkeln-Shader, Stilproben-Satz (10 bis 15 Teile über das Figma-Konto mit Prüfung), Florians erste Figurenteile mit Farbmasken im Rig, Looks Tag, Abend, Nacht; ein Feld der Basiszone komplett ohne Platzhalter | Stilprobe: ein Feld im Alpen-Look, Art Direction v2 als Dokument (ersetzt `docs/ART.md`) | Standbild vom Handy neben Bild 15 und 04, Stützen je Familie neben der Studie, UI-Variante gewählt, Handy 60 fps mit Shadow Map und Funkeln, Florians Freigabe | M (parallel zu E3 möglich, sobald der Erzeugungsweg steht) | E1, Florians Teile, Erzeugungsweg |
+| **E4 Stilprobe** | Stützen-Werkstatt (drei Wege, Hybrid gegen Florians Studien), UI-Werkstatt (drei Varianten, Florian wählt), Funkeln-Shader, Stilproben-Satz (10 bis 15 Teile über das Figma-Konto mit Prüfung), Florians erste Figurenteile mit Farbmasken im Rig, Looks Tag, Abend, Nacht; ein Feld der Basiszone komplett ohne Platzhalter; Vergleich je Stelle: gemaltes Teil gegen 3D-Teil mit gemalter, per Shader umgefärbter Textur (Florian, 25.10.) | Stilprobe: ein Feld im Alpen-Look, Art Direction v2 als Dokument (ersetzt `docs/ART.md`) | Standbild vom Handy neben Bild 15 und 04, Stützen je Familie neben der Studie, UI-Variante gewählt, Handy 60 fps mit Shadow Map und Funkeln, Florians Freigabe | M (parallel zu E3 möglich, sobald der Erzeugungsweg steht) | E1, Florians Teile, Erzeugungsweg |
 | **E5 Alpen-Satz, Figuren, Karte** | Alpen-Satz (50 bis 70 Teile in Familien) ersetzt die Platzhalter der Basiszone, Katalog und KTX2, Figuren-Editor Stufe 1, Schlange mit Florians Figuren, Wagen Stufe 2 (Alpen-Autos nach Florians Entwurf, Holzzug und weitere über Generator und Meshy), Karte als ein Rad mit Sektoren, Miniaturen und Symbolen, Morph Schritt 1, Boden formen im Sandkasten | Basiszone komplett im Alpen-Look, Karte und Morph laufen | Zone komplett ohne Platzhalter, Morph-Video vom Handy ohne Sprung bei 60 fps, Replay grün, Prüfung „Platzhalter ohne Teil“ leer, Florians Freigabe | L | E3, E4, Florians Wagenentwurf |
 | **E6 Generator und Prüfer** | Rezepte als Layout-Grammatiken, Seeds, Kandidaten im Editor, Lösungsbahn je Level, Prüfer in der CI, Zonen-Bundles mit Vorladen, Speicher-Messung | Zehn Kandidaten-Level in der Basiszone, vom Prüfer bestanden | CI grün mit Prüfer, Handy 60 fps und Speicher im Rahmen, Florian nimmt zehn Kandidaten an oder ändert sie | M | E5 |
 | **E7 Neon-Freizeitpark** | Zweite Zone nur aus Daten, Neonpark-Satz, Looks Nacht und Neon mit Neon-Nebel, Glühen, Punktlichtern, eigene Stützen- und Stationsvarianten, Kostüme, höchstens ein neues interaktives Element; jede nötige Code-Änderung wird als Befund gegen das System notiert und behoben; danach Morph Schritt 2 mit Florian | Zweite Zone spielbar, Liste der Befunde, Morph-Animation final | Zone ohne neuen Engine-Code (Ausnahmen gelistet), 60 fps, Prüfer grün, Florians Freigabe | L | E6, Neonpark-Satz |
@@ -445,6 +545,8 @@ mit Florian. Die Session arbeitet auf einem eigenen Branch und geht am Tor per P
    Aufwertungsstufe wählen; Prüfung: Zonendatei lädt deterministisch, Standbild-Test.
 10. **Tor 1b:** Florian baut selbst einen Testausschnitt (Station, Hügel, Fenster-Element, Baustelle); das Handy zeigt
     dasselbe; Fixes; Doku in `docs/TECH.md` und `docs/HANDOVER.md`; Pull Request nach `main`.
+
+**Stand:** Schritte 1 bis 4 gebaut am 24.10.2026, Tor 1a bestanden am 25.10.2026, Schritte 6 bis 9 gebaut am 25.10.2026 (Nachträge in Paket 1); Tor 1b bestanden am 25.10.2026, Etappe 1 abgeschlossen, Pull Request nach `main` gestellt.
 
 **Florian parallel zu Etappe 1:** den Erzeugungsweg für Teile mit der Session prüfen (Voraussetzung für E4), erste
 Figurenteile in zwei Ansichten skizzieren, Entwurf der Alpen-Autos, Handy-Tests an den Toren, Entscheidungen an den
@@ -593,6 +695,10 @@ Platzhalter mit richtigen Maßen.
 2. Stützen-Werkstatt mit Weg C als Start: einverstanden? **Ja (24.10.).**
 
 **Status: bestätigt am 24.10.2026.**
+**Stand 25.10.2026 (Etappe 1, Schritt 8):** Stationsanker mit Richtung und Vorgabestück (14 m, offene Pinsel-Bahn,
+jeder Strich setzt sie fort) sind im Editor und im Spiel; Häuschen und Hebel als Platzhalter; der große Startart-Knopf,
+die sichtbaren Startarten (3.5) und die Fähigkeiten als Schalter kommen in E2. Schritt 9 (25.10.): Die Aufwertungsstufe
+je Feld ist heute die Gurtstufe (Taste U im Editor, `upgrade` in der Zonendatei), ein Platzhalter für die Schalter aus 2.4.
 
 ## Paket 8a: Teile und Elemente
 
@@ -656,6 +762,19 @@ in Paket 0 über die Stilprobe gefunden, nicht vorab festgelegt.
 
 **Status: bestätigt am 24.10.2026.** Die Grafikliste (Entscheidung 8) folgt aus der Basiszone und wird hier mit Datum
 nachgetragen, sobald die Platzhalter stehen.
+
+**Nachtrag 25.10.2026 (Florians Frage aus Tor 1b):** Tunnel sollen wie in den Referenzen auch an der Seite und vorn im Berg
+sitzen, der Boden und die Höhlen sollen organische Formen mit vielen Lagen und Tiefe haben; Frage, ob ein Berg später ein
+Teil mit echter Tiefe und Seitenansicht (Meshy) sein kann. Antwort der Session: Tunnelmünder an Flanke und Front sind
+gemalte Öffnungen mit Öffnungsvolumen (Richtlinie 3; heute Platzhalter-Kreise in der Lippe und automatische Portale); der
+Boden ist ein Höhenfeld je x und Spur mit gemalten Rändern (heute flach, weil die Zone noch kein Gelände hat; „Boden
+formen“ in E5); Überhänge und Höhlen kommen aus gemalten Teilen in vielen Tiefenlagen (Höhlenkasten als Platzhalter,
+später vier gemalte Flächen plus Höhlenteile; Untergrund als Ameisenfarm, Paket 5). **Florians Korrektur (25.10.):**
+Die Begründung, Meshy-Modelle beleuchteten sich realistisch und brächen den gemalten Look, ist gestrichen; die
+Meshy-Modelle aus den GPT-Earle-Teilen fand er sehr gut, und eine gemalte Textur lässt sich mit Shadern umfärben und so
+anpassen. Ob an einer Stelle ein gemaltes Teil oder ein 3D-Teil mit gemalter Textur besser aussieht, bleibt offen und
+wird an der Stilprobe (E4) je Stelle getestet, zum Beispiel ein Hero-Fels mit Tunnel in beiden Bauweisen nebeneinander
+auf dem Handy. Die Richtlinie trägt den Nachtrag in den Abschnitten 0, 3 und 9.
 
 ## Paket 6: Figuren, Schlange, Fahrgäste
 
@@ -952,6 +1071,8 @@ Baustellen-Inventar der Zone, hart aufgeklebt auf das gemalte Bild.
    unkonventioneller (Florian, 24.10., Nachtrag).** Ausarbeitung in 0.4 als UI-Werkstatt mit Varianten.
 
 **Status: bestätigt am 24.10.2026**; die zehn Regeln bleiben vorläufig, bis die Stilprobe sie bestätigt oder ändert.
+**Nachtrag 25.10.2026 (Florian):** Gemalte Fläche gegen 3D-Teil mit gemalter, per Shader umgefärbter Textur (Meshy aus den
+GPT-Earle-Teilen) ist keine Regel, sondern ein Test der Stilprobe je Stelle; siehe Paket 8a und Richtlinie 3 und 9.
 
 ## Paket 7: Werkzeuge und Bedienung
 
@@ -1003,6 +1124,10 @@ der Basiszone, die Adressparameter bleiben zum Vergleichen.
 Die Lesarten Bühne, Ein Strich und Ebenen, der Spur-Filter (Punktraster als Filter) und die 150 spurbasierten Level
 als Inhalt fallen mit dem Umbau auf den Weltrenderer; die Level-Daten bleiben als Vorrat für Rezepte (Paket 9), die
 Aufnahmen und Tests der Lesarten bleiben, soweit sie den Pinsel prüfen. Der Lesart-Knopf unten links verschwindet.
+
+**Stand 24.10.2026 (Etappe 1, Schritt 4):** Lesart-Knopf und Spur-Filter sind raus; die drei alten Lesarten bleiben
+im Code nur noch per Adresse (`?stage`, `?single`, `?lanes`) für Szenarien und Replay. Die 150 Level liegen weiter in
+`src/levels` und tragen bis zum Zonen-Editor (Schritt 6) die Basiszone-Arbeit; als Inhalt fallen sie mit der Zonendatei.
 
 ### Vorschlag 7.3: Bug-Backlog aus dem Testtag (Entscheidung 5)
 

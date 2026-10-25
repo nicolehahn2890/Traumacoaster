@@ -35,6 +35,11 @@ export class Camera {
   private shakeLeft = 0;
   private shakeDur = 0;
   private shakeTime = 0;
+  /**
+   * Weiche Begrenzung (Feld eines Levels, Plan 2.3): Beim Ziehen darf die Kamera etwas über den Rand hinaus, danach
+   * federt sie zurück; die Zielwerte bleiben immer im Rand. null = keine Begrenzung.
+   */
+  softBounds: Bounds | null = null;
 
   shake(amp = 0.6, dur = 0.3): void {
     this.shakeAmp = Math.max(this.shakeAmp * (this.shakeLeft / Math.max(1e-6, this.shakeDur)), amp);
@@ -122,11 +127,47 @@ export class Camera {
         this.shakeAmp = 0;
       }
     }
+    if (this.softBounds) this.applySoftBounds(dt);
     if (this.direct) return;
     const k = 1 - Math.exp(-this.smoothing * dt);
     this.x = lerp(this.x, this.tx, k);
     this.y = lerp(this.y, this.ty, k);
     this.zoom = lerp(this.zoom, this.tz, k);
+  }
+
+  /** Rand der weichen Begrenzung in Bühnen-Metern (die halbe Sicht bleibt innerhalb des Felds) */
+  private softLimits(): Bounds {
+    const b = this.softBounds!;
+    const hw = this.width / 2 / this.zoom;
+    const hh = this.height / 2 / this.zoom;
+    const minX = Math.min(b.minX + hw, b.maxX - hw);
+    const maxX = Math.max(b.minX + hw, b.maxX - hw);
+    const minY = Math.min(b.minY + hh, b.maxY - hh);
+    const maxY = Math.max(b.minY + hh, b.maxY - hh);
+    return { minX, maxX, minY, maxY };
+  }
+
+  private applySoftBounds(dt: number): void {
+    const l = this.softLimits();
+    // Ziele hart im Rand (Autoscroll, Folgen des Zugs), die Lage beim Ziehen bis zu einem Viertel der Sicht darüber hinaus
+    this.tx = clamp(this.tx, l.minX, l.maxX);
+    this.ty = clamp(this.ty, l.minY, l.maxY);
+    if (this.direct) {
+      const ox = this.width / 4 / this.zoom;
+      const oy = this.height / 4 / this.zoom;
+      this.x = clamp(this.x, l.minX - ox, l.maxX + ox);
+      this.y = clamp(this.y, l.minY - oy, l.maxY + oy);
+      return;
+    }
+    // losgelassen: zurückfedern
+    const k = 1 - Math.exp(-8 * dt);
+    this.x = lerp(this.x, clamp(this.x, l.minX, l.maxX), k);
+    this.y = lerp(this.y, clamp(this.y, l.minY, l.maxY), k);
+  }
+
+  /** Zoom, bei dem ein Bereich gerade ins Bild passt (Zoom-Grenze „Feld passt ins Bild“) */
+  fitZoom(b: Bounds): number {
+    return Math.min(this.width / Math.max(1, b.maxX - b.minX), this.height / Math.max(1, b.maxY - b.minY));
   }
 
   /** Begrenzt das Ziel so, dass die Kamera nicht zu weit aus dem Level fliegt */

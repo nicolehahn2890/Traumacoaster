@@ -5,6 +5,7 @@
  *  3. Looping in der Luft → 1 Looping, Fahrt kopfüber und wieder aufrecht
  *  4. Löschen-Knopf, Überzeichnen (Hügel in eine flache Bahn)
  *  7. Bearbeiten: Segment ziehen (Bahn durch den Finger, Knoten bleiben), Langdruck zeigt Profi-Handles
+ * 10. Zone: Prüfzone im Weltrenderer (Station, Vorgabestück, Coins, Feld, Zeichenaufrufe, Standbild)
  * Screenshots nach screenshots/scenario-*.png. Nutzt einen vorbereiteten Spielstand (Welt 1 fast komplett).
  * Läuft in der Lesart „Bühne“ (`&stage` in der Adresse), für die die Erwartungen geschrieben sind (Standard ist der
  * Pinsel), und ohne Autoscroll (`&scroll=0`): Die Striche liegen in festen Bildschirmkoordinaten, ein mitlaufendes Bild
@@ -477,6 +478,56 @@ await page.screenshot({ path: 'screenshots/scenario-9-map.png' });
 // Play liegt mittig unter der Scheibe
 const playX = await page.evaluate(() => window.tcGame.current.playBtn.x);
 check(Math.abs(playX - 640) < 2, `Play-Knopf mittig (x ${playX})`);
+}
+
+// 10. Zone: die Prüfzone (public/zones/probe) lädt deterministisch in die Welt, Station setzt das Vorgabestück, Coins der
+//     Gruppe stehen, Feld ist aktiv, Zeichenaufrufe im Budget; Standbild der Welt
+if (want('10')) {
+  await page.goto(`${BASE}?zone=probe&dev=1&fx=1&scroll=0`, { waitUntil: 'networkidle' });
+  await sleep(3000);
+  const zone = await page.evaluate(() => {
+    const s = window.tcGame.current;
+    const z = s.sandbox?.zone;
+    return {
+      world: !!window.tcGame.world,
+      name: z?.name,
+      counts: z ? [z.elements.length, z.fields.length, z.stations.length, z.queues.length, z.sites.length, z.coinGroups.length] : null,
+      path: s.path ? s.path.nodes.length : 0,
+      first: s.path?.nodes[0]?.kind ?? null,
+      startX: s.path?.nodes[0]?.x ?? null,
+      coins: s.level.coins?.length ?? 0,
+      field: s.activeField?.id ?? null,
+      minZoom: s.view.camera.minZoom,
+      draw: window.tcGame.dev?.drawCalls ?? 0,
+      // Schritt 9: Ziele des Felds in der Zielleiste, Gurtstufe des Felds, Fortschrittsstufe blendet die spätere Kulisse aus
+      goals: s.level.goals.length,
+      cells: s.goalCells.length,
+      belt: s.level.restraint ?? null,
+      e1Visible: window.tcGame.world.zone.get('e1')?.built.group.visible ?? null,
+      e2Visible: window.tcGame.world.zone.get('e2')?.built.group.visible ?? null,
+    };
+  });
+  console.log('zone', zone);
+  check(zone.world, 'Weltrenderer läuft mit ?zone=');
+  check(zone.name === 'probe' && JSON.stringify(zone.counts) === '[3,1,1,1,1,1]', `Prüfzone geladen (Elemente, Felder, Station, Schlange, Baustelle, Coins: ${JSON.stringify(zone.counts)})`);
+  check(zone.path === 2 && zone.first === 'station' && zone.startX === 24, `Vorgabestück der Station steht (Knoten ${zone.path}, Start ${zone.first} bei x ${zone.startX})`);
+  check(zone.coins === 5, `Coins der Gruppe in der Bühne (${zone.coins})`);
+  check(zone.field === 'f1' && zone.minZoom > 3, `Feld f1 aktiv mit Zoom-Grenze (${zone.minZoom.toFixed(2)} px/m)`);
+  check(zone.draw > 0 && zone.draw < 150, `Zeichenaufrufe im Budget (${zone.draw} < 150)`);
+  check(zone.goals === 3 && zone.cells === 3, `Ziele des Felds stehen in der Zielleiste (${zone.goals} Ziele, ${zone.cells} Zellen)`);
+  check(zone.belt === 2, `Gurtstufe des Felds gilt für die Fahrt (${zone.belt} = Bügel)`);
+  check(zone.e1Visible === true && zone.e2Visible === false, `Fortschrittsstufe 1 zeigt den Dreiteiler und blendet die Kulisse ab Stufe 2 aus (e1 ${zone.e1Visible}, e2 ${zone.e2Visible})`);
+  // dieselbe Datei noch einmal gelesen ergibt denselben Stand (deterministisch)
+  const again = await page.evaluate(async () => {
+    const res = await fetch(`${location.pathname.replace(/[^/]*$/, '')}zones/probe/zone.json`, { cache: 'no-store' });
+    const file = await res.json();
+    const z = window.tcGame.current.sandbox.zone;
+    // Schlüssel sortiert vergleichen: die Reihenfolge in der Datei ist egal, der Inhalt muss gleich sein
+    const canon = (o) => JSON.stringify(Object.fromEntries(Object.entries(o).sort(([a], [b]) => (a < b ? -1 : 1))));
+    return { fileElements: file.elements.length, sameStation: canon(file.stations[0]) === canon(z.stations[0]), sameField: canon(file.fields[0]) === canon(z.fields[0]) };
+  });
+  check(again.fileElements === 3 && again.sameStation && again.sameField, 'Zonendatei und geladener Stand stimmen überein');
+  await page.screenshot({ path: 'screenshots/scenario-10-zone.png' });
 }
 
 await browser.close();

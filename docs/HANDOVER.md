@@ -1,4 +1,4 @@
-# Übergabe – Trauma Coaster (Stand 23.10.2026)
+# Übergabe – Trauma Coaster (Stand 25.10.2026)
 
 Für die nächste Session (Florian oder wer auch immer weitermacht): Was fertig ist, was offen ist, wie du
 weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md`, die Technik in
@@ -6,6 +6,58 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
 
 ## 1. Wo wir stehen
 
+- **24.10., Etappe 1 begonnen** (Branch `etappe-1-weltrenderer`, Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10).
+  Schritt 1 gebaut: Weltrenderer hinter `?world=1` (Three-Szene im selben WebGL-Kontext, Pixi zeichnet davor den Himmel und
+  darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem
+  die exakte geneigte Kamera, auch für den Pinsel), Boden als Höhenfeld und geschlossener Erdschnitt aus dem Terrain,
+  100-Punkte-Test (`tests/world.test.ts`). Technik in `docs/TECH.md` 4e und 4f, Gelerntes im Plan unter Paket 1. Replay:
+  261 Aufnahmen, Pinsel in Perspektive 87 von 250 Fahrten geschafft (vorher 88, ohne Perspektive 90), kein Fehler.
+  Schritt 2 gebaut: Bahnprofile Straße und Stahl als Meshes aus dem Bahnmodell (gleiche Schräglage wie die Bühne, Schwellen
+  und Streben als Instanzen, `?track=` zum Vergleich), Wagen-Platzhalter als 3D-Körper mit Sitzen (eine Geometrie je
+  Wagen), Licht aus dem Labor, Replay `npm run strokes:replay -- --world` (Profil je Bahn gebaut und geprüft, Abstand
+  Bahn–Strich im Bild der Weltkamera): 250 Bahnprofile gebaut, keine ungültigen Werte, Abstand Bahn–Strich im Median 2,3 px.
+  Schritt 3 gebaut: Holz und Hängebahn als Profile (die Gondel hängt am Balken 2,4 m über der Bahnlinie), vier
+  Stützenfamilien aus dem Labor als Instanzen (höchstens fünf Zeichenaufrufe je Familie, Holzbahn 96 statt 469 im Labor),
+  Füße über Fundamentflächen (`src/world/foundations.ts`: Terrain; Kulissen später über Metadaten). Replay `--world` mit
+  Stützen: 250 Bahnprofile, 7410 Stützen geplant und gebaut, keine Stelle ohne Fundament (die Aufnahmen liegen auf flachen Leveln), keine ungültigen Werte; Abstand Bahn–Strich bei 191 neuen Strichen im Median 2,0 px.
+  Schritt 4 gebaut: Kulissen-Platzhalter mit Tiefenpuffer (Fläche, Dreiteiler, Säule, Höhlenkasten, Wasser, Wasserfall,
+  Portal; Berge der Level sind Dreiteiler mit Tunnelöffnungen, Seen Wasserflächen), Licht mit Shadow Map und
+  Schattenfänger, Nebel, vier Looks aus dem Labor (`?look=`), Umfärbe-Shader auf allen Flächen; Lesarten-Knopf und
+  Spur-Filter sind weg (Pinsel ist die Lesart, `?stage|single|lanes` nur für Szenarien und Replay). Replay: unverändert grün (250 Profile, 7410 Stützen, Abstand Bahn–Strich im Median 2,0 px, kein Fehler).
+  Tor 1a, erste Runde (25.10.): Florian hat alle Links auf dem Handy gesehen (3D und Schatten besser). Fixes: Hängebahn
+  mit dem Balken auf dem Strich und der Gondel darunter (Regel: der Strich ist immer genau dort, wo gezeichnet wird),
+  Berge ohne feste Spur als gestaffelte Scheiben je Spur statt als ein tiefer Klotz, dunkle Tunnelmünder. **Tor 1a
+  bestanden (25.10.):** Leistung reicht, Kantenglättung bleibt an, Berge als Platzhalter eingeordnet.
+  Schritt 6 gebaut (25.10.): Zonendatei `public/zones/basiszone/zone.json` (Version 1: Name, Breite, Bahntyp, Elemente
+  nach Plan 8a.1), Klötzchen-Editor am Mac unter `?zone=basiszone&editor=1` (Palette, Setzen, Ziehen, Tiefe, Maße, Löschen,
+  Bahntyp, Speichern über den Dev-Server, Hot-Reload bei jeder Dateiänderung, Tab zum Spielen), TECH.md 4g. Replay `--world`: 322 Aufnahmen, 9185 Stützen, Median 2,0 px, kein Fehler.
+  Schritt 7 gebaut (25.10.): Metadaten je Element in Datei und Editor (Fundament M, Öffnung O, Anker A, Wachstumsstufe G,
+  Tiefenrolle R), Felder aufziehen (Werkzeug „Feld“, Enter schaltet aktiv) mit weicher Kamerabegrenzung, Zoom-Grenze „Feld
+  passt ins Bild“ und Absperrband an den Rändern; ohne Editor wählt `?field=` das Feld. Replay `--world`: 343 Aufnahmen, 9579 Stützen, Median 2,0 px, kein Fehler.
+  Schritt 8 gebaut (25.10.): Stationsanker mit Richtung und Vorgabestück (im Spiel beginnt die Bahn dort, Löschen stellt
+  das Stück wieder her), Häuschen- und Hebel-Platzhalter, Schlangenbereich mit Figuren und Freiraum, Baustellen-Marke
+  (Verbinden, Durchbruch), Coin-Gruppen (Reihe, Bogen, Ring, Säule) als Coins der Bühne; alle als verschmolzene
+  Platzhalter. Replay `--world`: 364 Aufnahmen, 10162 Stützen, Median 2,0 px, kein Fehler.
+  Schritt 9 gebaut (25.10.): Ziele je Feld (Katalog v1 = die Zieltypen des heutigen Prüfers, als Zeile „finish, height 20,
+  *coins 5“ über die Taste Z), Fortschrittsstufe (G: Elemente späterer Wachstumsstufen fehlen) und Aufwertung (U: heute
+  die Gurtstufe) je Feld; im aktiven Feld wertet die Zielleiste live wie im Level und die Ergebnistafel zeigt Sterne;
+  Knopf „Testfahrt“ im Editor; Prüfzone `public/zones/probe/zone.json` mit Determinismus-Test und Szenario 10 (Standbild
+  `screenshots/scenario-10-zone.png`, CI-Matrix 1 bis 10). Platzhalter: Zieleingabe als Textzeile im Browser-Dialog;
+  Rätselziele, Magnet-Coins, Fangen und die Fähigkeiten als Schalter kommen in E2 und E3. Replay `--world`: 382 Aufnahmen, 10695 Stützen, Median 2,0 px, kein Fehler.
+  Als Nächstes Schritt 10, Tor 1b: Florian baut selbst einen Testausschnitt (Station, Hügel, Fenster-Element, Baustelle),
+  das Handy zeigt dasselbe, dann Fixes, Doku und der Pull Request nach `main`.
+  Tor 1b, erste Rückmeldung (25.10.): Öffnung verschieben (Alt+Pfeile, Plus und Minus für den Radius) und Dicke des
+  Volumens (Shift+Pfeile links/rechts) fehlten im Editor und sind nachgerüstet. Florians Fragen zu Tunneln an Seite und
+  Front, organischem Boden und Höhlen mit Lagen sind mit Antwort in Paket 8a notiert. Florians Korrektur dazu: Ob ein
+  gemaltes Teil oder ein 3D-Teil mit gemalter, per Shader umgefärbter Textur (Meshy) besser aussieht, bleibt offen und wird
+  an der Stilprobe je Stelle getestet (Richtlinie 0, 3 und 9; Plan Paket 0 und 8a).
+  Achtung: Jede Code-Änderung lädt die Editor-Seite am Mac neu; ungesicherte Einträge gehen verloren, gespeicherte Zonen
+  kommen per Hot-Reload zurück.
+  **Tor 1b bestanden (25.10.):** Florian hat den Testausschnitt selbst gebaut, das Handy zeigt dasselbe. Etappe 1 ist
+  damit abgeschlossen; der Pull Request nach `main` steht in Abschnitt 3.
+  Links für den Handy-Test: Dev-Server mit `npm run dev` (zeichnet auf), Adresse aus dem
+  Vite-Log plus `?scene=start&level=8&world=1&dev=1` und `&track=`, `&aa=0`, `&shadow=0`, `&look=`, Level 32 (Tunnel),
+  Level 47 (See).
 - **24.10., spät: der große Plan steht.** `docs/GROSSER-PLAN.md` ist Paket für Paket mit Florian abgestimmt und in
   allen Paketen bestätigt: Ziel sind Look und Werkzeuge, nicht fertige Level. Es entsteht eine **Basiszone** als
   Werkstatt mit allen Fähigkeiten (vier Bahntypen, alle Startarten und Aufwertungen, alle Elementtypen) zuerst als
@@ -89,30 +141,39 @@ npm run strokes:replay        # aufgezeichnete Striche in allen vier Lesarten na
 Nützliche URL-Parameter im Spiel: `?scene=start&level=8` (direkt ins Level), `?fast=6` (Zeitraffer),
 `?brush` / `?stage` / `?single` / `?lanes` (Lesart erzwingen), `?scroll=0` (kein Autoscroll beim Zeichnen, für
 Skripte), `?fx=0` / `?fx=1` (Shader aus/an, sonst automatisch
-ab sechs CPU-Kernen), `?dev=1` (Overlay mit fps, Draw-Calls, Partikeln; Taste F schaltet die Effekte um).
+ab sechs CPU-Kernen), `?dev=1` (Overlay mit fps, Draw-Calls, Partikeln; Taste F schaltet die Effekte um), `?world=1`
+(Weltrenderer der Etappe 1, Perspektive 18° Standard; dort `?persp=0` für die Bühne, `?aa=0` ohne Kantenglättung).
 Eigene automatische Tests im Dev-Server mit `TC_NO_RECORD=1`, damit sie die echten Aufnahmen nicht verfälschen.
 
-## 3. Nächster Schritt: Etappe 1 des großen Plans
+## 3. Nächster Schritt: Etappe 2 des großen Plans
 
-Der Plan ist `docs/GROSSER-PLAN.md` (Tabelle A zeigt je Paket, was bestätigt ist; Paket 10 die Etappen; Paket 11 die
-Risiken). Als Nächstes kommt **Etappe 1, Weltrenderer und Klötzchen-Editor**, als zehn Arbeitsschritte in Reihenfolge
-ohne Kalender (Paket 10): Schritte 1 bis 4 bauen den Weltrenderer (Three-Szene hinter Schalter, Pixi-HUD im selben
-Kontext, Kamera 18 Grad mit Kamerafahrt, Boden und Erdschnitt, vier Bahnprofile aus dem Bahnmodell, Stützenfamilien
-instanziert, Wagen-Platzhalter, Kulissen-Platzhalter mit Tiefenpuffer, Licht, Schatten, Nebel, Looks; Lesarten-Knopf
-und Spur-Filter raus), Schritt 5 ist Tor 1a (Handy-Messung mit Florian), Schritte 6 bis 9 bauen den Klötzchen-Editor
-am Mac (Platzhalter, Metadaten, Felder, Station, Schlangenbereich, Baustelle, Coins, Zonendatei, Testfahrt, Ziele),
-Schritt 10 ist Tor 1b (Florian baut selbst einen Testausschnitt).
+Etappe 1 (Weltrenderer und Klötzchen-Editor) ist auf dem Branch `etappe-1-weltrenderer` fertig, Tor 1a und Tor 1b sind
+bestanden; der Pull Request nach `main` ist https://github.com/nicolehahn2890/Traumacoaster/pull/4 (der Merge deployt
+auf GitHub Pages; Florian merged). Der Plan ist `docs/GROSSER-PLAN.md` (Tabelle A zeigt je Paket, was bestätigt ist;
+Paket 10 die Etappen; Paket 11 die Risiken). Als Nächstes kommt **Etappe 2, Bahn und Welt** (Paket 10, Zeile E2):
+Fähigkeiten als Schalter (Paket 3.1), Startarten sichtbar als Platzhalter, Aufwertungen als Daten, Station mit
+Startart-Knopf am Hebel, Schlangenbereich mit Freiraum (Anheben der Bahn) und Platzhalter-Figuren, Fels-Regeln
+(Öffnungen, Baustellen, Stop-Hinweis „Fels“), Baustellen in zwei Varianten mit Freilegung, Räume „offen ab Stufe“,
+Autoscroll-Schalter, Wasser mit Schaltern, Fortschrittsstufe mit Looks, Kettenzuglinie. Ergebnis: Basiszone v1, in der
+alle Bahn- und Weltfähigkeiten mit Platzhaltern spielbar sind; Tor: Checkliste je Fähigkeit in je einem Feld, Replay
+grün, Handy 60 fps, Florians Spieltest. Etappe 2 hat im Plan noch keine Arbeitsschritte; die Session schlägt sie zuerst
+vor (in der Art von Paket 10, Etappe 1) und baut erst nach Florians Ja. Was Etappe 1 schon vorweggenommen hat (Station
+mit Vorgabestück, Schlangenbereich, Baustelle und Coin-Gruppen als Platzhalter, Felder mit Kamerabegrenzung, Ziele und
+Gurtstufe je Feld), steht in Paket 1, Nachträge 11 bis 16; offen aus Tor 1b bleibt der Vergleich gemaltes Teil gegen
+3D-Teil mit gemalter Textur, der an der Stilprobe je Stelle getestet wird (Paket 8a).
 
-**Startsatz für eine neue Session** (so beginnt die Bau-Session, Florian passt ihn an):
+**Startsatz für eine neue Session** (Florian passt ihn an):
 
-> Lies `docs/HANDOVER.md` ganz und `docs/GROSSER-PLAN.md` (Tabelle A, Abschnitt Z, Paket 1, 2, 3, 10, 11), dann
-> `docs/RICHTLINIE.md` Abschnitte 0, 2, 3, 3a, 12 und `docs/TECH.md` 4b bis 4e. Starte Etappe 1 nach den zehn
-> Arbeitsschritten in Paket 10, in dieser Reihenfolge, auf einem eigenen Branch. Nach jedem Schritt `npm test`,
-> `npm run build` und das Replay; eigene Browser-Tests nur mit `TC_NO_RECORD=1`; `recordings/strokes.jsonl` nie
-> anfassen. An den Toren (Schritt 5 und 10) hältst du an und fragst mich; Entscheidungen, die der Plan mir
+> Lies `docs/HANDOVER.md` ganz und `docs/GROSSER-PLAN.md` (Tabelle A, Abschnitt Z, Paket 1, 2, 3, 5, 10, 11), dann
+> `docs/RICHTLINIE.md` Abschnitte 0, 3, 3a, 4, 12 und `docs/TECH.md` 4b bis 4g. Schlage mir zuerst die Arbeitsschritte
+> für Etappe 2 (Paket 10, Zeile E2) vor, in Reihenfolge mit Toren, und warte auf mein Ja; dann baue sie auf einem
+> eigenen Branch (von `main`, sobald Pull Request 4 gemerged ist, sonst von `etappe-1-weltrenderer`). Nach jedem
+> Schritt `npm test`, `npm run build` und das Replay; eigene Browser-Tests nur mit `TC_NO_RECORD=1`;
+> `recordings/strokes.jsonl` nie anfassen. An den Toren hältst du an und fragst mich; Entscheidungen, die der Plan mir
 > zuschreibt, triffst du nicht selbst. Was du lernst, trägst du mit Datum im betroffenen Paket des Plans nach, die
-> Technik in `docs/TECH.md`, den Stand hier in Abschnitt 1. Deutsch, keine Modell- oder Werkzeugnamen in Dateien
-> und Commits, Commit-Betreff beschreibt das Spielverhalten. Keine Grafiken in Menge vor der Stilprobe.
+> Technik in `docs/TECH.md`, den Stand hier in Abschnitt 1. Bei jedem Stand sagst du, was Platzhalter ist und was
+> System. Deutsch, keine Modell- oder Werkzeugnamen in Dateien und Commits, Commit-Betreff beschreibt das
+> Spielverhalten. Keine Grafiken in Menge vor der Stilprobe.
 
 Regeln aus dem Plan, die für jede Session gelten: Nichts wird festgelegt, was Florian nicht bestätigt hat; was eine
 Etappe lernt, wird mit Datum im betroffenen Paket nachgetragen; keine Teile in Menge vor der Stilprobe (Etappe 4);
@@ -151,10 +212,14 @@ ansehen.
    `npm run levels:doc` erzeugt `docs/LEVELS.md`.
 4. Commit auf Deutsch (Betreff beschreibt das Spielverhalten, Rumpf die Dateien), Push auf den
    eigenen Branch, CI-Lauf im Actions-Tab prüfen (`.github/workflows/ci.yml`: Job `test` plus Matrix
-   `scenario` 1–9), dann per Pull Request nach `main` (deployt auf GitHub Pages).
+   `scenario` 1–10), dann per Pull Request nach `main` (deployt auf GitHub Pages).
 
 ## 5. Regeln und Eigenheiten
 
+- **Platzhalter immer dazusagen (Florian, 25.10.):** Bei jedem Stand, jeder Antwort und jedem Standbild steht dabei, was
+  nur vorläufig oder Platzhalter ist (Klötzchen, Farben, Formen aus den Level-Daten, Labor-Werte) und was gesetztes
+  System ist (Kamera, Tiefenpuffer, Dreiteiler-Prinzip, Profile aus dem Bahnmodell, Instanzen, Schatten, Looks). Nichts
+  Vorläufiges so zeigen, als wäre es der Look.
 - Keine Modell- oder Werkzeugnamen in Dateien, Commits oder Kommentaren. Die Attributionszeilen am Ende
   der Commit-Nachricht gibt die jeweilige Session vor.
 - `art-src/` (Quellbilder der Kacheln) ist nicht im Repository; das Archiv ist die Figma-Datei

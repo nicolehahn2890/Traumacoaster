@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "name": "probe",
+  "width": 160,
+  "trackType": "steel",
+  "elements": [
+    {
+      "id": "e1",
+      "kind": "threePart",
+      "x": 85,
+      "y": 0,
+      "z": 1,
+      "w": 24,
+      "h": 14,
+      "d": 7.5,
+      "color": "#a0765a",
+      "foundation": true,
+      "openings": [
+        {
+          "dx": 0,
+          "dy": 4,
+          "r": 2.4
+        }
+      ]
+    },
+    {
+      "id": "e2",
+      "kind": "flat",
+      "x": 50,
+      "y": 0,
+      "z": 2,
+      "w": 8,
+      "h": 6,
+      "color": "#7cc242",
+      "label": "Kulisse",
+      "growth": 2
+    },
+    {
+      "id": "e3",
+      "kind": "water",
+      "x": 125,
+      "y": 0.05,
+      "z": -1,
+      "w": 20,
+      "h": 0,
+      "d": 8,
+      "color": "#3ec7c2"
+    }
+  ],
+  "fields": [
+    {
+      "id": "f1",
+      "name": "Probefeld",
+      "x0": 10,
+      "x1": 140,
+      "y0": -10,
+      "y1": 45,
+      "goals": [
+        {
+          "type": "finish"
+        },
+        {
+          "type": "height",
+          "value": 12
+        },
+        {
+          "type": "coins",
+          "value": 5,
+          "bonus": true
+        }
+      ],
+      "stage": 1,
+      "upgrade": 2
+    }
+  ],
+  "stations": [
+    {
+      "id": "s1",
+      "x": 24,
+      "y": 1,
+      "z": 0,
+      "dir": 1,
+      "length": 14
+    }
+  ],
+  "queues": [
+    {
+      "id": "q1",
+      "x0": 6,
+      "x1": 18,
+      "y": 0,
+      "z": -1,
+      "dir": 1
+    }
+  ],
+  "sites": [
+    {
+      "id": "b1",
+      "x": 110,
+      "y": 1,
+      "z": 1,
+      "variant": "breakthrough",
+      "energy": 12
+    }
+  ],
+  "coinGroups": [
+    {
+      "id": "c1",
+      "shape": "arc",
+      "x": 60,
+      "y": 4,
+      "z": 0,
+      "count": 5,
+      "spacing": 3
+    }
+  ]
+}

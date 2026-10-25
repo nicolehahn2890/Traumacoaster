@@ -9,7 +9,7 @@
 import { Container, Graphics, Texture } from 'pixi.js';
 import type { Vec3 } from '@/core/math3';
 import type { TrackPath, TrackSamples } from '@/track/model';
-import { frameWithBank, railBanks, stateAt } from '@/track/model';
+import { frameWithBank, railBanksFor, stateAt } from '@/track/model';
 import type { Terrain } from '@/physics/terrain';
 import type { WorldDef } from '@/levels/types';
 import { laneRatioFor, laneScale, toLaneOf, toStage, viewState, LANE_MIN, LANE_MAX, LANE_DEPTH } from '@/track/stage';
@@ -74,11 +74,6 @@ export interface TunnelPortal {
   dir: number;
 }
 
-/** Geschätzte Fahrgeschwindigkeit für die statische Schräglage: Energie aus der Höhendifferenz */
-function designSpeed(samples: TrackSamples, i: number, maxY: number): number {
-  return Math.sqrt(Math.max(0, 2 * 9.81 * (maxY - samples.y[i]))) * 0.8 + 2;
-}
-
 /** halbe Breite des Schienenbands in Spur-Metern (Tinte außen eingeschlossen) */
 const RAIL_HALF = 0.13;
 /** ein Durchlauf des Schienenprofils je 3 Bühnen-Meter */
@@ -107,6 +102,8 @@ export class TrackRenderer {
   /** letzte Zeichnung (für die Neuprojektion bei Kamerabewegung in Perspektive) */
   private last: { path: TrackPath; samples: TrackSamples; skin: string; preview: boolean } | null = null;
   private supportGlows: Array<SupportGlow & { lane: number; X: number; Y: number; k: number }> = [];
+  /** Weltrenderer: Pfeiler (und ihre Lichter) zeichnet die Welt */
+  private supportsHidden = false;
   private glowsDrawn = false;
   /** Bahn und Schräglage der Schienen der letzten Zeichnung: Der Wagen fährt mit derselben Schräglage (railFrame) */
   private railSamples: TrackSamples | null = null;
@@ -194,6 +191,20 @@ export class TrackRenderer {
     return railProfileTexture(`${skin}_${lane}_${sky}_${grain ? 'g' : 'p'}`, rail, light, ink, grain, 3 + lane);
   }
 
+  /** Weltrenderer: Schienen und Schwellen zeichnet die Welt; hier bleiben Elemente, Station und Leuchtlinie */
+  setWorldMode(on: boolean): void {
+    for (const g of this.railUnder.values()) g.visible = !on;
+    for (const c of this.railMeshLayer.values()) c.visible = !on;
+    for (const c of this.layers.supports.values()) c.visible = !on;
+    this.supportsHidden = on;
+    if (on) for (const g of this.supportGlowGraphics.values()) g.clear();
+  }
+
+  /** Schräglage der Schienen je Abtastpunkt der letzten Zeichnung (die Welt baut ihre Profile damit) */
+  get railBanks(): Float64Array {
+    return this.railBank;
+  }
+
   /** Rahmen (vorwärts, oben, seitlich) auf den Schienen bei Bahnlänge s, mit ihrer Schräglage; null ohne Bahn */
   railFrame(s: number): { T: Vec3; U: Vec3; S: Vec3; bank: number } | null {
     const sm = this.railSamples;
@@ -212,10 +223,7 @@ export class TrackRenderer {
     if (samples.count < 2) return portals;
     const style = SKIN_STYLES[skin] ?? SKIN_STYLES.skinWood;
     const sky = this.world.sky[1];
-    let maxY = 0;
-    for (let i = 0; i < samples.count; i++) maxY = Math.max(maxY, samples.y[i]);
-
-    const banks = railBanks(samples, (i) => designSpeed(samples, i, maxY));
+    const banks = railBanksFor(samples);
     this.railSamples = samples;
     this.railBank = banks;
     this.last = { path, samples, skin, preview };
@@ -311,7 +319,7 @@ export class TrackRenderer {
       n.c.visible = growth > 0.02;
       n.c.scale.y = n.k * Math.max(0.001, growth);
     }
-    if (growth >= 1 && !this.glowsDrawn) {
+    if (growth >= 1 && !this.glowsDrawn && !this.supportsHidden) {
       this.glowsDrawn = true;
       for (const gl of this.supportGlows) {
         const g = this.glowGraphic(gl.lane, this.supportGlowGraphics);
@@ -418,7 +426,7 @@ export class TrackRenderer {
       left.push({ x: pl.X, y: pl.Y });
       right.push({ x: pr.X, y: pr.Y });
       center.push(pc.X, pc.Y);
-      ratio.push(laneRatioFor(s.z[i], lane));
+      ratio.push(laneRatioFor(s.z[i], lane, s.y[i]));
     }
     // Schwellen zwischen den Schienen
     let nextS = s.s[a];
