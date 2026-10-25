@@ -6,7 +6,7 @@
  * Three legt den Kontext an (stencil für Pixi-Masken); Pixi bekommt Zeichenfläche und Kontext beim Start (Game.init).
  * Dazu Licht mit Shadow Map, Nebel und Looks (light.ts, looks.ts) und die Kulissen des Levels (levelElements.ts).
  */
-import { Box3, Color, Fog, Group, PCFSoftShadowMap, Raycaster, Scene, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, type Object3D } from 'three';
+import { Box3, Color, Fog, Group, PCFSoftShadowMap, Raycaster, Scene, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, type Object3D, BoxGeometry, DoubleSide, Euler, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, type Material } from 'three';
 import type { ZoneElement } from '@/zone/types';
 import { buildZoneElement } from '@/zone/build';
 import { laneToZ, zToLane } from './camera';
@@ -19,7 +19,7 @@ import { WorldCamera, type CameraView } from './camera';
 import { buildGround, type GroundMeshes } from './ground';
 import { groundBandsTexture, strataTexture } from './textures';
 import { WorldLights } from './light';
-import { applyGrade, LOOKS, type LookName } from './looks';
+import { applyGrade, LOOKS, type LookName, revealMaterial, paintedMaterial, type RevealUniforms } from './looks';
 import { elementsFromTerrain, type PortalLike } from './levelElements';
 import type { BuiltElement } from './elements';
 import { trackFrames } from './trackMesh';
@@ -41,6 +41,9 @@ export interface WorldRendererOptions {
   /** Look erzwingen (?look=), sonst Tag oder Nacht nach dem Level */
   look?: LookName | null;
 }
+
+/** Material der Splitter eines Durchbruchs */
+const SPLINTER = paintedMaterial({ color: new Color('#7a2a2a') });
 
 export class WorldRenderer {
   readonly canvas: HTMLCanvasElement;
@@ -69,6 +72,11 @@ export class WorldRenderer {
   private start: BuiltStart | null = null;
   /** gedimmte Bahn, nur dort gezeichnet, wo Fels oder Kulisse sie verdecken (Schritt 5; Plan 5.2) */
   private ghost: Group | null = null;
+  /** laufende Freilegung (Schritt 6): die Lippe eines Dreiteilers trägt ein Auflöse-Material */
+  private revealing: { lip: Mesh; prev: Material | Material[]; mat: MeshLambertMaterial & { reveal: RevealUniforms } } | null = null;
+  /** Splitter eines Durchbruchs (Schritt 6): Instanzen mit Geschwindigkeit, kurz animiert */
+  private readonly splinters: Array<{ im: InstancedMesh; pos: Vector3[]; vel: Vector3[]; t: number }> = [];
+  private lastTick = 0;
   private readonly train = new WorldTrain();
   /** Bahntyp aus der Adresse (?track=) überstimmt den Typ des Skins (zum Vergleich der vier Typen) */
   trackOverride: TrackType | null = null;
@@ -148,8 +156,81 @@ export class WorldRenderer {
 
   /** Welt zeichnen (zwischen Pixi-Himmel und Pixi-HUD) */
   render(): void {
+    this.tickEffects();
     this.three.resetState();
     this.three.render(this.scene, this.camera.active);
+  }
+
+  /** Splitter weiterbewegen (Schwerkraft, 1,2 s), dann entfernen */
+  private tickEffects(): void {
+    const now = performance.now();
+    const dt = this.lastTick ? Math.min(0.05, (now - this.lastTick) / 1000) : 0;
+    this.lastTick = now;
+    if (!this.splinters.length) return;
+    const m4 = new Matrix4();
+    for (let k = this.splinters.length - 1; k >= 0; k--) {
+      const sp = this.splinters[k];
+      sp.t += dt;
+      for (let i = 0; i < sp.pos.length; i++) {
+        sp.vel[i].y -= 9.8 * dt;
+        sp.pos[i].addScaledVector(sp.vel[i], dt);
+        m4.makeRotationFromEuler(new Euler(sp.t * 4 + i, sp.t * 3, i));
+        m4.setPosition(sp.pos[i]);
+        sp.im.setMatrixAt(i, m4);
+      }
+      sp.im.instanceMatrix.needsUpdate = true;
+      if (sp.t > 1.2) {
+        this.scene.remove(sp.im);
+        sp.im.geometry.dispose();
+        this.splinters.splice(k, 1);
+      }
+    }
+  }
+
+  /** Freilegung (Schritt 6; Richtlinie 4): die Lippe des Elements löst sich um den Anschlusspunkt mit Radius r auf */
+  beginReveal(id: string, center: { x: number; y: number }, radius: number): void {
+    this.endReveal();
+    const lip = this.zone.get(id)?.built.lip;
+    if (!lip) return;
+    const base = lip.material as MeshLambertMaterial;
+    const mat = revealMaterial({ color: base.color.clone(), side: DoubleSide });
+    mat.reveal.uRevealC.value.set(center.x, center.y, 0);
+    mat.reveal.uRevealR.value = radius;
+    this.revealing = { lip, prev: lip.material, mat };
+    lip.material = mat;
+  }
+
+  setReveal(progress: number): void {
+    if (this.revealing) this.revealing.mat.reveal.uReveal.value = progress;
+  }
+
+  endReveal(): void {
+    const r = this.revealing;
+    if (!r) return;
+    r.lip.material = r.prev;
+    r.mat.dispose();
+    this.revealing = null;
+  }
+
+  /** Durchbruch (Schritt 6): die Wand der Baustelle verschwindet, Splitter fliegen */
+  shatterSite(id: string): void {
+    const z = this.zone.get(id);
+    if (!z) return;
+    const wall = z.built.group.children.find((c) => c.name === 'wall') as Mesh | undefined;
+    const origin = wall ? wall.getWorldPosition(new Vector3()) : new Vector3(z.origin.x, z.origin.y + 3, laneToZ(z.origin.z));
+    if (wall) wall.visible = false;
+    const n = 14;
+    const im = new InstancedMesh(new BoxGeometry(0.5, 0.5, 0.3), SPLINTER, n);
+    im.castShadow = true;
+    const pos: Vector3[] = [];
+    const vel: Vector3[] = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      pos.push(origin.clone().add(new Vector3(0, -2.5 + (i % 5) * 1.2, Math.cos(a) * 1.4)));
+      vel.push(new Vector3(4 + (i % 3) * 2, 3 + (i % 4) * 1.5, Math.sin(a) * 3));
+    }
+    this.splinters.push({ im, pos, vel, t: 0 });
+    this.scene.add(im);
   }
 
   /** Zeichenaufrufe des letzten Bildes (nur Three) */

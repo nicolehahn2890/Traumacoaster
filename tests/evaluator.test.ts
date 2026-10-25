@@ -11,7 +11,7 @@ import type { RideStats } from '@/physics/trainSim';
 
 const ride = (over: Partial<RideStats> = {}): RideStats => ({
   time: 20, maxSpeed: 15, maxG: 3, minG: 0.5, maxLatG: 1, airtime: 0.5, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0,
-  blackout: false, brakesUsed: false, distance: 100, ejected: 0, caught: 0, flightMax: 0, ...over,
+  blackout: false, brakesUsed: false, distance: 100, ejected: 0, caught: 0, flightMax: 0, breakthroughs: 0, ...over,
 });
 
 describe('Level-Daten', () => {

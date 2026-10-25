@@ -52,7 +52,7 @@ interface Cave {
   half: number;
 }
 
-function inPolygon(poly: Array<[number, number]>, x: number, y: number): boolean {
+export function inPolygon(poly: Array<[number, number]>, x: number, y: number): boolean {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const [xi, yi] = poly[i];

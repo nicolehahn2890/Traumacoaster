@@ -49,6 +49,13 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Ghost-Durchgang. Platzhalter: Wandbänder, runde Öffnungen, offene Flanken, Kästen, Hinweis als Toast. Tests 257 grün,
   Replay `--world` unverändert (475 Profile, Median 2,0 px; die Aufnahmen laufen ohne Zone), Szenario 10 mit 15 Prüfungen
   grün (134 Zeichenaufrufe).
+  Schritt 6 gebaut: Baustellen (`src/zone/sites.ts`, TECH.md 4h). Verbinden: Das Strichende rastet am Anschlusspunkt ein,
+  die Freilegung läuft (Ping, Kamera heraus, Lippe löst sich mit Brandkante auf, Staub), danach hat die Lippe dort eine
+  Öffnung und das Bahnende rutscht in den Innenraum. Durchbruch: Wand quer zur Bahn, in der Fahrt zersplittert sie bei
+  Mindesttempo (Splitter, Sticker), sonst hält sie und die Fahrt endet. Prüfzone mit beiden Varianten. System: Fang,
+  Öffnung im Feld, Wand in der Fahrt. Platzhalter: Ping, Staub, Splitter, Dauer, Kreisöffnung. Tests 261 grün, Replay
+  unverändert grün, Szenario 10 mit 16 Prüfungen grün (135 Zeichenaufrufe; höhere Werte traten nur direkt nach
+  Code-Änderungen während des Neuladens auf).
 - **24.10., Etappe 1 begonnen** (Branch `etappe-1-weltrenderer`, Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10).
   Schritt 1 gebaut: Weltrenderer hinter `?world=1` (Three-Szene im selben WebGL-Kontext, Pixi zeichnet davor den Himmel und
   darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem

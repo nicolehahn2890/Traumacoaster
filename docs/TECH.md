@@ -397,6 +397,29 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   Innenraum geben das Tunnel-Gefühl der Level und von Florians Fenster-Element. Tests in `tests/rock.test.ts` (Feld, Spannen,
   Ausweichen, Blockade mit Abschneiden, Tunnel-Meter), Szenario 10 prüft das Feld der Prüfzone. Platzhalter: Bänder statt
   gemalter Wandstärke, runde Öffnungen, offene Flanken, Kästen; der Hinweis ist ein Toast.
+- **Baustellen in zwei Varianten mit Freilegung** (Schritt 6; `src/zone/sites.ts`, Plan 5.1, 5.2, Richtlinie 4). Eine
+  Baustelle trägt `variant`, beim Durchbruch `energy` (m/s), beim Verbinden optional `target` (Kennung des Dreiteilers,
+  sonst der nächste, dessen Umriss den Punkt enthält und dessen Dicke die Spur trifft, `siteTarget`) und `r`
+  (Öffnungsradius, Vorgabe 2,6 m). **Verbinden:** Endet ein Strich näher als `SITE_REACH` = 3,5 m (oder 40 px) am
+  Anschlusspunkt, gleitet sein Ende dort hin und hält die Tiefe knapp vor der Lippe (`BrushOptions.endSnap`: das Ende ist
+  im Löser ein fester Punkt wie die Station, `siteAnchor`); dann läuft die Freilegung (`LevelScene.startReveal`,
+  `stepReveal`): Ping-Ring am Punkt, Kamera fährt 1 s heraus, die Lippe löst sich von 0,7 bis 2,7 s auf (Auflöse-Material
+  `revealMaterial` in `looks.ts`: Rausch-Schwelle um den Punkt mit Brandkante, wie im Labor, eigene Uniforms je
+  Material, nur auf der Lippe des Elements `BuiltElement.lip`), Staub und Wackler bei 1,1 s, bei 2,9 s ist die Öffnung da:
+  `openedSites` merkt sich die Baustelle, `withSiteOpenings` leitet die Elemente mit der zusätzlichen Öffnung ab (die
+  Zonendatei bleibt unverändert; „offen ab Stufe“ kommt in Schritt 7), Festigkeitsfeld und Welt werden neu gebaut, das
+  Bahnende rutscht durch die Öffnung in den Innenraum, damit der nächste Strich hinter der Lippe beginnt (5.2), die Kamera
+  fährt zurück. **Durchbruch:** die Wand steht quer zur Bahn (0,5 × 6 × 4 m, Name `wall`) und ist für den Strich
+  durchlässig; in der Fahrt (`TrainSimOptions.walls`, `siteWalls`) trifft sie der erste Wagen innerhalb von 0,6 m in x,
+  0,35 Spuren und der Wandhöhe: mit mindestens `energy` zersplittert sie (`stats.breakthroughs`, Ereignis `breakthrough`,
+  `WorldRenderer.shatterSite`: Wand aus, 14 Splitter als Instanzen 1,2 s im Flug, Sticker `site.breakthrough`, die
+  Baustelle bleibt in der Sitzung offen), sonst steht der Zug und der Fehlgrund heißt `wall` (`fail.wall`, `sticker.wall`).
+  Die Vorab-Fahrt beim Zeichnen und die Zielart kommen in E3. Editor: Plus und Minus ändern den Öffnungsradius, die
+  Statuszeile nennt das Ziel-Element. Prüfzone: Verbinden-Baustelle `b2` auf `e1`, Durchbruch `b1`. Gelernt: Ein fester
+  Endpunkt im Fels-Lauf darf die Seitenwahl nicht blockieren (feste Punkte zählen dort nicht mit), sonst meldete der Fang
+  „Fels“; und eine Öffnung lädt den Pinsel nicht ein, nur das Verschieben des Bahnendes bringt die Fortsetzung hinter die
+  Lippe. Tests in `tests/sites.test.ts`. Platzhalter: Ping, Staub, Splitter, Dauer der Choreografie (Florian prüft sie an
+  Tor 2b), Öffnung als Kreis.
 
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).

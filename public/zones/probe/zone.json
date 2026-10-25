@@ -147,6 +147,15 @@
       "z": 1,
       "variant": "breakthrough",
       "energy": 12
+    },
+    {
+      "id": "b2",
+      "x": 80,
+      "y": 6,
+      "z": 1,
+      "variant": "connect",
+      "target": "e1",
+      "r": 2.6
     }
   ],
   "coinGroups": [

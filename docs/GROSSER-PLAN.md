@@ -627,7 +627,7 @@ Rückfragen der Session (25.10.): alle Empfehlungen angenommen (drei Tore; Durch
 bleibt eigenes Element; Entwurf der Basiszone v1 durch die Session; Startart-Knopf wechselt per Tipp; Kettenzugstärke
 als Höhe über der Station).
 
-**Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritte 1 bis 3 und 3b (Aufzug) gebaut am 25.10.2026 (Nachträge in Paket 3, 2 und 4). **Tor 2a bestanden (Florian, 25.10.2026):** Startart-Platzhalter und Aufzug reichen bis zur Stilprobe, der Knopf am Hebel ist verständlich, die Kettenregel passt, das Handy läuft flüssig. Schritt 5 gebaut am 25.10.2026 (Nachtrag in Paket 5), Schritt 6 begonnen.
+**Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritte 1 bis 3 und 3b (Aufzug) gebaut am 25.10.2026 (Nachträge in Paket 3, 2 und 4). **Tor 2a bestanden (Florian, 25.10.2026):** Startart-Platzhalter und Aufzug reichen bis zur Stilprobe, der Knopf am Hebel ist verständlich, die Kettenregel passt, das Handy läuft flüssig. Schritte 5 und 6 gebaut am 25.10.2026 (Nachträge in Paket 5), Schritt 7 begonnen.
 
 ### Rückfragen zu Paket 10
 
@@ -1061,6 +1061,13 @@ den Bergen der Level (dort liegt der Tunnelmund, wo die Bahn die Silhouette kreu
 Spur), die Rückwand dahinter; die erste Fassung hatte das vertauscht und das Fenster in der Rückwand. (3) Der Pinsel
 weicht je Lauf von Linienpunkten auf eine Seite aus, gewählt nach der Lage seiner ersten Lösung; blockiert ist er nur,
 wenn Boden, Bühne oder Station beide Seiten sperren (etwa eine Säule über alle Spuren), dann endet die Bahn davor.
+**Stand 25.10.2026 (Etappe 2, Schritt 6 gebaut; `docs/TECH.md` 4h):** Baustellen nach 5.1 mit der Freilegung aus
+Richtlinie 4 (Verbinden: Fang des Strichendes, Choreografie, Öffnung in der Lippe) und dem Durchbruch in der Fahrt.
+Gelernt: (1) Die Baustelle braucht ein Ziel-Element (der Dreiteiler, dessen Umriss sie enthält) und einen Öffnungsradius
+als Daten; die Öffnung gilt in der Sitzung, nicht in der Datei (7 bringt „offen ab Stufe“). (2) Eine Öffnung lädt den
+Pinsel nicht ein; erst das Verschieben des Bahnendes in den Innenraum lässt die Fortsetzung hinter der Lippe beginnen,
+wie 5.2 es beschreibt. (3) Der Durchbruch ist für den Strich durchlässig und nur in der Fahrt eine Wand; so bleibt das
+Zeichnen frei und die Vorab-Fahrt aus E3 kann später zeigen, ob das Tempo reicht.
 **Status: bestätigt am 24.10.2026.** Graben in Stufen trägt Florians Vorbehalt; Autoscroll wird nach dem Ausprobieren
 entschieden. **Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Der Wasserfall bleibt ein eigenes Element (er ist
 seit Etappe 1 da) und bekommt den Schalter „Fahrt dahinter gedämpft“; die Schalter Schmuck, trägt Stützen und Splash-Zone

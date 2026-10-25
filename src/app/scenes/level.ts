@@ -40,9 +40,10 @@ import { cutIndexNear, retractIndex } from '@/track/strokeBuffer';
 import { laneRise, laneScale, nearestLane, rayToWorld, setPerspective, tagRay, toStage, toView, viewState, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
 import { HANG_DROP, trackTypeForSkin, type TrackType } from '@/world/trackTypes';
-import type { ZoneField, ZoneFile, ZoneStation } from '@/zone/types';
+import type { ZoneElement, ZoneField, ZoneFile, ZoneSite, ZoneStation } from '@/zone/types';
 import { LIFT_HEIGHT_DEFAULT, allowedStarts, resolveAbilities, zoneUnlocks, type ResolvedAbilities } from '@/zone/abilities';
 import { RockField } from '@/zone/rock';
+import { SITE_OPENING_R, SITE_REACH, siteAnchor, siteTarget, siteWalls, withSiteOpenings } from '@/zone/sites';
 import { applyZoneExtras, stationPath, zoneCoins } from '@/zone/build';
 import { ZoneEditor } from '@/app/zoneEditor';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
@@ -384,6 +385,11 @@ export class LevelScene implements Scene {
   /** Festigkeitsfeld der Zone (Etappe 2, Schritt 5): fester Fels aus den Elementen bis zur Fortschrittsstufe; null ohne Zone */
   private rock: RockField | null = null;
   private rockToastAt = -10;
+  /** offene Baustellen dieser Sitzung (Etappe 2, Schritt 6): Verbinden nach der Freilegung, Durchbruch nach dem Zersplittern */
+  private readonly openedSites = new Set<string>();
+  /** laufende Freilegung: Ping, Kamera heraus, Lippe löst sich auf, Staub, Öffnung, Kamera zurück */
+  private reveal: { site: ZoneSite; el: ZoneElement; t: number; cam: { x: number; y: number; zoom: number }; dusted: boolean } | null = null;
+  private fxLayer = new Graphics();
   private fieldTape = new Graphics();
   /** Kettenzuglinie (Etappe 2, Schritt 3): gestrichelt in der Höhe, bis zu der die Kette des Felds zieht, mit Beschriftung im HUD */
   private chainLine = new Graphics();
@@ -479,7 +485,7 @@ export class LevelScene implements Scene {
         }
       }
     }
-    this.view.overlay.addChild(this.fieldTape, this.chainLine);
+    this.view.overlay.addChild(this.fieldTape, this.chainLine, this.fxLayer);
     setPerspective(game.world ? !PERSP_OFF : PERSP_URL, FOV_URL);
     this.view.overlay.addChild(this.laneGlow, this.spotLayer, this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
@@ -557,8 +563,89 @@ export class LevelScene implements Scene {
   /** Festigkeitsfeld neu aus den Elementen der Zone (nach Änderungen im Editor und beim Feldwechsel: die Stufe blendet Elemente aus) */
   private refreshRock(): void {
     const zone = this.sandbox?.zone;
-    this.rock = zone ? new RockField(zone.elements, this.activeField?.stage ?? Infinity) : null;
+    this.rock = zone ? new RockField(this.derivedElements(), this.activeField?.stage ?? Infinity) : null;
     this.view.rock = this.rock;
+  }
+
+  /** Elemente der Zone mit den Öffnungen der offenen Verbinden-Baustellen (Schritt 6; die Zonendatei bleibt unverändert) */
+  private derivedElements(): ZoneElement[] {
+    const zone = this.sandbox?.zone;
+    return zone ? withSiteOpenings(zone.elements, zone.sites, this.openedSites) : [];
+  }
+
+  /** Verbinden-Baustelle, an deren Anschlusspunkt das Strichende einrastet (Fang wie beim Rundenschluss), sonst null */
+  private siteSnap(drawn: StagePoint[]): { site: ZoneSite; el: ZoneElement; X: number; Y: number; lane: number } | null {
+    const zone = this.sandbox?.zone;
+    if (!zone || drawn.length < 2) return null;
+    const e = drawn[drawn.length - 1];
+    const reach = Math.max(SITE_REACH, 40 / this.view.camera.zoom);
+    let best: { site: ZoneSite; el: ZoneElement; X: number; Y: number; lane: number } | null = null;
+    let bestD = reach;
+    for (const site of zone.sites) {
+      if (site.variant !== 'connect' || this.openedSites.has(site.id)) continue;
+      const el = siteTarget(zone.elements, site);
+      if (!el) continue;
+      const a = siteAnchor(zone.elements, site);
+      const v = toView(a.x, a.y, a.lane);
+      const d = Math.hypot(v.X - e.X, v.Y - e.Y);
+      if (d < bestD) {
+        bestD = d;
+        best = { site, el, X: v.X, Y: v.Y, lane: a.lane };
+      }
+    }
+    return best;
+  }
+
+  /** Freilegung starten (Richtlinie 4): Ping am Punkt, Kamera fährt heraus, die Lippe löst sich auf, Staub, dann ist die Öffnung da */
+  private startReveal(site: ZoneSite, el: ZoneElement): void {
+    const cam = this.view.camera.target;
+    this.reveal = { site, el, t: 0, cam: { x: cam.x, y: cam.y, zoom: cam.zoom }, dusted: false };
+    this.game.world?.beginReveal(el.id, { x: site.x, y: site.y }, (site.r ?? SITE_OPENING_R) + 0.8);
+    this.toast.show(t('site.reveal'), 1.2);
+    audio.play('impact');
+  }
+
+  private stepReveal(dt: number): void {
+    const r = this.reveal;
+    if (!r) return;
+    r.t += dt;
+    const world = this.game.world;
+    const v = toView(r.site.x, r.site.y, r.el.z);
+    const g = this.fxLayer;
+    g.clear();
+    const zs = 1 / Math.max(0.35, this.view.camera.zoom / 12);
+    if (r.t < 0.6) {
+      // Ping: ein wachsender Ring am Anschlusspunkt
+      const k = r.t / 0.6;
+      g.circle(v.X, v.Y, (1 + 5 * k) * zs).stroke({ width: 0.35 * zs, color: 0xffd23f, alpha: 1 - k });
+    }
+    if (r.t < 1.0) this.view.camera.setTarget(r.site.x, r.site.y + 3, r.cam.zoom * 0.8);
+    const p = Math.max(0, Math.min(1, (r.t - 0.7) / 2.0));
+    world?.setReveal(p * p * (3 - 2 * p));
+    if (r.t > 1.1 && !r.dusted) {
+      r.dusted = true;
+      this.view.effects.dust(v.X, v.Y, 6);
+      this.view.camera.shake(0.3, 0.3);
+    }
+    if (r.t >= 2.9) {
+      // Öffnung ist da: Festigkeitsfeld und Welt neu, Kamera zurück
+      this.openedSites.add(r.site.id);
+      world?.endReveal();
+      const derived = this.derivedElements().find((e) => e.id === r.el.id);
+      if (derived) world?.updateZoneElement(derived);
+      this.refreshRock();
+      // das Bahnende rutscht durch die Öffnung in den Innenraum: Der nächste Strich beginnt hinter der Lippe (Plan 5.2)
+      const end = this.path?.nodes[this.path.nodes.length - 1];
+      if (this.path && end && !isClosed(this.path) && Math.hypot(end.x - r.site.x, end.y - r.site.y) < 2) {
+        const half = (r.el.d ?? 7.5) / 2 / LANE_DEPTH;
+        end.z = r.el.z - half + 0.25;
+        this.redrawTrack();
+      }
+      this.view.camera.setTarget(r.cam.x, r.cam.y, r.cam.zoom);
+      this.reveal = null;
+      g.clear();
+      this.toast.show(t('site.open'), 2);
+    }
   }
 
   /** Hubhöhe des Aufzugs im Feld (Etappe 2, Schritt 3b) */
@@ -2128,12 +2215,15 @@ export class LevelScene implements Scene {
       this.redrawTrack();
       return;
     }
-    const plan = planBrushTrack(line, this.brushOptions(), keep, kind === 'overdraw' ? undefined : shown);
+    // Verbinden-Baustelle (Schritt 6): endet der Strich nah am Anschlusspunkt, rastet das Ende dort ein und die Freilegung läuft
+    const snap = kind === 'overdraw' ? null : this.siteSnap(drawn);
+    const plan = planBrushTrack(line, { ...this.brushOptions(), ...(snap ? { endSnap: { X: snap.X, Y: snap.Y, lane: snap.lane } } : {}) }, keep, kind === 'overdraw' ? undefined : shown);
     if (!plan || plan.path.nodes.length < 2) {
       this.redrawTrack();
       return;
     }
     if (plan.rockCut) this.toast.show(t('rock.cut'), 2.4);
+    if (snap && !plan.rockCut) this.startReveal(snap.site, snap.el);
     this.pushHistory();
     plan.path.startType = this.path?.startType ?? 'chainlift';
     this.setPath(plan.path, true);
@@ -2588,7 +2678,8 @@ export class LevelScene implements Scene {
   private simOptions(path: TrackPath): TrainSimOptions {
     const chain = this.abilities?.chain;
     const rock = this.rock;
-    return { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), ...(chain ? { chainHeight: chain } : {}), ...(rock && !rock.empty ? { insideRock: (x: number, y: number, z: number) => rock.tunnel(x, y, z) } : {}) };
+    const zone = this.sandbox?.zone;
+    return { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), ...(chain ? { chainHeight: chain } : {}), ...(rock && !rock.empty ? { insideRock: (x: number, y: number, z: number) => rock.tunnel(x, y, z) } : {}), ...(zone ? { walls: siteWalls(zone.sites, this.openedSites) } : {}) };
   }
 
   /** Startart im Feld (Etappe 2, Schritt 1): erlaubt die Stufe die gewählte nicht, nimmt die Bahn die erste erlaubte */
@@ -3206,6 +3297,18 @@ export class LevelScene implements Scene {
           break;
         }
         case 'finish': this.cameraPhase = 'finale'; this.view.effects.confetti(s.X, s.Y + 3, 80); break;
+        case 'breakthrough': {
+          // Durchbruch (Schritt 6): Wand weg, Splitter, Sticker; die Baustelle bleibt in dieser Sitzung offen
+          this.view.effects.sparks(s.X, s.Y, 24);
+          this.view.camera.shake(0.45, 0.3);
+          this.sticker.show(t('site.breakthrough'), '#ffd23f', 1.4);
+          audio.play('impact');
+          if (e.id) {
+            this.game.world?.shatterSite(e.id);
+            this.openedSites.add(e.id);
+          }
+          break;
+        }
         default: break;
       }
     }
@@ -3558,6 +3661,7 @@ export class LevelScene implements Scene {
   update(dt: number): void {
     if (!this.view) return;
     this.time += dt;
+    this.stepReveal(dt);
     this.fadeHud(dt);
     if (this.mode === 'draw') {
       if (this.refiner && !this.stroke) this.stepRefine(REFINE_SLICE_MS);

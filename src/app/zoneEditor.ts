@@ -29,6 +29,7 @@ import { loadZone, onZoneChange, saveZone } from '@/zone/io';
 import { KIND_DEFAULTS, ZONE_ANCHORS, ZONE_DEPTH_ROLES, ZONE_GOAL_TYPES, formatGoals, newCoinGroup, newElement, newField, newQueue, newSite, newStation, parseGoals, round, type ZoneCoinGroup, type ZoneElement, type ZoneElementKind, type ZoneField, type ZoneFile, type ZoneQueue, type ZoneSite, type ZoneStation } from '@/zone/types';
 import { applyZoneExtras, buildZoneCoins, buildZoneQueue, buildZoneSite, buildZoneStation, itemPosition } from '@/zone/build';
 import { COIN_SHAPES } from '@/zone/groups';
+import { SITE_OPENING_R, siteTarget } from '@/zone/sites';
 import { ABILITY_WORDS, ZONE_ABILITIES, describeAbilities, formatFieldLine, formatStageLine, parseFieldLine, parseStageLine, resolveAbilities, zoneUpgrades } from '@/zone/abilities';
 import { toView } from '@/track/stage';
 
@@ -616,6 +617,7 @@ export class ZoneEditor {
       } else if (item.kind === 'site') {
         if (lower === 'v') item.b.variant = item.b.variant === 'connect' ? 'breakthrough' : 'connect';
         else if (vert) item.b.energy = round(Math.max(2, (item.b.energy ?? 10) + vert * 2));
+        else if (k === '+' || k === '-') item.b.r = round(Math.max(1.2, Math.min(8, (item.b.r ?? SITE_OPENING_R) + (k === '+' ? 0.2 : -0.2))));
         else return false;
       } else {
         if (lower === 'c') item.c.shape = COIN_SHAPES[(COIN_SHAPES.indexOf(item.c.shape) + 1) % COIN_SHAPES.length];
@@ -804,7 +806,7 @@ export class ZoneEditor {
       case 'queue':
         return `Schlange ${item.q.id} · x ${item.q.x0} bis ${item.q.x1} m · Höhe ${item.q.y} m · Spur ${item.q.z} · Eingang ${item.q.dir === 1 ? 'rechts' : 'links'} · Freiraum 5 m`;
       case 'site':
-        return `Baustelle ${item.b.id} · x ${item.b.x} m · Höhe ${item.b.y} m · Spur ${item.b.z} · ${item.b.variant === 'connect' ? 'Verbinden' : `Durchbruch ab ${item.b.energy ?? 10} m/s`}`;
+        return `Baustelle ${item.b.id} · x ${item.b.x} m · Höhe ${item.b.y} m · Spur ${item.b.z} · ${item.b.variant === 'connect' ? `Verbinden: öffnet ${siteTarget(this.zone.elements, item.b)?.id ?? 'keinen Dreiteiler (auf einen setzen)'}, Radius ${item.b.r ?? SITE_OPENING_R} m` : `Durchbruch ab ${item.b.energy ?? 10} m/s`}`;
       default:
         return `Coins ${item.c.id} · ${SHAPE_NAMES[item.c.shape]} · ${item.c.count} Stück im Abstand ${item.c.spacing} m · x ${item.c.x} m · Höhe ${item.c.y} m · Spur ${item.c.z}`;
     }
@@ -853,7 +855,7 @@ export class ZoneEditor {
       this.status.text = this.describeItem(item);
       this.hint.text = item.kind === 'station' ? 'Ziehen verschiebt · Bild auf/ab Tiefe · D Richtung · Pfeile links/rechts Länge · Entf löschen'
         : item.kind === 'queue' ? 'Ziehen verschiebt · Bild auf/ab Tiefe · D Eingang · Pfeile links/rechts Länge · Entf löschen'
-        : item.kind === 'site' ? 'Ziehen verschiebt · Bild auf/ab Tiefe · V Verbinden/Durchbruch · Pfeile auf/ab Tempo · Entf löschen'
+        : item.kind === 'site' ? 'Ziehen verschiebt · Bild auf/ab Tiefe · V Verbinden/Durchbruch · Pfeile auf/ab Tempo (Durchbruch) · + − Öffnungsradius (Verbinden) · Entf löschen'
         : 'Ziehen verschiebt · Bild auf/ab Tiefe · C Form · Pfeile auf/ab Zahl, links/rechts Abstand · Entf löschen';
     } else if (field) {
       this.status.text = this.describeField(field);

@@ -34,7 +34,7 @@ export const SKIN_PHYSICS: Record<string, SkinPhysics> = {
 };
 
 export type RidePhase = 'lift' | 'launch' | 'coast' | 'done' | 'failed' | 'flying';
-export type FailReason = 'derail' | 'fall' | 'stall' | 'eject' | 'water' | 'ejectSide' | 'openEnd' | 'crossing' | 'chain';
+export type FailReason = 'derail' | 'fall' | 'stall' | 'eject' | 'water' | 'ejectSide' | 'openEnd' | 'crossing' | 'chain' | 'wall';
 
 export interface CarState {
   index: number;
@@ -79,6 +79,8 @@ export interface RideStats {
   tunnels: number;
   boosters: number;
   splashes: number;
+  /** Durchbrüche durch Baustellen-Wände (Etappe 2, Schritt 6) */
+  breakthroughs: number;
   inversions: number;
   blackout: boolean;
   brakesUsed: boolean;
@@ -92,7 +94,9 @@ export interface RideStats {
 }
 
 export interface RideEvent {
-  kind: 'coin' | 'tunnelEnter' | 'tunnelExit' | 'booster' | 'brake' | 'splash' | 'liftStart' | 'liftEnd' | 'launchEnd' | 'peak' | 'fail' | 'finish' | 'inversion' | 'wheelLock';
+  kind: 'coin' | 'tunnelEnter' | 'tunnelExit' | 'booster' | 'brake' | 'splash' | 'liftStart' | 'liftEnd' | 'launchEnd' | 'peak' | 'fail' | 'finish' | 'inversion' | 'wheelLock' | 'breakthrough';
+  /** Durchbruch: Kennung der Baustelle */
+  id?: string;
   time: number;
   car?: number;
   index?: number;
@@ -120,6 +124,8 @@ export interface TrainSimOptions {
   chainHeight?: number;
   /** Öffnungsvolumen und Höhlenräume der Zone (Etappe 2, Schritt 5): dort zählen Tunnel-Meter wie im Berg */
   insideRock?: (x: number, y: number, z: number) => boolean;
+  /** Durchbruch-Wände der Zone (Etappe 2, Schritt 6): quer zur Bahn bei x auf Spur z von y bis y + h; schnell genug (energy, m/s) zersplittert sie, sonst hält sie */
+  walls?: Array<{ id: string; x: number; y: number; z: number; h: number; energy: number }>;
 }
 
 const STATION_PUSH = 2.0; // m/s: rollt auf ebener Strecke gut 10 m aus und bleibt stehen
@@ -156,7 +162,7 @@ export class TrainSim {
   readonly prevCars: CarState[] = [];
   readonly events: RideEvent[] = [];
   readonly stats: RideStats = {
-    time: 0, maxSpeed: 0, maxG: 1, minG: 1, maxLatG: 0, airtime: 0, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0, blackout: false, brakesUsed: false, distance: 0, ejected: 0, caught: 0, flightMax: 0,
+    time: 0, maxSpeed: 0, maxG: 1, minG: 1, maxLatG: 0, airtime: 0, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0, blackout: false, brakesUsed: false, distance: 0, ejected: 0, caught: 0, flightMax: 0, breakthroughs: 0,
   };
   readonly collected: boolean[];
   /** Kreuzungen der Bahn mit sich selbst auf gleicher Höhe: dort fährt der Zug auf die andere Schiene auf */
@@ -176,6 +182,8 @@ export class TrainSim {
   sinceFail = 0;
   liftStart = -1;
   liftEnd = -1;
+  /** Durchbruch-Wände, die schon getroffen wurden (zersplittert oder gehalten) */
+  private readonly passedWalls = new Set<string>();
   /** die Kette endet unter dem Gipfel (Kettenzugstärke); rollt der Zug danach zurück, heißt der Fehlgrund „chain“ */
   private liftLimited = false;
   private liftDescended = false;
@@ -438,6 +446,22 @@ export class TrainSim {
       if (next.y < front.y - 0.05 && front.y > 3) {
         this.peakReported = true;
         this.events.push({ kind: 'peak', time: this.t, x: front.x, y: front.y, z: front.z });
+      }
+    }
+    // Durchbruch-Wände (Etappe 2, Schritt 6): der erste Wagen trifft die Wand quer zur Bahn; schnell genug zersplittert
+    // sie (Ereignis, Zählung), sonst hält sie und die Fahrt ist zu Ende
+    if (this.opts.walls) {
+      for (const w of this.opts.walls) {
+        if (this.passedWalls.has(w.id)) continue;
+        if (Math.abs(front.z - w.z) > 0.35 || Math.abs(front.x - w.x) > 0.6 || front.y < w.y - 0.5 || front.y > w.y + w.h) continue;
+        this.passedWalls.add(w.id);
+        if (Math.abs(this.v) >= w.energy) {
+          this.stats.breakthroughs++;
+          this.events.push({ kind: 'breakthrough', time: this.t, id: w.id, car: 0 });
+        } else {
+          this.v = 0;
+          this.fail('wall');
+        }
       }
     }
     for (let i = 0; i < this.opts.coins.length; i++) {

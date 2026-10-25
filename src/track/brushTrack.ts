@@ -113,6 +113,8 @@ export interface BrushOptions {
   rock?: (p: StagePoint) => RockSpan[];
   /** intern: nach dem Abschneiden vor dem Fels nicht noch einmal schneiden */
   noCut?: boolean;
+  /** Fang (Etappe 2, Schritt 6): das Ende der offenen Linie gleitet auf diesen Bühnenpunkt und hält dort diese Spur (Baustelle) */
+  endSnap?: { X: number; Y: number; lane: number };
 }
 
 /** verbotener Tiefenbereich (Spuren) */
@@ -129,6 +131,7 @@ interface Opts {
   tolerance: number;
   rock: ((p: StagePoint) => RockSpan[]) | null;
   noCut: boolean;
+  endSnap: { X: number; Y: number; lane: number } | null;
 }
 
 const withDefaults = (o: BrushOptions): Opts => ({
@@ -139,6 +142,7 @@ const withDefaults = (o: BrushOptions): Opts => ({
   tolerance: o.tolerance ?? 1,
   rock: o.rock ?? null,
   noCut: !!o.noCut,
+  endSnap: o.endSnap ?? null,
 });
 
 export interface LineCrossing {
@@ -980,10 +984,13 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
   // Runde: Die Station liegt auf beiden Seiten gerade (die ersten und letzten 2 m behalten ihre Tiefe), sonst käme die
   // Bahn mit anderer Tiefen-Steigung an, als sie abfährt: ein seitlicher Knick genau in der Station
   const seam = (i: number) => closed && (i <= 2 || i >= n - 3);
-  const station = (i: number) => i === 0 || (closed && i === n - 1) || seam(i) || isFixed(i);
-  const fixedAt = (i: number) => (isFixed(i) ? fixed![i] : upper[0]);
+  // Fang an einer Baustelle: das Ende der offenen Linie hält die Spur des Anschlusspunkts wie die Station ihre
+  const endPin = o.endSnap && !closed ? n - 1 : -1;
+  const station = (i: number) => i === 0 || (closed && i === n - 1) || seam(i) || isFixed(i) || i === endPin;
+  const fixedAt = (i: number) => (isFixed(i) ? fixed![i] : i === endPin ? o.endSnap!.lane * LANE_DEPTH : upper[0]);
   const pinStation = () => {
     pins.set(0, fixedAt(0));
+    if (endPin >= 0) pins.set(endPin, fixedAt(endPin));
     if (closed) for (const i of [1, 2, n - 3, n - 2, n - 1]) pins.set(i, isFixed(i) ? fixed![i] : fixedAt(0));
     if (fixed) for (let i = 0; i < n; i++) if (isFixed(i)) pins.set(i, fixed[i]);
   };
@@ -1234,20 +1241,22 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
     }
     for (const r of runs) {
       let sum = 0;
+      let cnt = 0;
       let frontOk = true;
       let backOk = true;
       for (let i = r.from; i <= r.to; i++) {
-        if (station(i)) {
-          frontOk = backOk = false;
-          break;
-        }
+        // feste Punkte (Station, alte Bahn, Fang an einer Baustelle) bleiben, wo sie sind, und zählen nicht mit
+        if (station(i)) continue;
+        cnt++;
         sum += z[i] - (r.z0 + r.z1) / 2;
         if (r.z0 < low[i] - 1e-6 || r.z0 < Z_MIN) frontOk = false;
         if (r.z1 > upper[i] + 1e-6 || r.z1 > Z_MAX) backOk = false;
       }
+      if (!cnt) continue;
       const back = sum >= 0 ? backOk : !frontOk && backOk;
       const front = !back && frontOk;
       for (let i = r.from; i <= r.to; i++) {
+        if (station(i)) continue;
         if (back) rockLo[i] = Math.max(rockLo[i], r.z1);
         else if (front) rockUp[i] = Math.min(rockUp[i], r.z0);
         else blocked[i] = 1;
@@ -1480,6 +1489,8 @@ export function planBrushTrack(points: StagePoint[], options: BrushOptions = {},
   const o = withDefaults(options);
   const prep = prepareBrushLine(points, o.closeSnap, o.closeReach);
   if (!prep) return null;
+  // Fang an einer Baustelle: das Ende gleitet über die letzten 6 m auf den Anschlusspunkt
+  if (o.endSnap && !prep.closed) prep.line = blendInto(prep.line, null, { X: o.endSnap.X, Y: o.endSnap.Y }, 6);
   const n = prep.line.length;
   const { calm, wH, level } = depthWeights(prep.line, prep.closed);
   const crossings = findLineCrossings(prep.line, prep.closed);

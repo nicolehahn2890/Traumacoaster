@@ -162,7 +162,9 @@ export function buildSitePlaceholder(x: number, y: number, z: number, variant: '
   const mats: Material[] = [];
   if (variant === 'breakthrough') {
     const wallMat = paintedMaterial({ color: new Color('#7a2a2a'), transparent: true, opacity: 0.55, depthWrite: false, side: DoubleSide });
-    const wall = new Mesh(new BoxGeometry(4, 6, 0.4), wallMat);
+    // Wand quer zur Bahn (dünn in Fahrtrichtung, 4 m breit, 6 m hoch); die Fahrt zersplittert sie bei Mindesttempo (Schritt 6)
+    const wall = new Mesh(new BoxGeometry(0.5, 6, 4), wallMat);
+    wall.name = 'wall';
     wall.position.set(x, y + 3, Z);
     g.add(wall);
     mats.push(wallMat);

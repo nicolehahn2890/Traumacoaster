@@ -5,7 +5,7 @@
  * wählt den Look je Fortschrittsstufe (Paket 2); `?look=day|dusk|night|neon` erzwingt einen zum Vergleich. Der
  * Umfärbe-Shader hängt sich an Lambert-Materialien (`paintedMaterial`), alle Flächen teilen dieselben Uniforms.
  */
-import { Color, MeshLambertMaterial, type MeshLambertMaterialParameters } from 'three';
+import { Color, MeshLambertMaterial, type MeshLambertMaterialParameters, Vector3 } from 'three';
 
 export type LookName = 'day' | 'dusk' | 'night' | 'neon';
 export const LOOK_NAMES: readonly LookName[] = ['day', 'dusk', 'night', 'neon'];
@@ -82,6 +82,53 @@ vec3 recolor(vec3 c) {
   return c * uBright * uTint;
 }
 `;
+
+const REVEAL_GLSL = `
+uniform float uReveal, uRevealR;
+uniform vec3 uRevealC;
+varying vec3 vWorldPos;
+float rvHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float rvNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(rvHash(i), rvHash(i + vec2(1.0, 0.0)), f.x), mix(rvHash(i + vec2(0.0, 1.0)), rvHash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+`;
+const REVEAL_FRAG = `
+  if (uReveal > 0.0) {
+    float dd = distance(vWorldPos.xy, uRevealC.xy);
+    float nn = rvNoise(vWorldPos.xy * 0.9) * 0.7 + rvNoise(vWorldPos.xy * 3.1) * 0.3;
+    float edge = uRevealR * uReveal * (0.6 + 0.8 * nn);
+    if (dd < edge) discard;
+    if (dd < edge + 1.2) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.72, 0.3), 0.85 * (1.0 - (dd - edge) / 1.2));
+  }`;
+
+export interface RevealUniforms {
+  uReveal: { value: number };
+  uRevealC: { value: Vector3 };
+  uRevealR: { value: number };
+}
+
+/**
+ * Lambert-Material mit Umfärben und Freilegung (Etappe 2, Schritt 6; Richtlinie 4, aus dem Labor): Um uRevealC löst sich
+ * die Fläche mit wachsendem Radius uRevealR · uReveal auf, mit Rausch-Schwelle und Brandkante. Eigene Uniforms je Material.
+ */
+export function revealMaterial(params: MeshLambertMaterialParameters = {}): MeshLambertMaterial & { reveal: RevealUniforms } {
+  const reveal: RevealUniforms = { uReveal: { value: 0 }, uRevealC: { value: new Vector3() }, uRevealR: { value: 4 } };
+  const m = new MeshLambertMaterial(params) as MeshLambertMaterial & { reveal: RevealUniforms };
+  m.reveal = reveal;
+  m.customProgramCacheKey = () => 'painted-reveal';
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, grade, reveal);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\n' + GLSL + REVEAL_GLSL)
+      .replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.rgb = recolor(diffuseColor.rgb);' + REVEAL_FRAG);
+  };
+  return m;
+}
 
 /** Lambert-Material, das der Look umfärbt (Farbe oder Textur, vor dem Licht) */
 export function paintedMaterial(params: MeshLambertMaterialParameters = {}): MeshLambertMaterial {

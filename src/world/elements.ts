@@ -29,6 +29,8 @@ export interface BuiltElement {
   foundation?: Foundation;
   /** Öffnungen, durch die die Bahn darf (Fels-Regeln, Paket 5) */
   openings?: Opening[];
+  /** Vorderlippe des Dreiteilers (die Freilegung löst sie um den Anschlusspunkt auf, Schritt 6) */
+  lip?: Mesh;
   dispose(): void;
 }
 
@@ -133,7 +135,7 @@ export function buildThreePart(outline: Array<[number, number]>, z: number, dept
   void maxY;
   const g = new Group();
   g.add(back, lip, floor);
-  return finish('threePart', g, [back.material as Material, lipMat, dark], { openings: [...openings] });
+  return finish('threePart', g, [back.material as Material, lipMat, dark], { openings: [...openings], lip });
 }
 
 /** eine Scheibe eines Bergstapels: Silhouette (Welt-XY) auf Spur z mit ihren Öffnungen */

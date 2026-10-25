@@ -270,6 +270,7 @@ describe('Zonendatei: Ziele, Stufen und Prüfzone (Schritt 9)', () => {
     expect(f.maxHeight).toBe(40);
     expect(f.chain).toBe(20);
     expect(zone!.upgrades![2].lift).toBe(15);
-    expect([zone!.stations.length, zone!.queues.length, zone!.sites.length, zone!.coinGroups.length]).toEqual([1, 1, 1, 1]);
+    expect([zone!.stations.length, zone!.queues.length, zone!.sites.length, zone!.coinGroups.length]).toEqual([1, 1, 2, 1]);
+    expect(zone!.sites[1]).toMatchObject({ variant: 'connect', target: 'e1', r: 2.6 });
   });
 });

@@ -135,6 +135,10 @@ export interface ZoneSite {
   variant: 'connect' | 'breakthrough';
   /** Durchbruch: nötiges Tempo (m/s) */
   energy?: number;
+  /** Verbinden: Kennung des Dreiteilers, der die Öffnung bekommt (ohne Angabe der nächste, der den Punkt enthält) */
+  target?: string;
+  /** Verbinden: Radius der Öffnung nach der Freilegung (Meter) */
+  r?: number;
 }
 
 export interface ZoneFile {
@@ -358,6 +362,8 @@ export function parseZone(json: unknown): ZoneFile | null {
     if (!num(r.x) || !num(r.y) || !num(r.z)) return null;
     const site: ZoneSite = { id: r.id as string, x: r.x, y: r.y, z: r.z, variant: r.variant === 'breakthrough' ? 'breakthrough' : 'connect' };
     if (num(r.energy) && r.energy > 0) site.energy = r.energy;
+    if (typeof r.target === 'string' && r.target) site.target = r.target.slice(0, 20);
+    if (num(r.r) && r.r > 0) site.r = r.r;
     return site;
   });
   const coinGroups = list<ZoneCoinGroup>('coinGroups', (r) => (num(r.x) && num(r.y) && num(r.z) ? { id: r.id as string, shape: (COIN_SHAPES as readonly string[]).includes(String(r.shape)) ? (r.shape as ZoneCoinGroup['shape']) : 'row', x: r.x, y: r.y, z: r.z, count: num(r.count) ? Math.max(1, Math.min(40, Math.round(r.count))) : 5, spacing: num(r.spacing) ? Math.max(0.5, r.spacing) : 2 } : null));
@@ -416,6 +422,8 @@ export function serializeZone(zone: ZoneFile): string {
   const sites = byId(zone.sites).map((b) => {
     const out: Record<string, unknown> = { id: b.id, x: round(b.x), y: round(b.y), z: round(b.z), variant: b.variant };
     if (b.energy) out.energy = round(b.energy);
+    if (b.target) out.target = b.target;
+    if (b.r !== undefined) out.r = round(b.r);
     return out;
   });
   const coinGroups = byId(zone.coinGroups).map((c) => ({ id: c.id, shape: c.shape, x: round(c.x), y: round(c.y), z: round(c.z), count: c.count, spacing: round(c.spacing) }));
