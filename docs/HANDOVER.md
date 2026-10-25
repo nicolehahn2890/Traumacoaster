@@ -101,6 +101,10 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Stützen und Fahrt auf dem Feld gebaut (25.10.): das Feld ist in Zonen das einzige Fundament (Füße auf allem, was unter
   dem Punkt fest wird, kein Fuß im Festen), Tunnel-Meter unter einer Decke des Feldes; das alte Festigkeitsfeld ist
   gelöscht. System: Fundament und Fahrt aus dem Feld. Platzhalter: offene Flanken, rechteckige Räume.
+  Spitze gebaut (25.10.): Beim Loslassen bleibt, was die Vorschau schon fest gezeigt hat (älter als 45 m), nur der freie
+  Teil und ein Rundenschluss werden neu gelöst. Sprung beim Loslassen an 119 Aufnahmen im Median 0,77 statt 1,17 Spuren
+  (ohne Zone 0,41 statt 0,94). Tests 277 grün, Build grün, Replay `--world` unverändert, Szenario 10 grün. Offen aus dem
+  Freiraumfeld-Vorschlag: Ebenen-Boden und Räume im Editor (braucht Florians Bild der Ebenen), dann Tor 2b erneut.
 - **24.10., Etappe 1 begonnen** (Branch `etappe-1-weltrenderer`, Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10).
   Schritt 1 gebaut: Weltrenderer hinter `?world=1` (Three-Szene im selben WebGL-Kontext, Pixi zeichnet davor den Himmel und
   darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem

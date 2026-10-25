@@ -522,6 +522,14 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   Tunnel-Meter, wo `ceilingAbove` eine Decke meldet (Innenraum eines Dreiteilers; ein offener Raum hat keine Decke, dort
   zählen keine Tunnel-Meter). Szenario 10 prüft das Feld (Lippe fest, Fenster frei, Innenraum frei mit Decke, Oberkante
   trägt).
+  **Spitze** (`planBrushTrack`): Was die Vorschau schon fest gezeigt hat (älter als `PREVIEW_FREE` 45 m vor dem Ende),
+  bleibt beim Loslassen genau so (`fixed` aus der gezeigten Vorschau, wie beim Fortsetzen die alte Bahn); neu gelöst wird
+  nur der freie Teil, bei einer Runde dazu der Schluss (dort hält die gezeigte Tiefe weiter nur weich, weil der Schluss die
+  Linie am Ende verändert). Beim Malen gilt wie bisher: die letzten 15 m (`PREVIEW_TIP`) wählen frei, davor hält die
+  gezeigte Tiefe, älter als 45 m ist fest. Gemessen (inzwischen 119 Aufnahmen, 94 mit Berührung): Sprung beim Loslassen
+  im Median 0,77 statt 1,17 Spuren, ohne Zonenregeln 0,41 statt 0,94; Tiefensprünge und Vorschau-Sprünge unverändert (12,5
+  und 51,8 je berührendem Strich; ohne Zonenregeln 11,3 und 43,4). Der Rest des Wackelns sind die 15 m der Spitze und
+  Kreuzungen, an denen der neue Strang vor oder hinter den alten muss; der alte bewegt sich nicht mehr.
   **Pinsel auf dem Feld** (`BrushOptions.field`: `free`, `solid`, `floor`; ohne Feld gilt in den Levels der Boden wie
   bisher): je Linienpunkt die freien Abschnitte, daraus `chooseChain` eine Kette über den ganzen Strich (dynamisches
   Programm): je Punkt kostet ein Abschnitt den Abstand der Wunschtiefe (Bildhöhe über der Erde) zu ihm in Spuren, eine
