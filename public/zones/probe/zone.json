@@ -113,6 +113,7 @@
       "off": [
         "tunnel"
       ],
+      "chain": 20,
       "budget": 400,
       "maxHeight": 40
     }

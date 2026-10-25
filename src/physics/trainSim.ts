@@ -34,7 +34,7 @@ export const SKIN_PHYSICS: Record<string, SkinPhysics> = {
 };
 
 export type RidePhase = 'lift' | 'launch' | 'coast' | 'done' | 'failed' | 'flying';
-export type FailReason = 'derail' | 'fall' | 'stall' | 'eject' | 'water' | 'ejectSide' | 'openEnd' | 'crossing';
+export type FailReason = 'derail' | 'fall' | 'stall' | 'eject' | 'water' | 'ejectSide' | 'openEnd' | 'crossing' | 'chain';
 
 export interface CarState {
   index: number;
@@ -116,6 +116,8 @@ export interface TrainSimOptions {
   lateralLimit?: number;
   /** Kreuzungen auf gleicher Höhe prüfen (Standard ja; die Probefahrten der Pinsel-Bahn prüfen sie vorab selbst) */
   checkCrossings?: boolean;
+  /** Kettenzugstärke (Etappe 2, Schritt 3; Plan 2.4): Höhe über der Station in Metern, bis zu der die Kette zieht; ohne Angabe bis zum Gipfel */
+  chainHeight?: number;
 }
 
 const STATION_PUSH = 2.0; // m/s: rollt auf ebener Strecke gut 10 m aus und bleibt stehen
@@ -125,7 +127,7 @@ const LIFT_SEARCH = 30; // m: so weit nach der Station darf der Anstieg beginnen
 const LIFT_MIN_SLOPE = 0.06;
 /** m: so tief muss die Bahn nach einem Gipfel fallen, damit der Lift dort endet (Absätze unterwegs zählen nicht) */
 const LIFT_DIP = 1.5;
-const LAUNCH_LENGTH = 26;
+export const LAUNCH_LENGTH = 26;
 const LAUNCH_ACCEL = 12;
 /** Offenes Ende (Absperrband): ab diesem Tempo blockieren die Räder auf den letzten Metern und der Zug fliegt ab, darunter kippt er */
 const OPEN_END_FLY_SPEED = 6;
@@ -172,6 +174,9 @@ export class TrainSim {
   sinceFail = 0;
   liftStart = -1;
   liftEnd = -1;
+  /** die Kette endet unter dem Gipfel (Kettenzugstärke); rollt der Zug danach zurück, heißt der Fehlgrund „chain“ */
+  private liftLimited = false;
+  private liftDescended = false;
   private liftActive = false;
   private wasInTunnel: boolean[] = [];
   private passedElements = new Set<number>();
@@ -207,27 +212,11 @@ export class TrainSim {
    * (weniger als LIFT_DIP tief) sind kein Gipfel; der Lift endet am höchsten Punkt, sobald die Bahn danach deutlich fällt.
    */
   private findLift(): void {
-    const sm = this.samples;
-    let start = -1;
-    let top = -1;
-    for (let i = 1; i < sm.count; i++) {
-      if (start < 0) {
-        if (sm.s[i] > LIFT_SEARCH) break;
-        if (sm.t3y[i] > LIFT_MIN_SLOPE) start = top = i;
-        continue;
-      }
-      if (sm.y[i] >= sm.y[top]) top = i;
-      else if (sm.y[top] - sm.y[i] > LIFT_DIP && sm.s[top] - sm.s[start] > 1) {
-        // die Förderräder der Station bringen den Zug zur Kette: Lift ab der Station
-        this.liftStart = 0;
-        this.liftEnd = sm.s[top];
-        return;
-      }
-    }
-    if (start >= 0) {
-      this.liftStart = 0;
-      this.liftEnd = top > start && sm.s[top] - sm.s[start] > 1 ? sm.s[top] : sm.length * 0.5;
-    }
+    const r = liftRange(this.samples, this.opts.chainHeight);
+    if (!r) return;
+    this.liftStart = r.start;
+    this.liftEnd = r.end;
+    this.liftLimited = r.limited;
   }
 
   get skinPhysics(): SkinPhysics {
@@ -372,10 +361,12 @@ export class TrainSim {
     this.v += a * h;
     if (this.wheelLock > 0 && this.v < WHEEL_LOCK_FLOOR) this.v = WHEEL_LOCK_FLOOR;
     // Stillstand: auf ebener Strecke oder am Berg → nicht geschafft
+    if (this.liftLimited && !this.liftDescended && this.phase === 'coast' && this.s > this.liftEnd && aGrav > 0.3) this.liftDescended = true;
     if (!afterFail && this.phase === 'coast' && this.v <= 0.03) {
       this.stallTimer += h;
       if (this.stallTimer > 0.4 || aGrav < -0.05) {
-        this.fail('stall');
+        // Stillstand am ersten Anstieg hinter einer zu kurzen Kette: die Kette reicht nicht (Etappe 2, Schritt 3)
+        this.fail(this.liftLimited && !this.liftDescended && this.s >= this.liftEnd - 0.5 ? 'chain' : 'stall');
         this.v = Math.min(this.v, -0.02);
       }
     } else this.stallTimer = 0;
@@ -536,6 +527,37 @@ export class TrainSim {
     this.flight = new FlightSim(this.cars, { terrain: this.opts.terrain, gravity: this.opts.gravityScale, carLength: this.opts.carLength, kind, side });
     this.phase = 'flying';
   }
+}
+
+/**
+ * Kettenzug, auch für die sichtbare Kette (Etappe 2, Schritt 2): Bogenlänge, ab der und bis zu der die Kette zieht, oder
+ * null ohne Anstieg nahe der Station. Die Förderräder der Station bringen den Zug zur Kette: Lift ab der Station bis zum
+ * Gipfel des ersten großen Anstiegs; kleine Absätze (unter LIFT_DIP) sind kein Gipfel.
+ */
+export function liftRange(sm: TrackSamples, chainHeight?: number): { start: number; end: number; limited: boolean } | null {
+  let start = -1;
+  let top = -1;
+  let end = -1;
+  for (let i = 1; i < sm.count; i++) {
+    if (start < 0) {
+      if (sm.s[i] > LIFT_SEARCH) break;
+      if (sm.t3y[i] > LIFT_MIN_SLOPE) start = top = i;
+      continue;
+    }
+    if (sm.y[i] >= sm.y[top]) top = i;
+    else if (sm.y[top] - sm.y[i] > LIFT_DIP && sm.s[top] - sm.s[start] > 1) {
+      end = sm.s[top];
+      break;
+    }
+  }
+  if (start < 0) return null;
+  if (end < 0) end = top > start && sm.s[top] - sm.s[start] > 1 ? sm.s[top] : sm.length * 0.5;
+  // Kettenzugstärke (Etappe 2, Schritt 3): die Kette endet, wo die Bahn die erlaubte Höhe über der Station erreicht
+  if (chainHeight !== undefined && chainHeight > 0) {
+    const limit = sm.y[0] + chainHeight;
+    for (let i = 1; i < sm.count && sm.s[i] <= end; i++) if (sm.y[i] >= limit) return { start: 0, end: sm.s[i], limited: sm.s[i] < end - 1e-6 };
+  }
+  return { start: 0, end, limited: false };
 }
 
 export function simOptionsForLevel(level: LevelDef, path: TrackPath, terrain: Terrain, skin: string, allowTunnels: boolean): TrainSimOptions {

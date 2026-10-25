@@ -24,6 +24,10 @@ import { elementsFromTerrain, type PortalLike } from './levelElements';
 import type { BuiltElement } from './elements';
 import { trackFrames } from './trackMesh';
 import { buildTrack, disposeTrack } from './trackBuilder';
+import { buildStartPlaceholder, type BuiltStart } from './startElements';
+import { carColor } from './train';
+import { liftRange } from '@/physics/trainSim';
+import type { StartType } from '@/track/model';
 import type { TrackType } from './trackTypes';
 import { WorldTrain, type RailFrame } from './train';
 import { TerrainFoundation, type Foundation } from './foundations';
@@ -61,6 +65,8 @@ export class WorldRenderer {
   private look: LookName = 'day';
   private track: Group | null = null;
   private supports: Group | null = null;
+  /** Platzhalter der Startart (Kette, Launch-Band, Puffer, Turm; Etappe 2, Schritt 2) */
+  private start: BuiltStart | null = null;
   private readonly train = new WorldTrain();
   /** Bahntyp aus der Adresse (?track=) überstimmt den Typ des Skins (zum Vergleich der vier Typen) */
   trackOverride: TrackType | null = null;
@@ -303,13 +309,19 @@ export class WorldRenderer {
    * Bahn als Profil aus den Abtastpunkten und der Schräglage der Bühnen-Schienen bauen (auch für die Vorschau); nach dem
    * Loslassen (keine Vorschau) dazu die Stützen auf den Fundamenten des Levels
    */
-  setTrack(samples: TrackSamples, banks: Float64Array, type: TrackType, preview: boolean, insideMountain?: (x: number, y: number, z: number) => boolean): void {
+  setTrack(samples: TrackSamples, banks: Float64Array, type: TrackType, preview: boolean, insideMountain?: (x: number, y: number, z: number) => boolean, start?: { type: StartType; stationLength: number; groundY: number }): void {
     this.clearTrack();
     if (samples.count < 2) return;
     this.type = this.trackOverride ?? type;
     const frames = trackFrames(samples, banks);
     this.track = buildTrack(frames, samples.length, this.type);
     this.scene.add(this.track);
+    if (start) {
+      // Startart sichtbar (Schritt 2): Kette bis zum Kettenende der Fahrt, Launch-Band, Puffer oder Turm
+      const needsLift = start.type === 'chainlift' || start.type === 'verticalLift';
+      this.start = buildStartPlaceholder(frames, { type: start.type, trackType: this.type, lift: needsLift ? liftRange(samples) : null, stationLength: start.stationLength, groundY: start.groundY });
+      this.scene.add(this.start.group);
+    }
     if (!preview) {
       const { plans, stats } = planWorldSupports(samples, frames, this.type, this.foundations, insideMountain ?? (() => false));
       this.supportStats = stats;
@@ -319,6 +331,11 @@ export class WorldRenderer {
   }
 
   clearTrack(): void {
+    if (this.start) {
+      this.scene.remove(this.start.group);
+      this.start.dispose();
+      this.start = null;
+    }
     if (this.track) {
       this.scene.remove(this.track);
       disposeTrack(this.track);
@@ -332,8 +349,8 @@ export class WorldRenderer {
   }
 
   /** Zug mit count Wagen als Platzhalter-Körper anlegen (Gondeln mit Hänger bei der Hängebahn) */
-  buildTrain(count: number): void {
-    this.train.build(count, this.type === 'hanging');
+  buildTrain(count: number, variant?: string): void {
+    this.train.build(count, this.type === 'hanging', carColor(variant));
   }
 
   /** Wagen je Bild stellen (rail: Schienenrahmen bei s, wenn der Zug auf der Bahn fährt) */

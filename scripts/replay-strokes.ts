@@ -56,7 +56,7 @@ const lastIdx = args.indexOf('--last');
 const last = lastIdx >= 0 ? Number(args[lastIdx + 1]) : 0;
 const file = args.find((a, i) => !a.startsWith('--') && (lastIdx < 0 || i !== lastIdx + 1)) ?? 'recordings/strokes.jsonl';
 const NAME: Record<Reading, string> = { brush: 'Pinsel', stage: 'Bühne', single: 'Ein Strich', lanes: 'Ebenen' };
-const FAIL: Record<string, string> = { derail: 'entgleist', fall: 'Fahrgäste fallen', stall: 'bleibt stehen', eject: 'Rauswurf', water: 'Wasser', ejectSide: 'Rauswurf seitlich', openEnd: 'Absperrband (offenes Ende)', crossing: 'Kreuzung' };
+const FAIL: Record<string, string> = { derail: 'entgleist', fall: 'Fahrgäste fallen', stall: 'bleibt stehen', eject: 'Rauswurf', water: 'Wasser', ejectSide: 'Rauswurf seitlich', openEnd: 'Absperrband (offenes Ende)', crossing: 'Kreuzung', chain: 'Kette reicht nicht' };
 
 let recs: Rec[] = readFileSync(file, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l) as Rec);
 if (last > 0) recs = recs.slice(-last);

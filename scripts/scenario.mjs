@@ -512,6 +512,13 @@ if (want('10')) {
       budget: s.level.trackBudget ?? null,
       maxHeight: s.level.maxHeight ?? null,
       upgrades: z?.upgrades?.length ?? 0,
+      // Schritt 2: großer Startart-Knopf am Hebel der Station (Radius 33 statt 22) und die Gruppe der Startart in der Welt
+      startChipR: s.chips()[0]?.r ?? 0,
+      startGroup: !!window.tcGame.world.scene.getObjectByName('start'),
+      // Schritt 3: Kettenzugstärke des Felds (20 m) als gestrichelte Linie mit Beschriftung, Wagenvariante der Stufe
+      chain: s.abilities?.chain ?? null,
+      chainLine: s.chainLine.getBounds().width > 0 && s.chainLabel.visible,
+      car: s.abilities?.car ?? null,
     };
   });
   console.log('zone', zone);
@@ -526,6 +533,8 @@ if (want('10')) {
   check(zone.e1Visible === true && zone.e2Visible === false, `Fortschrittsstufe 1 zeigt den Dreiteiler und blendet die Kulisse ab Stufe 2 aus (e1 ${zone.e1Visible}, e2 ${zone.e2Visible})`);
   check(zone.upgrades === 3 && zone.launch === true && zone.tunnel === false && zone.mountain === false, `Schalter des Felds gelten (Stufe „Alles“ mit Tunnel aus: launch ${zone.launch}, tunnel ${zone.tunnel}, Bergbauer ${zone.mountain})`);
   check(zone.budget === 400 && zone.maxHeight === 40, `Streckenbudget und Höhenlimit des Felds gelten (${zone.budget} m, ${zone.maxHeight} m)`);
+  check(zone.startChipR === 33 && zone.startGroup, `Startart-Knopf am Hebel (Radius ${zone.startChipR}) und Startart-Gruppe in der Welt (${zone.startGroup})`);
+  check(zone.chain === 20 && zone.chainLine && zone.car === 'rot', `Kettenzuglinie bei ${zone.chain} m mit Beschriftung (${zone.chainLine}), Wagenvariante ${zone.car}`);
   // dieselbe Datei noch einmal gelesen ergibt denselben Stand (deterministisch)
   const again = await page.evaluate(async () => {
     const res = await fetch(`${location.pathname.replace(/[^/]*$/, '')}zones/probe/zone.json`, { cache: 'no-store' });

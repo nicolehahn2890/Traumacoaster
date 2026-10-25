@@ -18,6 +18,19 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Vorbelegung der fünf Stufen, Texteingabe im Browser-Dialog, Wagenvariante als Wort. Eigenheiten im Worktree: Die
   Aufnahmen liegen nur im Haupt-Checkout (Pfad an das Replay geben); Szenarien mit `TC_URL` gegen den eigenen Server
   starten, sonst nimmt das Skript einen fremden Server auf Port 4173.
+  Schritt 2 gebaut: Startarten sichtbar als Platzhalter in den Maßen der Physik (`src/world/startElements.ts`): Kette mit
+  Zahnrädern bis zum Kettenende der Fahrt (`liftRange` aus der Physik), Launch-Band mit Lichtern auf 26 m, Hydro-Band
+  mit Dampf-Marke, Pendel-Puffer beidseits des Vorgabestücks, Vertikallift-Turm am Kettenende; in der Zone ein großer
+  Startart-Knopf am Hebel des Häuschens (Tipp wechselt durch die erlaubten Startarten, Name als Sticker). System: Bau aus
+  den Rahmen der Bahn, Kettenende aus der Physik, Knopf am Anker. Platzhalter: alle Formen und Farben, Kettenlage je Typ.
+  Zeichenaufrufe in der Prüfzone mit Anstieg 131 bis 134.
+  Schritt 3 gebaut: Kettenzugstärke in der Fahrt (die Kette endet in der erlaubten Höhe über der Station; rollt der Zug am
+  ersten Anstieg zurück, heißt es „Die Kette reicht nicht bis zum Gipfel“, die Schwachstellen-Probefahrt meldet es als
+  Hinweis), gestrichelte Kettenzuglinie mit Beschriftung im Zeichenmodus, Wagenvariante der Stufe als Farbe der
+  Klötzchen-Wagen. Die Probefahrten des Pinsels kennen die Grenze absichtlich nicht (sie würden sonst den Hügel verformen).
+  System: Grenze in der Physik, Fehlgrund, Linie. Platzhalter: Strichstil, Farbwörter, Wagen. Replay `--world` nach
+  Schritt 2 und 3: 475 Bahnprofile, keine ungültigen Werte, 13460 Stützen, Median 2,0 px, kein Fehler (das Replay fährt ohne
+  Kettenzugstärke, wie die Level). Szenario 10 nach Schritt 3: 14 Prüfungen grün. Als Nächstes Tor 2a (Handy-Test).
 - **24.10., Etappe 1 begonnen** (Branch `etappe-1-weltrenderer`, Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10).
   Schritt 1 gebaut: Weltrenderer hinter `?world=1` (Three-Szene im selben WebGL-Kontext, Pixi zeichnet davor den Himmel und
   darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem

@@ -193,7 +193,8 @@ Splash-Zone, Wasserfall), Räume mit „offen ab Stufe“. **Nachtrag 25.10.2026
 Aufwertungsstufen aus 2.4 werden eine Tabelle der Zone (Stufe → Satz von Schaltern nach 3.1 mit Gurt, Kettenzugstärke
 und Wagenvariante); ein Feld wählt die Stufe und kann einzelne Schalter überschreiben; die Kettenzugstärke ist die Höhe
 über der Station in Metern, bis zu der die Kette zieht (Stufe „alles“ ohne Grenze); Streckenbudget und Höhenlimit
-stehen je Feld.
+stehen je Feld. **Stand 25.10.2026:** gebaut in Etappe 2, Schritte 1 und 3 (`docs/TECH.md` 4h); die Kettenzugstärke wirkt in
+der Fahrt und zeichnet die Linie, die Wagenvariante färbt die Platzhalter-Wagen.
 
 ## Paket 4: Levelziele, Sterne, Humor
 
@@ -617,7 +618,7 @@ Rückfragen der Session (25.10.): alle Empfehlungen angenommen (drei Tore; Durch
 bleibt eigenes Element; Entwurf der Basiszone v1 durch die Session; Startart-Knopf wechselt per Tipp; Kettenzugstärke
 als Höhe über der Station).
 
-**Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritt 1 gebaut am 25.10.2026 (Nachtrag in Paket 3), Schritt 2 begonnen.
+**Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritte 1 bis 3 gebaut am 25.10.2026 (Nachträge in Paket 3 und 2); als Nächstes Tor 2a.
 
 ### Rückfragen zu Paket 10
 
@@ -776,6 +777,19 @@ musste geändert werden. (2) Mit den Schaltern ist „Boden formen“ in der Zon
 „Bergbauer“ (jeder Strich abseits der Bahn wurde zum Berg) für die Basiszone von selbst. (3) Die Startart gehört zum Feld:
 Erlaubt die Stufe die gewählte nicht, springt die Bahn auf die erste erlaubte, und der Knopf wechselt nur durch die
 erlaubten. Platzhalter: Vorbelegung der Stufen, Texteingabe im Browser-Dialog.
+**Stand 25.10.2026 (Etappe 2, Schritt 2 gebaut; `docs/TECH.md` 4h):** Die fünf Startarten aus 3.5 stehen als Platzhalter in
+der Welt (Kette mit Zahnrädern, Launch-Band mit Lichtern, Hydro-Band mit Dampf, Pendel-Puffer, Vertikallift-Turm), der
+Startart-Knopf sitzt groß am Hebel des Häuschens und wechselt per Tipp durch die erlaubten Startarten. Gelernt: (1) Die
+Kette muss dieselbe Suche nutzen wie die Fahrt, sonst zeigt sie ein anderes Kettenende als das, an dem der Zug losgelassen
+wird; die Suche ist darum eine Funktion der Physik (`liftRange`), die der Renderer aufruft. (2) Ein Launch-Band auf den
+ersten 26 m läuft über das 14-m-Vorgabestück hinaus in den ersten Hügel; das ist die Länge, auf der die Physik beschleunigt,
+und bleibt so, bis die Stilprobe die Form festlegt. (3) Alles zusammen kostet höchstens drei Zeichenaufrufe je Startart
+(Instanzen und verschmolzene Teile), die Prüfzone liegt mit Anstieg bei 131 bis 134.
+**Stand 25.10.2026 (Etappe 2, Schritt 3 gebaut; `docs/TECH.md` 4h):** Kettenzugstärke je Stufe als Höhe über der Station,
+Kettenzuglinie beim Zeichnen, eigener Fehlgrund „Kette reicht nicht“ in Fahrt und Probefahrt, Wagenvariante als Farbe.
+Gelernt: Die Probefahrten des Pinsels dürfen die Grenze nicht kennen; sie bessern die Linie nach und hätten einen zu hohen
+ersten Hügel fünfmal nach hinten geschoben, statt ihn dem Spieler zu lassen. Die Grenze gilt für Schwachstellen-Anzeige und
+Fahrt; der Spieler sieht die Linie und entscheidet selbst.
 
 ## Paket 8a: Teile und Elemente
 

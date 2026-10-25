@@ -268,6 +268,7 @@ describe('Zonendatei: Ziele, Stufen und Prüfzone (Schritt 9)', () => {
     expect(f.off).toEqual(['tunnel']);
     expect(f.budget).toBe(400);
     expect(f.maxHeight).toBe(40);
+    expect(f.chain).toBe(20);
     expect([zone!.stations.length, zone!.queues.length, zone!.sites.length, zone!.coinGroups.length]).toEqual([1, 1, 1, 1]);
   });
 });

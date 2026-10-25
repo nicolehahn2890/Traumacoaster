@@ -50,6 +50,8 @@ export class WorldView {
   /** Weltrenderer (?world=1): Himmel wird vor der Three-Welt gezeichnet; Boden, Schienen und Wagen kommen aus der Welt */
   private worldMode = false;
   private worldR: WorldRenderer | null = null;
+  /** Länge des Vorgabestücks der Station (die Puffer des Pendel-Starts stehen an seinen Enden); die Zone setzt sie */
+  stationLength = 14;
 
   constructor(worldDef: WorldDef, terrain: Terrain, skin: string, night = false, fx: boolean | null = null) {
     this.worldDef = worldDef;
@@ -135,7 +137,11 @@ export class WorldView {
     // Weltrenderer: Profil aus denselben Abtastpunkten und derselben Schräglage wie die Schienen der Bühne; die Berge
     // bekommen an den Portalen ihre Öffnungen
     if (!preview) this.worldR?.setTunnelPortals(portals);
-    this.worldR?.setTrack(samples, this.trackR.railBanks, trackTypeForSkin(skin), preview, (x, y, z) => terrain.insideMountain(x, y, z));
+    this.worldR?.setTrack(samples, this.trackR.railBanks, trackTypeForSkin(skin), preview, (x, y, z) => terrain.insideMountain(x, y, z), {
+      type: path.startType,
+      stationLength: this.stationLength,
+      groundY: terrain.groundHeight(samples.x[0], samples.z[0]),
+    });
   }
 
   /** Bahn löschen (Bühne und Welt) */
@@ -155,9 +161,9 @@ export class WorldView {
     this.trackR.redrawSupports(growth);
   }
 
-  buildTrain(cars: number, riders: CharacterDef[], perCar: number): void {
+  buildTrain(cars: number, riders: CharacterDef[], perCar: number, carVariant?: string): void {
     this.trainR.build(cars, riders, perCar);
-    this.worldR?.buildTrain(cars);
+    this.worldR?.buildTrain(cars, carVariant);
   }
 
   /** onRails: Der Zug fährt auf der Bahn (nicht im Flug nach einem Fehlschlag); die Wagen liegen dann auf den Schienen */

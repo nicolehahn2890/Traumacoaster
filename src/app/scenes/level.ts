@@ -17,7 +17,7 @@ import type { BeltLevel, ElementId, LevelDef, WorldDef } from '@/levels/types';
 import { goalLabel, ELEMENT_NAMES } from '@/levels/goalLabels';
 import { evaluate, type Evaluation, hasNegativeGoals } from '@/levels/evaluator';
 import { Terrain } from '@/physics/terrain';
-import { SKIN_PHYSICS, TrainSim, simOptionsForLevel, type CarState, type FailReason } from '@/physics/trainSim';
+import { SKIN_PHYSICS, TrainSim, simOptionsForLevel, type CarState, type FailReason, type TrainSimOptions } from '@/physics/trainSim';
 import { carFrame, stateAt } from '@/track/model';
 import { PassengerSim, initPhysics, emptyParts, seatedPose, type PassengerView } from '@/physics/passengers';
 import { restraintFor } from '@/physics/belts';
@@ -96,6 +96,19 @@ const SHELF_ELEMENTS: Array<{ kind: ElementKind; unlock: ElementId; color: strin
   { kind: 'splash', unlock: 'splash', color: '#3ec7c2', length: 8 },
   { kind: 'launchBlock', unlock: 'doubleLaunch', color: '#ffd23f', length: 14 },
 ];
+/** Symbol der Startart im Chip oder im großen Knopf (k: Maßstab) */
+function drawStartIcon(g: Graphics, type: StartType, k: number): void {
+  const ink = hexNum(INK);
+  if (type === 'chainlift') for (let i = 0; i < 4; i++) g.circle((-9 + i * 6) * k, (6 - i * 4) * k, 2.6 * k).fill(ink);
+  else if (type === 'launch' || type === 'hydro') g.poly([-3, -11, 6, -1, 1, -1, 3, 11, -6, 1, -1, 1].map((v) => v * k)).fill(type === 'hydro' ? 0x3ec7c2 : 0xffb13b).stroke({ width: 1.5 * k, color: ink });
+  else if (type === 'swing') {
+    g.moveTo(0, -10 * k).lineTo(-6 * k, 6 * k).stroke({ width: 2.5 * k, color: ink });
+    g.circle(-6 * k, 7 * k, 3.5 * k).fill(0xffd23f).stroke({ width: 1.5 * k, color: ink });
+  } else {
+    g.moveTo(0, 9 * k).lineTo(0, -9 * k).stroke({ width: 3 * k, color: ink, cap: 'round' });
+    g.moveTo(-6 * k, -3 * k).lineTo(0, -9 * k).lineTo(6 * k, -3 * k).stroke({ width: 3 * k, color: ink, cap: 'round', join: 'round' });
+  }
+}
 /** Bühnen-Meter Tinte hinter dem Finger (die Bahn selbst ist die Vorschau) */
 const INK_TAIL = 1.5;
 /** Zurückziehen des Strichs: so nah (px) an der eigenen Linie und entgegen ihrer Richtung radiert der Zeiger den Strich */
@@ -368,6 +381,9 @@ export class LevelScene implements Scene {
   /** Schalter, Gurt, Kettenzugstärke und Grenzen des aktiven Felds (Etappe 2, Schritt 1; ohne Feld: alles) */
   private abilities: ResolvedAbilities | null = null;
   private fieldTape = new Graphics();
+  /** Kettenzuglinie (Etappe 2, Schritt 3): gestrichelt in der Höhe, bis zu der die Kette des Felds zieht, mit Beschriftung im HUD */
+  private chainLine = new Graphics();
+  private chainLabel = label('', 13, INK, true);
 
   constructor(levelId: number, sandbox: SandboxConfig | null = null) {
     this.sandbox = sandbox;
@@ -457,12 +473,12 @@ export class LevelScene implements Scene {
         }
       }
     }
-    this.view.overlay.addChild(this.fieldTape);
+    this.view.overlay.addChild(this.fieldTape, this.chainLine);
     setPerspective(game.world ? !PERSP_OFF : PERSP_URL, FOV_URL);
     this.view.overlay.addChild(this.laneGlow, this.spotLayer, this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
     this.laneHud.addChild(this.laneHudG);
-    this.hud.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn);
+    this.hud.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.chainLabel, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn);
     this.ui.addChild(this.hud, this.laneHud, this.toast);
     this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, ...this.laneBtns.map((l) => l.btn), ...(this.zoneEditor?.buttons ?? [])];
     this.speedBtn.visible = false;
@@ -538,6 +554,7 @@ export class LevelScene implements Scene {
   private resetStationPiece(): void {
     const st = this.zoneStation();
     if (!st) return;
+    this.view.stationLength = st.length;
     if (!this.path || this.isStationPieceOnly()) this.setPath(stationPath(st), false);
     this.ensureStartAllowed();
   }
@@ -581,6 +598,7 @@ export class LevelScene implements Scene {
 
   /** Absperrband an den Rändern des aktiven Felds (links, rechts, oben), in der Ansicht auf Spur 0 */
   private drawFieldTape(): void {
+    this.drawChainLine();
     const g = this.fieldTape;
     g.clear();
     const f = this.activeField;
@@ -598,6 +616,41 @@ export class LevelScene implements Scene {
     edge(corners[0], corners[1]);
     edge(corners[1], corners[2]);
     edge(corners[2], corners[3]);
+  }
+
+  /**
+   * Kettenzuglinie (Etappe 2, Schritt 3; Plan 2.4, 7.4): Zieht in der Zone eine Kette mit begrenzter Stärke, zeigt eine
+   * gestrichelte Linie auf der Spur der Station die Höhe, bis zu der sie zieht; der erste Hügel darf nicht höher sein.
+   */
+  private drawChainLine(): void {
+    const g = this.chainLine;
+    g.clear();
+    this.chainLabel.visible = false;
+    const st = this.zoneStation();
+    const chain = this.abilities?.chain;
+    const type = this.path?.startType ?? 'chainlift';
+    if (!st || !chain || this.mode !== 'draw' || (type !== 'chainlift' && type !== 'verticalLift')) return;
+    const f = this.activeField;
+    const x0 = f ? f.x0 : st.x - 60;
+    const x1 = f ? f.x1 : st.x + 120;
+    const y = st.y + chain;
+    const a = toView(x0, y, st.z);
+    const b = toView(x1, y, st.z);
+    const len = Math.hypot(b.X - a.X, b.Y - a.Y);
+    const n = Math.max(2, Math.round(len / 1.5));
+    for (let i = 0; i < n; i += 2) {
+      const t0 = i / n;
+      const t1 = Math.min(1, (i + 1) / n);
+      g.moveTo(a.X + (b.X - a.X) * t0, a.Y + (b.Y - a.Y) * t0).lineTo(a.X + (b.X - a.X) * t1, a.Y + (b.Y - a.Y) * t1).stroke({ width: 0.4, color: 0x3b3f4a, alpha: 0.85 });
+    }
+    // Beschriftung am linken Ende der Linie, aber immer im Bild (nah gezoomt liegt die Linie oft über dem oberen Rand)
+    const p = this.view.toScreen(a.X, a.Y);
+    this.chainLabel.text = t('chain.line', { n: String(chain) });
+    const half = this.chainLabel.width / 2;
+    const above = p.y < safeArea().top + 90;
+    this.chainLabel.text = above ? `↑ ${t('chain.line', { n: String(chain) })}` : t('chain.line', { n: String(chain) });
+    this.chainLabel.position.set(Math.max(12 + half, Math.min(this.w - 12 - half, p.x + 12 + half)), Math.max(safeArea().top + 96, Math.min(this.h - 30, p.y - 16)));
+    this.chainLabel.visible = true;
   }
 
   /** Kamera im Level halten: im aktiven Feld weich, sonst die harten Grenzen des Levels */
@@ -2158,7 +2211,7 @@ export class LevelScene implements Scene {
     }
     if (!this.inspector) {
       const probe = (path: TrackPath, samples: TrackSamples) =>
-        new TrainSim(samples, path, { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), lateralLimit: Infinity, checkCrossings: false });
+        new TrainSim(samples, path, { ...this.simOptions(path), lateralLimit: Infinity, checkCrossings: false });
       this.inspector = new TrackInspector(this.path, this.samples, probe, (SKIN_PHYSICS[this.skin] ?? SKIN_PHYSICS.skinWood).lateralLimit);
     }
     if (this.inspector.path !== this.path) {
@@ -2170,6 +2223,8 @@ export class LevelScene implements Scene {
     this.inspector = null;
     this.inspectAt = -1;
     this.drawWeakSpots();
+    // Zone: eine zu kurze Kette meldet die Probefahrt als Hinweis (Etappe 2, Schritt 3)
+    if (this.sandbox?.zone && this.weakSpots.some((w) => w.reason === 'chain')) this.toast.show(t('chain.hint'), 2.2);
   }
 
   /** Dev-Modus: Schwachstellen der aktuellen Bahn (zu eng, zu langsam, Kreuzung) als rote Ringe */
@@ -2262,6 +2317,7 @@ export class LevelScene implements Scene {
     this.scheduleInspect();
     this.drawOverlay();
     this.refreshLaneHud();
+    this.drawChainLine();
     if (this.mode === 'draw') this.buildStandingTrain();
     if (this.drag.kind !== 'none' && this.drag.kind !== 'stroke') this.liveFeedback(this.path, this.samples, this.stats);
   }
@@ -2277,12 +2333,12 @@ export class LevelScene implements Scene {
       this.view.clearTrain();
       return;
     }
-    const opts = simOptionsForLevel(this.level, this.path, this.terrain, this.skin, this.allowTunnels);
+    const opts = this.simOptions(this.path);
     const perCar = 2;
     const belt = this.belt();
     if (this.standCars.length !== opts.cars) {
       const riders = storage.ridersFor(opts.cars * perCar);
-      this.view.buildTrain(opts.cars, riders, perCar);
+      this.view.buildTrain(opts.cars, riders, perCar, this.abilities?.car);
       this.standViews = [];
       for (let c = 0; c < opts.cars; c++) {
         for (let r = 0; r < perCar; r++) {
@@ -2473,8 +2529,19 @@ export class LevelScene implements Scene {
     this.path.startType = available[(idx + 1) % available.length];
     this.redrawTrack();
     this.updateGoals();
-    this.toast.show(`${t('startType')}: ${t('start.' + this.path.startType)}`, 1.5);
+    // Zone: der Name kurz groß als Sticker (Plan 3.3), im Level der Toast wie bisher
+    if (this.sandbox?.zone) this.sticker.show(t('start.' + this.path.startType), '#ffd23f', 1.2);
+    else this.toast.show(`${t('startType')}: ${t('start.' + this.path.startType)}`, 1.5);
   }
+  /**
+   * Optionen der Fahrt für diese Bahn, in der Zone mit der Kettenzugstärke des Felds (Etappe 2, Schritt 3). Die Probefahrten
+   * des Pinsels (BrushRefiner) laufen ohne sie: Sie bessern die Linie nach, eine zu kurze Kette können sie nicht beheben.
+   */
+  private simOptions(path: TrackPath): TrainSimOptions {
+    const chain = this.abilities?.chain;
+    return { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), ...(chain ? { chainHeight: chain } : {}) };
+  }
+
   /** Startart im Feld (Etappe 2, Schritt 1): erlaubt die Stufe die gewählte nicht, nimmt die Bahn die erste erlaubte */
   private ensureStartAllowed(): void {
     if (!this.path || !this.abilities) return;
@@ -2634,17 +2701,20 @@ export class LevelScene implements Scene {
     const out: Array<{ x: number; y: number; r: number; action: () => void; draw: (g: Graphics) => void }> = [];
     if (!this.path || this.mode !== 'draw') return out;
     const nodes = this.path.nodes;
-    const sp = this.nodeScreen(nodes[0]);
     const type = this.path.startType;
+    // Zone: großer Startart-Knopf am Hebel des Häuschens (Etappe 2, Schritt 2; Plan 3.3: das kleine Symbol über dem
+    // ersten Knoten wurde nicht als Knopf erkannt), sonst der Chip über dem ersten Knoten
+    const st = this.zoneStation();
+    const lever = st ? toView(st.x + st.dir * 2.2, st.y + 1.4, st.z - 2.0 / LANE_DEPTH) : null;
+    const sp = lever ? this.view.toScreen(lever.X, lever.Y) : this.nodeScreen(nodes[0]);
+    const k = lever ? 1.5 : 1;
     out.push({
-      x: sp.x, y: sp.y - 46, r: 22, action: () => this.cycleStart(),
+      x: sp.x, y: sp.y - (lever ? 44 : 46), r: 22 * k, action: () => this.cycleStart(),
       draw: (g) => {
-        g.circle(0, 0, 20).fill(hexNum(PAPER)).stroke({ width: 3, color: hexNum(INK) });
         const ink = hexNum(INK);
-        if (type === 'chainlift') for (let i = 0; i < 4; i++) g.circle(-9 + i * 6, 6 - i * 4, 2.6).fill(ink);
-        else if (type === 'launch' || type === 'hydro') g.poly([-3, -11, 6, -1, 1, -1, 3, 11, -6, 1, -1, 1]).fill(type === 'hydro' ? 0x3ec7c2 : 0xffb13b).stroke({ width: 1.5, color: ink });
-        else if (type === 'swing') { g.moveTo(0, -10).lineTo(-6, 6).stroke({ width: 2.5, color: ink }); g.circle(-6, 7, 3.5).fill(0xffd23f).stroke({ width: 1.5, color: ink }); }
-        else { g.moveTo(0, 9).lineTo(0, -9).stroke({ width: 3, color: ink, cap: 'round' }); g.moveTo(-6, -3).lineTo(0, -9).lineTo(6, -3).stroke({ width: 3, color: ink, cap: 'round', join: 'round' }); }
+        if (lever) g.moveTo(0, 18 * k).lineTo(0, 44).stroke({ width: 6, color: ink, cap: 'round' });
+        g.circle(0, 0, 20 * k).fill(hexNum(lever ? '#ffd23f' : PAPER)).stroke({ width: 3, color: ink });
+        drawStartIcon(g, type, k);
       },
     });
     // Pinsel-Bahn: Kreuzungen antippen tauscht, welcher Strang vorne liegt (nur solange die Bahn zum Plan passt)
@@ -2929,7 +2999,7 @@ export class LevelScene implements Scene {
     // Offene Bahn: kein automatischer Rückweg mehr; die Fahrt endet am Absperrband (Abflug oder Kippen)
     const ridePath = this.path;
     const rideSamples = this.samples;
-    const opts = simOptionsForLevel(this.level, ridePath, this.terrain, this.skin, this.allowTunnels);
+    const opts = this.simOptions(ridePath);
     this.sim = new TrainSim(rideSamples, ridePath, opts);
     const perCar = 2;
     const riders = storage.ridersFor(opts.cars * perCar);
@@ -2978,7 +3048,7 @@ export class LevelScene implements Scene {
       this.toast.show(t('caught', { name }), 1.6);
       audio.play('catch');
     };
-    this.view.buildTrain(opts.cars, riders, perCar);
+    this.view.buildTrain(opts.cars, riders, perCar, this.abilities?.car);
     this.standCars = [];
     this.standViews = [];
     this.view.trainR.setStanding(false);
@@ -3495,7 +3565,7 @@ export class LevelScene implements Scene {
     this.view.update(dt);
     this.game.world?.setCamera(this.view.cameraView());
     this.zoneEditor?.update();
-    if (this.activeField && this.view.viewMoved) this.drawFieldTape();
+    if (this.view.viewMoved) this.drawFieldTape();
     // Perspektive: Griffe, Ende-Marker, Spur-Schein und Schwachstellen liegen in der Ansicht und wandern mit der Kamera
     if (this.view.viewMoved && this.mode === 'draw') {
       this.drawOverlay();

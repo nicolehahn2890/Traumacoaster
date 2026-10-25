@@ -332,6 +332,35 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   die Statuszeile zeigt den aufgelösten Satz. Prüfzone mit drei Stufen und einem Feld „Tunnel aus, Budget 400 m, Höhe
   40 m“; Szenario 10 prüft die Schalter im Spiel; Tests in `tests/abilities.test.ts`. Platzhalter: Vorbelegung der Stufen,
   Texteingabe als Browser-Dialog, Wagenvariante als ein Wort.
+- **Startarten sichtbar, Startart-Knopf am Hebel** (Schritt 2; `src/world/startElements.ts`, Plan 3.5, 3.3): Der Weltrenderer
+  baut mit jeder Bahn (auch der Vorschau) die Gruppe „start“ aus den Rahmen der Bahn: Kettenzug als Kettenglieder (Instanzen
+  alle 0,5 m, ein Zeichenaufruf) von der Station bis zum Kettenende mit Zahnrädern an beiden Enden; Launch als Band 1,5 m
+  breit mit Lichtern (Instanzen alle 2 m) auf den ersten `LAUNCH_LENGTH` = 26 m; Hydro als 2 m breites Band in Wasserfarbe
+  mit Dampf-Marke (vier durchscheinende Kugeln) am Bandende; Pendel als Puffer 1,6 m vor dem Anfang und hinter dem Ende
+  des Vorgabestücks (`WorldView.stationLength`, die Zone setzt sie); Vertikallift als Kette plus Turm mit Plattform neben dem
+  Kettenende, vom Boden unter der Station bis über die Bahn. Das Kettenende kommt aus derselben Suche wie die Fahrt:
+  `liftRange(samples)` in `src/physics/trainSim.ts` (aus `findLift` herausgelöst; ohne Anstieg innerhalb von 30 m nach der
+  Station gibt es keine Kette). Höchstens drei Zeichenaufrufe je Startart (Prüfzone mit Anstieg: 131 bis 134). Der Knopf: In
+  der Zone sitzt statt des kleinen Chips über dem ersten Knoten ein 1,5-mal so großer gelber Knopf mit Stiel am Hebel des
+  Häuschens (Weltpunkt des Hebels über `toView` in den Bildschirm projiziert, `LevelScene.chips`); ein Tipp wechselt durch
+  die Startarten, die das Feld erlaubt (`cycleStart`), der Name erscheint als Sticker. Im Level bleibt der kleine Chip mit
+  Toast. Tests in `tests/startElements.test.ts`, Szenario 10 prüft Knopf und Gruppe. Platzhalter: alle Formen und Farben,
+  die Lage der Kette über der Bahnlinie je Typ (`CHAIN_LIFT`), der Dampf.
+- **Kettenzuglinie, Kettenzugstärke, Wagenvariante** (Schritt 3; Plan 2.4, 7.4): Die Kettenzugstärke eines Felds (Stufe oder
+  Überschreibung, Meter über der Station) geht als `chainHeight` in die Fahrt (`TrainSimOptions`): `liftRange(samples,
+  chainHeight)` endet die Kette, wo die Bahn die erlaubte Höhe über der Station erreicht (`limited`), die Kette in der Welt
+  endet dort ebenso. Rollt der Zug hinter einer so verkürzten Kette am ersten Anstieg zurück (noch bevor er einmal bergab
+  gefahren ist), heißt der Fehlgrund `chain` statt `stall` (Text `fail.chain`); die Schwachstellen-Probefahrt meldet ihn in
+  der Zone als Hinweis `chain.hint`. Die Probefahrten des Pinsels (`BrushRefiner`) laufen ohne die Grenze, denn sie bessern
+  die Linie nach und könnten eine zu kurze Kette nur durch Verformen des Hügels beheben; Inspector und Fahrt nutzen sie
+  (`LevelScene.simOptions`). Linie: `drawChainLine` zeichnet im Zeichenmodus bei Kettenzug oder Vertikallift eine
+  gestrichelte Linie im Overlay auf der Spur der Station in der Höhe Station plus Stärke, über die Breite des aktiven Felds
+  (sonst 60 m vor bis 120 m hinter der Station), mit der Beschriftung `chain.line` im HUD am linken Ende; sie wird mit
+  dem Absperrband, nach jeder Neuzeichnung der Bahn und bei Kamerabewegung neu gesetzt. Wagenvariante: `car` der Stufe als
+  Farbwort oder Hex-Wert (`carColor`, `CAR_WORDS` in `src/world/train.ts`) färbt alle Klötzchen-Wagen der Welt
+  (`WorldView.buildTrain(…, carVariant)`); unbekannte Wörter lassen die Standardfarben. Prüfzone: Feld f1 mit Kette 20 m
+  und Stufe „Alles“ mit Wagen „rot“; Tests in `tests/chain.test.ts`. Platzhalter: Strichstil und Lage der Linie, die
+  Farbwörter, die Wagen selbst.
 
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).

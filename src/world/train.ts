@@ -20,6 +20,18 @@ const FIRST = '#ff5c8a';
 const INK = new Color(0x2a1f3d);
 const LAMP = new Color(0xffd23f);
 
+/** Wagenvariante der Aufwertung (Etappe 2, Schritt 3; Platzhalter): Farbwort oder Hex-Wert → Farbe aller Klötzchen-Wagen */
+export const CAR_WORDS: Record<string, string> = {
+  rot: '#e0453f', blau: '#3e7cc7', grün: '#5cb85c', gruen: '#5cb85c', gelb: '#ffd23f', lila: '#9b6dff', orange: '#ff8a5c',
+  weiß: '#f2f2f2', weiss: '#f2f2f2', schwarz: '#2a2a2a', rosa: '#ff5c8a', türkis: '#3ec7c2', tuerkis: '#3ec7c2',
+};
+export function carColor(word: string | undefined | null): string | null {
+  if (!word) return null;
+  const w = word.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(w)) return w;
+  return CAR_WORDS[w] ?? null;
+}
+
 export type RailFrame = (s: number) => { T: Vec3; U: Vec3; S: Vec3; bank: number } | null;
 
 /** ein Material für alle Wagen: die Farbe steckt je Ecke in der Geometrie (ein Zeichenaufruf je Wagen) */
@@ -45,8 +57,8 @@ function part(geo: BufferGeometry, color: Color, x: number, y: number, z: number
  * ein Wagen als eine Geometrie in lokalen Koordinaten: x Fahrtrichtung, y oben, z Seite (Betrachterseite positiv);
  * hanging: Gondel ohne Räder, mit zwei Hängern und Laufwerk am Tragbalken, der HANG_DROP über der Gondel liegt
  */
-function carMesh(index: number, total: number, hanging: boolean): Mesh {
-  const body = index === 0 ? FIRST : BODY[index % BODY.length];
+function carMesh(index: number, total: number, hanging: boolean, variant: string | null = null): Mesh {
+  const body = variant ?? (index === 0 ? FIRST : BODY[index % BODY.length]);
   const hl = CAR.halfLength;
   const hw = 0.6;
   const y0 = CAR.railOffset;
@@ -90,11 +102,11 @@ export class WorldTrain {
   /** Hängebahn: die Gondeln hängen HANG_DROP unter der Bahnlinie */
   private hanging = false;
 
-  build(count: number, hanging = false): void {
+  build(count: number, hanging = false, variant: string | null = null): void {
     this.clear();
     this.hanging = hanging;
     for (let i = 0; i < count; i++) {
-      const car = carMesh(i, count, hanging);
+      const car = carMesh(i, count, hanging, variant);
       car.visible = false;
       this.cars.push(car);
       this.group.add(car);
