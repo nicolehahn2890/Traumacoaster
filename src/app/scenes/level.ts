@@ -42,6 +42,7 @@ import { WorldView } from '@/render/worldView';
 import { HANG_DROP, trackTypeForSkin, type TrackType } from '@/world/trackTypes';
 import type { ZoneField, ZoneFile, ZoneStation } from '@/zone/types';
 import { LIFT_HEIGHT_DEFAULT, allowedStarts, resolveAbilities, zoneUnlocks, type ResolvedAbilities } from '@/zone/abilities';
+import { RockField } from '@/zone/rock';
 import { applyZoneExtras, stationPath, zoneCoins } from '@/zone/build';
 import { ZoneEditor } from '@/app/zoneEditor';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
@@ -380,6 +381,9 @@ export class LevelScene implements Scene {
   private activeField: ZoneField | null = null;
   /** Schalter, Gurt, Kettenzugstärke und Grenzen des aktiven Felds (Etappe 2, Schritt 1; ohne Feld: alles) */
   private abilities: ResolvedAbilities | null = null;
+  /** Festigkeitsfeld der Zone (Etappe 2, Schritt 5): fester Fels aus den Elementen bis zur Fortschrittsstufe; null ohne Zone */
+  private rock: RockField | null = null;
+  private rockToastAt = -10;
   private fieldTape = new Graphics();
   /** Kettenzuglinie (Etappe 2, Schritt 3): gestrichelt in der Höhe, bis zu der die Kette des Felds zieht, mit Beschriftung im HUD */
   private chainLine = new Graphics();
@@ -448,6 +452,7 @@ export class LevelScene implements Scene {
         game.world.setZone(zone.elements);
         applyZoneExtras(game.world, zone);
         this.level.coins = zoneCoins(zone);
+        this.refreshRock();
         if (EDITOR_URL) {
           this.zoneEditor = new ZoneEditor(
             {
@@ -461,6 +466,7 @@ export class LevelScene implements Scene {
                 this.view.trackR.setCoins(this.level.coins);
               },
               refreshStation: () => this.resetStationPiece(),
+              refreshRock: () => this.refreshRock(),
               startRide: () => this.startRide(),
             },
             zone,
@@ -548,6 +554,13 @@ export class LevelScene implements Scene {
     return p.nodes.length === 2 || (p.nodes.length === 4 && p.nodes[3].kind === 'lift');
   }
 
+  /** Festigkeitsfeld neu aus den Elementen der Zone (nach Änderungen im Editor und beim Feldwechsel: die Stufe blendet Elemente aus) */
+  private refreshRock(): void {
+    const zone = this.sandbox?.zone;
+    this.rock = zone ? new RockField(zone.elements, this.activeField?.stage ?? Infinity) : null;
+    this.view.rock = this.rock;
+  }
+
   /** Hubhöhe des Aufzugs im Feld (Etappe 2, Schritt 3b) */
   private elevatorHeight(): number {
     return this.abilities?.lift ?? LIFT_HEIGHT_DEFAULT;
@@ -593,6 +606,7 @@ export class LevelScene implements Scene {
       this.buildShelf();
     }
     this.game.world?.setStage(field?.stage ?? Infinity);
+    this.refreshRock();
     this.goalsBuiltFor = '';
     this.refreshBeltBadge(false);
     this.updateGoals();
@@ -1484,6 +1498,15 @@ export class LevelScene implements Scene {
       const k = laneScale(n.z);
       g.circle(sp.X, sp.Y, 0.9 * k * zs).stroke({ width: 0.16 * k * zs, color: 0x9b6dff, alpha: 0.9 });
     }
+    // Fels ohne freie Seite (Schritt 5): rote Marken auf der Linie, dazu einmal je Strich der Hinweis
+    const rock = this.brushPreview?.rock;
+    if (rock?.length && this.stroke) {
+      for (const p of rock) g.circle(p.X, p.Y, 0.55 * zs).fill({ color: 0xff4d5e, alpha: 0.8 });
+      if (this.time - this.rockToastAt > 3) {
+        this.rockToastAt = this.time;
+        this.toast.show(t('rock.blocked'), 1.6);
+      }
+    }
     if (!this.stroke || this.stroke.length < 2 || isClosed(path) || path.nodes.length < 2) return;
     const st0 = path.nodes[0];
     const sp = toView(st0.x, st0.y, st0.z);
@@ -1907,6 +1930,8 @@ export class LevelScene implements Scene {
       closeSnap: Math.max(8, 60 / this.view.camera.zoom),
       // beim Nachbessern gibt die Linie höchstens 8 Bildschirm-Pixel nach
       tolerance: Math.max(0.4, 8 / this.view.camera.zoom),
+      // Fels der Zone (Schritt 5): verbotene Tiefen je Linienpunkt, gedeutet mit dem Strahl der Kamera
+      rock: this.rock && !this.rock.empty ? (p: StagePoint) => this.rock!.spans(p, (q, lane) => rayToWorld(q, lane)) : undefined,
     };
   }
 
@@ -2108,6 +2133,7 @@ export class LevelScene implements Scene {
       this.redrawTrack();
       return;
     }
+    if (plan.rockCut) this.toast.show(t('rock.cut'), 2.4);
     this.pushHistory();
     plan.path.startType = this.path?.startType ?? 'chainlift';
     this.setPath(plan.path, true);
@@ -2561,7 +2587,8 @@ export class LevelScene implements Scene {
    */
   private simOptions(path: TrackPath): TrainSimOptions {
     const chain = this.abilities?.chain;
-    return { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), ...(chain ? { chainHeight: chain } : {}) };
+    const rock = this.rock;
+    return { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), ...(chain ? { chainHeight: chain } : {}), ...(rock && !rock.empty ? { insideRock: (x: number, y: number, z: number) => rock.tunnel(x, y, z) } : {}) };
   }
 
   /** Startart im Feld (Etappe 2, Schritt 1): erlaubt die Stufe die gewählte nicht, nimmt die Bahn die erste erlaubte */

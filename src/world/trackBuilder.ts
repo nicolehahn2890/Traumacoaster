@@ -6,7 +6,7 @@
  * darunter (train.ts). Farben sind Platzhalter aus dem Labor; Umfärben per Shader kommt mit den Looks (Schritt 4).
  * Materialien werden geteilt und nie freigegeben, Geometrien je Bahn.
  */
-import { BoxGeometry, CanvasTexture, ClampToEdgeWrapping, DoubleSide, Group, Mesh, RepeatWrapping, SRGBColorSpace, type MeshLambertMaterial } from 'three';
+import { BoxGeometry, CanvasTexture, ClampToEdgeWrapping, DoubleSide, Group, Mesh, RepeatWrapping, SRGBColorSpace, type MeshLambertMaterial, MeshBasicMaterial, GreaterDepth, InstancedMesh } from 'three';
 import { paintedMaterial } from './looks';
 import { alongTrack, rect, ring, sweepGeometry, type TrackFrame } from './trackMesh';
 import type { TrackType } from './trackTypes';
@@ -114,6 +114,26 @@ export function buildTrack(frames: TrackFrame[], length: number, type: TrackType
       break;
     default:
       buildSteel(g, frames, length);
+  }
+  return g;
+}
+
+/** Material der gedimmten Bahn: nur dort, wo etwas davor liegt (Tiefentest „weiter hinten“), ohne Tiefe zu schreiben */
+const GHOST = new MeshBasicMaterial({ color: 0xfff1d6, transparent: true, opacity: 0.28, depthWrite: false, depthFunc: GreaterDepth });
+
+/**
+ * Gedimmte Bahn hinter Fels und Kulissen (Etappe 2, Schritt 5; Plan 5.2): der Bahnkörper noch einmal mit dem umgekehrten
+ * Tiefentest, also nur sichtbar, wo er verdeckt ist. Ein Zeichenaufruf (nur das erste Profil des Typs), die Geometrie ist
+ * geteilt und gehört der Bahn.
+ */
+export function ghostTrack(track: Group): Group {
+  const g = new Group();
+  g.name = 'track-ghost';
+  const body = track.children.find((c) => (c as Mesh).isMesh && !(c as InstancedMesh).isInstancedMesh) as Mesh | undefined;
+  if (body) {
+    const m = new Mesh(body.geometry, GHOST);
+    m.renderOrder = 5;
+    g.add(m);
   }
   return g;
 }

@@ -7,6 +7,7 @@ import type { WorldDef } from '@/levels/types';
 import type { Terrain } from '@/physics/terrain';
 import type { TrackPath, TrackSamples } from '@/track/model';
 import { liftTopArc } from '@/track/model';
+import type { RockField } from '@/zone/rock';
 import type { CarState } from '@/physics/trainSim';
 import type { PassengerView } from '@/physics/passengers';
 import type { CharacterDef } from '@/editor/characters';
@@ -55,6 +56,8 @@ export class WorldView {
   stationLength = 14;
   /** Kettenzugstärke des Felds (Meter über der Station): die sichtbare Kette endet dort wie die Fahrt */
   chainHeight: number | undefined;
+  /** Festigkeitsfeld der Zone (Etappe 2, Schritt 5): kein Stützenfuß im Fels */
+  rock: RockField | null = null;
 
   constructor(worldDef: WorldDef, terrain: Terrain, skin: string, night = false, fx: boolean | null = null) {
     this.worldDef = worldDef;
@@ -140,7 +143,7 @@ export class WorldView {
     // Weltrenderer: Profil aus denselben Abtastpunkten und derselben Schräglage wie die Schienen der Bühne; die Berge
     // bekommen an den Portalen ihre Öffnungen
     if (!preview) this.worldR?.setTunnelPortals(portals);
-    this.worldR?.setTrack(samples, this.trackR.railBanks, trackTypeForSkin(skin), preview, (x, y, z) => terrain.insideMountain(x, y, z), {
+    this.worldR?.setTrack(samples, this.trackR.railBanks, trackTypeForSkin(skin), preview, (x, y, z) => terrain.insideMountain(x, y, z) || !!this.rock?.solid(x, y, z), {
       type: path.startType,
       stationLength: this.stationLength,
       groundY: terrain.groundHeight(samples.x[0], samples.z[0]),

@@ -519,6 +519,8 @@ if (want('10')) {
       chain: s.abilities?.chain ?? null,
       chainLine: s.chainLine.getBounds().width > 0 && s.chainLabel.visible,
       car: s.abilities?.car ?? null,
+      // Schritt 5: Festigkeitsfeld der Prüfzone (Dreiteiler e1 fest, sein Fenster frei und Tunnel)
+      rock: !!s.rock && s.rock.solid(85, 8, 0.554) && !s.rock.solid(85, 4, 0.554) && s.rock.solid(85, 4, 1.446) && !s.rock.solid(85, 8, 1) && s.rock.tunnel(85, 8, 1) && !s.rock.solid(85, 8, 0),
     };
   });
   console.log('zone', zone);
@@ -535,6 +537,7 @@ if (want('10')) {
   check(zone.budget === 400 && zone.maxHeight === 40, `Streckenbudget und Höhenlimit des Felds gelten (${zone.budget} m, ${zone.maxHeight} m)`);
   check(zone.startChipR === 33 && zone.startGroup, `Startart-Knopf am Hebel (Radius ${zone.startChipR}) und Startart-Gruppe in der Welt (${zone.startGroup})`);
   check(zone.chain === 20 && zone.chainLine && zone.car === 'rot', `Kettenzuglinie bei ${zone.chain} m mit Beschriftung (${zone.chainLine}), Wagenvariante ${zone.car}`);
+  check(zone.rock === true, `Festigkeitsfeld: Lippe fest mit freiem Fenster, Rückwand fest, Innenraum frei und Tunnel (${zone.rock})`);
   // dieselbe Datei noch einmal gelesen ergibt denselben Stand (deterministisch)
   const again = await page.evaluate(async () => {
     const res = await fetch(`${location.pathname.replace(/[^/]*$/, '')}zones/probe/zone.json`, { cache: 'no-store' });

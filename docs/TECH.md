@@ -376,6 +376,27 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   prüfen die Startart (`evaluator.ts`, `ZONE_GOAL_TYPES`). Tests in `tests/lift.test.ts`. Platzhalter: Gerüst, Maschinenhaus,
   der Fahrkorb fährt noch nicht mit, die Aufzug-Knoten sind im Zeichenmodus wie normale Knoten greifbar. Der echte
   Pendel-Launch (dreimal durch die Station) kommt in E3.
+- **Fels-Regeln** (Schritt 5; `src/zone/rock.ts`, Plan 5.1, 5.2, Richtlinie 3): Die Zone baut aus ihren Platzhaltern mit
+  Volumen ein Festigkeitsfeld (`RockField`, je Fortschrittsstufe neu). Ein Dreiteiler ist Rückwand, Innenraum und
+  Vorderlippe: Lippe (vor der Spur des Elements, in Spuren `z − d/2`) und Rückwand (`z + d/2`) sind je ein Band von
+  ±`ROCK_MARGIN` = 0,12 Spuren, die Lippe außer in ihren Öffnungen; der Innenraum dazwischen ist frei und zählt als
+  Tunnel; die Flanken sind offen wie bei den Bergen der Level (die gemalten Teile bringen feste Flanken und echte
+  Öffnungsvolumen als Metadaten). Säulen sind Zylinder, Höhlenkästen haben Wände, Boden und Decke (`CAVE_WALL` 0,6 m) um
+  einen freien Raum, der als Tunnel zählt; Flächen, Wasser, Wasserfall, Portal sind kein Fels. Pinsel: `BrushOptions.rock`
+  liefert je Linienpunkt die verbotenen Tiefen (`spans`, der Punkt wird mit dem Strahl der Kamera in der Tiefe jeder Wand
+  gedeutet); `solveDepth` bildet daraus Läufe und wählt je Lauf nach der ersten Lösung die Seite (vor oder hinter der Wand;
+  geht die eine wegen Boden, Bühne oder Station nicht, die andere), als zusätzliche Schranken `rockUp`/`rockLo`, die
+  dieselben Federn halten wie Boden und Bühne. Geht keine Seite, ist der Punkt blockiert: die Vorschau zeigt rote Marken
+  (`BrushPreview.rock`, Hinweis `rock.blocked`), beim Loslassen schneidet `planBrushTrack` die Linie vor dem ersten Lauf ab
+  und plant neu (`rockCut`, Hinweis `rock.cut`). Stützen: `planWorldSupports` setzt keinen Fuß, wo `solid` gilt
+  (`WorldView.rock`). Fahrt: `TrainSimOptions.insideRock` zählt Tunnel-Meter im Innenraum und in Höhlenräumen wie im
+  Berg. Welt: `ghostTrack` zeichnet den Bahnkörper noch einmal mit umgekehrtem Tiefentest (`GreaterDepth`, Deckung 0,28),
+  also nur dort, wo Fels oder Kulisse ihn verdecken, ein Zeichenaufruf. Der Editor baut das Feld bei jeder Änderung neu
+  (`refreshRock`). Gelernt: Eine Scheibe, die bis auf das Fenster ganz fest ist, macht das Fenster für den Pinsel wertlos
+  (links und rechts davon ist Fels, die Bahn wird um den Berg geschoben); erst Rückwand und Lippe als Wände mit freiem
+  Innenraum geben das Tunnel-Gefühl der Level und von Florians Fenster-Element. Tests in `tests/rock.test.ts` (Feld, Spannen,
+  Ausweichen, Blockade mit Abschneiden, Tunnel-Meter), Szenario 10 prüft das Feld der Prüfzone. Platzhalter: Bänder statt
+  gemalter Wandstärke, runde Öffnungen, offene Flanken, Kästen; der Hinweis ist ein Toast.
 
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).

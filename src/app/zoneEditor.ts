@@ -51,6 +51,8 @@ export interface ZoneEditorHost {
   refreshStation(): void;
   /** Testfahrt: die Bahn fahren lassen (wie der Fahren-Knopf des Levels) */
   startRide(): void;
+  /** Festigkeitsfeld neu aus den Elementen (Etappe 2, Schritt 5: Fels für Pinsel, Stützen und Fahrt) */
+  refreshRock(): void;
 }
 
 const ANCHOR_NAMES = { station: 'Station', tunnel: 'Tunnelachse', waterfall: 'Wasserfallquelle' } as const;
@@ -132,6 +134,7 @@ export class ZoneEditor {
     this.host.world.setZone(this.zone.elements);
     applyZoneExtras(this.host.world, this.zone);
     this.host.world.selectZoneElement(this.selectedId && this.item(this.selectedId) ? this.selectedId : null);
+    this.host.refreshRock();
   }
 
   private find(id: string): ZoneElement | undefined {
@@ -227,6 +230,7 @@ export class ZoneEditor {
     else if (item.kind === 'site') z.sites = z.sites.filter((e) => e.id !== id);
     else z.coinGroups = z.coinGroups.filter((e) => e.id !== id);
     this.host.world.removeZoneElement(id);
+    if (item.kind === 'element') this.host.refreshRock();
     if (item.kind === 'coins') this.host.refreshCoins();
     if (item.kind === 'station') this.host.refreshStation();
     this.dirty = true;
@@ -392,6 +396,7 @@ export class ZoneEditor {
       default: {
         const el = newElement(this.zone, tool, x, y, z);
         this.zone.elements.push(el);
+        this.host.refreshRock();
         w.addZoneElement(el);
         return el.id;
       }
@@ -707,6 +712,7 @@ export class ZoneEditor {
 
   private commit(el: ZoneElement): void {
     this.host.world.updateZoneElement(el);
+    this.host.refreshRock();
     this.dirty = true;
     this.refreshLabels();
   }

@@ -118,6 +118,8 @@ export interface TrainSimOptions {
   checkCrossings?: boolean;
   /** Kettenzugstärke (Etappe 2, Schritt 3; Plan 2.4): Höhe über der Station in Metern, bis zu der die Kette zieht; ohne Angabe bis zum Gipfel */
   chainHeight?: number;
+  /** Öffnungsvolumen und Höhlenräume der Zone (Etappe 2, Schritt 5): dort zählen Tunnel-Meter wie im Berg */
+  insideRock?: (x: number, y: number, z: number) => boolean;
 }
 
 const STATION_PUSH = 2.0; // m/s: rollt auf ebener Strecke gut 10 m aus und bleibt stehen
@@ -414,7 +416,7 @@ export class TrainSim {
       car.gFwd = car.feltFwd / G;
       car.gLat = Math.abs(car.feltSide) / G;
       car.inverted = car.upy < -0.2;
-      car.inTunnel = this.opts.terrain.insideMountain(st.x, st.y, st.z);
+      car.inTunnel = this.opts.terrain.insideMountain(st.x, st.y, st.z) || !!this.opts.insideRock?.(st.x, st.y, st.z);
     }
   }
 

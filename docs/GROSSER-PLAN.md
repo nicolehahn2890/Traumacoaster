@@ -627,7 +627,7 @@ Rückfragen der Session (25.10.): alle Empfehlungen angenommen (drei Tore; Durch
 bleibt eigenes Element; Entwurf der Basiszone v1 durch die Session; Startart-Knopf wechselt per Tipp; Kettenzugstärke
 als Höhe über der Station).
 
-**Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritte 1 bis 3 und 3b (Aufzug) gebaut am 25.10.2026 (Nachträge in Paket 3, 2 und 4). **Tor 2a bestanden (Florian, 25.10.2026):** Startart-Platzhalter und Aufzug reichen bis zur Stilprobe, der Knopf am Hebel ist verständlich, die Kettenregel passt, das Handy läuft flüssig. Schritt 5 begonnen.
+**Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritte 1 bis 3 und 3b (Aufzug) gebaut am 25.10.2026 (Nachträge in Paket 3, 2 und 4). **Tor 2a bestanden (Florian, 25.10.2026):** Startart-Platzhalter und Aufzug reichen bis zur Stilprobe, der Knopf am Hebel ist verständlich, die Kettenregel passt, das Handy läuft flüssig. Schritt 5 gebaut am 25.10.2026 (Nachtrag in Paket 5), Schritt 6 begonnen.
 
 ### Rückfragen zu Paket 10
 
@@ -1052,6 +1052,15 @@ heutige Regel „keine Stützen im Wasser“ gilt damit nur, wo der Schalter „
 1. Baustelle in zwei Varianten (Verbinden, Durchbruch) als Daten: einverstanden? **Ja (24.10.).**
 2. Autoscroll zum Ausgang als Editor-Schalter zum Ausprobieren: einverstanden? **Ja (24.10.).**
 
+**Stand 25.10.2026 (Etappe 2, Schritt 5 gebaut; `docs/TECH.md` 4h):** Fels-Regeln nach 5.1 sind in Pinsel, Stützen, Fahrt
+und Welt. Gelernt: (1) Ein Dreiteiler-Platzhalter darf nicht als volle Scheibe fest sein, sonst ist sein Fenster für den
+Pinsel wertlos (links und rechts davon Fels, die Bahn wird um den Berg geschoben); fest sind Rückwand und Lippe (außer in
+den Fenstern), der Innenraum ist der freie Kanal der Richtlinie und zählt als Tunnel, die Flanken bleiben offen wie bei
+den Bergen der Level (dort liegt der Tunnelmund, wo die Bahn die Silhouette kreuzt). Feste Flanken und echte
+Öffnungsvolumen kommen mit den gemalten Teilen (8a). (2) In Spuren liegt die Lippe vor der Spur des Elements (kleinere
+Spur), die Rückwand dahinter; die erste Fassung hatte das vertauscht und das Fenster in der Rückwand. (3) Der Pinsel
+weicht je Lauf von Linienpunkten auf eine Seite aus, gewählt nach der Lage seiner ersten Lösung; blockiert ist er nur,
+wenn Boden, Bühne oder Station beide Seiten sperren (etwa eine Säule über alle Spuren), dann endet die Bahn davor.
 **Status: bestätigt am 24.10.2026.** Graben in Stufen trägt Florians Vorbehalt; Autoscroll wird nach dem Ausprobieren
 entschieden. **Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Der Wasserfall bleibt ein eigenes Element (er ist
 seit Etappe 1 da) und bekommt den Schalter „Fahrt dahinter gedämpft“; die Schalter Schmuck, trägt Stützen und Splash-Zone

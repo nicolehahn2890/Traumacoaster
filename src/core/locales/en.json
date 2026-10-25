@@ -35,6 +35,8 @@
   "chain.line": "Chain lifts up to {n} m",
   "chain.hint": "Chain doesn't reach the crest",
   "lift.onlyEmpty": "Elevator: clear the track first, then choose it",
+  "rock.blocked": "Rock: the track can't pass here",
+  "rock.cut": "Rock: the track ends in front of it. Use an opening or pass in front or behind.",
   "beltSnap": "{name}: belt snapped!",
   "sticker.derail": "Derailed!",
   "sticker.fall": "Fell off!",

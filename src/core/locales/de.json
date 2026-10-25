@@ -35,6 +35,8 @@
   "chain.line": "Kette zieht bis {n} m",
   "chain.hint": "Kette reicht nicht bis zum Gipfel",
   "lift.onlyEmpty": "Aufzug: erst die Bahn löschen, dann wählen",
+  "rock.blocked": "Fels: hier kommt die Bahn nicht durch",
+  "rock.cut": "Fels: Die Bahn endet davor. Nimm eine Öffnung oder weiche vorn oder hinten aus.",
   "beltSnap": "{name}: Gurt gerissen!",
   "sticker.derail": "Entgleist!",
   "sticker.fall": "Abgestürzt!",

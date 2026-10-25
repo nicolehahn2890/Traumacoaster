@@ -106,6 +106,19 @@ export interface BrushOptions {
   closeReach?: number;
   /** so weit (Bühnen-Meter) darf die Linie beim Nachbessern nachgeben */
   tolerance?: number;
+  /**
+   * Fels (Etappe 2, Schritt 5; Plan 5.1): verbotene Tiefen (Spuren) eines Bühnenpunkts. Der Löser bleibt vor oder hinter
+   * dem Fels; geht keins, ist der Punkt blockiert und die Bahn endet beim Loslassen davor
+   */
+  rock?: (p: StagePoint) => RockSpan[];
+  /** intern: nach dem Abschneiden vor dem Fels nicht noch einmal schneiden */
+  noCut?: boolean;
+}
+
+/** verbotener Tiefenbereich (Spuren) */
+export interface RockSpan {
+  z0: number;
+  z1: number;
 }
 
 interface Opts {
@@ -114,6 +127,8 @@ interface Opts {
   closeSnap: number;
   closeReach: number;
   tolerance: number;
+  rock: ((p: StagePoint) => RockSpan[]) | null;
+  noCut: boolean;
 }
 
 const withDefaults = (o: BrushOptions): Opts => ({
@@ -122,6 +137,8 @@ const withDefaults = (o: BrushOptions): Opts => ({
   closeSnap: o.closeSnap ?? 8,
   closeReach: o.closeReach ?? 0,
   tolerance: o.tolerance ?? 1,
+  rock: o.rock ?? null,
+  noCut: !!o.noCut,
 });
 
 export interface LineCrossing {
@@ -168,6 +185,10 @@ export interface BrushPlan {
   /** Loopings und Hügel im Strich, und wo die Wunschtiefe deshalb gerade läuft */
   elements: BrushElements;
   ramps: Ramp[];
+  /** Fels ohne freie Seite: Läufe von Linienpunkten (von, bis), die im Fels bleiben (Etappe 2, Schritt 5) */
+  rock: Array<[number, number]>;
+  /** die Linie wurde vor dem Fels abgeschnitten (die Bahn endet davor) */
+  rockCut: boolean;
 }
 
 export interface BrushElements {
@@ -916,7 +937,7 @@ function nearPairs(line: StagePoint[], closed: boolean, fixed: Float64Array | nu
  * (Kraft je Paar aus dem Gleichungssystem). Die Station (Anfang) steht auf dem Boden, bei geschlossener Runde auch das
  * Ende. Dazu je Linienpunkt die Knoten-Toleranz (eng, wo die Bahn einer anderen Stelle nahekommt).
  */
-function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing[], wH: Float64Array, wMul: Float64Array, lower: Float64Array, calm: Float64Array, o: Opts, fixed: Float64Array | null = null, hold: Float64Array | null = null, holdW: Float64Array | null = null, flat: Float64Array | null = null, ramps: Ramp[] = [], level: Float64Array | null = null): { z: Float64Array; tol: Float64Array } {
+function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing[], wH: Float64Array, wMul: Float64Array, lower: Float64Array, calm: Float64Array, o: Opts, fixed: Float64Array | null = null, hold: Float64Array | null = null, holdW: Float64Array | null = null, flat: Float64Array | null = null, ramps: Ramp[] = [], level: Float64Array | null = null): { z: Float64Array; tol: Float64Array; blocked: Uint8Array } {
   const n = line.length;
   const z = new Float64Array(n);
   for (let i = 0; i < n; i++) z[i] = Math.max(Z_MIN, Math.min(Z_MAX, (line[i].Y - H_COMFORT) / C));
@@ -926,6 +947,12 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
   const ypp = new Float64Array(n);
   for (let i = 1; i < n - 1; i++) ypp[i] = line[i - 1].Y - 2 * line[i].Y + line[i + 1].Y;
   let solved = false;
+  // Fels (Etappe 2, Schritt 5): verbotene Tiefen je Linienpunkt (Meter); die Seitenwahl setzt daraus Schranken
+  const rockSpans: RockSpan[][] = line.map((p) => (o.rock ? o.rock(p).map((r) => ({ z0: r.z0 * LANE_DEPTH, z1: r.z1 * LANE_DEPTH })) : []));
+  const hasRock = rockSpans.some((r) => r.length > 0);
+  const rockUp = new Float64Array(n).fill(Infinity);
+  const rockLo = new Float64Array(n).fill(-Infinity);
+  const blocked = new Uint8Array(n);
   const bounds = () => {
     for (let i = 0; i < n; i++) {
       const g = o.ground(rayToWorld(line[i], z[i] / LANE_DEPTH).x, z[i] / LANE_DEPTH);
@@ -933,6 +960,9 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
       // unter der vordersten Bodenlinie gezeichnet: ganz vorne bleiben (die Höhe wird dort angehoben)
       upper[i] = Math.max(Z_MIN, Math.min(Z_MAX, (line[i].Y - g - o.clearance) / C));
       low[i] = Math.min(upper[i], Math.max(Z_MIN, lower[i]));
+      // vor oder hinter dem Fels bleiben
+      if (rockUp[i] < upper[i]) upper[i] = Math.max(low[i], rockUp[i]);
+      if (rockLo[i] > low[i]) low[i] = Math.min(upper[i], rockLo[i]);
     }
     for (let i = 0; i < n; i++) if (calm[i] > 0) target[i] = calm[i] * upper[0] + (1 - calm[i]) * target[i];
     // Looping und Hügel: Wunschtiefe gerade von Fuß zu Fuß (Tiefe der letzten Lösung, vor der ersten die Wunschtiefe)
@@ -1184,10 +1214,59 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
   };
   // erste Lösung ohne Engstellen und Fliehkraft: daraus die Reihenfolge an den Kreuzungen (später Gezeichnetes vorne,
   // außer der frühere Strang liegt schon ganz vorne) und die Seite an den Engstellen
+  // Fels: Läufe aufeinanderfolgender Punkte mit derselben Spanne; je Lauf die Seite nach der Lage der ersten Lösung
+  // (vor oder hinter der Mitte der Scheibe); geht sie wegen Boden, Bühne oder Station nicht, die andere; geht keine,
+  // sind die Punkte blockiert (rot, die Bahn endet davor)
+  const decideRock = () => {
+    const runs: Array<{ z0: number; z1: number; from: number; to: number }> = [];
+    const open = new Map<string, { z0: number; z1: number; from: number; to: number }>();
+    for (let i = 0; i < n; i++) {
+      for (const sp of rockSpans[i]) {
+        const key = `${sp.z0.toFixed(2)}|${sp.z1.toFixed(2)}`;
+        const r = open.get(key);
+        if (r && r.to === i - 1) r.to = i;
+        else {
+          const nr = { z0: sp.z0, z1: sp.z1, from: i, to: i };
+          open.set(key, nr);
+          runs.push(nr);
+        }
+      }
+    }
+    for (const r of runs) {
+      let sum = 0;
+      let frontOk = true;
+      let backOk = true;
+      for (let i = r.from; i <= r.to; i++) {
+        if (station(i)) {
+          frontOk = backOk = false;
+          break;
+        }
+        sum += z[i] - (r.z0 + r.z1) / 2;
+        if (r.z0 < low[i] - 1e-6 || r.z0 < Z_MIN) frontOk = false;
+        if (r.z1 > upper[i] + 1e-6 || r.z1 > Z_MAX) backOk = false;
+      }
+      const back = sum >= 0 ? backOk : !frontOk && backOk;
+      const front = !back && frontOk;
+      for (let i = r.from; i <= r.to; i++) {
+        if (back) rockLo[i] = Math.max(rockLo[i], r.z1);
+        else if (front) rockUp[i] = Math.min(rockUp[i], r.z0);
+        else blocked[i] = 1;
+        if (rockLo[i] > rockUp[i]) {
+          blocked[i] = 1;
+          rockLo[i] = -Infinity;
+          rockUp[i] = Infinity;
+        }
+      }
+    }
+  };
   const order = crossings.filter((c) => c.laterFront === undefined);
-  if (order.length || near.length) {
+  if (order.length || near.length || hasRock) {
     settle(false);
     for (const c of order) c.laterFront = c.natural ? z[c.j] <= z[c.i] : z[c.i] - PASS_SIDE >= Z_MIN + 0.5 || z[c.i] + PASS_SIDE > upper[c.j];
+    if (hasRock) {
+      decideRock();
+      bounds();
+    }
   }
   if (near.length) {
     // Engstellen entlang paralleler Stränge: eine Seite je Strangpaar (Paare, die über ±2 Linienpunkte zusammenhängen),
@@ -1266,7 +1345,20 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
     if (Math.hypot(line[q.j].X - line[q.i].X, dz) > PASS_SIDE + 0.6 && Math.abs(line[q.j].Y - line[q.i].Y - C * dz) > PASS_OVER + 0.6) continue;
     for (const c of [q.i, q.j]) for (let k = Math.max(0, c - 1); k <= Math.min(n - 1, c + 1); k++) tol[k] = TIGHT_TOL;
   }
-  return { z, tol };
+  return { z, tol, blocked };
+}
+
+/** Läufe (von, bis) der blockierten Linienpunkte */
+function blockedRuns(blocked: Uint8Array): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  for (let i = 0; i < blocked.length; i++) {
+    if (!blocked[i]) continue;
+    let j = i;
+    while (j + 1 < blocked.length && blocked[j + 1]) j++;
+    out.push([i, j]);
+    i = j;
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------ Bahn
@@ -1312,8 +1404,9 @@ export function pathFromPoints(pts: Vec3[], closed: boolean, tolAt?: ArrayLike<n
 }
 
 function replan(plan: BrushPlan, o: Opts): void {
-  const { z, tol } = solveDepth(plan.line, plan.closed, plan.crossings, plan.wH, plan.wMul, plan.lower, plan.calm, o, plan.fixed, plan.hold, plan.holdW, plan.flat, plan.ramps, plan.level);
+  const { z, tol, blocked } = solveDepth(plan.line, plan.closed, plan.crossings, plan.wH, plan.wMul, plan.lower, plan.calm, o, plan.fixed, plan.hold, plan.holdW, plan.flat, plan.ramps, plan.level);
   plan.z = z;
+  plan.rock = blockedRuns(blocked);
   plan.pts = worldPoints(plan.line, plan.z, plan.closed, o);
   plan.path = pathFromPoints(plan.pts, plan.closed, tol);
 }
@@ -1425,9 +1518,22 @@ export function planBrushTrack(points: StagePoint[], options: BrushOptions = {},
     flat,
     elements,
     ramps,
+    rock: [],
+    rockCut: false,
   };
   keepOrder(plan.crossings, shownPreview?.crossings);
   replan(plan, o);
+  if (plan.rock.length && !o.noCut) {
+    // Fels ohne freie Seite: Die Bahn endet davor (Plan 5.1), der Rest des Strichs fällt weg
+    const cut = plan.rock[0][0] - 1;
+    if (cut >= 4) {
+      const shorter = planBrushTrack(plan.line.slice(0, cut), { ...options, noCut: true }, keepDepth, shownPreview);
+      if (shorter && shorter.path.nodes.length >= 2) {
+        shorter.rockCut = true;
+        return shorter;
+      }
+    }
+  }
   return plan;
 }
 
@@ -1457,6 +1563,8 @@ export interface BrushPreview {
   path: TrackPath;
   /** Tiefe je Linienpunkt, für die nächste Vorschau */
   z: Float64Array;
+  /** Linienpunkte im Fels ohne freie Seite (rote Marken) */
+  rock: StagePoint[];
   /** Kreuzungen mit der gewählten Reihenfolge (bleibt von Vorschau zu Vorschau und beim Loslassen gleich) */
   crossings: LineCrossing[];
 }
@@ -1489,10 +1597,12 @@ export function previewBrushTrack(points: StagePoint[], options: BrushOptions, p
   const wMul = new Float64Array(n).fill(1);
   const flat = new Float64Array(n).fill(1);
   const ramps = applyElements(findElements(prep.line, crossings), wMul, flat, calm, level);
-  const { z } = solveDepth(prep.line, false, crossings, wH, wMul, new Float64Array(n).fill(-Infinity), calm, o, fixed, null, null, flat, ramps, level);
+  const { z, blocked } = solveDepth(prep.line, false, crossings, wH, wMul, new Float64Array(n).fill(-Infinity), calm, o, fixed, null, null, flat, ramps, level);
   const nodes = previewNodes(worldPoints(prep.line, z, false, o), []);
   if (nodes.length) nodes[0].kind = 'station';
-  return { path: { ...emptyPath(), nodes, closed: false, brush: true }, z, crossings };
+  const rock: StagePoint[] = [];
+  for (let i = 0; i < n; i++) if (blocked[i]) rock.push(prep.line[i]);
+  return { path: { ...emptyPath(), nodes, closed: false, brush: true }, z, crossings, rock };
 }
 
 /** Anfang und Ende einer Linie weich auf zwei Punkte gleiten lassen (je über blend Bühnen-Meter) */

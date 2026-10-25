@@ -23,7 +23,7 @@ import { applyGrade, LOOKS, type LookName } from './looks';
 import { elementsFromTerrain, type PortalLike } from './levelElements';
 import type { BuiltElement } from './elements';
 import { trackFrames } from './trackMesh';
-import { buildTrack, disposeTrack } from './trackBuilder';
+import { buildTrack, disposeTrack, ghostTrack } from './trackBuilder';
 import { buildStartPlaceholder, type BuiltStart } from './startElements';
 import { carColor } from './train';
 import { liftRange } from '@/physics/trainSim';
@@ -67,6 +67,8 @@ export class WorldRenderer {
   private supports: Group | null = null;
   /** Platzhalter der Startart (Kette, Launch-Band, Puffer, Turm; Etappe 2, Schritt 2) */
   private start: BuiltStart | null = null;
+  /** gedimmte Bahn, nur dort gezeichnet, wo Fels oder Kulisse sie verdecken (Schritt 5; Plan 5.2) */
+  private ghost: Group | null = null;
   private readonly train = new WorldTrain();
   /** Bahntyp aus der Adresse (?track=) überstimmt den Typ des Skins (zum Vergleich der vier Typen) */
   trackOverride: TrackType | null = null;
@@ -316,6 +318,8 @@ export class WorldRenderer {
     const frames = trackFrames(samples, banks);
     this.track = buildTrack(frames, samples.length, this.type);
     this.scene.add(this.track);
+    this.ghost = ghostTrack(this.track);
+    this.scene.add(this.ghost);
     if (start) {
       // Startart sichtbar (Schritt 2): Kette bis zum Kettenende der Fahrt, Launch-Band, Puffer oder Turm
       const needsLift = start.type === 'chainlift' || start.type === 'verticalLift';
@@ -332,6 +336,10 @@ export class WorldRenderer {
   }
 
   clearTrack(): void {
+    if (this.ghost) {
+      this.scene.remove(this.ghost);
+      this.ghost = null;
+    }
     if (this.start) {
       this.scene.remove(this.start.group);
       this.start.dispose();

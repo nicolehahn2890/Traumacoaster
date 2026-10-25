@@ -41,6 +41,14 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   als Bahnhöhe, ein Ziel „Höhe ≥ 12 m“ ist mit einem 15-m-Aufzug schon erfüllt.
   **Tor 2a bestanden (25.10.):** Startart-Platzhalter und Aufzug reichen bis zur Stilprobe, Knopf am Hebel verständlich,
   Kettenregel passt, Handy flüssig. Weiter mit Schritt 5 (Fels-Regeln).
+  Schritt 5 gebaut: Fels-Regeln (`src/zone/rock.ts`, TECH.md 4h). Dreiteiler: Lippe (mit Fenstern) und Rückwand fest, der
+  Innenraum frei und Tunnel, Flanken offen wie bei den Bergen der Level; Säulen fest; Höhlenkästen mit festen Wänden um
+  einen freien Raum. Der Pinsel bleibt vor oder hinter einer Wand (oder im Innenraum); geht keine Seite, zeigt die Vorschau
+  rote Marken mit Hinweis „Fels“, und beim Loslassen endet die Bahn davor. Keine Stützenfüße im Fels, Tunnel-Meter in
+  Innenraum und Höhle, Bahn hinter Fels gedimmt sichtbar. System: Festigkeitsfeld, Schranken im Löser, Abschneiden,
+  Ghost-Durchgang. Platzhalter: Wandbänder, runde Öffnungen, offene Flanken, Kästen, Hinweis als Toast. Tests 257 grün,
+  Replay `--world` unverändert (475 Profile, Median 2,0 px; die Aufnahmen laufen ohne Zone), Szenario 10 mit 15 Prüfungen
+  grün (134 Zeichenaufrufe).
 - **24.10., Etappe 1 begonnen** (Branch `etappe-1-weltrenderer`, Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10).
   Schritt 1 gebaut: Weltrenderer hinter `?world=1` (Three-Szene im selben WebGL-Kontext, Pixi zeichnet davor den Himmel und
   darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem
