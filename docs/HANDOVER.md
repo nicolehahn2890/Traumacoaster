@@ -112,6 +112,12 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Elementwänden; Test, dass das Feld im freien Gelände dieselbe Tiefe liefert wie ohne Feld. Messung an 159 Aufnahmen:
   Loslassen 0,46 Spuren mit und 0,40 ohne Zonenregeln. Tests 278 grün, Build grün. Nächster Vorschlag (Plan Paket 5):
   Ebenen-Probe mit gemalten Landschaftskörpern aus dem Parallax-Baukasten im Feld.
+  Referenzen (25.10.): Florian hat gefragt, ob die Session seine Referenzen überhaupt kennt; sie sind „die Essenz“.
+  Alle Ordner unter `refs/` sind seitdem vollständig gesichtet (Earle mit seinen Favoriten, Rayman, 35 Visuals,
+  Moodboards, Figurenbögen, Progression „mehr Ebenen, gleicher Blick“, 139 Teile des Elemente-Bogens, Parallax-Baukasten,
+  144 Bahnstudien) und als Inventar mit Essenz und Paketzuordnung in Plan Paket 0 („Referenzen als Essenz“) festgehalten;
+  Vorschlag Ebenen-Probe danach angepasst. Regel: vor jedem Vorschlag zu Welt, Look, Bahn, Figuren oder Karte die
+  passenden Ordner ansehen und nennen.
 - **24.10., Etappe 1 begonnen** (Branch `etappe-1-weltrenderer`, Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10).
   Schritt 1 gebaut: Weltrenderer hinter `?world=1` (Three-Szene im selben WebGL-Kontext, Pixi zeichnet davor den Himmel und
   darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem

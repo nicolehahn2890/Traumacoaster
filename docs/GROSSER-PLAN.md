@@ -1159,7 +1159,9 @@ Maske, Renderer zeigt das Bild als Fläche in der Tiefe; (b) Zone „ebenen“ a
 Tunnel-Metern; (c) Freilegung der Höhle per Regler im Editor und als Baustelle; (d) Florian prüft auf dem Handy: Gefühl
 beim Zeichnen, Formen, Verdeckung, Freilegung. Danach ersetzen Körper die Klötzchen (8a), der Boden wird Ebenen; Look
 und neue Malereien kommen mit der Stilprobe (Paket 0). Offen für Florian: zuerst mit den Körpern des Baukastens oder
-zuerst neue Malereien aus seinen Collagen?
+zuerst neue Malereien aus seinen Collagen? Nach der Sichtung aller Referenzen (25.10.2026, Paket 0 „Referenzen als
+Essenz“) gilt der Vorschlag mit den dort genannten Änderungen (Rollen des Elemente-Bogens, Stufenschaltung „mehr
+Ebenen bei gleichem Blick“, Stützen auf Säumen, Freilegung an der Probe erarbeiten).
 **Status: bestätigt am 24.10.2026.** Graben in Stufen trägt Florians Vorbehalt; Autoscroll wird nach dem Ausprobieren
 entschieden. **Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Der Wasserfall bleibt ein eigenes Element (er ist
 seit Etappe 1 da) und bekommt den Schalter „Fahrt dahinter gedämpft“; die Schalter Schmuck, trägt Stützen und Splash-Zone
@@ -1202,6 +1204,61 @@ sonst endet die Fahrt davor); die Vorab-Fahrt beim Zeichnen und die Zielart komm
 - Punktraster nur gemalt; zusätzlich wäre ein Shader schön, der an manchen Stellen das **Funkeln animiert**.
 - Alpen als erster Look: ja, mit irgendetwas müssen wir anfangen.
 - UI: ein Vorschlag in **total verrücktem, extremem Neo-Brutalismus** mit vielen eigenen Formen und Effekten.
+
+### Referenzen als Essenz (Florian, 25.10.2026)
+
+Florians Vorgabe: Die Referenzen unter `refs/` (lokal, nicht im Repository) sind die Essenz; er hat sie mühevoll
+zusammengesucht, und sie gehören in den Plan. Jeder Vorschlag zu Welt, Höhlen, Ebenen, Look, Bahn, Figuren oder Karte
+nennt die Ordner und Bilder, auf denen er fußt. Inventar, am 25.10.2026 vollständig gesichtet:
+
+- **`eyvind earle/`** (45 Gemälde, 5 Bildschirmfotos; Ordner `feedback-2026-09-30` mit Florians fünf Favoriten: rote
+  Scheune mit Baum, Schnee und weißen Rindenlinien; bunte Kronen mit schönen Stämmen; organischer Stamm und Hain-Gruppen
+  aus Punkten; Baumform mit Sternnadeln; Tannenwald aus Punkten mit Schneeflächen). Essenz: wenige große Flächen,
+  gebänderte Hügel mit harten Licht-Schatten-Kanten, lange geriefte Stämme mit hellen Rindenlinien, Kronen und Wälder aus
+  Punkten, spitze Schlagschatten, Berge als Facetten, Wolken als gestapelte Flächen, kräftige ungewohnte Farbfelder. →
+  Paket 0 (Stilprobe, Regeln), 8a (Malaufträge).
+- **`rayman legends/`** (17 Spielszenen). Essenz: gemaltes Volumen, Licht als Blickführung, drei bis fünf Tiefenebenen
+  mit Vordergrund-Silhouetten und verblauender Ferne, leuchtende Höhlen, hängende Plattformen, elastische Silhouetten,
+  Humor. → Paket 0 (Staffelung, Licht), 5 (Höhlen), 6 (Figuren).
+- **`traumacoaster-gpt explore/visuals/`** (35 Spielbilder 04 bis 52): Stil 04 und 09, Maßstab 15 und 16, Alpen 15, 18,
+  21, 27, 31, 50; fast alle zeigen unten den Querschnitt aus geschichteten Höhlen mit runden Bögen und Tunnelmündern,
+  oben die Oberfläche, dahinter Fernen. → Paket 0, 5.
+- **`…/moodboards_map/`** (6: Stiltafeln Smaragd-Sinfonie, Vulkan-Varieté, Kosmischer Garten mit Karte und Spiel,
+  Weltenrad am Desktop, Sternengarten mobil, Ausbaustufen Karte und Spiel). → Paket 12 (Karte als Rad, Miniaturen), 0.
+- **`…/character/`** (7 Teilebögen). → Paket 6 (dort schon berücksichtigt).
+- **`…/progression demo/`** (4): „Mehr Ebenen. Gleicher Blick.“ Level 03 mit zwei Ebenen, 16 mit drei, 38 mit fünf,
+  dieselbe Ansicht, die Bahn gewinnt Spuren; dazu Smaragdhain, Straßenkarussell und Alpenrausch je als Anfänger, Mittel
+  und Profi: dieselbe Zone gewinnt mit dem Fortschritt Tiefenebenen und unterirdische Stockwerke. Essenz: Fortschritt
+  heißt mehr Ebenen bei gleichem Blick. → Paket 2 (Fortschrittsstufe, Wachstum, offen ab Stufe), 5 (Freilegung), 10.
+- **`…/elements_png/`** (139 freigestellte Teile des Alpen-Baukastens): Portale in neun Materialien (Bernstein,
+  Gletscher, Kalk, Moos, Wurzel, Schnee, Erde, Stein, warmes Holz), je als Vorderkörper `front`, Innenwand-Streifen
+  `front_wrap` und Schrägansichten `left35`/`right35`; Höhlen (Decken, Säulen, Böden, Wände, Füllungen in Kobalt,
+  Bernstein, Tiefe, Sonnenschacht, nass; hängende Insel, Plattform-Haken, Wurzelband, Stalaktiten); Wiesenmassen und
+  -bänke, Felsbögen, Strebepfeiler, Felshals; Säume (Gras, Fels, Schnee, Wurzel) und Übergänge (Fels zu Wiese, Wurzel zu
+  Boden, Erde am Eingang); Erdschichten; Fernen (Vorberge, Waldferne, Gipfel, Schneekämme, See, Ufer); Himmel, Wolken,
+  Nebel (Höhle kühl, Tal cremefarben), Licht (Lichtschächte, Portal-Streulicht, Wasserkaustik); Wasser (Wasserfälle,
+  Kaskaden, Gischt, unterirdischer Teich); Pfeiler (Bogenjoch, Kapitell, Fuß, Schaft, Stein-Y); Geheimnisse (Ruine,
+  Kristall, Pilze); Bäume (Kronenplatte, silberner S-Baum, Haine). Essenz: die Welt als Bausatz gemalter Ebenen mit
+  Vorderkörper, Innenwand, Füllung, Saum und Übergang; genau das Vokabular der Ebenen-Probe. → Paket 5, 8a, 3 (Pfeiler).
+- **`…/parallax baukasten test/`** (Labor: 20 Körper mit Masken und Oberkanten, zehn Szenen mit Rezept und
+  Bahngeometrie, Höhlen-Freilegung per Regler, Umsetzungsplan, Modul-Schema mit Oberflächen, Räumen, Anschlüssen und
+  Zeichenreihenfolge, Prüfbericht). → Paket 5 (Ebenen-Probe), 8a (Modul-Datenmodell), 2 (Zonendatei).
+- **`…/bahn und strecke/`** (144: zehn Bahnen je mit Gleisen, drei Pfeilern, Station, Eingang mit Schlange, Wagen in
+  drei Detailgraden und Zug; dazu Beton freigestellt, Fahrwerk, Rohrschiene, Holz-Stützwerke, Beton-S und -V, Breite
+  3,5 Wagen, Holz- und Stahlgleise). → Paket 3 (Wagen, Station, Stützen-Werkstatt), 8a; seit Runde 2 im Plan.
+- **`…/doc/`** (Erklärung der Visuals, Art-Direction-Vorschlag, Bildprompts, Umsetzungsplan als PDF). → Paket 0.
+
+**Was sich dadurch am Vorschlag Ebenen-Probe ändert (Paket 5, 25.10.2026):** (1) Ein Körper hat die Rollen des
+Elemente-Bogens: Vorderkörper, Innenwand (der `wrap`-Streifen als Tunnelwand), Füllung dahinter, Saum und Übergang zur
+Nachbar-Ebene; Portale sind Körper mit Loch; Nebel- und Lichtebenen sind Ebenen ohne Festes. (2) Fortschritt ist „mehr
+Ebenen bei gleichem Blick“: die Probe bekommt eine Stufenschaltung, die Tiefenebenen und Stockwerke freilegt, nicht
+nur eine Höhle. (3) Stützen stehen auf Säumen und Oberkanten (die Oberkanten des Baukastens sind genau das), die
+Pfeilerteile des Bogens ersetzen die Platzhalter-Stützen. (4) Freilegen heißt: der Vorderkörper weicht über eine Maske
+(Auflöse-Shader mit Brandkante aus Schritt 6) oder eine Ebene verschiebt sich; wie genau, erarbeiten wir an der Probe
+mit Florian (Choreografie aus Richtlinie 4). (5) Earles Favoriten (Punkte, Rindenlinien, Bänder) und Raymans Staffelung
+(Nebel, Licht, verblauende Ferne) sind Sache der Stilprobe (0.2) und der Malaufträge (8a), nicht der Probe; die Probe
+nimmt die Baukasten-Körper als Platzhalter des Looks. (6) Reihenfolge: Ebenen-Probe, Florians Handy-Test, dann Tor 2b
+und die Basiszone v1 aus Körpern statt Klötzchen.
 
 ### Vorschlag 0.1: Referenzen und Regeln (vorläufig bis zur Stilprobe)
 
