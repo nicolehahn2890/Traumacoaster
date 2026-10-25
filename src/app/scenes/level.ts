@@ -40,7 +40,7 @@ import { cutIndexNear, retractIndex } from '@/track/strokeBuffer';
 import { laneRise, laneScale, nearestLane, rayToWorld, setPerspective, tagRay, toStage, toView, viewState, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
 import { HANG_DROP, trackTypeForSkin, type TrackType } from '@/world/trackTypes';
-import type { ZoneFile } from '@/zone/types';
+import type { ZoneField, ZoneFile } from '@/zone/types';
 import { ZoneEditor } from '@/app/zoneEditor';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
 import { hexNum, shade } from '@/render/paint';
@@ -361,6 +361,9 @@ export class LevelScene implements Scene {
   private uiButtons: Button[] = [];
   /** Klötzchen-Editor der Zone (?zone=…&editor=1) */
   private zoneEditor: ZoneEditor | null = null;
+  /** aktives Feld der Zone: Kamera bleibt darin (weich), Zoom höchstens „Feld passt ins Bild“, Absperrband an den Rändern */
+  private activeField: ZoneField | null = null;
+  private fieldTape = new Graphics();
 
   constructor(levelId: number, sandbox: SandboxConfig | null = null) {
     this.sandbox = sandbox;
@@ -422,11 +425,16 @@ export class LevelScene implements Scene {
         game.world.trackOverride = game.world.trackOverride ?? zone.trackType;
         game.world.setZone(zone.elements);
         if (EDITOR_URL) {
-          this.zoneEditor = new ZoneEditor({ view: this.view, world: game.world, toast: this.toast, redrawTrack: () => this.redrawTrack() }, zone);
+          this.zoneEditor = new ZoneEditor({ view: this.view, world: game.world, toast: this.toast, redrawTrack: () => this.redrawTrack(), setActiveField: (f) => this.setActiveField(f) }, zone);
           this.ui.addChild(this.zoneEditor.hud);
+        } else {
+          // ohne Editor (Handy): ?field=<Kennung> wählt ein Feld der Zone, sonst das erste
+          const want = new URLSearchParams(location.search).get('field');
+          this.setActiveField(zone.fields.find((f) => f.id === want) ?? zone.fields[0] ?? null);
         }
       }
     }
+    this.view.overlay.addChild(this.fieldTape);
     setPerspective(game.world ? !PERSP_OFF : PERSP_URL, FOV_URL);
     this.view.overlay.addChild(this.laneGlow, this.spotLayer, this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
@@ -478,6 +486,49 @@ export class LevelScene implements Scene {
   /** Hintergrund vor der Three-Welt (Weltrenderer): der Himmel */
   get background(): Container | undefined {
     return this.view?.background;
+  }
+
+  /** Feld der Zone aktiv schalten (null: ganze Zone): Kamera weich begrenzt, Zoom-Grenze „Feld passt ins Bild“, Absperrband */
+  private setActiveField(field: ZoneField | null): void {
+    this.activeField = field;
+    const cam = this.view.camera;
+    if (field) {
+      const b = { minX: field.x0, maxX: field.x1, minY: field.y0, maxY: field.y1 };
+      cam.softBounds = b;
+      cam.minZoom = Math.max(1, cam.fitZoom(b));
+      cam.fitBounds(b, 0.02, 30);
+    } else {
+      cam.softBounds = null;
+      cam.minZoom = 3;
+    }
+    this.drawFieldTape();
+  }
+
+  /** Absperrband an den Rändern des aktiven Felds (links, rechts, oben), in der Ansicht auf Spur 0 */
+  private drawFieldTape(): void {
+    const g = this.fieldTape;
+    g.clear();
+    const f = this.activeField;
+    if (!f) return;
+    const corners = [toView(f.x0, f.y0, 0), toView(f.x0, f.y1, 0), toView(f.x1, f.y1, 0), toView(f.x1, f.y0, 0)];
+    const edge = (a: { X: number; Y: number }, b: { X: number; Y: number }) => {
+      const len = Math.hypot(b.X - a.X, b.Y - a.Y);
+      const n = Math.max(2, Math.round(len / 2.5));
+      for (let i = 0; i < n; i++) {
+        const t0 = i / n;
+        const t1 = (i + 1) / n;
+        g.moveTo(a.X + (b.X - a.X) * t0, a.Y + (b.Y - a.Y) * t0).lineTo(a.X + (b.X - a.X) * t1, a.Y + (b.Y - a.Y) * t1).stroke({ width: 0.5, color: i % 2 ? 0x2a1f3d : 0xffd23f, alpha: 0.9 });
+      }
+    };
+    edge(corners[0], corners[1]);
+    edge(corners[1], corners[2]);
+    edge(corners[2], corners[3]);
+  }
+
+  /** Kamera im Level halten: im aktiven Feld weich, sonst die harten Grenzen des Levels */
+  private clampCamera(): void {
+    if (this.activeField) return;
+    this.view.camera.clampTo({ minX: -40, maxX: this.level.width + 40, minY: -30, maxY: 160 });
   }
 
   private leave(): void {
@@ -1236,7 +1287,7 @@ export class LevelScene implements Scene {
     const y0 = cam.y;
     // panBy nimmt die Fingerbewegung: Zeiger am rechten Rand heißt Welt nach links schieben
     cam.panBy(-this.scrollV.x * step, -this.scrollV.y * step);
-    cam.clampTo({ minX: -40, maxX: this.level.width + 40, minY: -30, maxY: 160 });
+    this.clampCamera();
     cam.snap();
     // an der Levelgrenze steht die Kamera: dort kein Tempo ansammeln
     if (Math.abs(cam.x - x0) < 1e-6) this.scrollV.x = 0;
@@ -3335,7 +3386,7 @@ export class LevelScene implements Scene {
       this.endMarker.scale.set(1 + 0.15 * Math.sin(this.time * 5));
       if (this.selected >= 0 && this.drag.kind === 'none') this.drawOverlay();
       if (this.standCars.length) this.view.updateStandingTrain(this.standCars, this.standViews, dt);
-      this.view.camera.clampTo({ minX: -40, maxX: this.level.width + 40, minY: -30, maxY: 160 });
+      this.clampCamera();
     } else if (this.mode === 'ride') {
       this.spotLayer.visible = false;
       this.updateRide(dt);
@@ -3350,6 +3401,7 @@ export class LevelScene implements Scene {
     this.view.update(dt);
     this.game.world?.setCamera(this.view.cameraView());
     this.zoneEditor?.update();
+    if (this.activeField && this.view.viewMoved) this.drawFieldTape();
     // Perspektive: Griffe, Ende-Marker, Spur-Schein und Schwachstellen liegen in der Ansicht und wandern mit der Kamera
     if (this.view.viewMoved && this.mode === 'draw') {
       this.drawOverlay();

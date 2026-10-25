@@ -30,8 +30,11 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   bestanden (25.10.):** Leistung reicht, Kantenglättung bleibt an, Berge als Platzhalter eingeordnet.
   Schritt 6 gebaut (25.10.): Zonendatei `public/zones/basiszone/zone.json` (Version 1: Name, Breite, Bahntyp, Elemente
   nach Plan 8a.1), Klötzchen-Editor am Mac unter `?zone=basiszone&editor=1` (Palette, Setzen, Ziehen, Tiefe, Maße, Löschen,
-  Bahntyp, Speichern über den Dev-Server, Hot-Reload bei jeder Dateiänderung, Tab zum Spielen), TECH.md 4g. Als Nächstes
-  Schritt 7 (Metadaten je Platzhalter, Level-Feld mit Kamerabegrenzung und Absperrband, Zoom-Grenze). Replay `--world`: 322 Aufnahmen, 9185 Stützen, Median 2,0 px, kein Fehler.
+  Bahntyp, Speichern über den Dev-Server, Hot-Reload bei jeder Dateiänderung, Tab zum Spielen), TECH.md 4g. Replay `--world`: 322 Aufnahmen, 9185 Stützen, Median 2,0 px, kein Fehler.
+  Schritt 7 gebaut (25.10.): Metadaten je Element in Datei und Editor (Fundament M, Öffnung O, Anker A, Wachstumsstufe G,
+  Tiefenrolle R), Felder aufziehen (Werkzeug „Feld“, Enter schaltet aktiv) mit weicher Kamerabegrenzung, Zoom-Grenze „Feld
+  passt ins Bild“ und Absperrband an den Rändern; ohne Editor wählt `?field=` das Feld. Als Nächstes Schritt 8
+  (Stationsanker mit Richtung, Vorgabestück, Häuschen, Hebel; Schlangenbereich; Baustellen-Marke; Coin-Gruppen). Replay `--world`: 343 Aufnahmen, 9579 Stützen, Median 2,0 px, kein Fehler.
   Links für den Handy-Test: Dev-Server mit `npm run dev` (zeichnet auf), Adresse aus dem
   Vite-Log plus `?scene=start&level=8&world=1&dev=1` und `&track=`, `&aa=0`, `&shadow=0`, `&look=`, Level 32 (Tunnel),
   Level 47 (See).

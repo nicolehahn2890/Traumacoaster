@@ -260,6 +260,21 @@ Politur; alles Gesetzte sind Klötzchen, die später Grafiken ersetzen.
   projizierten Kasten des Elements (`zoneElementScreenBox`), beim Ziehen wird die Gruppe nur verschoben und erst beim
   Loslassen neu gebaut. Höhlenböden tragen Stützen, Wasser sperrt sie (`refreshFoundations`). Kein Rückgängig, keine
   Mehrfachauswahl, kein Drehen (Stufe 1).
+- **Metadaten je Element** (Schritt 7, Plan 2.1 und 8a.1): `foundation` (tragfähige Oberkante: Stützen dürfen darauf stehen,
+  wenn die Bahn in der Tiefe höchstens eine halbe Spur entfernt ist; `topAt` kennt die Schultern des Dreiteilers),
+  `openings` (Öffnungen in der Lippe des Dreiteilers, relativ zum Fuß, Radius; die Bahn darf dort hindurch), `anchor`
+  (Anschluss am Fuß: Station, Tunnelachse, Wasserfallquelle), `growth` (Wachstumsstufe: ab dieser Fortschrittsstufe da),
+  `depthRole` (Rückwand, Mitte, Vorderlippe). Im Editor am gewählten Element: M Fundament, O Öffnung (Dreiteiler), A Anker,
+  G Stufe, R Rolle; Fundament als grüne Oberkante, Anker als Punkt am Fuß, alles in der Statuszeile. Wachstumsstufe und
+  Tiefenrolle sind bis Schritt 9 nur Daten (die Stufe schaltet dann Elemente je Level).
+- **Felder** (Schritt 7, Plan 2.1 und 2.3): `fields` in der Zonendatei (`f1`, `f2`, …; x0 bis x1, Höhe y0 bis y1 in
+  Zonenkoordinaten, mindestens 20 × 12 m). Werkzeug „Feld“: in der Welt aufziehen (Rechteck auf Spur 0), Klick in ein Feld
+  wählt es, Enter schaltet es aktiv, Entf löscht. Aktives Feld im Spielen (und ohne Editor mit `?field=<Kennung>`, sonst
+  das erste Feld der Zone): weiche Kamerabegrenzung (`Camera.softBounds`: die Ziele bleiben im Feld, beim Ziehen darf die
+  Kamera ein Viertel der Sicht darüber hinaus und federt los­gelassen zurück), Zoom-Grenze „Feld passt ins Bild“
+  (`Camera.fitZoom` als `minZoom`), Absperrband an den Rändern links, rechts und oben (gelb-schwarz gestrichelt in der
+  Ansicht auf Spur 0, `LevelScene.drawFieldTape`). Im Bauen bleibt die Kamera frei. Hochformat- und Querformat-Rahmen
+  des Felds (Plan 2.3) zeigt der Editor noch nicht.
 - Die Bühne nutzt für die Zone das Sandbox-Level (`SandboxConfig.zone`): flacher Boden, Breite der Zone, alle Elemente
   und Startarten frei (Plan Paket 3: die Basiszone kann alles). Tests in `tests/zone.test.ts`.
 

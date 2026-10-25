@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Mesh } from 'three';
-import { KIND_DEFAULTS, ZONE_KINDS, emptyZone, newElement, newElementId, parseZone, serializeZone, type ZoneFile } from '@/zone/types';
-import { buildZoneElement } from '@/zone/build';
+import { FIELD_MIN_H, FIELD_MIN_W, KIND_DEFAULTS, ZONE_KINDS, emptyZone, newElement, newElementId, newField, parseZone, serializeZone, type ZoneFile } from '@/zone/types';
+import { buildZoneElement, topAt } from '@/zone/build';
 
 describe('Zonendatei (Schritt 6)', () => {
   it('leere Zone, neue Elemente mit Platzhalter-Maßen und eindeutigen Kennungen', () => {
@@ -68,5 +68,60 @@ describe('Zonendatei (Schritt 6)', () => {
       if (kind === 'water') expect(built.foundation!.blocks!(20, 0)).toBe(true);
       built.dispose();
     }
+  });
+});
+
+describe('Zonendatei: Metadaten und Felder (Schritt 7)', () => {
+  it('Metadaten überleben Schreiben und Lesen, Unsinn fällt weg', () => {
+    const zone = emptyZone('basiszone');
+    const el = newElement(zone, 'threePart', 50, 0, 1);
+    el.foundation = true;
+    el.openings = [{ dx: 0, dy: 3, r: 2.4 }];
+    el.anchor = 'tunnel';
+    el.growth = 2;
+    el.depthRole = 'front';
+    zone.elements.push(el);
+    const back = parseZone(JSON.parse(serializeZone(zone)))!;
+    expect(back.elements[0]).toMatchObject({ foundation: true, openings: [{ dx: 0, dy: 3, r: 2.4 }], anchor: 'tunnel', growth: 2, depthRole: 'front' });
+    const bad = parseZone({ version: 1, name: 'x', elements: [{ id: 'e1', kind: 'flat', x: 0, y: 0, z: 0, w: 4, h: 4, anchor: 'ufo', growth: -2, depthRole: 'oben', openings: [{ dx: 1 }] }] })!;
+    expect(bad.elements[0].anchor).toBeUndefined();
+    expect(bad.elements[0].growth).toBeUndefined();
+    expect(bad.elements[0].depthRole).toBeUndefined();
+    expect(bad.elements[0].openings).toBeUndefined();
+  });
+
+  it('Felder: Mindestmaße, Ecken in beliebiger Reihenfolge, Kennungen f1, f2', () => {
+    const zone = emptyZone('basiszone');
+    const a = newField(zone, 100, 30, 40, -5);
+    zone.fields.push(a);
+    expect(a).toMatchObject({ id: 'f1', x0: 40, x1: 100, y0: -5, y1: 30 });
+    const b = newField(zone, 10, 10, 12, 11);
+    zone.fields.push(b);
+    expect(b.id).toBe('f2');
+    expect(b.x1 - b.x0).toBe(FIELD_MIN_W);
+    expect(b.y1 - b.y0).toBe(FIELD_MIN_H);
+    const back = parseZone(JSON.parse(serializeZone(zone)))!;
+    expect(back.fields.map((f) => f.id)).toEqual(['f1', 'f2']);
+    expect(parseZone({ version: 1, name: 'x', fields: [{ id: 'f1', x0: 'a' }] })!.fields).toEqual([]);
+  });
+
+  it('Öffnungen kommen in die Lippe, ein Fundament trägt auf der Oberkante', () => {
+    const zone = emptyZone('basiszone');
+    const el = newElement(zone, 'threePart', 50, 0, 0);
+    const solid = buildZoneElement(el);
+    el.openings = [{ dx: 0, dy: 4, r: 2.4 }];
+    el.foundation = true;
+    const holed = buildZoneElement(el);
+    const lipVerts = (b: typeof solid) => (b.group.children[1] as Mesh).geometry.getAttribute('position').count;
+    expect(lipVerts(holed)).toBeGreaterThan(lipVerts(solid));
+    expect(holed.openings).toEqual([{ x: 50, y: 4, r: 2.4 }]);
+    expect(holed.foundation!.surfaceBelow(50, 30, 0)).toEqual({ y: 14, kind: 'element' });
+    expect(holed.foundation!.surfaceBelow(50, 30, 1)).toBeNull();
+    expect(holed.foundation!.surfaceBelow(50, 5, 0)).toBeNull();
+    expect(topAt(el, 50)).toBe(14);
+    expect(topAt(el, 38.1)).toBeCloseTo(9.86, 1);
+    expect(topAt(el, 70)).toBeNull();
+    solid.dispose();
+    holed.dispose();
   });
 });

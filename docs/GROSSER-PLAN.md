@@ -136,8 +136,8 @@ Optionen:
 
 **Empfehlung: A**, in drei Ausbaustufen, jede mit Tor. **Bestätigt am 24.10.2026: Option A, Florian bedient den Editor selbst am Mac.**
 **Stand 25.10.2026:** Stufe 1 begonnen (Etappe 1, Schritt 6: Setzen, Ziehen, Tiefe, Maße, Löschen, Speichern, Laden,
-Hot-Reload; `docs/TECH.md` 4g), Metadaten, Felder, Station, Schlange, Baustelle, Coins, Testfahrt und Ziele folgen in
-den Schritten 7 bis 9.
+Hot-Reload; Schritt 7: Metadaten je Element und Felder mit Kamerabegrenzung, Absperrband und Zoom-Grenze; `docs/TECH.md`
+4g), Station, Schlange, Baustelle, Coins, Testfahrt und Ziele folgen in den Schritten 8 und 9.
 
 1. **Klötzchen-Editor** (gehört zur Etappe Weltrenderer): Platzhalter (Fläche, Kasten, Zylinder, Höhlenkasten, Wasser,
    Station, Baustelle, Coin-Gruppe) setzen, ziehen, in der Tiefe verschieben, Metadaten setzen (Fundament, Öffnung,
@@ -452,6 +452,12 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
     das Spiel; ein Three-Linienrahmen (ein Pixel) ist als Auswahl kaum zu sehen, der Rahmen ist ein Pixi-Kasten um die
     projizierte Hülle. Platzhalter: alle Klötzchen, ihre Maße und Farben. Replay `--world` unverändert grün (322
     Aufnahmen mit Florians Handy-Strichen, 9185 Stützen, Median 2,0 px, kein Fehler).
+12. Schritt 7 (25.10.): Metadaten je Platzhalter nach 2.1 und 8a.1 (Fundament, Öffnungen, Anschluss, Wachstumsstufe,
+    Tiefenrolle) in Datei und Editor, Felder als Rechtecke in Zonenkoordinaten mit weicher Kamerabegrenzung (Rückstoß
+    nach dem Ziehen), Zoom-Grenze „Feld passt ins Bild“ und Absperrband an den Rändern; `docs/TECH.md` 4g. Gelernt: Die
+    Taste F war schon das Dev-Overlay (Effekte), darum schaltet Enter ein Feld aktiv; Wachstumsstufe und Tiefenrolle
+    bleiben bis Schritt 9 reine Daten. Platzhalter: die Öffnung ist ein Kreis, die Oberkante tragfähig als Ganzes; beides
+    ersetzen die Metadaten der gemalten Teile (Fundament-Polygon, Öffnungsvolumen). Replay `--world`: 343 Aufnahmen, 9579 Stützen, Median 2,0 px, kein Fehler.
 
 ## Paket 10: Etappen und Abnahmen (Vorschlag aus allem Bestätigten)
 
@@ -510,7 +516,7 @@ mit Florian. Die Session arbeitet auf einem eigenen Branch und geht am Tor per P
 10. **Tor 1b:** Florian baut selbst einen Testausschnitt (Station, Hügel, Fenster-Element, Baustelle); das Handy zeigt
     dasselbe; Fixes; Doku in `docs/TECH.md` und `docs/HANDOVER.md`; Pull Request nach `main`.
 
-**Stand:** Schritte 1 bis 4 gebaut am 24.10.2026, Tor 1a bestanden am 25.10.2026, Schritt 6 gebaut am 25.10.2026 (Nachträge in Paket 1); Schritt 7 steht an.
+**Stand:** Schritte 1 bis 4 gebaut am 24.10.2026, Tor 1a bestanden am 25.10.2026, Schritte 6 und 7 gebaut am 25.10.2026 (Nachträge in Paket 1); Schritt 8 steht an.
 
 **Florian parallel zu Etappe 1:** den Erzeugungsweg für Teile mit der Session prüfen (Voraussetzung für E4), erste
 Figurenteile in zwei Ansichten skizzieren, Entwurf der Alpen-Autos, Handy-Tests an den Toren, Entscheidungen an den
