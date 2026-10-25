@@ -628,7 +628,7 @@ Rückfragen der Session (25.10.): alle Empfehlungen angenommen (drei Tore; Durch
 bleibt eigenes Element; Entwurf der Basiszone v1 durch die Session; Startart-Knopf wechselt per Tipp; Kettenzugstärke
 als Höhe über der Station).
 
-**Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritte 1 bis 3 und 3b (Aufzug) gebaut am 25.10.2026 (Nachträge in Paket 3, 2 und 4). **Tor 2a bestanden (Florian, 25.10.2026):** Startart-Platzhalter und Aufzug reichen bis zur Stilprobe, der Knopf am Hebel ist verständlich, die Kettenregel passt, das Handy läuft flüssig. Schritte 5 bis 7 gebaut am 25.10.2026 (Nachträge in Paket 5 und 2). Tor 2b, erster Test (Florian, 25.10.2026): Bahn in Räumen und an Berg und Tunnel unschön und springend; Fix (Glättung der Tiefenwahl an Wänden und Räumen, Nachtrag in Paket 5) gebaut am 25.10.2026, Florian testet erneut.
+**Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritte 1 bis 3 und 3b (Aufzug) gebaut am 25.10.2026 (Nachträge in Paket 3, 2 und 4). **Tor 2a bestanden (Florian, 25.10.2026):** Startart-Platzhalter und Aufzug reichen bis zur Stilprobe, der Knopf am Hebel ist verständlich, die Kettenregel passt, das Handy läuft flüssig. Schritte 5 bis 7 gebaut am 25.10.2026 (Nachträge in Paket 5 und 2). Tor 2b, erster Test (Florian, 25.10.2026): Bahn in Räumen und an Berg und Tunnel unschön und springend; Fix (Glättung der Tiefenwahl an Wänden und Räumen, Nachtrag in Paket 5) gebaut am 25.10.2026. Zweiter Test (Florian, 25.10.2026): nicht bestanden, Leitsätze und Vorschlag „Freiraumfeld“ in Paket 5; sofort gebaut: Durchfahrt durch Fenster (Magnet) und Vorschau ohne Wackeln; wartet auf Florians Entscheidung zum Vorschlag und seinen nächsten Test.
 
 ### Rückfragen zu Paket 10
 
@@ -1088,6 +1088,37 @@ Oberfläche (die Decke ist mit dem Deckel weg). (3) Der Fels schlägt die Hebel 
 rot, die frei war. (4) Wände und Räume brauchen einen Anlauf (8 m), sonst knickt die Bahn an der Wand ab. Gemessen an 71
 Aufnahmen: Tiefensprünge je berührendem Strich 10,7 statt 12,2, Vorschau-Sprünge 85,3 statt 95,2, blockierte Läufe 0 statt
 6. Florian testet erneut.
+**Tor 2b, zweiter Test (Florian, 25.10.2026): nicht bestanden.** Rückmeldung: etwas besser, aber nahe Stein und im
+„Erdgeschoss“ weiter sehr unschön; die Bahn wackelt beim Strichziehen und nimmt in der Grube keine schöne Form an; das
+Fenster im Fels trifft er kaum noch; den Raum (das ausgestanzte Quadrat im Boden) versteht er nicht: nicht, wie er ihn
+bewegt, nicht, was er soll, nicht, wie er zum ebenenartigen Tunnelsystem gehört. **Florians Leitsätze (gelten für die
+Welt und den Pinsel, Etappe 2 und danach):** (1) Keine hundert Sonderregeln je Form. (2) Jedes Element trägt Stützen,
+auch mit organischer Form. (3) Um Berge, Elemente, Löcher im Fels und am Tunnel wird die Kurve ganz glatt geleitet, ohne
+dass man es beim Strichziehen merkt: nie Wackeln, nie Knicke. (4) Öffnungen und „richtige“ Wege ziehen den Strich wie ein
+Magnet an und führen hindurch; trotzdem bleibt die Pinselspitze (der Finger) glatt mit dem Bahnanfang verbunden. (5) Die
+Oberfläche (heute das Gras) darf aus mehreren Ebenen bestehen; das Freilegen einer unterirdischen Schicht kann das
+Auseinanderziehen von Ebenen sein. (6) Noch ungeklärt und zu planen: wie Pfeiler gesetzt werden, wie der Boden aufgebaut
+ist, wie Höhlen aufgebaut sind und wie die Bahn ihre Kollisionskörper findet. Sofort gebaut (25.10.2026, Nachtrag
+unten): Durchfahrt durch ein Fenster als Seite der Passage (der Magnet zur Öffnung) und die Vorschau ohne Wackeln (die
+gezeigte Bahn klebt an ihrer Tiefe, nur die Spitze wählt frei).
+**Vorschlag der Session (25.10.2026, braucht Florians Ja, baut nichts vorweg): ein Freiraumfeld statt Sonderregeln.**
+Ein einziges Feld „fest oder frei“ über die ganze Welt, aus dem Pinsel, Stützen, Fahrt und Freilegen abgeleitet werden;
+die heutigen Regeln (Lippen- und Rückwandbänder, Raum-Treffer, Passagen, Brücke und Tauchfahrt) werden Fälle dieses
+Feldes und fallen als eigene Regeln weg. (a) **Feld:** Boden als Ebenen (Platten mit Dicke, nach Leitsatz 5), Fels und
+Höhlen als Volumen, gemalte Teile später als Volumen aus ihrer Form (auch organisch); ein Raum ist Freiraum in einer
+Platte, eine Öffnung Freiraum durch Festes; Freilegen heißt, Festes wird frei oder eine Platte rückt weg (die Ameisenfarm
+aus Richtlinie 4). (b) **Pinsel:** je Linienpunkt die freien Tiefen-Abschnitte am Strahl; die Abschnitte werden über den
+ganzen Strich als eine Kette mit kleinstem Sprung gewählt (dynamisches Programm statt Seitenwahl je Element), Wände stoßen
+weich ab (Abstand statt harter Schranke), Öffnungen sind freie Abschnitte durch Festes und wirken dadurch von selbst als
+Magnet; die bisherige Glättung läuft im gewählten Korridor. (c) **Spitze:** alles älter als etwa 15 m ist fertig und
+bleibt stehen, die Spitze ist ein glatter Verbinder vom letzten festen Punkt (Lage und Richtung) zum Finger und schaut
+voraus (Magnet); so wackelt beim Malen nichts und der Finger bleibt glatt verbunden (Leitsätze 3 und 4). (d) **Stützen:**
+Füße dort, wo das Feld unter der Bahn fest wird, auf jedem Element (Leitsatz 2); Füße nie in Festem. (e) **Fahrt:**
+Tunnel-Meter in eingeschlossenem Freiraum, Durchbruch-Wände als zerbrechliches Festes; die Kollisionskörper sind das
+Feld (Leitsatz 6). (f) **Räume und Ebenen neu nach Florians Bild:** Ebenen im Editor ziehen und auseinanderziehen, Räume
+als Freiraum darin; das ausgestanzte Quadrat verschwindet. Schritte, jeder mit Messung an den Aufnahmen und Tests: Feld
+aus den heutigen Klötzchen; Pinsel auf das Feld; Spitze; Stützen und Fahrt; Ebenen-Boden und Räume im Editor; dann Tor
+2b erneut. Bis Florian entscheidet, kommen keine weiteren Sonderregeln dazu.
 **Status: bestätigt am 24.10.2026.** Graben in Stufen trägt Florians Vorbehalt; Autoscroll wird nach dem Ausprobieren
 entschieden. **Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Der Wasserfall bleibt ein eigenes Element (er ist
 seit Etappe 1 da) und bekommt den Schalter „Fahrt dahinter gedämpft“; die Schalter Schmuck, trägt Stützen und Splash-Zone

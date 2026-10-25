@@ -474,6 +474,29 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   2 und offenem Raum dieselben Zahlen, kaum eine Aufnahme taucht). Tests in `tests/rock.test.ts` (Seite bleibt über
   Vorschauen und beim Loslassen, Hebel gegen Fels) und `tests/underground.test.ts` (Brücke, Tauchfahrt mit Wellen,
   Raumboden). Platzhalter weiter: Abtauchen ohne Schacht, rechteckige Löcher.
+- **Durchfahrt durch Fenster (Magnet) und Vorschau ohne Wackeln** (Tor 2b, zweiter Test, 25.10.; Florians Leitsätze in
+  Plan Paket 5). Fenster: Trifft der Strahl der Lippe eine Öffnung, liefert `RockField.spans` eine Spanne `kind: 'window'`
+  (Tiefe der Lippe, ohne Breite, keine Wand). Trifft eine Passage ein Fenster und liegt der Strich nicht ohnehin im
+  Korridor, ist die Durchfahrt die erste Wahl (`RockSide` `in`: davor vor der Lippe, danach im Korridor; `out`
+  umgekehrt, wenn die Passage an einem festen Punkt hinter der Lippe beginnt, etwa nach einer Freilegung): Schranken an
+  der Lippe vor dem Fenster auf der einen, danach auf der anderen Seite, Rückwand bleibt Schranke, die Wunschtiefe
+  wechselt in einem langen S um das Fenster (`THROUGH_RAMP` 14 Punkte davor und danach; ein kurzer Wechsel bog in der
+  Fahrt zu eng). Beim Malen wächst der Strich ins Fenster hinein, wenn die Passage schon „davor“ gezeigt wird: dann wird
+  aus „davor“ die Durchfahrt (was gezeigt war, bleibt vor der Lippe; der Korridor dahinter ist neu); das Fenster zählt
+  auch an festen Punkten, sonst verlöre die Passage es, sobald es hinter dem freien Teil liegt, und fiele beim Loslassen
+  auf den Korridor zurück. Die natürliche Seite ist, liegt die erste Lösung in einer Wand, die nähere Seite dieser Wand
+  (vorher der Korridor, sobald sie irgendwo zwischen Lippenfront und Rückwand lag). So zieht ein Eingang den Strich wie
+  ein Magnet hindurch; wer das Fenster nicht trifft, fährt wie bisher davor, im Korridor oder dahinter. Vorschau: Im freien Teil
+  (die letzten `PREVIEW_FREE` 45 m) hängt die gezeigte Bahn weich an der Tiefe der letzten Vorschau (`hold`/`holdW`,
+  Gewicht `PREVIEW_HOLD` 20 mit weichem Anstieg ab `PREVIEW_TIP` 15 m vor dem Finger bis zum festen Teil); nur die Spitze
+  wählt frei, Schranken bleiben hart. Gemessen (Replay `--zone probe`, 71 Aufnahmen, 53 mit Berührung): Vorschau-Sprünge
+  an gezeigten Punkten 41,5 je Strich statt 85,8, ohne Zonenregeln 33,0 statt 73,3; Tiefensprünge der fertigen Bahn 11,4
+  statt 10,6 (die Durchfahrt wechselt die Seite), Loslassen 1,07 statt 0,99 Spuren; Fahrten geschafft 30 statt 28 von 71
+  (Aufnahmen ohne Zone, die Berührungen sind Zufall). Varianten, nur mit dem Haltegewicht gemessen: fest ab 25 m statt
+  45 m: Vorschau-Sprünge 15,8, aber fertige Bahn 12,3 Sprünge und Loslassen 1,15 (die alte Bahn kann an Kreuzungen nicht
+  mehr nachgeben); Spitze 20 m mit halbem Gewicht: 61,6 / 10,1 / 0,87. Die verbleibenden Sprünge kommen von Kreuzungen
+  und Engstellen, an denen der frühere Strang nachgibt; dagegen hilft erst die Spitze aus dem Vorschlag „Freiraumfeld“
+  (Plan Paket 5). Tests in `tests/rock.test.ts` (Durchfahrt am Stück und beim Malen, Strich im Korridor bleibt dort).
 
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).

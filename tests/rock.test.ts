@@ -69,10 +69,11 @@ describe('Festigkeitsfeld der Zone (Etappe 2, Schritt 5)', () => {
     expect(both[0].z0).toBeCloseTo(lip - ROCK_MARGIN, 6);
     expect(both[0].z1).toBeCloseTo(lip + ROCK_MARGIN, 6);
     expect(both[1].z0).toBeCloseTo(back - ROCK_MARGIN, 6);
-    // Punkt, der an der Lippe genau im Fenster liegt
+    // Punkt, der an der Lippe genau im Fenster liegt: nur die Rückwand ist Wand, das Fenster lädt zur Durchfahrt ein
     const window = rock.spans(toStage(85, 4, lip), toWorld);
-    expect(window).toHaveLength(1);
-    expect(window[0].z0).toBeCloseTo(back - ROCK_MARGIN, 6);
+    expect(window.filter((s) => s.kind !== 'window')).toHaveLength(1);
+    expect(window.find((s) => s.kind !== 'window')!.z0).toBeCloseTo(back - ROCK_MARGIN, 6);
+    expect(window.find((s) => s.kind === 'window')).toMatchObject({ id: 'e1', z0: lip, z1: lip });
     expect(rock.spans(toStage(40, 8, 1), toWorld)).toHaveLength(0);
   });
 
@@ -96,10 +97,21 @@ describe('Festigkeitsfeld der Zone (Etappe 2, Schritt 5)', () => {
       expect(inLip(plan.z[i] / LANE_DEPTH)).toBe(false);
     });
     expect(checked).toBeGreaterThan(4);
-    // Innenraum: Bildhöhe 8,2 → Spur 1 in 4 m Höhe, mitten zwischen Rückwand und Lippe: kein Fels, keine Blockade
+    // Bildhöhe 8,2 → Spur 1 in 4 m Höhe, mitten zwischen Rückwand und Lippe: ein Strich, der ohnehin im Korridor liegt,
+    // bleibt dort (kein Fels, keine Blockade), auch wenn der Strahl der Lippe bei x 85 das Fenster trifft
     const inside = planBrushTrack(flatLine(8.2, 30, 140), opts)!;
     expect(inside.rock).toEqual([]);
+    expect([...inside.rockSides.values()]).toEqual(['between']);
     expect(Math.abs(inside.z[at(inside, 85)] / LANE_DEPTH - 1)).toBeLessThan(half - ROCK_MARGIN);
+    // Bildhöhe 6,1 (Spur 0,5: an der Lippe) trifft das Fenster: Der Strich wird hindurchgezogen (Magnet), vor dem Fenster
+    // vor der Lippe, danach im Korridor, ohne Knick
+    const through = planBrushTrack(flatLine(Y, 30, 140), opts)!;
+    expect(through.rock).toEqual([]);
+    expect([...through.rockSides.values()]).toEqual(['in']);
+    expect(through.z[at(through, 78)] / LANE_DEPTH).toBeLessThan(lip - ROCK_MARGIN + 1e-6);
+    expect(through.z[at(through, 95)] / LANE_DEPTH).toBeGreaterThan(lip + ROCK_MARGIN - 1e-6);
+    expect(through.z[at(through, 95)] / LANE_DEPTH).toBeLessThan(back - ROCK_MARGIN);
+    for (let i = 1; i < through.z.length; i++) expect(Math.abs(through.z[i] - through.z[i - 1]) / LANE_DEPTH).toBeLessThan(0.12);
   });
 
   it('ohne freie Seite ist der Strich blockiert: Vorschau markiert rot, beim Loslassen endet die Bahn davor', () => {
@@ -137,8 +149,8 @@ describe('Glättung der Tiefenwahl am Fels (Tor 2b)', () => {
   it('die Seite einer Passage bleibt über Vorschauen und beim Loslassen; die Tiefe läuft ohne Knick an der Lippe vorbei', () => {
     const rock = new RockField([slab]);
     const opts = { rock: (p: StagePoint) => rock.spans(p, toWorld) };
-    // Bildhöhe knapp vor der Lippe: ohne Fels läge die Linie in der Lippe, die Seite ist knapp
-    const Y = 4 + 4.2 * 0.5;
+    // Bildhöhe knapp vor der Lippe und über dem Fenster (Spur 0,5 in 8 m Höhe): ohne Fels läge die Linie in der Lippe
+    const Y = 8 + 4.2 * 0.5;
     const pts = flatLine(Y, 30, 150);
     // Vorschauen wie beim Malen: alle 8 m eine, jede baut auf der letzten auf
     let pv: ReturnType<typeof previewBrushTrack> = null;
@@ -160,10 +172,31 @@ describe('Glättung der Tiefenwahl am Fels (Tor 2b)', () => {
     for (let i = 1; i < plan.z.length; i++) if (Math.abs(plan.line[i].X - 85) < 30) expect(Math.abs(plan.z[i] - plan.z[i - 1]) / LANE_DEPTH).toBeLessThan(0.12);
   });
 
+  it('beim Malen zieht das Fenster den Strich hindurch, sobald er es erreicht; was davor gezeigt war, bleibt vor der Lippe', () => {
+    const rock = new RockField([slab]);
+    const opts = { rock: (p: StagePoint) => rock.spans(p, toWorld) };
+    // Bildhöhe 6,1 (an der Lippe): vor dem Fenster entscheidet die Vorschau „davor“ (das Fenster ist noch nicht erreicht)
+    const pts = flatLine(4 + 4.2 * 0.5, 30, 140);
+    let pv: ReturnType<typeof previewBrushTrack> = null;
+    let before: string[] = [];
+    for (let k = 20; k <= pts.length; k += 2) {
+      pv = previewBrushTrack(pts.slice(0, k), opts, pv);
+      if (pts[k - 1].X < 82 && pv) before = [...pv.rockSides.values()];
+    }
+    expect(before).toEqual(['front']);
+    expect([...pv!.rockSides.values()]).toEqual(['in']);
+    const plan = planBrushTrack(pts, opts, undefined, pv!)!;
+    expect([...plan.rockSides.values()]).toEqual(['in']);
+    const at = (x: number) => plan.line.findIndex((p) => Math.abs(p.X - x) < 1.5);
+    expect(plan.z[at(78)] / LANE_DEPTH).toBeLessThan(lip - ROCK_MARGIN + 1e-6);
+    expect(Math.abs(plan.z[at(100)] / LANE_DEPTH - 1)).toBeLessThan(half - ROCK_MARGIN);
+    for (let i = 1; i < plan.z.length; i++) expect(Math.abs(plan.z[i] - plan.z[i - 1]) / LANE_DEPTH).toBeLessThan(0.12);
+  });
+
   it('Nachbessern: der Hebel „nach hinten legen“ drückt die Bahn nicht in die Lippe, der Fels bleibt frei', () => {
     const rock = new RockField([slab]);
     const opts = { rock: (p: StagePoint) => rock.spans(p, toWorld) };
-    const Y = 4 + 4.2 * 0.5;
+    const Y = 8 + 4.2 * 0.5;
     const plan = planBrushTrack(flatLine(Y, 30, 150), opts)!;
     // wie der Hebel: Mindesttiefe am Berg 3 m hinter die Lösung legen, dann neu wählen
     for (let i = 0; i < plan.z.length; i++) if (Math.abs(plan.line[i].X - 85) < 14) plan.lower[i] = plan.z[i] + 3;

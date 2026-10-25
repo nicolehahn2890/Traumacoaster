@@ -18,9 +18,12 @@ import { threePartOutline } from './build';
 export interface RockSpan {
   z0: number;
   z1: number;
-  /** Element und Wand (Lippe, Rückwand, Wand): der Löser hält je Element und Strich eine Seite */
+  /**
+   * Element und Wand (Lippe, Rückwand, Wand): der Löser hält je Passage eine Seite. Ein Fenster (der Strahl trifft eine
+   * Öffnung der Lippe) ist keine Wand, sondern lädt zur Durchfahrt ein; seine Spanne ist die Tiefe der Lippe ohne Breite
+   */
   id?: string;
-  kind?: 'lip' | 'back' | 'wall';
+  kind?: 'lip' | 'back' | 'wall' | 'window';
 }
 
 /** Sicherheitsabstand vor und hinter Fels (Spuren): die Bahn streift die Lippe nicht */
@@ -140,7 +143,9 @@ export class RockField {
       // Spuren: vorn klein, hinten groß; die Lippe liegt vor der Spur des Elements, die Rückwand dahinter
       const lip = s.zc - s.half;
       const wl = toWorld(p, lip);
-      if (this.slabHit(s, wl.x, wl.y) === 'rock') out.push({ z0: lip - ROCK_MARGIN, z1: lip + ROCK_MARGIN, id: s.id, kind: 'lip' });
+      const hit = this.slabHit(s, wl.x, wl.y);
+      if (hit === 'rock') out.push({ z0: lip - ROCK_MARGIN, z1: lip + ROCK_MARGIN, id: s.id, kind: 'lip' });
+      else if (hit === 'opening') out.push({ z0: lip, z1: lip, id: s.id, kind: 'window' });
       const back = s.zc + s.half;
       const wb = toWorld(p, back);
       if (this.slabHit(s, wb.x, wb.y) !== null) out.push({ z0: back - ROCK_MARGIN, z1: back + ROCK_MARGIN, id: s.id, kind: 'back' });

@@ -74,7 +74,19 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   rechteckige Löcher. Messung an 71 Aufnahmen (Replay `--zone probe`): Tiefensprünge je berührendem Strich 10,7 statt
   12,2, Vorschau-Sprünge 85,3 statt 95,2, Loslassen 1,09 statt 1,14 Spuren, blockierte Läufe 0 statt 6. Tests 272 grün,
   Build grün, Replay `--world` unverändert (475 Profile, Median 2,0 px); Browser: der Strich durch den Berg läuft glatt
-  (0,03 Spuren je Meter), die Tauchfahrt in den Raum ohne Knick am Lochrand. Als Nächstes: Florian testet erneut (Tor 2b).
+  (0,03 Spuren je Meter), die Tauchfahrt in den Raum ohne Knick am Lochrand.
+  Tor 2b, zweiter Test (25.10.): nicht bestanden. Florian: etwas besser, aber nahe Stein und im „Erdgeschoss“ weiter
+  sehr unschön, die Bahn wackelt beim Strichziehen, in der Grube keine schöne Form, das Fenster im Fels trifft er kaum
+  noch, den Raum (ausgestanztes Quadrat) versteht er nicht; seine Leitsätze (keine hundert Sonderregeln, jedes Element
+  trägt Stützen auch organisch, Kurve glatt um alles geleitet ohne Wackeln und Knicke, Öffnungen als Magnet mit glatt
+  verbundenem Finger, Boden aus Ebenen, Pfeiler/Boden/Höhlen/Kollisionskörper ungeklärt) stehen im Plan, Paket 5.
+  Sofort gebaut (25.10., TECH.md 4h): Durchfahrt durch Fenster als Seite der Passage (Magnet) und Vorschau ohne Wackeln
+  (die gezeigte Bahn klebt, nur die Spitze wählt frei): Vorschau-Sprünge 41,5 statt 85,8 je Strich (ohne Zone 33,0
+  statt 73,3), fertige Bahn 11,4 statt 10,6 Sprünge, Fahrten 30 statt 28 von 71. Tests 273 grün, Build grün, Szenario 10
+  grün. System: Fenster-Spanne, Durchfahrt, Haltegewicht.
+  Platzhalter: alles Bisherige. Vorschlag der Session im Plan (Paket 5): ein Freiraumfeld statt Sonderregeln (Pinsel,
+  Spitze, Stützen, Fahrt, Ebenen-Boden), wartet auf Florians Ja; bis dahin keine weiteren Sonderregeln. Beide Dev-Server
+  laufen aus dem Worktree: 5174 mit Aufnahme (Handy, LAN), 5178 ohne Aufnahme (eigene Prüfungen).
 - **24.10., Etappe 1 begonnen** (Branch `etappe-1-weltrenderer`, Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10).
   Schritt 1 gebaut: Weltrenderer hinter `?world=1` (Three-Szene im selben WebGL-Kontext, Pixi zeichnet davor den Himmel und
   darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem
