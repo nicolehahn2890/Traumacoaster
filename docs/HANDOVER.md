@@ -30,7 +30,15 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Klötzchen-Wagen. Die Probefahrten des Pinsels kennen die Grenze absichtlich nicht (sie würden sonst den Hügel verformen).
   System: Grenze in der Physik, Fehlgrund, Linie. Platzhalter: Strichstil, Farbwörter, Wagen. Replay `--world` nach
   Schritt 2 und 3: 475 Bahnprofile, keine ungültigen Werte, 13460 Stützen, Median 2,0 px, kein Fehler (das Replay fährt ohne
-  Kettenzugstärke, wie die Level). Szenario 10 nach Schritt 3: 14 Prüfungen grün. Als Nächstes Tor 2a (Handy-Test).
+  Kettenzugstärke, wie die Level). Szenario 10 nach Schritt 3: 14 Prüfungen grün.
+  Schritt 3b gebaut (Florians Entscheidung auf die Zwischenfrage, welche Startarten echt sind): Der Vertikallift ist ein
+  Aufzug am Ende des Vorgabestücks (Viertelkreis, senkrecht bis zur Hubhöhe der Stufe, oben beginnt der Strich; die Fahrt
+  hebt den Zug hoch und lässt ihn oben los), in der Welt ein Gerüst mit Maschinenhaus; der Knopf bietet ihn nur bei leerer
+  Bahn. Zielarten „Aufzug-Start“ und „Pendel-Start“ sind im Katalog; das echte Pendeln (dreimal durch die Station) kommt in
+  E3. System: Vorgabestück mit Aufzug, Liftende in der Fahrt, Zielarten. Platzhalter: Gerüst, Maschinenhaus, Fahrkorb ohne
+  Bewegung. Replay `--world` nach Schritt 3b unverändert grün (475 Profile, Median 2,0 px), Szenario 10 grün (14 Prüfungen),
+  im Browser fährt der Zug den Aufzug mit 20 km/h hoch und rollt oben weiter. Hinweis fürs Leveldesign: Die Hubhöhe zählt
+  als Bahnhöhe, ein Ziel „Höhe ≥ 12 m“ ist mit einem 15-m-Aufzug schon erfüllt. Als Nächstes Tor 2a (Handy-Test).
 - **24.10., Etappe 1 begonnen** (Branch `etappe-1-weltrenderer`, Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10).
   Schritt 1 gebaut: Weltrenderer hinter `?world=1` (Three-Szene im selben WebGL-Kontext, Pixi zeichnet davor den Himmel und
   darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem

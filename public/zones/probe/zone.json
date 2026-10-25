@@ -39,7 +39,8 @@
         "tunnel"
       ],
       "belt": 2,
-      "car": "rot"
+      "car": "rot",
+      "lift": 15
     }
   ],
   "elements": [

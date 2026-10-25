@@ -225,19 +225,20 @@ export function buildStartPlaceholder(frames: TrackFrame[], ctx: StartContext): 
       break;
     }
     case 'verticalLift': {
-      chain();
+      // Aufzug (Schritt 3b): Gerüst aus vier Pfosten um das senkrechte Stück des Vorgabestücks, Riegel auf der
+      // Betrachterseite, Maschinenhaus über dem oberen Ende; die Fahrt hebt den Zug auf der Bahn selbst hoch
       const lift = ctx.lift;
       if (!lift) break;
-      // Turm neben der Bahn (Betrachterseite) vom Boden bis knapp über das Kettenende, Plattform oben, Riegel zur Bahn
       const f = frameAt(frames, Math.min(lift.end, last));
-      const side = 2.6;
-      const cx = f.p.x + f.s.x * side;
-      const cz = f.p.z + f.s.z * side;
-      const h = Math.max(2, f.p.y - ctx.groundY + 1.0);
+      const x = f.p.x;
+      const z = f.p.z;
+      const y0 = ctx.groundY;
+      const y1 = f.p.y + 3.2;
       const parts = new Parts();
-      parts.add(new BoxGeometry(1.6, h, 1.6).translate(cx, ctx.groundY + h / 2, cz), STEEL);
-      parts.add(new BoxGeometry(3.0, 0.3, 3.0).translate(cx, f.p.y + 0.9, cz), CONCRETE);
-      parts.add(new BoxGeometry(0.3, 0.3, side).translate(cx - (f.s.x * side) / 2, f.p.y + top + 0.15, cz - (f.s.z * side) / 2), INK);
+      for (const dx of [-1.3, 1.3]) for (const dz of [-1.3, 1.3]) parts.add(new BoxGeometry(0.3, y1 - y0, 0.3).translate(x + dx, (y0 + y1) / 2, z + dz), STEEL);
+      for (let y = y0 + 2.5; y < y1 - 0.5; y += 3) parts.add(new BoxGeometry(2.9, 0.18, 0.18).translate(x, y, z + 1.3), INK);
+      parts.add(new BoxGeometry(3.4, 1.2, 3.4).translate(x, y1 + 0.6, z), CONCRETE);
+      parts.add(new BoxGeometry(3.6, 0.2, 3.6).translate(x, y1 + 1.3, z), YELLOW);
       const m = parts.mesh();
       m.name = 'tower';
       g.add(m);

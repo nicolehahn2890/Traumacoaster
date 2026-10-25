@@ -24,7 +24,7 @@ export interface Evaluation {
   cleanRide: boolean;
 }
 
-const STATIC: Set<Goal['type']> = new Set(['height', 'loops', 'turns', 'lanes', 'length', 'maxLength', 'rolls', 'launch', 'chainlift', 'boosters', 'noBrakes', 'drop', 'element']);
+const STATIC: Set<Goal['type']> = new Set(['height', 'loops', 'turns', 'lanes', 'length', 'maxLength', 'rolls', 'launch', 'chainlift', 'verticalLift', 'swingLaunch', 'boosters', 'noBrakes', 'drop', 'element']);
 
 /** Negative Ziele: Rausfliegen, Fangen, Flugweite. In Leveln mit solchen Zielen ist ein Rauswurf kein Fehlschlag. */
 export const NEGATIVE: Set<Goal['type']> = new Set(['eject', 'catch', 'flight']);
@@ -60,6 +60,8 @@ export function evaluateGoal(goal: Goal, path: TrackPath, ts: TrackStats, ride: 
     case 'maxLength': value = ts.length; done = value <= v; break;
     case 'launch': value = path.startType === 'launch' || path.startType === 'hydro' || path.startType === 'swing' ? 1 : 0; done = value > 0; break;
     case 'chainlift': value = path.startType === 'chainlift' || path.startType === 'verticalLift' ? 1 : 0; done = value > 0; break;
+    case 'verticalLift': value = path.startType === 'verticalLift' ? 1 : 0; done = value > 0; break;
+    case 'swingLaunch': value = path.startType === 'swing' ? 1 : 0; done = value > 0; break;
     case 'boosters': value = path.elements.filter((e) => e.kind === 'booster' || e.kind === 'launchBlock').length; done = value >= v; break;
     case 'noBrakes': value = path.elements.some((e) => e.kind === 'brake') ? 0 : 1; done = value > 0; break;
     case 'element': value = countElement(path, goal.element ?? ''); done = value >= Math.max(1, v); break;

@@ -34,6 +34,7 @@
   "fail.chain": "The chain doesn't reach the crest: the train rolled back. Keep the first hill below the dashed line.",
   "chain.line": "Chain lifts up to {n} m",
   "chain.hint": "Chain doesn't reach the crest",
+  "lift.onlyEmpty": "Elevator: clear the track first, then choose it",
   "beltSnap": "{name}: belt snapped!",
   "sticker.derail": "Derailed!",
   "sticker.fall": "Fell off!",

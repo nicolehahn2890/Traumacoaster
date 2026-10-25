@@ -53,6 +53,8 @@ export interface ZoneUpgrade {
   chain?: number;
   /** Wagenvariante (Platzhalter: eine Farbe für die Klötzchen-Wagen) */
   car?: string;
+  /** Hubhöhe des Aufzugs (Vertikallift, Meter über der Station); ohne Angabe LIFT_HEIGHT_DEFAULT */
+  lift?: number;
 }
 
 /** was ein Feld an seiner Stufe ändert (Plan 3.1: der Editor schaltet je Level um), dazu seine Grenzen (Plan 2.1) */
@@ -69,7 +71,12 @@ export interface FieldAbilityOverrides {
   budget?: number;
   /** Höhenlimit (Meter), ohne Angabe keins */
   maxHeight?: number;
+  /** Hubhöhe des Aufzugs statt der der Stufe (Meter) */
+  lift?: number;
 }
+
+/** Hubhöhe des Aufzugs, wenn weder Stufe noch Feld eine nennen (Meter) */
+export const LIFT_HEIGHT_DEFAULT = 20;
 
 /**
  * Vorbelegung der Stufen (Platzhalter, bis das Leveldesign die Tabelle füllt): Stufe i hat den Gurt i, so bedeutet die
@@ -100,6 +107,8 @@ export interface ResolvedAbilities {
   budget: number;
   /** Höhenlimit (Meter), 0 = keins */
   maxHeight: number;
+  /** Hubhöhe des Aufzugs (Meter über der Station) */
+  lift: number;
   /** die gewählte Stufe der Tabelle, wenn das Feld eine nennt */
   stage?: ZoneUpgrade;
   stageIndex?: number;
@@ -110,14 +119,15 @@ export interface ResolvedAbilities {
  * Überschreibungen des Felds
  */
 export function resolveAbilities(zone: { upgrades?: ZoneUpgrade[] }, field: (FieldAbilityOverrides & { upgrade?: number }) | null): ResolvedAbilities {
-  if (!field) return { abilities: new Set(ZONE_ABILITIES), budget: 0, maxHeight: 0 };
+  if (!field) return { abilities: new Set(ZONE_ABILITIES), budget: 0, maxHeight: 0, lift: LIFT_HEIGHT_DEFAULT };
   const table = zoneUpgrades(zone);
   const stageIndex = field.upgrade === undefined ? undefined : Math.max(0, Math.min(table.length - 1, Math.floor(field.upgrade)));
   const stage = stageIndex === undefined ? undefined : table[stageIndex];
   const abilities = new Set<ZoneAbility>(stage ? stage.abilities : ZONE_ABILITIES);
   for (const a of field.on ?? []) abilities.add(a);
   for (const a of field.off ?? []) abilities.delete(a);
-  const out: ResolvedAbilities = { abilities, budget: field.budget ?? 0, maxHeight: field.maxHeight ?? 0 };
+  const lift = field.lift ?? stage?.lift;
+  const out: ResolvedAbilities = { abilities, budget: field.budget ?? 0, maxHeight: field.maxHeight ?? 0, lift: lift !== undefined && lift > 0 ? lift : LIFT_HEIGHT_DEFAULT };
   const belt = field.belt ?? stage?.belt;
   if (belt !== undefined) out.belt = belt;
   const chain = field.chain ?? stage?.chain;
@@ -151,9 +161,9 @@ const abilityOf = (word: string): ZoneAbility | null => {
   return null;
 };
 
-type ParamKey = 'belt' | 'chain' | 'car' | 'budget' | 'maxHeight' | 'name';
-const PARAM_WORDS: Record<string, ParamKey> = { gurt: 'belt', kette: 'chain', wagen: 'car', budget: 'budget', höhe: 'maxHeight', hoehe: 'maxHeight', name: 'name' };
-const PARAM_WORD: Record<ParamKey, string> = { belt: 'gurt', chain: 'kette', car: 'wagen', budget: 'budget', maxHeight: 'höhe', name: 'name' };
+type ParamKey = 'belt' | 'chain' | 'car' | 'budget' | 'maxHeight' | 'name' | 'lift';
+const PARAM_WORDS: Record<string, ParamKey> = { gurt: 'belt', kette: 'chain', wagen: 'car', budget: 'budget', höhe: 'maxHeight', hoehe: 'maxHeight', name: 'name', hub: 'lift', aufzug: 'lift' };
+const PARAM_WORD: Record<ParamKey, string> = { belt: 'gurt', chain: 'kette', car: 'wagen', budget: 'budget', maxHeight: 'höhe', name: 'name', lift: 'hub' };
 
 interface Tokens {
   on: ZoneAbility[];
@@ -164,6 +174,7 @@ interface Tokens {
   car?: string;
   budget?: number;
   maxHeight?: number;
+  lift?: number;
   name?: string;
   unknown: string[];
 }
@@ -222,6 +233,8 @@ export function parseStageLine(text: string, base?: ZoneUpgrade): { upgrade: Zon
   if (chain !== undefined && chain > 0) upgrade.chain = chain;
   const car = t.car ?? base?.car;
   if (car) upgrade.car = car;
+  const lift = t.lift ?? base?.lift;
+  if (lift !== undefined && lift > 0) upgrade.lift = lift;
   return { upgrade, unknown: t.unknown };
 }
 
@@ -229,6 +242,7 @@ export function parseStageLine(text: string, base?: ZoneUpgrade): { upgrade: Zon
 export function formatStageLine(u: ZoneUpgrade): string {
   const parts = [u.abilities.map((a) => ABILITY_WORDS[a][0]).join(' ') || '(keine Schalter)', `gurt ${u.belt}`, `kette ${u.chain !== undefined && u.chain > 0 ? u.chain : 'frei'}`];
   if (u.car) parts.push(`wagen ${u.car}`);
+  if (u.lift !== undefined && u.lift > 0) parts.push(`hub ${u.lift}`);
   // der Name ist ein Wort (Platzhalter-Namen; mit Leerzeichen bliebe er beim Lesen zurück)
   if (u.name && !/\s/.test(u.name)) parts.push(`name ${u.name}`);
   return parts.join(', ');
@@ -245,6 +259,7 @@ export function parseFieldLine(text: string): { overrides: FieldAbilityOverrides
   if (t.chain !== undefined && t.chain > 0) o.chain = t.chain;
   if (t.budget !== undefined && t.budget > 0) o.budget = t.budget;
   if (t.maxHeight !== undefined && t.maxHeight > 0) o.maxHeight = t.maxHeight;
+  if (t.lift !== undefined && t.lift > 0) o.lift = t.lift;
   return { overrides: o, unknown: t.unknown };
 }
 
@@ -257,6 +272,7 @@ export function formatFieldLine(o: FieldAbilityOverrides): string {
   if (o.chain !== undefined) parts.push(`${PARAM_WORD.chain} ${o.chain}`);
   if (o.budget !== undefined) parts.push(`${PARAM_WORD.budget} ${o.budget}`);
   if (o.maxHeight !== undefined) parts.push(`${PARAM_WORD.maxHeight} ${o.maxHeight}`);
+  if (o.lift !== undefined) parts.push(`${PARAM_WORD.lift} ${o.lift}`);
   return parts.join(', ');
 }
 

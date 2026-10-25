@@ -41,7 +41,7 @@ import { laneRise, laneScale, nearestLane, rayToWorld, setPerspective, tagRay, t
 import { WorldView } from '@/render/worldView';
 import { HANG_DROP, trackTypeForSkin, type TrackType } from '@/world/trackTypes';
 import type { ZoneField, ZoneFile, ZoneStation } from '@/zone/types';
-import { allowedStarts, resolveAbilities, zoneUnlocks, type ResolvedAbilities } from '@/zone/abilities';
+import { LIFT_HEIGHT_DEFAULT, allowedStarts, resolveAbilities, zoneUnlocks, type ResolvedAbilities } from '@/zone/abilities';
 import { applyZoneExtras, stationPath, zoneCoins } from '@/zone/build';
 import { ZoneEditor } from '@/app/zoneEditor';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
@@ -541,21 +541,34 @@ export class LevelScene implements Scene {
     return (f && zone.stations.find((s) => s.x >= f.x0 && s.x <= f.x1 && s.y >= f.y0 && s.y <= f.y1)) ?? zone.stations[0];
   }
 
-  /** Ist die Bahn nur das Vorgabestück der Station (noch nichts gezeichnet)? */
+  /** Ist die Bahn nur das Vorgabestück der Station (noch nichts gezeichnet)? Gerade (zwei Knoten) oder mit Aufzug (vier, der letzte „lift“) */
   private isStationPieceOnly(): boolean {
     const p = this.path;
-    return !!p && p.nodes.length === 2 && p.nodes[0].kind === 'station' && p.closed === false && !!p.brush;
+    if (!p || p.nodes[0]?.kind !== 'station' || p.closed !== false || !p.brush) return false;
+    return p.nodes.length === 2 || (p.nodes.length === 4 && p.nodes[3].kind === 'lift');
+  }
+
+  /** Hubhöhe des Aufzugs im Feld (Etappe 2, Schritt 3b) */
+  private elevatorHeight(): number {
+    return this.abilities?.lift ?? LIFT_HEIGHT_DEFAULT;
   }
 
   /**
    * Vorgabestück der Station setzen (Plan 3.3: Bahnstart vorgegeben, gerade, 14 m): beim Betreten, nach dem Löschen und
    * wenn der Editor die Station verschiebt, solange noch nichts gezeichnet ist
    */
-  private resetStationPiece(): void {
+  private resetStationPiece(type: StartType = this.path?.startType ?? 'chainlift'): void {
     const st = this.zoneStation();
     if (!st) return;
     this.view.stationLength = st.length;
-    if (!this.path || this.isStationPieceOnly()) this.setPath(stationPath(st), false);
+    if (!this.path || this.isStationPieceOnly()) {
+      // Startart bleibt (oder die erste erlaubte); beim Aufzug trägt das Vorgabestück den senkrechten Lift (Schritt 3b)
+      const allowed = this.abilities ? (allowedStarts(this.abilities) as StartType[]) : [];
+      const start = allowed.length && !allowed.includes(type) ? allowed[0] : type;
+      const piece = stationPath(st, start === 'verticalLift' ? this.elevatorHeight() : 0);
+      piece.startType = start;
+      this.setPath(piece, false);
+    }
     this.ensureStartAllowed();
   }
 
@@ -575,6 +588,7 @@ export class LevelScene implements Scene {
       this.level.restraint = res.belt;
       this.level.trackBudget = res.budget || undefined;
       this.level.maxHeight = res.maxHeight || undefined;
+      this.view.chainHeight = res.chain;
       this.shelfOpen = false;
       this.buildShelf();
     }
@@ -629,7 +643,7 @@ export class LevelScene implements Scene {
     const st = this.zoneStation();
     const chain = this.abilities?.chain;
     const type = this.path?.startType ?? 'chainlift';
-    if (!st || !chain || this.mode !== 'draw' || (type !== 'chainlift' && type !== 'verticalLift')) return;
+    if (!st || !chain || this.mode !== 'draw' || type !== 'chainlift') return;
     const f = this.activeField;
     const x0 = f ? f.x0 : st.x - 60;
     const x1 = f ? f.x1 : st.x + 120;
@@ -2376,10 +2390,11 @@ export class LevelScene implements Scene {
 
   private clearTrack(): void {
     if (this.mode !== 'draw' || !this.path) return;
+    const start = this.path.startType;
     this.pushHistory();
     this.setPath(null, false);
-    // Zone mit Station: das Vorgabestück bleibt
-    this.resetStationPiece();
+    // Zone mit Station: das Vorgabestück bleibt, mit der gewählten Startart (Aufzug inklusive)
+    this.resetStationPiece(start);
     this.toast.show(t('clear'), 1.2);
   }
 
@@ -2522,13 +2537,20 @@ export class LevelScene implements Scene {
   }
   private cycleStart(): void {
     if (!this.path) return;
-    const available = START_ORDER.filter((s) => this.unlocked.has(START_UNLOCK[s]));
+    const unlockedStarts = START_ORDER.filter((s) => this.unlocked.has(START_UNLOCK[s]));
+    // Aufzug nur, solange die Bahn das Vorgabestück ist: Er verlängert es um den senkrechten Lift (Schritt 3b)
+    const pieceOnly = this.isStationPieceOnly();
+    const available = unlockedStarts.filter((s) => s !== 'verticalLift' || pieceOnly || this.path!.startType === 'verticalLift');
     if (!available.length) return;
     const idx = available.indexOf(this.path.startType);
+    const next = available[(idx + 1) % available.length];
+    const skipped = unlockedStarts.includes('verticalLift') && !available.includes('verticalLift') && unlockedStarts[(unlockedStarts.indexOf(this.path.startType) + 1) % unlockedStarts.length] === 'verticalLift';
     this.pushHistory();
-    this.path.startType = available[(idx + 1) % available.length];
+    this.path.startType = next;
+    if (pieceOnly) this.resetStationPiece(next);
     this.redrawTrack();
     this.updateGoals();
+    if (skipped) this.toast.show(t('lift.onlyEmpty'), 2);
     // Zone: der Name kurz groß als Sticker (Plan 3.3), im Level der Toast wie bisher
     if (this.sandbox?.zone) this.sticker.show(t('start.' + this.path.startType), '#ffd23f', 1.2);
     else this.toast.show(`${t('startType')}: ${t('start.' + this.path.startType)}`, 1.5);

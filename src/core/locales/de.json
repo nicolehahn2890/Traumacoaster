@@ -34,6 +34,7 @@
   "fail.chain": "Die Kette reicht nicht bis zum Gipfel: Der Zug ist zurückgerollt. Zeichne den ersten Hügel bis zur gestrichelten Linie.",
   "chain.line": "Kette zieht bis {n} m",
   "chain.hint": "Kette reicht nicht bis zum Gipfel",
+  "lift.onlyEmpty": "Aufzug: erst die Bahn löschen, dann wählen",
   "beltSnap": "{name}: Gurt gerissen!",
   "sticker.derail": "Entgleist!",
   "sticker.fall": "Abgestürzt!",

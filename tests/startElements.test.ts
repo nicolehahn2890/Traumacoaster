@@ -84,14 +84,15 @@ describe('Startarten sichtbar (Etappe 2, Schritt 2)', () => {
     built.dispose();
   });
 
-  it('Vertikallift: Kette und ein Turm neben dem Kettenende vom Boden bis über die Bahn', () => {
+  it('Vertikallift: Gerüst um das Liftende vom Boden bis über die Bahn, ohne Kette (Schritt 3b: Aufzug)', () => {
     const { built, lift, samples } = build(hill, 'verticalLift', 'road');
-    expect(childNamed(built, 'chain')).toBeDefined();
+    expect(childNamed(built, 'chain')).toBeUndefined();
     const tower = childNamed(built, 'tower') as Mesh;
     const box = new Box3().setFromObject(tower);
     expect(box.min.y).toBeCloseTo(0, 1);
     const i = samples.s.findIndex((s) => s >= lift!.end);
-    expect(box.max.y).toBeGreaterThan(samples.y[i]);
+    expect(box.max.y).toBeGreaterThan(samples.y[i] + 3);
+    expect(Math.abs((box.min.x + box.max.x) / 2 - samples.x[i])).toBeLessThan(0.6);
     built.dispose();
   });
 });

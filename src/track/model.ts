@@ -9,7 +9,8 @@ import { clamp } from '@/core/math';
 import { LANE_DEPTH } from './stage';
 import { findCrossings } from './crossings';
 
-export type NodeKind = 'normal' | 'loopApex' | 'turn' | 'station' | 'closeTurn' | 'closeReturn';
+/** lift: oberes Ende des Aufzugs im Vorgabestück der Station (Etappe 2, Schritt 3b; Plan 3.5) */
+export type NodeKind = 'normal' | 'loopApex' | 'turn' | 'station' | 'closeTurn' | 'closeReturn' | 'lift';
 export type StartType = 'chainlift' | 'launch' | 'hydro' | 'swing' | 'verticalLift';
 
 export interface TrackNode {
@@ -87,6 +88,22 @@ export function clonePath(p: TrackPath): TrackPath {
 }
 
 export const isAutoNode = (n: TrackNode): boolean => n.kind === 'closeTurn' || n.kind === 'closeReturn';
+
+/** Bogenlänge des Aufzug-Endes (Knoten „lift“): der Abtastpunkt, der dem Knoten in x und Höhe am nächsten liegt; null ohne Aufzug */
+export function liftTopArc(path: Pick<TrackPath, 'nodes'>, samples: TrackSamples): number | null {
+  const n = [...path.nodes].reverse().find((k) => k.kind === 'lift');
+  if (!n) return null;
+  let best = -1;
+  let bd = Infinity;
+  for (let i = 0; i < samples.count; i++) {
+    const d = (samples.x[i] - n.x) ** 2 + (samples.y[i] - n.y) ** 2;
+    if (d < bd) {
+      bd = d;
+      best = i;
+    }
+  }
+  return best >= 0 ? samples.s[best] : null;
+}
 
 /** Knotenposition in Metern (z × LANE_DEPTH) */
 export const nodePos = (n: TrackNode): Vec3 => ({ x: n.x, y: n.y, z: n.z * LANE_DEPTH });

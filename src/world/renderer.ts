@@ -309,7 +309,7 @@ export class WorldRenderer {
    * Bahn als Profil aus den Abtastpunkten und der Schräglage der Bühnen-Schienen bauen (auch für die Vorschau); nach dem
    * Loslassen (keine Vorschau) dazu die Stützen auf den Fundamenten des Levels
    */
-  setTrack(samples: TrackSamples, banks: Float64Array, type: TrackType, preview: boolean, insideMountain?: (x: number, y: number, z: number) => boolean, start?: { type: StartType; stationLength: number; groundY: number }): void {
+  setTrack(samples: TrackSamples, banks: Float64Array, type: TrackType, preview: boolean, insideMountain?: (x: number, y: number, z: number) => boolean, start?: { type: StartType; stationLength: number; groundY: number; chainHeight?: number; liftTop?: number }): void {
     this.clearTrack();
     if (samples.count < 2) return;
     this.type = this.trackOverride ?? type;
@@ -319,7 +319,8 @@ export class WorldRenderer {
     if (start) {
       // Startart sichtbar (Schritt 2): Kette bis zum Kettenende der Fahrt, Launch-Band, Puffer oder Turm
       const needsLift = start.type === 'chainlift' || start.type === 'verticalLift';
-      this.start = buildStartPlaceholder(frames, { type: start.type, trackType: this.type, lift: needsLift ? liftRange(samples) : null, stationLength: start.stationLength, groundY: start.groundY });
+      const lift = needsLift ? liftRange(samples, start.type === 'chainlift' ? start.chainHeight : undefined, start.liftTop) : null;
+      this.start = buildStartPlaceholder(frames, { type: start.type, trackType: this.type, lift, stationLength: start.stationLength, groundY: start.groundY });
       this.scene.add(this.start.group);
     }
     if (!preview) {

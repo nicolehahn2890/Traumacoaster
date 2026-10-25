@@ -376,6 +376,9 @@ optional). Florians „maximal drei, meistens zwei“ passt genau.
    einbauen; ob sie erst in späteren Zonen genutzt wird, entscheidet das Leveldesign.**
 
 **Status: bestätigt am 24.10.2026.** Offen bleibt nur, was ausdrücklich so markiert ist (Schleifen nach Entscheidung
+**Nachtrag 25.10.2026 (Etappe 2, Florian):** Zwei Zielarten kommen in den Katalog v1: „Aufzug-Start“ (Vertikallift als
+Aufzug benutzt) und „Pendel-Start“ (Pendel-Launch benutzt); beide sind gebaut (`src/levels/evaluator.ts`), das echte Pendeln
+folgt in E3.
 4, Flugweite als Bonus-Variante, Zustieg unterwegs); das wird in Paket 3 und 6 geklärt.
 **Stand 25.10.2026 (Etappe 1, Schritt 9):** Ziele lassen sich je Feld der Zone eintragen (Katalog v1 = die Zieltypen,
 die der heutige Prüfer kennt: Ankommen, Höhe, Coins, Loopings, Kurven, Tunnel, Startarten, Booster, Airtime, Tempo,
@@ -517,7 +520,7 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
 |---|---|---|---|---|---|
 | **E1 Weltrenderer und Klötzchen-Editor** | Three-Szene hinter Schalter, Pixi-HUD im Kontext, Kamera 18 Grad, Boden, Erdschnitt, Kulissen-Platzhalter mit Tiefenpuffer, vier Bahnprofile, Stützenfamilien instanziert, Wagen-Platzhalter, Licht, Schatten, Nebel, Looks aus dem Labor; Editor Stufe 1 (Platzhalter, Metadaten, Felder, Station, Baustelle, Coins, Zonendatei, Testfahrt); Lesarten-Knopf und Spur-Filter raus | Basiszone-Datei v0 mit einem Testfeld, vom Editor geschrieben | 100-Punkte-Test, Replay grün, Handy 60 fps mit Holz unter 150 Draw Calls, Florian baut selbst einen Testausschnitt, Handy zeigt dasselbe | M (Arbeitsschritte unten) | Richtlinie, Labor |
 | **E2 Bahn und Welt** | Fähigkeiten als Schalter (3.1), Startarten sichtbar (Platzhalter), Aufwertungen als Daten, Station mit Vorgabestück, Häuschen, Hebel und Richtung, Schlangenbereich mit Freiraum und Platzhalter-Figuren, Feld mit Kamerabegrenzung, Fels-Regeln (Öffnungen, Baustellen, Stop-Hinweis), Baustellen in zwei Varianten mit Freilegung, Räume mit „offen ab Stufe“, Autoscroll-Schalter, Wasser mit Schaltern, Fortschrittsstufe mit Looks, Kettenzuglinie | Basiszone v1: alle Bahn- und Weltfähigkeiten mit Platzhaltern spielbar | Checkliste je Fähigkeit in je einem Feld, Replay grün, Handy 60 fps, Florians Spieltest | M | E1 |
-| **E3 Ziele, Rätsel, Humor** | Zielarten-Katalog v1 auf der 3D-Bahn, Magnet-Coins, Tunnel-Meter, Sprungschanze mit Fangtrichter und Vorab-Fahrt, Fangen mit Magnetwagen, Bild im Bild als 2D-Kabine, Glocke, Mühlrad, Tor mit Schalterplatte, Durchbruch, Sterne A plus C mit „Alle an Bord“, Humor-Regeln (Entgleisen selten und groß), Bug-Backlog (Stabilität, Schräglage automatisch, Strichintelligenz, Bahnende, Kreuzungstausch ins Bogenmenü), 150 Level als Inhalt raus | Basiszone v2: jedes Ziel und jedes Element in einem Feld erlebbar | Prüfer-Vorstufe: jedes Ziel einmal erfüllt im Replay, Handy 60 fps auch mit Vorab-Fahrt und Bild im Bild, Florians Spieltest mit Fokus Humor | M | E2 |
+| **E3 Ziele, Rätsel, Humor** | Zielarten-Katalog v1 auf der 3D-Bahn, **Pendel-Launch echt** (dreimal durch die Station mit wachsender Kraft, GDD; Florian, 25.10.2026, mit Zielart „Pendel-Start“), Magnet-Coins, Tunnel-Meter, Sprungschanze mit Fangtrichter und Vorab-Fahrt, Fangen mit Magnetwagen, Bild im Bild als 2D-Kabine, Glocke, Mühlrad, Tor mit Schalterplatte, Durchbruch, Sterne A plus C mit „Alle an Bord“, Humor-Regeln (Entgleisen selten und groß), Bug-Backlog (Stabilität, Schräglage automatisch, Strichintelligenz, Bahnende, Kreuzungstausch ins Bogenmenü), 150 Level als Inhalt raus | Basiszone v2: jedes Ziel und jedes Element in einem Feld erlebbar | Prüfer-Vorstufe: jedes Ziel einmal erfüllt im Replay, Handy 60 fps auch mit Vorab-Fahrt und Bild im Bild, Florians Spieltest mit Fokus Humor | M | E2 |
 | **E4 Stilprobe** | Stützen-Werkstatt (drei Wege, Hybrid gegen Florians Studien), UI-Werkstatt (drei Varianten, Florian wählt), Funkeln-Shader, Stilproben-Satz (10 bis 15 Teile über das Figma-Konto mit Prüfung), Florians erste Figurenteile mit Farbmasken im Rig, Looks Tag, Abend, Nacht; ein Feld der Basiszone komplett ohne Platzhalter; Vergleich je Stelle: gemaltes Teil gegen 3D-Teil mit gemalter, per Shader umgefärbter Textur (Florian, 25.10.) | Stilprobe: ein Feld im Alpen-Look, Art Direction v2 als Dokument (ersetzt `docs/ART.md`) | Standbild vom Handy neben Bild 15 und 04, Stützen je Familie neben der Studie, UI-Variante gewählt, Handy 60 fps mit Shadow Map und Funkeln, Florians Freigabe | M (parallel zu E3 möglich, sobald der Erzeugungsweg steht) | E1, Florians Teile, Erzeugungsweg |
 | **E5 Alpen-Satz, Figuren, Karte** | Alpen-Satz (50 bis 70 Teile in Familien) ersetzt die Platzhalter der Basiszone, Katalog und KTX2, Figuren-Editor Stufe 1, Schlange mit Florians Figuren, Wagen Stufe 2 (Alpen-Autos nach Florians Entwurf, Holzzug und weitere über Generator und Meshy), Karte als ein Rad mit Sektoren, Miniaturen und Symbolen, Morph Schritt 1, Boden formen im Sandkasten | Basiszone komplett im Alpen-Look, Karte und Morph laufen | Zone komplett ohne Platzhalter, Morph-Video vom Handy ohne Sprung bei 60 fps, Replay grün, Prüfung „Platzhalter ohne Teil“ leer, Florians Freigabe | L | E3, E4, Florians Wagenentwurf |
 | **E6 Generator und Prüfer** | Rezepte als Layout-Grammatiken, Seeds, Kandidaten im Editor, Lösungsbahn je Level, Prüfer in der CI, Zonen-Bundles mit Vorladen, Speicher-Messung | Zehn Kandidaten-Level in der Basiszone, vom Prüfer bestanden | CI grün mit Prüfer, Handy 60 fps und Speicher im Rahmen, Florian nimmt zehn Kandidaten an oder ändert sie | M | E5 |
@@ -582,6 +585,12 @@ Symbol über dem ersten Knoten; Höhlenkästen unter dem Boden stehen unsichtbar
    die Kette zieht (Stufe „alles“ ohne Grenze); gestrichelte Linie beim Zeichnen; endet die Kette unter dem Gipfel,
    bleibt der Zug stehen und die Probefahrt meldet „Kette reicht nicht“. Wagenvariante als Datum je Stufe
    (Platzhalter: Farbe der Klötzchen-Wagen).
+   **Schritt 3b (Nachtrag 25.10.2026, Florians Entscheidung vor Tor 2a):** Der Vertikallift ist ein **Aufzug**: Das
+   Vorgabestück endet in einem Viertelkreis und steigt senkrecht bis zur Hubhöhe (Wert der Stufe oder des Felds, Vorgabe
+   20 m); dort beginnt der Strich, die Fahrt hebt den Zug auf der Bahn hoch und lässt ihn oben los (Kettenzugstärke gilt
+   dem Aufzug nicht). In der Welt ein Gerüst aus Pfosten mit Maschinenhaus statt der Kette. Der Knopf bietet den Aufzug
+   nur, solange die Bahn das Vorgabestück ist (sonst Hinweis). Dazu die Zielarten „Aufzug-Start“ und „Pendel-Start“
+   (Florian: beide Elemente sollen für bestimmte Levelziele erforderlich sein). Das echte Pendeln kommt in E3.
 4. **Tor 2a** (Handy): Schalter, Startarten, Hebel-Knopf, Kettenzuglinie im Probefeld; Florian entscheidet, ob die
    Startart-Platzhalter bis zur Stilprobe reichen und der Knopf verständlich ist; 60 fps, Replay grün, Fixes.
 5. **Fels-Regeln** (5.1, 5.2): Festigkeitsfeld aus den Zonenelementen (Dreiteiler fest mit Innenraum als Kanal nur durch
@@ -618,7 +627,7 @@ Rückfragen der Session (25.10.): alle Empfehlungen angenommen (drei Tore; Durch
 bleibt eigenes Element; Entwurf der Basiszone v1 durch die Session; Startart-Knopf wechselt per Tipp; Kettenzugstärke
 als Höhe über der Station).
 
-**Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritte 1 bis 3 gebaut am 25.10.2026 (Nachträge in Paket 3 und 2); als Nächstes Tor 2a.
+**Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritte 1 bis 3 und 3b (Aufzug) gebaut am 25.10.2026 (Nachträge in Paket 3, 2 und 4); als Nächstes Tor 2a.
 
 ### Rückfragen zu Paket 10
 
@@ -790,6 +799,12 @@ Kettenzuglinie beim Zeichnen, eigener Fehlgrund „Kette reicht nicht“ in Fahr
 Gelernt: Die Probefahrten des Pinsels dürfen die Grenze nicht kennen; sie bessern die Linie nach und hätten einen zu hohen
 ersten Hügel fünfmal nach hinten geschoben, statt ihn dem Spieler zu lassen. Die Grenze gilt für Schwachstellen-Anzeige und
 Fahrt; der Spieler sieht die Linie und entscheidet selbst.
+**Florians Entscheidung 25.10.2026 (Zwischenfrage vor Tor 2a):** Die Physik kannte nur Kettenzug, Launch und Hydro echt; der
+Vertikallift war ein Kettenzug mit 5,5 statt 6 m/s, der Pendel-Launch ein Launch mit 16 m/s². Entschieden: Der
+**Vertikallift ist ein Aufzug** am Ende des Vorgabestücks (Hubhöhe je Stufe, der Strich beginnt oben; gebaut als Schritt 3b,
+`docs/TECH.md` 4h). Der **Pendel-Launch wird in E3 echt** (dreimal durch die Station mit wachsender Kraft, wie im GDD); bis
+dahin bleibt er ein Launch mittlerer Stärke mit Puffern. Beide sollen für bestimmte Levelziele erforderlich sein: Zielarten
+„Aufzug-Start“ und „Pendel-Start“ (Paket 4).
 
 ## Paket 8a: Teile und Elemente
 

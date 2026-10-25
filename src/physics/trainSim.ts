@@ -7,7 +7,7 @@
  */
 import type { CoinSpec, LevelDef } from '@/levels/types';
 import type { TrackPath, TrackSamples, TrackState } from '@/track/model';
-import { carFrame, stateAt } from '@/track/model';
+import { carFrame, stateAt, liftTopArc } from '@/track/model';
 import { LANE_DEPTH, toStage } from '@/track/stage';
 import { findCrossings, type Crossing } from '@/track/crossings';
 import type { Terrain } from './terrain';
@@ -212,7 +212,9 @@ export class TrainSim {
    * (weniger als LIFT_DIP tief) sind kein Gipfel; der Lift endet am höchsten Punkt, sobald die Bahn danach deutlich fällt.
    */
   private findLift(): void {
-    const r = liftRange(this.samples, this.opts.chainHeight);
+    // Aufzug (Vertikallift): die Fahrt des Lifts endet am Knoten „lift“ des Vorgabestücks, die Kettenzugstärke gilt nur der Kette
+    const cap = liftTopArc(this.path, this.samples) ?? undefined;
+    const r = liftRange(this.samples, this.opts.startType === 'verticalLift' ? undefined : this.opts.chainHeight, cap);
     if (!r) return;
     this.liftStart = r.start;
     this.liftEnd = r.end;
@@ -534,7 +536,7 @@ export class TrainSim {
  * null ohne Anstieg nahe der Station. Die Förderräder der Station bringen den Zug zur Kette: Lift ab der Station bis zum
  * Gipfel des ersten großen Anstiegs; kleine Absätze (unter LIFT_DIP) sind kein Gipfel.
  */
-export function liftRange(sm: TrackSamples, chainHeight?: number): { start: number; end: number; limited: boolean } | null {
+export function liftRange(sm: TrackSamples, chainHeight?: number, cap?: number): { start: number; end: number; limited: boolean } | null {
   let start = -1;
   let top = -1;
   let end = -1;
@@ -552,6 +554,8 @@ export function liftRange(sm: TrackSamples, chainHeight?: number): { start: numb
   }
   if (start < 0) return null;
   if (end < 0) end = top > start && sm.s[top] - sm.s[start] > 1 ? sm.s[top] : sm.length * 0.5;
+  // Aufzug: der Lift endet spätestens am oberen Ende des Vorgabestücks (Etappe 2, Schritt 3b)
+  if (cap !== undefined && cap > 0) end = Math.min(end, cap);
   // Kettenzugstärke (Etappe 2, Schritt 3): die Kette endet, wo die Bahn die erlaubte Höhe über der Station erreicht
   if (chainHeight !== undefined && chainHeight > 0) {
     const limit = sm.y[0] + chainHeight;

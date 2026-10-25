@@ -73,6 +73,8 @@ export function goalLabel(goal: Goal): string {
     case 'tunnels': return `${fmt(v)} Tunnel`;
     case 'launch': return 'Launch-Start';
     case 'chainlift': return 'Kettenzug';
+    case 'verticalLift': return 'Aufzug-Start';
+    case 'swingLaunch': return 'Pendel-Start';
     case 'boosters': return `${fmt(v)} Booster`;
     case 'airtime': return `Airtime ≥ ${fmt(v)}${u}`;
     case 'speed': return `Tempo ≥ ${fmt(v)}${u}`;

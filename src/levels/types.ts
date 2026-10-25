@@ -13,6 +13,8 @@ export type GoalType =
   | 'tunnels' // Anzahl Tunnel-Durchfahrten
   | 'launch' // Launch-Start verwendet
   | 'chainlift' // Kettenzug verwendet
+  | 'verticalLift' // Aufzug (Vertikallift) als Start verwendet (Etappe 2; Florian, 25.10.2026)
+  | 'swingLaunch' // Pendel-Launch als Start verwendet (echtes Pendeln kommt in E3)
   | 'boosters' // Anzahl Booster auf der Strecke
   | 'airtime' // Sekunden mit negativen g (Airtime) insgesamt
   | 'speed' // Höchstgeschwindigkeit in km/h

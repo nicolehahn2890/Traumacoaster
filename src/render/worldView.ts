@@ -6,6 +6,7 @@ import { Container, Graphics, Sprite, TilingSprite } from 'pixi.js';
 import type { WorldDef } from '@/levels/types';
 import type { Terrain } from '@/physics/terrain';
 import type { TrackPath, TrackSamples } from '@/track/model';
+import { liftTopArc } from '@/track/model';
 import type { CarState } from '@/physics/trainSim';
 import type { PassengerView } from '@/physics/passengers';
 import type { CharacterDef } from '@/editor/characters';
@@ -52,6 +53,8 @@ export class WorldView {
   private worldR: WorldRenderer | null = null;
   /** Länge des Vorgabestücks der Station (die Puffer des Pendel-Starts stehen an seinen Enden); die Zone setzt sie */
   stationLength = 14;
+  /** Kettenzugstärke des Felds (Meter über der Station): die sichtbare Kette endet dort wie die Fahrt */
+  chainHeight: number | undefined;
 
   constructor(worldDef: WorldDef, terrain: Terrain, skin: string, night = false, fx: boolean | null = null) {
     this.worldDef = worldDef;
@@ -141,6 +144,8 @@ export class WorldView {
       type: path.startType,
       stationLength: this.stationLength,
       groundY: terrain.groundHeight(samples.x[0], samples.z[0]),
+      chainHeight: this.chainHeight,
+      liftTop: liftTopArc(path, samples) ?? undefined,
     });
   }
 

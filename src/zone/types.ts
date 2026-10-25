@@ -14,7 +14,7 @@ import { ZONE_ABILITIES, type FieldAbilityOverrides, type ZoneAbility, type Zone
 export type { FieldAbilityOverrides, ZoneAbility, ZoneUpgrade } from './abilities';
 
 /** Zielarten, die ein Feld heute eintragen kann (Katalog v1 aus Paket 4.1, soweit der Prüfer sie schon kennt) */
-export const ZONE_GOAL_TYPES: readonly GoalType[] = ['finish', 'height', 'coins', 'loops', 'turns', 'tunnels', 'launch', 'chainlift', 'boosters', 'airtime', 'speed', 'length', 'maxLength', 'time', 'maxTime', 'rolls', 'maxG', 'minG', 'splash', 'lanes', 'noBrakes', 'drop', 'eject', 'catch', 'flight'];
+export const ZONE_GOAL_TYPES: readonly GoalType[] = ['finish', 'height', 'coins', 'loops', 'turns', 'tunnels', 'launch', 'chainlift', 'verticalLift', 'swingLaunch', 'boosters', 'airtime', 'speed', 'length', 'maxLength', 'time', 'maxTime', 'rolls', 'maxG', 'minG', 'splash', 'lanes', 'noBrakes', 'drop', 'eject', 'catch', 'flight'];
 
 export interface ZoneGoal {
   type: GoalType;
@@ -269,6 +269,7 @@ export function parseZone(json: unknown): ZoneFile | null {
       if (typeof u.name === 'string' && u.name.trim()) up.name = u.name.trim().slice(0, 40);
       if (num(u.chain) && u.chain > 0) up.chain = u.chain;
       if (typeof u.car === 'string' && u.car.trim()) up.car = u.car.trim().slice(0, 20);
+      if (num(u.lift) && u.lift > 0) up.lift = u.lift;
       list.push(up);
     }
     if (list.length) upgrades = list.slice(0, 10);
@@ -332,6 +333,7 @@ export function parseZone(json: unknown): ZoneFile | null {
     if (num(f.chain) && f.chain > 0) field.chain = f.chain;
     if (num(f.budget) && f.budget > 0) field.budget = f.budget;
     if (num(f.maxHeight) && f.maxHeight > 0) field.maxHeight = f.maxHeight;
+    if (num(f.lift) && f.lift > 0) field.lift = f.lift;
     fieldIds.add(field.id);
     fields.push(field);
   }
@@ -393,6 +395,7 @@ export function serializeZone(zone: ZoneFile): string {
       if (f.chain !== undefined) out.chain = round(f.chain);
       if (f.budget !== undefined) out.budget = round(f.budget);
       if (f.maxHeight !== undefined) out.maxHeight = round(f.maxHeight);
+      if (f.lift !== undefined) out.lift = round(f.lift);
       return out;
     });
   const upgrades = zone.upgrades?.length
@@ -403,6 +406,7 @@ export function serializeZone(zone: ZoneFile): string {
         out.belt = u.belt;
         if (u.chain !== undefined) out.chain = round(u.chain);
         if (u.car) out.car = u.car;
+        if (u.lift !== undefined) out.lift = round(u.lift);
         return out;
       })
     : undefined;

@@ -47,13 +47,36 @@ export function itemPosition(item: ZoneElement | ZoneStation | ZoneQueue | ZoneS
   return { x: item.x, y: item.y, z: item.z };
 }
 
-/** gerades Vorgabestück der Station als offene Pinsel-Bahn: Stationsknoten am Anker, Ende dir · length weiter */
-export function stationPath(s: ZoneStation): TrackPath {
+/** Viertelkreis vom Bahnsteig in die Senkrechte des Aufzugs (Meter) */
+export const LIFT_BEND = 3;
+const KAPPA = 0.5523;
+
+/**
+ * Vorgabestück der Station als offene Pinsel-Bahn: Stationsknoten am Anker, gerade dir · length weiter. Mit Hubhöhe
+ * (Etappe 2, Schritt 3b; Plan 3.5, Vertikallift als Aufzug): am Ende des Bahnsteigs ein Viertelkreis in die Senkrechte und
+ * gerade hoch bis zur Hubhöhe; der letzte Knoten heißt „lift“, dort endet die Fahrt des Aufzugs und beginnt der Strich.
+ */
+export function stationPath(s: ZoneStation, elevator = 0): TrackPath {
   const a = createNode(s.x, s.y, s.z, 'station');
-  const b = createNode(s.x + s.dir * s.length, s.y, s.z);
-  a.outX = (s.dir * s.length) / 3;
-  b.inX = (-s.dir * s.length) / 3;
-  return { nodes: [a, b], elements: [], startType: 'chainlift', templates: {}, closed: false, brush: true };
+  const xe = s.x + s.dir * s.length;
+  if (!(elevator > 0)) {
+    const b = createNode(xe, s.y, s.z);
+    a.outX = (s.dir * s.length) / 3;
+    b.inX = (-s.dir * s.length) / 3;
+    return { nodes: [a, b], elements: [], startType: 'chainlift', templates: {}, closed: false, brush: true };
+  }
+  const R = Math.min(LIFT_BEND, elevator / 2);
+  const L = s.length - R;
+  const b = createNode(xe - s.dir * R, s.y, s.z);
+  const c = createNode(xe, s.y + R, s.z);
+  const d = createNode(xe, s.y + elevator, s.z, 'lift');
+  a.outX = (s.dir * L) / 3;
+  b.inX = (-s.dir * L) / 3;
+  b.outX = s.dir * R * KAPPA;
+  c.inY = -R * KAPPA;
+  c.outY = (elevator - R) / 3;
+  d.inY = -(elevator - R) / 3;
+  return { nodes: [a, b, c, d], elements: [], startType: 'verticalLift', templates: {}, closed: false, brush: true };
 }
 
 /** Station, Schlangen, Baustellen und Coin-Gruppen der Zone in die Welt setzen (ohne die Kulissen) */

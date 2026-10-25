@@ -361,6 +361,21 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   (`WorldView.buildTrain(…, carVariant)`); unbekannte Wörter lassen die Standardfarben. Prüfzone: Feld f1 mit Kette 20 m
   und Stufe „Alles“ mit Wagen „rot“; Tests in `tests/chain.test.ts`. Platzhalter: Strichstil und Lage der Linie, die
   Farbwörter, die Wagen selbst.
+- **Vertikallift als Aufzug** (Schritt 3b; Plan 3.5, Florians Entscheidung 25.10.): `stationPath(station, hubhöhe)` baut das
+  Vorgabestück mit Bahnsteig, Viertelkreis (Radius `LIFT_BEND` = 3 m) in die Senkrechte und geradem Stück bis zur Hubhöhe;
+  der letzte Knoten hat die Art `lift`. Die Hubhöhe ist `lift` der Stufe oder des Felds (Zeile `hub 15`), sonst
+  `LIFT_HEIGHT_DEFAULT` = 20 m. In der Fahrt endet der Lift am Knoten `lift` (`liftTopArc(path, samples)` als Deckel von
+  `liftRange`; die Kettenzugstärke gilt nur dem Kettenzug): Der Zug fährt mit Liftgeschwindigkeit den Bogen hoch, wird oben
+  losgelassen und rollt dort weiter; steigt der Strich danach weiter, bleibt er stehen (Fehlgrund `stall`). Der Strich beginnt
+  oben am Knoten `lift` (jeder Strich setzt die offene Bahn fort). In der Welt steht statt der Kette ein Gerüst aus vier
+  Pfosten um das senkrechte Stück mit Riegeln und Maschinenhaus (`startElements.ts`, Gruppe `start`, Name `tower`). Der
+  Startart-Knopf bietet den Aufzug nur, solange die Bahn das Vorgabestück ist (`isStationPieceOnly`: zwei Knoten oder vier mit
+  `lift`); ein Wechsel baut das Vorgabestück neu (`resetStationPiece(type)`), Löschen stellt es mit der gewählten Startart
+  wieder her, sonst zeigt der Knopf `lift.onlyEmpty`. Die sichtbare Kette des Kettenzugs endet seitdem auch in der Welt an der
+  Kettenzugstärke (`WorldView.chainHeight`). Zielarten `verticalLift` („Aufzug-Start“) und `swingLaunch` („Pendel-Start“)
+  prüfen die Startart (`evaluator.ts`, `ZONE_GOAL_TYPES`). Tests in `tests/lift.test.ts`. Platzhalter: Gerüst, Maschinenhaus,
+  der Fahrkorb fährt noch nicht mit, die Aufzug-Knoten sind im Zeichenmodus wie normale Knoten greifbar. Der echte
+  Pendel-Launch (dreimal durch die Station) kommt in E3.
 
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).
