@@ -137,8 +137,9 @@ Optionen:
 **Empfehlung: A**, in drei Ausbaustufen, jede mit Tor. **Bestätigt am 24.10.2026: Option A, Florian bedient den Editor selbst am Mac.**
 **Stand 25.10.2026:** Stufe 1 begonnen (Etappe 1, Schritt 6: Setzen, Ziehen, Tiefe, Maße, Löschen, Speichern, Laden,
 Hot-Reload; Schritt 7: Metadaten je Element und Felder mit Kamerabegrenzung, Absperrband und Zoom-Grenze; Schritt 8:
-Station, Schlange, Baustelle und Coin-Gruppen als Einträge der Zone; `docs/TECH.md` 4g), Testfahrt, Ziele und Stufen
-folgen in Schritt 9.
+Station, Schlange, Baustelle und Coin-Gruppen als Einträge der Zone; Schritt 9: Ziele, Fortschritts- und
+Aufwertungsstufe je Feld, Testfahrt-Knopf, Prüfzone mit Determinismus-Test und Standbild-Szenario; `docs/TECH.md` 4g).
+Stufe 1 des Editors ist damit gebaut; Tor 1b prüft sie.
 
 1. **Klötzchen-Editor** (gehört zur Etappe Weltrenderer): Platzhalter (Fläche, Kasten, Zylinder, Höhlenkasten, Wasser,
    Station, Baustelle, Coin-Gruppe) setzen, ziehen, in der Tiefe verschieben, Metadaten setzen (Fundament, Öffnung,
@@ -371,6 +372,11 @@ optional). Florians „maximal drei, meistens zwei“ passt genau.
 
 **Status: bestätigt am 24.10.2026.** Offen bleibt nur, was ausdrücklich so markiert ist (Schleifen nach Entscheidung
 4, Flugweite als Bonus-Variante, Zustieg unterwegs); das wird in Paket 3 und 6 geklärt.
+**Stand 25.10.2026 (Etappe 1, Schritt 9):** Ziele lassen sich je Feld der Zone eintragen (Katalog v1 = die Zieltypen,
+die der heutige Prüfer kennt: Ankommen, Höhe, Coins, Loopings, Kurven, Tunnel, Startarten, Booster, Airtime, Tempo,
+Länge, Zeit, Schrauben, g-Kräfte, Splash, Spuren, ohne Bremse, Drop, Abflug, Fangen, Flugweite; Stern = Bonusziel) und
+werden im aktiven Feld live wie im Level gewertet. Platzhalter: die Rätselziele aus 4.2 (Glocke, Mühlrad, Tor, Sprung,
+Durchbruch), Magnet-Coins und das Fangen mit Bild-im-Bild kommen in E2 und E3; die Zieleingabe ist eine Textzeile.
 
 ## Paket 1: Weltrenderer (Technik gesetzt, Einordnung als Etappe 1)
 
@@ -466,6 +472,13 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
     Platzhalter aus Einzelteilen kosteten mit Schatten über hundert Zeichenaufrufe; verschmolzen zu einer Geometrie je
     Platzhalter sind es vier. Platzhalter: alle Formen und Farben; Startart-Knopf, Freiraum-Anhebung, Durchbruch und
     Magnet-Coins kommen in E2 und E3. Replay `--world`: 364 Aufnahmen, 10162 Stützen, Median 2,0 px, kein Fehler.
+14. Schritt 9 (25.10.): Ziele je Feld (Katalog v1: die Zieltypen des heutigen Prüfers, als Zeile mit Typ, Wert und Stern
+    für Bonus; 4.1), Fortschrittsstufe je Feld (Elemente mit größerer Wachstumsstufe fehlen in diesem Level; 2.1) und
+    Aufwertung je Feld (heute die Gurtstufe; 2.4), Testfahrt-Knopf im Editor (gewähltes Feld aktiv, Spielen, Fahrt),
+    Prüfzone mit Determinismus-Test (Lesen und Schreiben ergeben dieselbe Datei) und Szenario 10 als Standbild-Test in
+    der CI. Gelernt: Ohne Ziele bleibt die Zone Sandkasten mit Maßband, mit Zielen verhält sie sich wie ein Level; so
+    prüft Florian ein Feld, ohne ein Level anzulegen. Platzhalter: Zieleingabe als Textzeile im Browser-Dialog; die
+    Rätselziele (4.2), Magnet-Coins und Fangen kommen in E2 und E3, die Fähigkeiten als Schalter (2.4) in E2. Replay `--world`: 382 Aufnahmen, 10695 Stützen, Median 2,0 px, kein Fehler.
 
 ## Paket 10: Etappen und Abnahmen (Vorschlag aus allem Bestätigten)
 
@@ -524,7 +537,7 @@ mit Florian. Die Session arbeitet auf einem eigenen Branch und geht am Tor per P
 10. **Tor 1b:** Florian baut selbst einen Testausschnitt (Station, Hügel, Fenster-Element, Baustelle); das Handy zeigt
     dasselbe; Fixes; Doku in `docs/TECH.md` und `docs/HANDOVER.md`; Pull Request nach `main`.
 
-**Stand:** Schritte 1 bis 4 gebaut am 24.10.2026, Tor 1a bestanden am 25.10.2026, Schritte 6 bis 8 gebaut am 25.10.2026 (Nachträge in Paket 1); Schritt 9 steht an.
+**Stand:** Schritte 1 bis 4 gebaut am 24.10.2026, Tor 1a bestanden am 25.10.2026, Schritte 6 bis 9 gebaut am 25.10.2026 (Nachträge in Paket 1); Schritt 10 (Tor 1b) steht an.
 
 **Florian parallel zu Etappe 1:** den Erzeugungsweg für Teile mit der Session prüfen (Voraussetzung für E4), erste
 Figurenteile in zwei Ansichten skizzieren, Entwurf der Alpen-Autos, Handy-Tests an den Toren, Entscheidungen an den
@@ -675,7 +688,8 @@ Platzhalter mit richtigen Maßen.
 **Status: bestätigt am 24.10.2026.**
 **Stand 25.10.2026 (Etappe 1, Schritt 8):** Stationsanker mit Richtung und Vorgabestück (14 m, offene Pinsel-Bahn,
 jeder Strich setzt sie fort) sind im Editor und im Spiel; Häuschen und Hebel als Platzhalter; der große Startart-Knopf,
-die sichtbaren Startarten (3.5) und die Fähigkeiten als Schalter kommen in E2.
+die sichtbaren Startarten (3.5) und die Fähigkeiten als Schalter kommen in E2. Schritt 9 (25.10.): Die Aufwertungsstufe
+je Feld ist heute die Gurtstufe (Taste U im Editor, `upgrade` in der Zonendatei), ein Platzhalter für die Schalter aus 2.4.
 
 ## Paket 8a: Teile und Elemente
 

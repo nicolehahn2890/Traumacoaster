@@ -84,12 +84,15 @@ function zoneStore(): Plugin {
       mkdirSync(dir, { recursive: true });
       if (existsSync(dir)) {
         let timer: NodeJS.Timeout | null = null;
-        watch(dir, { recursive: true }, (_event, file) => {
+        const watcher = watch(dir, { recursive: true }, (_event, file) => {
           const m = /^([a-z0-9-]+)[\\/]zone\.json$/.exec(String(file ?? ''));
           if (!m) return;
           if (timer) clearTimeout(timer);
           timer = setTimeout(() => server.ws.send({ type: 'custom', event: 'tc:zone', data: { name: m[1] } }), 80);
         });
+        // der Wächter hält den Prozess nicht am Leben (Vitest nutzt dieselbe Konfiguration und wartete sonst beim Schließen)
+        watcher.unref();
+        server.httpServer?.once('close', () => watcher.close());
       }
     },
   };

@@ -38,8 +38,9 @@ jobs:
       matrix:
         # 1 Oval (+ stehender Zug, Himmel-Übergabe), 2 Hügel+Oval mit Schräglage, 3 Steilkurve, 4 Looping,
         # 5 Löschen/Überzeichnen/Vorschau/Absperrband, 6 Rundkurs von Hand, 7 Bearbeiten (Segment ziehen, Langdruck),
-        # 8 Entgleisen auf Holz (Freiflug, Sticker), 9 Karte (Glücksrad, gemeinsamer Himmel, Play mittig)
-        step: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+        # 8 Entgleisen auf Holz (Freiflug, Sticker), 9 Karte (Glücksrad, gemeinsamer Himmel, Play mittig),
+        # 10 Zone (Prüfzone im Weltrenderer: Station, Vorgabestück, Coins, Feld, Zeichenaufrufe, Standbild)
+        step: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

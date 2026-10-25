@@ -7,7 +7,17 @@
  * `public/zones/<name>/zone.json`, das Spiel liest sie von dort (auch auf dem Handy).
  */
 import { parseTrackType, type TrackType } from '@/world/trackTypes';
+import type { GoalType } from '@/levels/types';
 import { COIN_SHAPES, type ZoneCoinGroup } from './groups';
+
+/** Zielarten, die ein Feld heute eintragen kann (Katalog v1 aus Paket 4.1, soweit der Prüfer sie schon kennt) */
+export const ZONE_GOAL_TYPES: readonly GoalType[] = ['finish', 'height', 'coins', 'loops', 'turns', 'tunnels', 'launch', 'chainlift', 'boosters', 'airtime', 'speed', 'length', 'maxLength', 'time', 'maxTime', 'rolls', 'maxG', 'minG', 'splash', 'lanes', 'noBrakes', 'drop', 'eject', 'catch', 'flight'];
+
+export interface ZoneGoal {
+  type: GoalType;
+  value?: number;
+  bonus?: boolean;
+}
 
 export type { ZoneCoinGroup } from './groups';
 
@@ -60,6 +70,31 @@ export interface ZoneField {
   x1: number;
   y0: number;
   y1: number;
+  /** Ziele des Levels (höchstens drei Pflicht, Plan 4) */
+  goals?: ZoneGoal[];
+  /** Fortschrittsstufe der Zone in diesem Level: Elemente mit höherer Wachstumsstufe fehlen; ohne Angabe ist alles da (Plan 2.1) */
+  stage?: number;
+  /** Aufwertungsstufe der Bahn: heute die Gurtstufe 0 bis 4; ohne Angabe die der Welt (Plan 2.4; Fähigkeiten als Schalter kommen in E2) */
+  upgrade?: number;
+}
+
+/** Zielzeile „Typ Wert, Typ Wert“ lesen (Editor); unbekannte Typen fallen weg */
+export function parseGoals(text: string): ZoneGoal[] {
+  const out: ZoneGoal[] = [];
+  for (const part of text.split(/[,;\n]+/)) {
+    const m = /^\s*(\*?)([a-zA-Z]+)\s*([\d.]+)?\s*$/.exec(part);
+    if (!m || !(ZONE_GOAL_TYPES as readonly string[]).includes(m[2])) continue;
+    const g: ZoneGoal = { type: m[2] as GoalType };
+    if (m[3] !== undefined && m[3] !== '') g.value = Number(m[3]);
+    if (m[1]) g.bonus = true;
+    out.push(g);
+  }
+  return out.slice(0, 6);
+}
+
+/** Zielzeile aus Zielen (Umkehrung von parseGoals): Bonusziele mit Stern */
+export function formatGoals(goals: ZoneGoal[]): string {
+  return goals.map((g) => `${g.bonus ? '*' : ''}${g.type}${g.value !== undefined ? ` ${g.value}` : ''}`).join(', ');
 }
 
 /** Stationsanker (Plan 3.3): Anfang des geraden Vorgabestücks auf der Bahnlinie, Richtung und Länge */
@@ -243,6 +278,20 @@ export function parseZone(json: unknown): ZoneFile | null {
     if (typeof f.id !== 'string' || fieldIds.has(f.id) || !num(f.x0) || !num(f.x1) || !num(f.y0) || !num(f.y1)) continue;
     const field: ZoneField = { id: f.id, x0: Math.min(f.x0, f.x1), x1: Math.max(f.x0, f.x1), y0: Math.min(f.y0, f.y1), y1: Math.max(f.y0, f.y1) };
     if (typeof f.name === 'string') field.name = f.name.slice(0, 40);
+    if (Array.isArray(f.goals)) {
+      const goals: ZoneGoal[] = [];
+      for (const raw2 of f.goals) {
+        const g = raw2 as Record<string, unknown>;
+        if (!g || !(ZONE_GOAL_TYPES as readonly string[]).includes(String(g.type))) continue;
+        const goal: ZoneGoal = { type: g.type as GoalType };
+        if (num(g.value)) goal.value = g.value;
+        if (g.bonus === true) goal.bonus = true;
+        goals.push(goal);
+      }
+      if (goals.length) field.goals = goals.slice(0, 6);
+    }
+    if (num(f.stage) && f.stage >= 0) field.stage = Math.min(9, Math.floor(f.stage));
+    if (num(f.upgrade) && f.upgrade >= 0) field.upgrade = Math.min(4, Math.floor(f.upgrade));
     fieldIds.add(field.id);
     fields.push(field);
   }
@@ -295,6 +344,9 @@ export function serializeZone(zone: ZoneFile): string {
       const out: Record<string, unknown> = { id: f.id };
       if (f.name) out.name = f.name;
       Object.assign(out, { x0: round(f.x0), x1: round(f.x1), y0: round(f.y0), y1: round(f.y1) });
+      if (f.goals?.length) out.goals = f.goals.map((g) => ({ type: g.type, ...(g.value !== undefined ? { value: g.value } : {}), ...(g.bonus ? { bonus: true } : {}) }));
+      if (f.stage !== undefined) out.stage = f.stage;
+      if (f.upgrade !== undefined) out.upgrade = f.upgrade;
       return out;
     });
   const byId = <T extends { id: string }>(items: T[]): T[] => [...items].sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true }));

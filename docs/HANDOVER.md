@@ -37,8 +37,15 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Schritt 8 gebaut (25.10.): Stationsanker mit Richtung und Vorgabestück (im Spiel beginnt die Bahn dort, Löschen stellt
   das Stück wieder her), Häuschen- und Hebel-Platzhalter, Schlangenbereich mit Figuren und Freiraum, Baustellen-Marke
   (Verbinden, Durchbruch), Coin-Gruppen (Reihe, Bogen, Ring, Säule) als Coins der Bühne; alle als verschmolzene
-  Platzhalter. Als Nächstes Schritt 9 (Testfahrt aus dem Editor, Ziele je Level, Fortschritts- und Aufwertungsstufe,
-  deterministisches Laden, Standbild-Test). Replay `--world`: 364 Aufnahmen, 10162 Stützen, Median 2,0 px, kein Fehler.
+  Platzhalter. Replay `--world`: 364 Aufnahmen, 10162 Stützen, Median 2,0 px, kein Fehler.
+  Schritt 9 gebaut (25.10.): Ziele je Feld (Katalog v1 = die Zieltypen des heutigen Prüfers, als Zeile „finish, height 20,
+  *coins 5“ über die Taste Z), Fortschrittsstufe (G: Elemente späterer Wachstumsstufen fehlen) und Aufwertung (U: heute
+  die Gurtstufe) je Feld; im aktiven Feld wertet die Zielleiste live wie im Level und die Ergebnistafel zeigt Sterne;
+  Knopf „Testfahrt“ im Editor; Prüfzone `public/zones/probe/zone.json` mit Determinismus-Test und Szenario 10 (Standbild
+  `screenshots/scenario-10-zone.png`, CI-Matrix 1 bis 10). Platzhalter: Zieleingabe als Textzeile im Browser-Dialog;
+  Rätselziele, Magnet-Coins, Fangen und die Fähigkeiten als Schalter kommen in E2 und E3. Replay `--world`: 382 Aufnahmen, 10695 Stützen, Median 2,0 px, kein Fehler.
+  Als Nächstes Schritt 10, Tor 1b: Florian baut selbst einen Testausschnitt (Station, Hügel, Fenster-Element, Baustelle),
+  das Handy zeigt dasselbe, dann Fixes, Doku und der Pull Request nach `main`.
   Links für den Handy-Test: Dev-Server mit `npm run dev` (zeichnet auf), Adresse aus dem
   Vite-Log plus `?scene=start&level=8&world=1&dev=1` und `&track=`, `&aa=0`, `&shadow=0`, `&look=`, Level 32 (Tunnel),
   Level 47 (See).
@@ -188,7 +195,7 @@ ansehen.
    `npm run levels:doc` erzeugt `docs/LEVELS.md`.
 4. Commit auf Deutsch (Betreff beschreibt das Spielverhalten, Rumpf die Dateien), Push auf den
    eigenen Branch, CI-Lauf im Actions-Tab prüfen (`.github/workflows/ci.yml`: Job `test` plus Matrix
-   `scenario` 1–9), dann per Pull Request nach `main` (deployt auf GitHub Pages).
+   `scenario` 1–10), dann per Pull Request nach `main` (deployt auf GitHub Pages).
 
 ## 5. Regeln und Eigenheiten
 

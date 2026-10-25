@@ -10,7 +10,9 @@
  * Tasten im Bauen: 1 bis 5 Spur für neue Einträge (vorn bis hinten), Bild auf und Bild ab (oder ] und [) Tiefe des
  * gewählten Eintrags (mit Shift fein), Pfeiltasten Maße, Entf löschen, Esc abwählen, T Bahntyp der Zone, Cmd/Strg+S
  * speichern; Element: M Fundament, O Öffnung, A Anker, G Stufe, R Rolle; Station und Schlange: D Richtung; Baustelle:
- * V Variante; Coins: C Form. Felder (Werkzeug „Feld“, aufziehen): Enter aktiv, Entf löschen.
+ * V Variante; Coins: C Form. Felder (Werkzeug „Feld“, aufziehen): Enter aktiv, N Name, Z Ziele (Zeile „finish, height 20,
+ * *coins 5“; Stern = Bonus), G Fortschrittsstufe der Zone, U Aufwertung (Gurtstufe), Entf löschen. Der Knopf „Testfahrt“
+ * schaltet das gewählte Feld aktiv, wechselt ins Spielen und lässt die Bahn fahren (Schritt 9).
  */
 import { Container, Graphics } from 'pixi.js';
 import type { Pt } from '@/core/input';
@@ -21,7 +23,7 @@ import type { WorldRenderer } from '@/world/renderer';
 import type { WorldView } from '@/render/worldView';
 import { TRACK_TYPES, type TrackType } from '@/world/trackTypes';
 import { loadZone, onZoneChange, saveZone } from '@/zone/io';
-import { KIND_DEFAULTS, ZONE_ANCHORS, ZONE_DEPTH_ROLES, newCoinGroup, newElement, newField, newQueue, newSite, newStation, round, type ZoneCoinGroup, type ZoneElement, type ZoneElementKind, type ZoneField, type ZoneFile, type ZoneQueue, type ZoneSite, type ZoneStation } from '@/zone/types';
+import { KIND_DEFAULTS, ZONE_ANCHORS, ZONE_DEPTH_ROLES, ZONE_GOAL_TYPES, formatGoals, newCoinGroup, newElement, newField, newQueue, newSite, newStation, parseGoals, round, type ZoneCoinGroup, type ZoneElement, type ZoneElementKind, type ZoneField, type ZoneFile, type ZoneQueue, type ZoneSite, type ZoneStation } from '@/zone/types';
 import { applyZoneExtras, buildZoneCoins, buildZoneQueue, buildZoneSite, buildZoneStation, itemPosition } from '@/zone/build';
 import { COIN_SHAPES } from '@/zone/groups';
 import { toView } from '@/track/stage';
@@ -43,11 +45,15 @@ export interface ZoneEditorHost {
   refreshCoins(): void;
   /** Vorgabestück der Station neu setzen (wenn noch nichts gezeichnet ist) */
   refreshStation(): void;
+  /** Testfahrt: die Bahn fahren lassen (wie der Fahren-Knopf des Levels) */
+  startRide(): void;
 }
 
 const ANCHOR_NAMES = { station: 'Station', tunnel: 'Tunnelachse', waterfall: 'Wasserfallquelle' } as const;
 const ROLE_NAMES = { back: 'Rückwand', mid: 'Mitte', front: 'Vorderlippe' } as const;
 const SHAPE_NAMES = { row: 'Reihe', arc: 'Bogen', ring: 'Ring', column: 'Säule' } as const;
+/** Gurtstufen der Aufwertung (src/physics/belts.ts) */
+const BELT_NAMES = ['ohne Gurt', 'Beckengurt', 'Bügel', 'Schulterbügel', 'Rennsitz'] as const;
 const EXTRA_TOOLS: Array<{ kind: Tool; label: string }> = [
   { kind: 'field', label: 'Feld' },
   { kind: 'station', label: 'Station' },
@@ -79,10 +85,14 @@ export class ZoneEditor {
   private readonly modeBtn = new Button('', BTN);
   private readonly saveBtn = new Button('Speichern', BTN);
   private readonly typeBtn = new Button('', BTN);
+  private readonly rideBtn = new Button('Testfahrt', BTN);
   private readonly status = label('', 14, INK, false, { wordWrap: true, wordWrapWidth: 520 });
   /** Auswahlrahmen um das gewählte Element (Bildschirm-Kasten der Welt, je Bild neu) */
   private readonly frame = new Graphics();
   private readonly hint = label('', 12, INK, false, { wordWrap: true, wordWrapWidth: 520 });
+  /** Oberkante der Statuszeile und Hochformat (aus resize); im Spielen mit Zielen rückt die Zeile unter die Zielleiste */
+  private statusTop = 76;
+  private portrait = false;
 
   constructor(private readonly host: ZoneEditorHost, zone: ZoneFile) {
     this.zone = zone;
@@ -96,8 +106,9 @@ export class ZoneEditor {
     this.modeBtn.onTap = () => this.toggleMode();
     this.saveBtn.onTap = () => void this.save();
     this.typeBtn.onTap = () => this.cycleType();
-    this.hud.addChild(this.frame, this.modeBtn, this.saveBtn, this.typeBtn, this.status, this.hint);
-    this.buttons.push(this.modeBtn, this.saveBtn, this.typeBtn);
+    this.rideBtn.onTap = () => this.testRide();
+    this.hud.addChild(this.frame, this.modeBtn, this.saveBtn, this.typeBtn, this.rideBtn, this.status, this.hint);
+    this.buttons.push(this.modeBtn, this.saveBtn, this.typeBtn, this.rideBtn);
     this.status.anchor.set(0, 0);
     this.hint.anchor.set(0, 0);
     this.hint.alpha = 0.8;
@@ -257,8 +268,31 @@ export class ZoneEditor {
     this.drag = null;
     this.fieldDrag = null;
     for (const p of this.palette) p.btn.visible = this.mode === 'build';
-    this.saveBtn.visible = this.typeBtn.visible = this.mode === 'build';
+    this.saveBtn.visible = this.typeBtn.visible = this.rideBtn.visible = this.mode === 'build';
     this.applyActiveField();
+    this.refreshLabels();
+  }
+
+  /** Testfahrt (Schritt 9): das gewählte Feld wird aktiv, der Editor wechselt ins Spielen, die Bahn fährt; Tab führt zurück */
+  private testRide(): void {
+    if (this.selectedFieldId) this.activeFieldId = this.selectedFieldId;
+    if (this.mode === 'build') this.toggleMode();
+    this.host.startRide();
+  }
+
+  /** Texteingabe über den Browser-Dialog (Editor am Mac); null, wenn abgebrochen oder nicht möglich */
+  private ask(question: string, current: string): string | null {
+    try {
+      return window.prompt(question, current);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Feld geändert: Datei als geändert merken; ist es das aktive Feld, gelten Ziele und Stufen sofort */
+  private commitField(field: ZoneField): void {
+    this.dirty = true;
+    if (field.id === this.activeFieldId) this.applyActiveField();
     this.refreshLabels();
   }
 
@@ -471,6 +505,43 @@ export class ZoneEditor {
         this.activateField(this.activeFieldId === field.id ? null : field.id);
         return true;
       }
+      const lower = k.toLowerCase();
+      if (lower === 'n') {
+        const name = this.ask('Name des Felds', field.name ?? '');
+        if (name === null) return true;
+        if (name.trim()) field.name = name.trim().slice(0, 40);
+        else delete field.name;
+        this.commitField(field);
+        return true;
+      }
+      if (lower === 'z') {
+        // Ziele als Zeile „Typ Wert, Typ Wert“, Stern vor dem Typ = Bonusziel (Katalog v1: Zieltypen des Prüfers)
+        const text = this.ask(`Ziele des Felds, mit Komma getrennt: Typ und Wert, Stern = Bonus. Typen: ${ZONE_GOAL_TYPES.join(', ')}`, formatGoals(field.goals ?? []));
+        if (text === null) return true;
+        const goals = parseGoals(text);
+        if (goals.length) field.goals = goals;
+        else delete field.goals;
+        const dropped = text.split(/[,;\n]+/).filter((s) => s.trim()).length - goals.length;
+        if (dropped > 0) this.host.toast.show(`${dropped} ${dropped === 1 ? 'Ziel' : 'Ziele'} nicht verstanden (Typ unbekannt)`, 2.5);
+        this.commitField(field);
+        return true;
+      }
+      if (lower === 'g') {
+        // Fortschrittsstufe der Zone in diesem Level: alle Elemente → 0 → 1 → 2 → 3 → alle
+        const next = field.stage === undefined ? 0 : field.stage + 1;
+        if (next > 3) delete field.stage;
+        else field.stage = next;
+        this.commitField(field);
+        return true;
+      }
+      if (lower === 'u') {
+        // Aufwertung der Bahn, heute die Gurtstufe: wie die Welt → ohne → Beckengurt → Bügel → Schulterbügel → Rennsitz → wie die Welt
+        const next = field.upgrade === undefined ? 0 : field.upgrade + 1;
+        if (next > 4) delete field.upgrade;
+        else field.upgrade = next;
+        this.commitField(field);
+        return true;
+      }
       return false;
     }
     const item = this.selectedItem;
@@ -669,7 +740,12 @@ export class ZoneEditor {
   }
 
   private describeField(f: ZoneField): string {
-    return `Feld ${f.id}${f.name ? ` „${f.name}“` : ''} · x ${f.x0} bis ${f.x1} m · Höhe ${f.y0} bis ${f.y1} m${f.id === this.activeFieldId ? ' · aktiv' : ''}`;
+    const meta = [
+      f.goals?.length ? `Ziele ${formatGoals(f.goals)}` : 'keine Ziele (Sandkasten)',
+      f.stage === undefined ? 'Stufe: alle Elemente' : `Stufe ${f.stage}`,
+      f.upgrade === undefined ? 'Gurt wie die Welt' : `Gurt: ${BELT_NAMES[f.upgrade] ?? f.upgrade}`,
+    ];
+    return `Feld ${f.id}${f.name ? ` „${f.name}“` : ''} · x ${f.x0} bis ${f.x1} m · Höhe ${f.y0} bis ${f.y1} m · ${meta.join(' · ')}${f.id === this.activeFieldId ? ' · aktiv' : ''}`;
   }
 
   private refreshLabels(): void {
@@ -703,12 +779,19 @@ export class ZoneEditor {
         : 'Ziehen verschiebt · Bild auf/ab Tiefe · C Form · Pfeile auf/ab Zahl, links/rechts Abstand · Entf löschen';
     } else if (field) {
       this.status.text = this.describeField(field);
-      this.hint.text = 'Enter aktiv schalten (im Spielen hält die Kamera das Feld, Absperrband an den Rändern) · Entf löschen · Esc abwählen';
+      this.hint.text = 'Enter aktiv schalten (im Spielen hält die Kamera das Feld, Absperrband an den Rändern) · N Name · Z Ziele · G Stufe · U Gurt · Testfahrt fährt im Feld · Entf löschen · Esc abwählen';
     } else {
       this.status.text = `Bauen · Zone ${this.zone.name} · ${this.zone.elements.length} Elemente · ${this.zone.fields.length} Felder · ${this.zone.stations.length} Stationen · ${this.zone.coinGroups.length} Coin-Gruppen · Spur für Neues: ${lane}`;
-      this.hint.text = 'Typ links wählen, dann in die Welt klicken · Klick wählt Element oder Feld · T Bahntyp · Tab Spielen';
+      this.hint.text = 'Typ links wählen, dann in die Welt klicken · Klick wählt Element oder Feld · T Bahntyp · Testfahrt fährt die Bahn · Tab Spielen';
     }
     this.status.visible = this.hint.visible = true;
+    this.placeStatus();
+  }
+
+  /** Statuszeile und Hinweis setzen: unter die Zielleiste, wenn im Spielen Ziele des aktiven Felds oben stehen */
+  private placeStatus(): void {
+    const f = this.mode === 'play' && this.activeFieldId ? this.zone.fields.find((x) => x.id === this.activeFieldId) : undefined;
+    this.status.y = this.statusTop + (f?.goals?.length ? (this.portrait ? 116 : 60) : 0);
     this.hint.y = this.status.y + this.status.height + 4;
   }
 
@@ -727,10 +810,13 @@ export class ZoneEditor {
     this.typeBtn.position.set(x, y);
     y += 34;
     this.saveBtn.position.set(x, y);
-    this.status.position.set(safe.left + 148, top + 62);
+    y += 34;
+    this.rideBtn.position.set(x, y);
+    this.statusTop = top + 62;
+    this.portrait = h > w;
+    this.status.x = this.hint.x = safe.left + 148;
     this.status.style.wordWrapWidth = Math.max(240, w - safe.left - safe.right - 320);
     this.hint.style.wordWrapWidth = Math.max(240, w - safe.left - safe.right - 320);
-    this.hint.position.set(safe.left + 148, this.status.y + this.status.height + 4);
-    void h;
+    this.placeStatus();
   }
 }

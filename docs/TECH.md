@@ -265,8 +265,8 @@ Politur; alles Gesetzte sind Klötzchen, die später Grafiken ersetzen.
   `openings` (Öffnungen in der Lippe des Dreiteilers, relativ zum Fuß, Radius; die Bahn darf dort hindurch), `anchor`
   (Anschluss am Fuß: Station, Tunnelachse, Wasserfallquelle), `growth` (Wachstumsstufe: ab dieser Fortschrittsstufe da),
   `depthRole` (Rückwand, Mitte, Vorderlippe). Im Editor am gewählten Element: M Fundament, O Öffnung (Dreiteiler), A Anker,
-  G Stufe, R Rolle; Fundament als grüne Oberkante, Anker als Punkt am Fuß, alles in der Statuszeile. Wachstumsstufe und
-  Tiefenrolle sind bis Schritt 9 nur Daten (die Stufe schaltet dann Elemente je Level).
+  G Stufe, R Rolle; Fundament als grüne Oberkante, Anker als Punkt am Fuß, alles in der Statuszeile. Die Wachstumsstufe
+  schaltet seit Schritt 9 Elemente je Feld (unten); die Tiefenrolle bleibt bis zur Stilprobe ein reines Datum.
 - **Felder** (Schritt 7, Plan 2.1 und 2.3): `fields` in der Zonendatei (`f1`, `f2`, …; x0 bis x1, Höhe y0 bis y1 in
   Zonenkoordinaten, mindestens 20 × 12 m). Werkzeug „Feld“: in der Welt aufziehen (Rechteck auf Spur 0), Klick in ein Feld
   wählt es, Enter schaltet es aktiv, Entf löscht. Aktives Feld im Spielen (und ohne Editor mit `?field=<Kennung>`, sonst
@@ -290,6 +290,22 @@ Politur; alles Gesetzte sind Klötzchen, die später Grafiken ersetzen.
   mit Farbe je Ecke (ein Zeichenaufruf plus einer je durchscheinendem Teil; als Einzelteile kosteten vier Platzhalter
   mit Schatten über hundert Aufrufe). Alle Einträge lassen sich wie Elemente wählen, ziehen, in der Tiefe schieben und
   löschen (Treffer über die Kennung).
+- **Ziele, Stufen und Testfahrt je Feld** (Schritt 9; Plan 2.1, 2.4, 4.1): Ein Feld trägt `goals` (höchstens sechs; Typ
+  aus `ZONE_GOAL_TYPES`, das sind die Zieltypen des heutigen Prüfers `evaluate`, dazu Wert und Bonus), `stage`
+  (Fortschrittsstufe der Zone in diesem Level: Elemente mit größerer Wachstumsstufe fehlen, `WorldRenderer.setStage`;
+  ohne Angabe ist alles da) und `upgrade` (Aufwertungsstufe, heute die Gurtstufe 0 bis 4 als `level.restraint`; ohne
+  Angabe die der Welt). Im Editor am gewählten Feld: N Name, Z Ziele als Zeile „finish, height 20, *coins 5“
+  (`parseGoals`, `formatGoals`; Stern = Bonus; Eingabe über den Browser-Dialog), G Stufe (alle, 0 bis 3), U Gurt. Wird ein
+  Feld aktiv (`LevelScene.setActiveField`), übernimmt das Level seine Ziele: die Zielleiste wertet sie live wie im Level,
+  die Ergebnistafel zeigt Sterne und Haken (ohne einen Fortschritt zu speichern); ohne Ziele bleibt die Zone Sandkasten
+  mit Maßband (`hasGoals`). Der Knopf „Testfahrt“ schaltet das gewählte Feld aktiv, wechselt ins Spielen und startet die
+  Fahrt (Tab zurück). Prüfzone `public/zones/probe/zone.json` mit allen Eintragsarten: `tests/zone.test.ts` liest sie und
+  verlangt, dass Lesen und Schreiben die Datei Zeichen für Zeichen wiedergeben (deterministisches Laden); Szenario 10
+  (`node scripts/scenario.mjs 10`, in der CI-Matrix) lädt sie mit Weltrenderer, prüft Einträge, Vorgabestück, Coins,
+  Feld, Ziele, Gurt, Stufe und Zeichenaufrufe und legt `screenshots/scenario-10-zone.png` als Standbild ab. Platzhalter:
+  Der Zielkatalog v1 kennt nur die heutigen Zieltypen (die Rätselziele Glocke, Mühlrad, Tor, Sprung, Durchbruch sowie
+  Magnet-Coins und Fangen kommen mit E2 und E3), die Aufwertung ist nur die Gurtstufe (Fähigkeiten als Schalter in E2),
+  die Zieleingabe ist eine Textzeile ohne eigene Oberfläche.
 - Die Bühne nutzt für die Zone das Sandbox-Level (`SandboxConfig.zone`): flacher Boden, Breite der Zone, alle Elemente
   und Startarten frei (Plan Paket 3: die Basiszone kann alles). Tests in `tests/zone.test.ts`.
 

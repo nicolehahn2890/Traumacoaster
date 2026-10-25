@@ -50,7 +50,9 @@ export class WorldRenderer {
   private elements: BuiltElement[] = [];
   private portals: PortalLike[] = [];
   /** Einträge der Zonendatei (Editor): gebaut je Kennung mit Ursprung (für das Ziehen), in einer eigenen Gruppe für Treffer */
-  private readonly zone = new Map<string, { origin: { x: number; y: number; z: number }; built: BuiltElement }>();
+  private readonly zone = new Map<string, { origin: { x: number; y: number; z: number }; built: BuiltElement; growth: number }>();
+  /** Fortschrittsstufe der Zone im Spiel: Einträge mit höherer Wachstumsstufe sind unsichtbar (Infinity: alle da, Editor) */
+  private stage = Infinity;
   private readonly zoneGroup = new Group();
   private selectedId: string | null = null;
   private readonly raycaster = new Raycaster();
@@ -188,7 +190,13 @@ export class WorldRenderer {
   }
 
   addZoneElement(el: ZoneElement): void {
-    this.addZoneBuilt(el.id, buildZoneElement(el), el);
+    this.addZoneBuilt(el.id, buildZoneElement(el), el, el.growth ?? 0);
+  }
+
+  /** Fortschrittsstufe setzen: Einträge, die erst später wachsen, verschwinden (Plan 2.1 Wachstumsstufen) */
+  setStage(stage: number): void {
+    this.stage = stage;
+    for (const e of this.zone.values()) e.built.group.visible = e.growth <= stage;
   }
 
   updateZoneElement(el: ZoneElement): void {
@@ -196,11 +204,12 @@ export class WorldRenderer {
   }
 
   /** beliebigen gebauten Eintrag unter einer Kennung in die Zone setzen (ersetzt einen gleichnamigen) */
-  addZoneBuilt(id: string, built: BuiltElement, origin: { x: number; y: number; z: number }): void {
+  addZoneBuilt(id: string, built: BuiltElement, origin: { x: number; y: number; z: number }, growth = 0): void {
     this.removeZoneElement(id);
     built.group.userData.elementId = id;
+    built.group.visible = growth <= this.stage;
     this.zoneGroup.add(built.group);
-    this.zone.set(id, { origin: { x: origin.x, y: origin.y, z: origin.z }, built });
+    this.zone.set(id, { origin: { x: origin.x, y: origin.y, z: origin.z }, built, growth });
     this.refreshFoundations();
   }
 
@@ -280,6 +289,7 @@ export class WorldRenderer {
     this.clearTrack();
     this.clearTrain();
     this.clearZone();
+    this.stage = Infinity;
     this.levelData = null;
     this.portals = [];
     this.buildElements();

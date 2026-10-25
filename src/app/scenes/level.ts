@@ -440,6 +440,7 @@ export class LevelScene implements Scene {
                 this.view.trackR.setCoins(this.level.coins);
               },
               refreshStation: () => this.resetStationPiece(),
+              startRide: () => this.startRide(),
             },
             zone,
           );
@@ -506,6 +507,11 @@ export class LevelScene implements Scene {
     return this.view?.background;
   }
 
+  /** Ziele im Spiel: im Level immer, in der Zone sobald das aktive Feld welche einträgt (sonst Sandkasten mit Maßband) */
+  private get hasGoals(): boolean {
+    return !this.sandbox || this.level.goals.length > 0;
+  }
+
   /** Station der Zone für die Bahn: die im aktiven Feld, sonst die erste; null ohne Station */
   private zoneStation(): ZoneStation | null {
     const zone = this.sandbox?.zone;
@@ -533,6 +539,14 @@ export class LevelScene implements Scene {
   /** Feld der Zone aktiv schalten (null: ganze Zone): Kamera weich begrenzt, Zoom-Grenze „Feld passt ins Bild“, Absperrband */
   private setActiveField(field: ZoneField | null): void {
     this.activeField = field;
+    // Ziele, Fortschritts- und Aufwertungsstufe des Felds gelten für dieses Level (Schritt 9): die Zielleiste wertet
+    // sie wie im Level aus, die Gurtstufe gilt für die Fahrt, Elemente späterer Wachstumsstufen fehlen in der Welt
+    this.level.goals = (field?.goals ?? []).map((g) => ({ type: g.type, ...(g.value !== undefined ? { value: g.value } : {}), ...(g.bonus ? { bonus: true } : {}) }));
+    this.level.restraint = field?.upgrade as BeltLevel | undefined;
+    this.game.world?.setStage(field?.stage ?? Infinity);
+    this.goalsBuiltFor = '';
+    this.refreshBeltBadge(false);
+    this.updateGoals();
     this.resetStationPiece();
     const cam = this.view.camera;
     if (field) {
@@ -2736,7 +2750,7 @@ export class LevelScene implements Scene {
 
   // ------------------------------------------------------------------ Ziele / Hinweise
   private updateGoals(): void {
-    if (this.sandbox) {
+    if (!this.hasGoals) {
       // Sandkasten: das Maßband zeigt Länge, Höhe, Loopings und Kehren dauerhaft
       this.goalsBar.removeChildren();
       this.goalCells = [];
@@ -2746,6 +2760,8 @@ export class LevelScene implements Scene {
       else this.measure.clear();
       return;
     }
+    // Zone mit Zielen: das Maßband nur noch während des Strichs (wie im Level)
+    if (this.sandbox) this.measure.pin(false);
     const ts = this.stats ?? { length: 0, maxHeight: 0, loops: 0, turns: 0, lanes: 0, rolls: 0, maxDrop: 0 };
     const ride = this.sim?.stats ?? null;
     const finished = this.sim?.phase === 'done';
@@ -2757,7 +2773,7 @@ export class LevelScene implements Scene {
   /** Zielleiste einmal je Level und Format bauen (Zellen bleiben, nur die Haken ändern sich) */
   private buildGoalsBar(): void {
     const portrait = this.h > this.w;
-    const key = `${this.level.id}:${portrait ? 'p' : 'l'}:${this.w}`;
+    const key = `${this.level.id}:${this.activeField?.id ?? ''}:${portrait ? 'p' : 'l'}:${this.w}`;
     if (this.goalsBuiltFor === key) return;
     this.goalsBuiltFor = key;
     this.goalsBar.removeChildren();
@@ -2819,7 +2835,7 @@ export class LevelScene implements Scene {
     const now = performance.now();
     if (!force && now - this.liveGoalTimer < 100) return;
     this.liveGoalTimer = now;
-    if (!this.sandbox) {
+    if (this.hasGoals) {
       this.buildGoalsBar();
       this.refreshGoals(evaluate(this.level, path, stats, null, false, true), true);
     }
@@ -3218,9 +3234,9 @@ export class LevelScene implements Scene {
     if (this.passengers) Object.assign(this.sim.stats, this.passengers.stats);
     const ev = evaluate(this.level, this.path, this.stats, this.sim.stats, finished, allSeated);
     this.updateGoals();
-    const success = !this.sandbox && ev.requiredDone;
+    const success = this.hasGoals && ev.requiredDone;
     let unlockedNow: ElementId[] = [];
-    if (success) {
+    if (success && !this.sandbox) {
       const before = unlockedUpTo(storage.progress.highest);
       storage.setStars(this.level.id, ev.stars);
       const after = unlockedUpTo(storage.progress.highest);
@@ -3241,27 +3257,27 @@ export class LevelScene implements Scene {
     const c = new Container();
     const portrait = this.h > this.w;
     const w = Math.min(this.w - 24, portrait ? 360 : 520);
-    const goalsCount = this.sandbox ? 0 : this.level.goals.length;
+    const goalsCount = this.hasGoals ? this.level.goals.length : 0;
     const hasNext = success && !this.sandbox && this.level.id < LEVELS.length;
     const h = Math.min(this.h - 20, 300 + goalsCount * 26 + (unlockedNow.length ? 40 : 0) + (hasNext ? 60 : 0));
     c.addChild(panelBg(w, h));
     let y = -h / 2 + 40;
-    const title = label(this.sandbox ? t('ride') : success ? t('success') : t('failed'), 32, success ? '#2f7a4a' : '#d64545', true);
+    const title = label(!this.hasGoals ? t('ride') : success ? t('success') : t('failed'), 32, success ? '#2f7a4a' : '#d64545', true);
     title.position.set(0, y);
     c.addChild(title);
     y += 36;
-    if (!this.sandbox) {
+    if (this.hasGoals) {
       const sg = new Graphics();
       for (let i = 0; i < 3; i++) star(sg, (i - 1) * 46, y + 6, 18, i < ev.stars);
       c.addChild(sg);
       y += 40;
     }
     const seatedOk = hasNegativeGoals(this.level) || (this.passengers?.allSeated ?? true);
-    const msg = label(finished && seatedOk ? (success || this.sandbox ? '' : t('goalsMissing')) : this.failMessage(sim.failReason), 16, INK, false, { wordWrap: true, wordWrapWidth: w - 50 });
+    const msg = label(finished && seatedOk ? (success || !this.hasGoals ? '' : t('goalsMissing')) : this.failMessage(sim.failReason), 16, INK, false, { wordWrap: true, wordWrapWidth: w - 50 });
     msg.position.set(0, y + 6);
     c.addChild(msg);
     y += msg.text ? msg.height + 14 : 4;
-    if (!this.sandbox) {
+    if (this.hasGoals) {
       ev.goals.forEach((r) => {
         const g = new Graphics();
         check(g, -w / 2 + 34, y, 9, r.done);

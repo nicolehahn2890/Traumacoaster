@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Mesh } from 'three';
-import { FIELD_MIN_H, FIELD_MIN_W, KIND_DEFAULTS, ZONE_KINDS, emptyZone, newElement, newElementId, newField, parseZone, serializeZone, type ZoneFile } from '@/zone/types';
+import { FIELD_MIN_H, FIELD_MIN_W, KIND_DEFAULTS, ZONE_GOAL_TYPES, ZONE_KINDS, emptyZone, formatGoals, newElement, newElementId, newField, parseGoals, parseZone, serializeZone, type ZoneFile } from '@/zone/types';
 import { buildZoneCoins, buildZoneElement, buildZoneQueue, buildZoneSite, buildZoneStation, stationPath, topAt, zoneCoins } from '@/zone/build';
 import { coinsOfGroup } from '@/zone/groups';
 import { newCoinGroup, newQueue, newSite, newStation } from '@/zone/types';
@@ -205,5 +206,62 @@ describe('Zonendatei: Station, Schlange, Baustelle, Coins (Schritt 8)', () => {
     expect(parts(buildZoneCoins(newCoinGroup(zone, 80, 2, 0)))).toBe(1);
     const st = buildZoneStation(newStation(zone, 20, 0, 0));
     expect((st.group.children[0] as Mesh).geometry.getAttribute('position').count).toBeGreaterThan(200);
+  });
+});
+
+describe('Zonendatei: Ziele, Stufen und Prüfzone (Schritt 9)', () => {
+  it('Zielzeile: Typ und Wert, Stern für Bonus, Unbekanntes fällt weg, Umkehrung stimmt', () => {
+    expect(ZONE_GOAL_TYPES).toContain('finish');
+    expect(ZONE_GOAL_TYPES).not.toContain('element');
+    const goals = parseGoals(' finish, height 20 ,*coins 5; quatsch 3, loops');
+    expect(goals).toEqual([{ type: 'finish' }, { type: 'height', value: 20 }, { type: 'coins', value: 5, bonus: true }, { type: 'loops' }]);
+    expect(formatGoals(goals)).toBe('finish, height 20, *coins 5, loops');
+    expect(parseGoals(formatGoals(goals))).toEqual(goals);
+    expect(parseGoals('')).toEqual([]);
+    // höchstens sechs Ziele
+    expect(parseGoals('finish, finish, finish, finish, finish, finish, finish')).toHaveLength(6);
+  });
+
+  it('Ziele, Fortschrittsstufe 0 und Gurtstufe eines Felds überleben Schreiben und Lesen, Unsinn fällt weg', () => {
+    const zone = emptyZone('basiszone');
+    const f = newField(zone, 10, 0, 80, 30);
+    f.goals = [{ type: 'finish' }, { type: 'coins', value: 5, bonus: true }];
+    f.stage = 0;
+    f.upgrade = 4;
+    zone.fields.push(f);
+    const text = serializeZone(zone);
+    const back = parseZone(JSON.parse(text))!;
+    expect(back.fields[0].goals).toEqual(f.goals);
+    expect(back.fields[0].stage).toBe(0);
+    expect(back.fields[0].upgrade).toBe(4);
+    expect(serializeZone(back)).toBe(text);
+    // ohne Angabe: keine Schlüssel in der Datei
+    const plain = emptyZone('basiszone');
+    plain.fields.push(newField(plain, 10, 0, 80, 30));
+    expect(serializeZone(plain)).not.toContain('"stage"');
+    expect(serializeZone(plain)).not.toContain('"goals"');
+    // Unsinn: unbekannter Zieltyp fällt weg, Gurtstufe wird auf 4 begrenzt, negative Stufe fällt weg
+    const raw = JSON.parse(text) as { fields: Array<Record<string, unknown>> };
+    raw.fields[0].goals = [{ type: 'quatsch', value: 1 }, { type: 'height', value: 'hoch' }, { type: 'loops', value: 2 }];
+    raw.fields[0].upgrade = 7;
+    raw.fields[0].stage = -1;
+    const odd = parseZone(raw)!;
+    expect(odd.fields[0].goals).toEqual([{ type: 'height' }, { type: 'loops', value: 2 }]);
+    expect(odd.fields[0].upgrade).toBe(4);
+    expect(odd.fields[0].stage).toBeUndefined();
+  });
+
+  it('Prüfzone: die Datei liest sich und schreibt sich Zeichen für Zeichen gleich (deterministisches Laden)', () => {
+    const text = readFileSync(new URL('../public/zones/probe/zone.json', import.meta.url), 'utf8');
+    const zone = parseZone(JSON.parse(text));
+    expect(zone).not.toBeNull();
+    expect(serializeZone(zone!)).toBe(text);
+    expect(zone!.elements.map((e) => e.id)).toEqual(['e1', 'e2', 'e3']);
+    expect(zone!.elements[1].growth).toBe(2);
+    const f = zone!.fields[0];
+    expect(f.goals).toHaveLength(3);
+    expect(f.stage).toBe(1);
+    expect(f.upgrade).toBe(2);
+    expect([zone!.stations.length, zone!.queues.length, zone!.sites.length, zone!.coinGroups.length]).toEqual([1, 1, 1, 1]);
   });
 });
