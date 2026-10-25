@@ -39,6 +39,16 @@ export class TerrainFoundation implements Foundation {
   }
 }
 
+/** das Freiraumfeld einer Zone als Fundament: Füße stehen auf dem, was unter dem Punkt fest wird (Erde, Fels, Raumboden), auf jedem Element */
+export class FieldFoundation implements Foundation {
+  constructor(private readonly field: { floorBelow(x: number, y: number, lane: number): { y: number; kind: 'ground' | 'rock' | 'cave' } | null }) {}
+
+  surfaceBelow(x: number, y: number, z: number): FootHit | null {
+    const hit = this.field.floorBelow(x, y, z);
+    return hit ? { y: hit.y, kind: hit.kind } : null;
+  }
+}
+
 /** höchster Treffer aller Fundamente unter einem Punkt */
 export function footBelow(foundations: readonly Foundation[], x: number, y: number, z: number): FootHit | null {
   for (const f of foundations) if (f.blocks?.(x, z)) return null;

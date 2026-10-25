@@ -1,18 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { LANE_DEPTH, rayToWorld, toStage, type StagePoint } from '@/track/stage';
+import { LANE_DEPTH, rayToWorld, type StagePoint } from '@/track/stage';
 import { planBrushTrack, previewBrushTrack, swapCrossing } from '@/track/brushTrack';
 import { sampleTrack } from '@/track/model';
 import { Terrain } from '@/physics/terrain';
 import { TrainSim, type TrainSimOptions } from '@/physics/trainSim';
-import { CAVE_WALL, ROCK_MARGIN, RockField } from '@/zone/rock';
 import { FreeField, WALL_HALF } from '@/zone/field';
 import type { ZoneElement } from '@/zone/types';
 
 /** Dreiteiler wie in der Prüfzone: 24 × 14 m, 7,5 m dick auf Spur 1, Fenster bei 4 m Höhe */
 const slab: ZoneElement = { id: 'e1', kind: 'threePart', x: 85, y: 0, z: 1, w: 24, h: 14, d: 7.5, openings: [{ dx: 0, dy: 4, r: 2.4 }] };
 const column: ZoneElement = { id: 'e2', kind: 'column', x: 50, y: 0, z: 0, w: 2, h: 10 };
-const cave: ZoneElement = { id: 'e3', kind: 'cave', x: 140, y: 0, z: -1, w: 30, h: 12, d: 14 };
-const flat: ZoneElement = { id: 'e4', kind: 'flat', x: 20, y: 0, z: 2, w: 8, h: 6 };
 
 const toWorld = (p: StagePoint, lane: number) => rayToWorld(p, lane);
 /** flache Linie auf fester Bildhöhe Y (der Pinsel legt sie auf Komforthöhe 4 m und wählt die Tiefe dazu: Spur = (Y − 4) / 4,2) */
@@ -25,60 +22,6 @@ const half = 7.5 / 2 / LANE_DEPTH;
 /** Spuren: vorn klein. Die Lippe liegt vor der Spur 1 des Dreiteilers, die Rückwand dahinter */
 const lip = 1 - half;
 const back = 1 + half;
-
-describe('Festigkeitsfeld der Zone (Etappe 2, Schritt 5)', () => {
-  it('Dreiteiler: Lippe und Rückwand fest, Fenster in der Lippe frei, Innenraum frei und Tunnel; Säule, Höhle, Fläche', () => {
-    const rock = new RockField([slab, column, cave, flat]);
-    expect(rock.empty).toBe(false);
-    expect(rock.solid(85, 8, lip)).toBe(true);
-    expect(rock.solid(85, 4, lip)).toBe(false);
-    expect(rock.solid(85, 4, back)).toBe(true);
-    expect(rock.solid(85, 8, 1)).toBe(false);
-    expect(rock.tunnel(85, 8, 1)).toBe(true);
-    expect(rock.tunnel(85, 4, 1)).toBe(true);
-    expect(rock.tunnel(85, 8, lip - 0.3)).toBe(false);
-    // außerhalb des Umrisses und über dem Berg frei
-    expect(rock.solid(60, 8, lip)).toBe(false);
-    expect(rock.solid(85, 15, lip)).toBe(false);
-    expect(rock.tunnel(60, 8, 1)).toBe(false);
-    // Säule: Radius 1 m, 10 m hoch
-    expect(rock.solid(50, 5, 0)).toBe(true);
-    expect(rock.solid(50.8, 5, 0)).toBe(true);
-    expect(rock.solid(51.5, 5, 0)).toBe(false);
-    expect(rock.solid(50, 11, 0)).toBe(false);
-    // Höhle: Wand, Boden und Decke fest, Raum frei und Tunnel
-    expect(rock.solid(140 - 15, 6, -1)).toBe(true);
-    // die Decke ist offen (der Deckel ist weg, Schritt 7), der Boden fest
-    expect(rock.solid(140, 12, -1)).toBe(false);
-    expect(rock.solid(140, 0.2, -1)).toBe(true);
-    expect(rock.solid(140, 6, -1)).toBe(false);
-    expect(rock.tunnel(140, 6, -1)).toBe(true);
-    expect(rock.tunnel(140, 6, 1)).toBe(false);
-    expect(rock.solid(140, CAVE_WALL / 2, -1)).toBe(true);
-    // Kulisse ohne Volumen
-    expect(rock.solid(20, 3, 2)).toBe(false);
-    expect(new RockField([flat]).empty).toBe(true);
-    // Fortschrittsstufe: ein Element späterer Wachstumsstufe fehlt
-    expect(new RockField([{ ...slab, growth: 2 }], 1).empty).toBe(true);
-    expect(new RockField([{ ...slab, growth: 2 }], 2).empty).toBe(false);
-  });
-
-  it('Spannen je Bühnenpunkt: Lippe und Rückwand als schmale Bänder, im Fenster nur die Rückwand', () => {
-    const rock = new RockField([slab]);
-    const both = rock.spans(toStage(85, 10, 1), toWorld);
-    expect(both).toHaveLength(2);
-    expect(both[0].z0).toBeCloseTo(lip - ROCK_MARGIN, 6);
-    expect(both[0].z1).toBeCloseTo(lip + ROCK_MARGIN, 6);
-    expect(both[1].z0).toBeCloseTo(back - ROCK_MARGIN, 6);
-    // Punkt, der an der Lippe genau im Fenster liegt: nur die Rückwand ist Wand, das Fenster lädt zur Durchfahrt ein
-    const window = rock.spans(toStage(85, 4, lip), toWorld);
-    expect(window.filter((s) => s.kind !== 'window')).toHaveLength(1);
-    expect(window.find((s) => s.kind !== 'window')!.z0).toBeCloseTo(back - ROCK_MARGIN, 6);
-    expect(window.find((s) => s.kind === 'window')).toMatchObject({ id: 'e1', z0: lip, z1: lip });
-    expect(rock.spans(toStage(40, 8, 1), toWorld)).toHaveLength(0);
-  });
-
-});
 
 /** Pinsel-Optionen mit dem Freiraumfeld (flache Erde bei 0) */
 const fieldOpts = (field: FreeField) => ({ field: { free: (p: StagePoint) => field.freeLanes(p, toWorld, 0.8), solid: (x: number, y: number, lane: number) => field.solid(x, y, lane), floor: (x: number, y: number, lane: number) => field.floorBelow(x, y, lane, 40)?.y ?? null } });
@@ -223,11 +166,10 @@ describe('Pinsel im Freiraumfeld (Tor 2b, Plan Paket 5)', () => {
     expect(plan.rockCut).toBe(false);
     expect(Math.abs(plan.z[at(plan, 85)] / LANE_DEPTH - 1)).toBeLessThan(half - WALL_HALF);
     expect(maxStep(plan, 60, 110)).toBeLessThan(0.12);
-    const rock = new RockField([two]);
     const path = { ...plan.path, startType: 'launch' as const };
     const samples = sampleTrack(path);
     const terrain = new Terrain({ width: 200, terrain: [{ kind: 'flat' }] });
-    const opts: TrainSimOptions = { cars: 2, carLength: 2.4, skin: 'skinSteel', frictionScale: 1, gravityScale: 1, startType: 'launch', coins: [], terrain, allowTunnels: true, checkCrossings: false, insideRock: (x, y, z) => rock.tunnel(x, y, z) };
+    const opts: TrainSimOptions = { cars: 2, carLength: 2.4, skin: 'skinSteel', frictionScale: 1, gravityScale: 1, startType: 'launch', coins: [], terrain, allowTunnels: true, checkCrossings: false, insideRock: (x, y, z) => field.ceilingAbove(x, y, z) };
     const sim = new TrainSim(samples, path, opts);
     for (let i = 0; i < 3000 && sim.phase !== 'failed' && sim.phase !== 'done' && sim.phase !== 'flying'; i++) sim.step(1 / 60);
     expect(sim.stats.tunnels).toBe(1);

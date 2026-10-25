@@ -1129,8 +1129,9 @@ Prüfzone hat jetzt ein zweites Fenster). (2) An einer Öffnung müssen Luft und
 die Bahn dort um die Wanddicke. (3) Erde knapp unter der Oberfläche muss frei bleiben und angehoben werden, sonst reißt
 die Kette vor jedem Loch. (4) In einer Höhle muss die Höhlenmitte gegen Glättung, gezeigte Tiefe und Hügelregel ankommen,
 sonst klebt die Bahn an der Wand, an der sie hereinkam. Gemessen an 98 Aufnahmen: nichts blockiert oder abgeschnitten,
-Sprünge etwa wie mit den Sonderregeln (11,3 je Strich, Vorschau 51,0; ohne Zonenregeln 11,2 und 40,1). Offen: Spitze, Stützen und Fahrt auf das
-Feld, Ebenen-Boden und Räume im Editor, dann Tor 2b erneut.
+Sprünge etwa wie mit den Sonderregeln (11,3 je Strich, Vorschau 51,0; ohne Zonenregeln 11,2 und 40,1). Stützen und Fahrt lesen das Feld (25.10.2026):
+Füße auf allem, was trägt, kein Fuß im Festen, Tunnel-Meter unter einer Decke; das alte Festigkeitsfeld ist weg. Offen:
+Spitze, Ebenen-Boden und Räume im Editor, dann Tor 2b erneut.
 **Status: bestätigt am 24.10.2026.** Graben in Stufen trägt Florians Vorbehalt; Autoscroll wird nach dem Ausprobieren
 entschieden. **Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Der Wasserfall bleibt ein eigenes Element (er ist
 seit Etappe 1 da) und bekommt den Schalter „Fahrt dahinter gedämpft“; die Schalter Schmuck, trägt Stützen und Splash-Zone

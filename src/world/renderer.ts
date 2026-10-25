@@ -87,6 +87,8 @@ export class WorldRenderer {
   private type: TrackType = 'steel';
   /** Fundamente des Levels (Boden und Berge; später Kulissen und Höhlenböden) */
   private foundations: Foundation[] = [];
+  /** Freiraumfeld der Zone als Fundament (Tor 2b): ersetzt Terrain und Element-Fundamente, Wasser sperrt weiter */
+  private fieldFoundation: Foundation | null = null;
   /** Zählung der letzten Stützenplanung (Dev-Anzeige, Replay) */
   supportStats: SupportStats | null = null;
 
@@ -303,11 +305,22 @@ export class WorldRenderer {
     this.refreshFoundations();
   }
 
-  /** Fundamente: Terrain, Kulissen des Levels und Elemente der Zone (Höhlenböden tragen, Wasser sperrt) */
+  /** Fundamente: Terrain, Kulissen des Levels und Elemente der Zone (Höhlenböden tragen, Wasser sperrt); mit Freiraumfeld nur das Feld und die Sperren */
   private refreshFoundations(): void {
-    const t = this.levelData ? [new TerrainFoundation(this.levelData.terrain)] : [];
     const fromElements = (list: Iterable<BuiltElement>): Foundation[] => [...list].flatMap((e) => (e.foundation ? [e.foundation] : []));
-    this.foundations = [...t, ...fromElements(this.elements), ...fromElements([...this.zone.values()].map((z) => z.built))];
+    const all = [...fromElements(this.elements), ...fromElements([...this.zone.values()].map((z) => z.built))];
+    if (this.fieldFoundation) {
+      this.foundations = [this.fieldFoundation, ...all.filter((f) => !!f.blocks)];
+      return;
+    }
+    const t = this.levelData ? [new TerrainFoundation(this.levelData.terrain)] : [];
+    this.foundations = [...t, ...all];
+  }
+
+  /** Freiraumfeld der Zone als Fundament setzen (null: Terrain und Elemente wie bisher) */
+  setFieldFoundation(f: Foundation | null): void {
+    this.fieldFoundation = f;
+    this.refreshFoundations();
   }
 
   // ------------------------------------------------------------------ Zone (Editor)

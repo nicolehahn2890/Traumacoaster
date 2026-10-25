@@ -42,7 +42,6 @@ import { WorldView } from '@/render/worldView';
 import { HANG_DROP, trackTypeForSkin, type TrackType } from '@/world/trackTypes';
 import type { ZoneElement, ZoneField, ZoneFile, ZoneSite, ZoneStation } from '@/zone/types';
 import { LIFT_HEIGHT_DEFAULT, allowedStarts, resolveAbilities, zoneUnlocks, type ResolvedAbilities } from '@/zone/abilities';
-import { RockField } from '@/zone/rock';
 import { cachedFreeLanes, FreeField, type FreeLanes } from '@/zone/field';
 import { SITE_OPENING_R, SITE_REACH, siteAnchor, siteTarget, siteWalls, withSiteOpenings } from '@/zone/sites';
 import { groundHoles, openRooms, roomAt, type Room } from '@/zone/underground';
@@ -386,7 +385,6 @@ export class LevelScene implements Scene {
   /** Schalter, Gurt, Kettenzugstärke und Grenzen des aktiven Felds (Etappe 2, Schritt 1; ohne Feld: alles) */
   private abilities: ResolvedAbilities | null = null;
   /** Festigkeitsfeld der Zone (Etappe 2, Schritt 5): fester Fels aus den Elementen bis zur Fortschrittsstufe; null ohne Zone */
-  private rock: RockField | null = null;
   /** Freiraumfeld der Zone (Tor 2b): fest oder frei, für den Pinsel */
   private field: FreeField | null = null;
   private freeLanes: (((p: StagePoint) => FreeLanes) & { clear(): void }) | null = null;
@@ -573,11 +571,10 @@ export class LevelScene implements Scene {
     const zone = this.sandbox?.zone;
     const stage = this.activeField?.stage ?? Infinity;
     const derived = this.derivedElements();
-    this.rock = zone ? new RockField(derived, stage) : null;
-    this.view.rock = this.rock;
-    // Freiraumfeld (Tor 2b): Erde, Fels und Räume in einem Feld; der Pinsel liest nur daraus
+    // Freiraumfeld (Tor 2b): Erde, Fels und Räume in einem Feld; Pinsel, Stützen und Fahrt lesen nur daraus
     this.field = zone ? new FreeField(derived, stage, (x, lane) => this.earthAt(x, lane)) : null;
     this.freeLanes = this.field ? cachedFreeLanes(this.field, (q, lane) => rayToWorld(q, lane), this.groundClearance) : null;
+    this.view.field = this.field;
     // Untergrund (Schritt 7): offene Räume, Löcher im Boden und Fenster im Erdschnitt
     this.rooms = zone ? openRooms(derived, stage) : [];
     this.game.world?.setGroundHoles(groundHoles(this.rooms, (x) => this.terrain.groundHeight(x, 0)));
@@ -2722,9 +2719,10 @@ export class LevelScene implements Scene {
    */
   private simOptions(path: TrackPath): TrainSimOptions {
     const chain = this.abilities?.chain;
-    const rock = this.rock;
+    const field = this.field;
     const zone = this.sandbox?.zone;
-    return { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), ...(chain ? { chainHeight: chain } : {}), ...(rock && !rock.empty ? { insideRock: (x: number, y: number, z: number) => rock.tunnel(x, y, z) } : {}), ...(zone ? { walls: siteWalls(zone.sites, this.openedSites) } : {}) };
+    // Tunnel-Meter (Plan 5.1): unter einer Decke des Freiraumfelds (Innenraum eines Dreiteilers, Höhle)
+    return { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), ...(chain ? { chainHeight: chain } : {}), ...(field && !field.empty ? { insideRock: (x: number, y: number, z: number) => field.ceilingAbove(x, y, z) } : {}), ...(zone ? { walls: siteWalls(zone.sites, this.openedSites) } : {}) };
   }
 
   /** Startart im Feld (Etappe 2, Schritt 1): erlaubt die Stufe die gewählte nicht, nimmt die Bahn die erste erlaubte */

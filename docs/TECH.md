@@ -514,8 +514,14 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   Erde, Fels, Raumboden) und `ceilingAbove` (Decke bis `CEILING` 12 m: Tunnel). `cachedFreeLanes` merkt sich Abschnitte
   je Bühnenpunkt (die Linie wächst beim Malen nur am Ende). Die Fels-Regeln aus Schritt 5 (Lippen- und Rückwandbänder,
   Seitenwahl je Passage, Durchfahrt) und die Raum-Treffer aus Schritt 7 (Tauchfahrt, Brücke, Anlauf) sind damit weg; das
-  Festigkeitsfeld `RockField` bleibt vorerst für Stützen, Tunnel-Meter der Fahrt und das Szenario, bis Stützen und Fahrt
-  das Feld lesen (nächster Schritt). Die Flanken der Dreiteiler sind offen geblieben (siehe Gelernt).
+  Festigkeitsfeld `RockField` (Schritt 5) ist weg. Die Flanken der Dreiteiler sind offen geblieben (siehe Gelernt).
+  **Stützen und Fahrt auf dem Feld:** `FieldFoundation` (`src/world/foundations.ts`) ist in Zonen das einzige Fundament
+  (`WorldRenderer.setFieldFoundation`, über `WorldView.field`): Füße stehen auf dem, was `floorBelow` unter dem
+  Anschlusspunkt meldet (Erde, Fels, Raumboden), also auf jedem Element, auch mit organischer Form (Leitsatz 2); Wasser
+  sperrt weiter über seine Sperre; kein Fuß im Festen (`solid` als `insideMountain` des Stützenplaners). Die Fahrt zählt
+  Tunnel-Meter, wo `ceilingAbove` eine Decke meldet (Innenraum eines Dreiteilers; ein offener Raum hat keine Decke, dort
+  zählen keine Tunnel-Meter). Szenario 10 prüft das Feld (Lippe fest, Fenster frei, Innenraum frei mit Decke, Oberkante
+  trägt).
   **Pinsel auf dem Feld** (`BrushOptions.field`: `free`, `solid`, `floor`; ohne Feld gilt in den Levels der Boden wie
   bisher): je Linienpunkt die freien Abschnitte, daraus `chooseChain` eine Kette über den ganzen Strich (dynamisches
   Programm): je Punkt kostet ein Abschnitt den Abstand der Wunschtiefe (Bildhöhe über der Erde) zu ihm in Spuren, eine

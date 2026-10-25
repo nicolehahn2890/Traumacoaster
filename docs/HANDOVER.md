@@ -98,6 +98,9 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   51,0, Loslassen 1,17 Spuren, nichts blockiert oder abgeschnitten; ohne Zonenregeln 11,2 / 40,1 / 0,94. Tests 279 grün,
   Build grün, Replay `--world` unverändert, Szenario 10 grün. Browser: Berg und Raum ohne Sprung und ohne Knick. Als
   Nächstes: Spitze (fertige Bahn bleibt), Stützen und Fahrt auf das Feld, Ebenen-Boden und Räume im Editor, dann Tor 2b.
+  Stützen und Fahrt auf dem Feld gebaut (25.10.): das Feld ist in Zonen das einzige Fundament (Füße auf allem, was unter
+  dem Punkt fest wird, kein Fuß im Festen), Tunnel-Meter unter einer Decke des Feldes; das alte Festigkeitsfeld ist
+  gelöscht. System: Fundament und Fahrt aus dem Feld. Platzhalter: offene Flanken, rechteckige Räume.
 - **24.10., Etappe 1 begonnen** (Branch `etappe-1-weltrenderer`, Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10).
   Schritt 1 gebaut: Weltrenderer hinter `?world=1` (Three-Szene im selben WebGL-Kontext, Pixi zeichnet davor den Himmel und
   darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem

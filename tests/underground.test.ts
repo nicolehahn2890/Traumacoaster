@@ -3,7 +3,6 @@ import { LANE_DEPTH } from '@/track/stage';
 import { Terrain } from '@/physics/terrain';
 import { CanvasTexture } from 'three';
 import { buildGround } from '@/world/ground';
-import { RockField } from '@/zone/rock';
 import { siteTarget, withSiteOpenings } from '@/zone/sites';
 import { emptyZone, parseZone, serializeZone, type ZoneElement, type ZoneSite } from '@/zone/types';
 import { groundHoles, groundWithRooms, openRooms, roomAt, roomOpen } from '@/zone/underground';
@@ -60,15 +59,16 @@ describe('Untergrund: Räume offen ab Stufe, Looks je Stufe (Etappe 2, Schritt 7
     expect(serializeZone(emptyZone('leer'))).not.toContain('"looks"');
   });
 
-  it('Festigkeitsfeld: ein geschlossener Raum fehlt, ein offener hat Wände und Boden, aber keine Decke (Deckel weg)', () => {
-    expect(new RockField([room], 1).empty).toBe(true);
-    const open = new RockField([room], 2);
+  it('Freiraumfeld: ein geschlossener Raum ist Erde, ein offener ist frei bis zur Oberfläche, seine Wände und sein Boden sind Erde', () => {
+    expect(new FreeField([room], 1, () => 0).empty).toBe(true);
+    const open = new FreeField([room], 2, () => 0);
     expect(open.empty).toBe(false);
-    expect(open.solid(128, -9, -1)).toBe(true);
-    expect(open.solid(140, -14, -1)).toBe(true);
+    expect(open.solid(127, -9, -1)).toBe(true);
+    expect(open.solid(140, -14.5, -1)).toBe(true);
     expect(open.solid(140, -4.2, -1)).toBe(false);
     expect(open.solid(140, -9, -1)).toBe(false);
-    expect(open.tunnel(140, -9, -1)).toBe(true);
+    expect(open.ceilingAbove(140, -9, -1)).toBe(false);
+    expect(open.floorBelow(140, -4, -1)).toMatchObject({ kind: 'cave' });
   });
 
   it('eine Verbinden-Baustelle über einem Raum zielt auf den Raum; offen nimmt sie ihm den Deckel', () => {

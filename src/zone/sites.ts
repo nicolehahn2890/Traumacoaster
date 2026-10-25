@@ -7,7 +7,7 @@
 import { LANE_DEPTH } from '@/track/stage';
 import { kindDefaults, type ZoneElement, type ZoneSite } from './types';
 import { threePartOutline } from './build';
-import { inPolygon } from './rock';
+import { inPolygon } from './field';
 
 /** Öffnungsradius einer Freilegung ohne Angabe (Meter) */
 export const SITE_OPENING_R = 2.6;

@@ -4,7 +4,7 @@ import { planBrushTrack } from '@/track/brushTrack';
 import { sampleTrack } from '@/track/model';
 import { Terrain } from '@/physics/terrain';
 import { TrainSim, type TrainSimOptions } from '@/physics/trainSim';
-import { RockField, ROCK_MARGIN } from '@/zone/rock';
+import { FreeField } from '@/zone/field';
 import { SITE_OPENING_R, SITE_STANDOFF, siteAnchor, siteTarget, siteWalls, withSiteOpenings } from '@/zone/sites';
 import { emptyZone, parseZone, serializeZone, type ZoneElement, type ZoneSite } from '@/zone/types';
 
@@ -34,17 +34,15 @@ describe('Baustellen (Etappe 2, Schritt 6)', () => {
   });
 
   it('nach der Freilegung trägt die Lippe die Öffnung: das Festigkeitsfeld lässt dort durch, die Zonendatei bleibt gleich', () => {
-    const before = new RockField([slab]);
-    const closedSpans = before.spans(toView(80, 6, 1 - half), (p, lane) => rayToWorld(p, lane));
-    expect(closedSpans.some((s) => Math.abs(s.z0 - (1 - half - ROCK_MARGIN)) < 1e-6)).toBe(true);
+    const before = new FreeField([slab], 0, () => 0);
+    expect(before.solid(80, 6, 1 - half)).toBe(true);
     const derived = withSiteOpenings([slab, flat], [connect, wallSite], new Set(['b2']));
     expect(derived[0].openings).toHaveLength(2);
     expect(derived[0].openings![1]).toEqual({ dx: -5, dy: 6, r: SITE_OPENING_R });
     expect(derived[1]).toBe(flat);
     expect(slab.openings).toHaveLength(1);
-    const after = new RockField(derived);
-    const openSpans = after.spans(toView(80, 6, 1 - half), (p, lane) => rayToWorld(p, lane));
-    expect(openSpans.some((s) => Math.abs(s.z0 - (1 - half - ROCK_MARGIN)) < 1e-6)).toBe(false);
+    const after = new FreeField(derived, 0, () => 0);
+    expect(after.solid(80, 6, 1 - half)).toBe(false);
     expect(withSiteOpenings([slab], [connect], new Set())[0]).toBe(slab);
     // Durchbruch-Wände nur für geschlossene Baustellen
     expect(siteWalls([connect, wallSite], new Set())).toHaveLength(1);

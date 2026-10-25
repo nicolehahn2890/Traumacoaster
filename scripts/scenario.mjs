@@ -519,7 +519,7 @@ if (want('10')) {
       chain: s.abilities?.chain ?? null,
       chainLine: s.chainLine.getBounds().width > 0 && s.chainLabel.visible,
       car: s.abilities?.car ?? null,
-      // Schritt 5: Festigkeitsfeld der Prüfzone (Dreiteiler e1 fest, sein Fenster frei und Tunnel)
+      // Schritt 5 (jetzt Freiraumfeld): Dreiteiler e1 fest, sein Fenster frei, Innenraum frei und unter einer Decke (Tunnel), Oberkante trägt
       // Schritt 6: zwei Baustellen (Durchbruch b1, Verbinden b2 auf dem Dreiteiler), noch keine offen, Wand für die Fahrt
       // Schritt 7: Raum e4 offen ab Stufe 2 (im Feld der Stufe 1 unsichtbar, kein Loch), Look der Stufe 1 ist Abend
       e4Visible: window.tcGame.world.zone.get('e4')?.built.group.visible ?? null,
@@ -527,7 +527,7 @@ if (want('10')) {
       look: window.tcGame.world.currentLook,
       sites: z?.sites.map((b) => b.variant).join(',') ?? '',
       opened: s.openedSites.size,
-      rock: !!s.rock && s.rock.solid(85, 8, 0.554) && !s.rock.solid(85, 4, 0.554) && s.rock.solid(85, 4, 1.446) && !s.rock.solid(85, 8, 1) && s.rock.tunnel(85, 8, 1) && !s.rock.solid(85, 8, 0),
+      rock: !!s.field && s.field.solid(85, 8, 0.554) && !s.field.solid(85, 4, 0.554) && s.field.solid(85, 4, 1.446) && !s.field.solid(85, 8, 1) && s.field.ceilingAbove(85, 8, 1) && !s.field.solid(85, 8, 0) && !!s.field.floorBelow(85, 20, 1),
     };
   });
   console.log('zone', zone);
@@ -544,7 +544,7 @@ if (want('10')) {
   check(zone.budget === 400 && zone.maxHeight === 40, `Streckenbudget und Höhenlimit des Felds gelten (${zone.budget} m, ${zone.maxHeight} m)`);
   check(zone.startChipR === 33 && zone.startGroup, `Startart-Knopf am Hebel (Radius ${zone.startChipR}) und Startart-Gruppe in der Welt (${zone.startGroup})`);
   check(zone.chain === 20 && zone.chainLine && zone.car === 'rot', `Kettenzuglinie bei ${zone.chain} m mit Beschriftung (${zone.chainLine}), Wagenvariante ${zone.car}`);
-  check(zone.rock === true, `Festigkeitsfeld: Lippe fest mit freiem Fenster, Rückwand fest, Innenraum frei und Tunnel (${zone.rock})`);
+  check(zone.rock === true, `Freiraumfeld: Lippe fest mit freiem Fenster, Rückwand fest, Innenraum frei und Tunnel, Oberkante trägt (${zone.rock})`);
   check(zone.sites === 'breakthrough,connect' && zone.opened === 0, `Baustellen Durchbruch und Verbinden, noch geschlossen (${zone.sites}, offen ${zone.opened})`);
   check(zone.e4Visible === false && zone.rooms === 0 && zone.look === 'dusk', `Raum ab Stufe 2 in Stufe 1 gedeckelt (sichtbar ${zone.e4Visible}, offene Räume ${zone.rooms}), Look der Stufe ${zone.look}`);
   // dieselbe Datei noch einmal gelesen ergibt denselben Stand (deterministisch)
