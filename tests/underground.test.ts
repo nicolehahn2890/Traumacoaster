@@ -6,7 +6,8 @@ import { buildGround } from '@/world/ground';
 import { RockField } from '@/zone/rock';
 import { siteTarget, withSiteOpenings } from '@/zone/sites';
 import { emptyZone, parseZone, serializeZone, type ZoneElement, type ZoneSite } from '@/zone/types';
-import { groundHoles, groundWithRooms, openRooms, roomAt, roomLanes, roomOpen } from '@/zone/underground';
+import { groundHoles, groundWithRooms, openRooms, roomAt, roomOpen } from '@/zone/underground';
+import { FreeField } from '@/zone/field';
 import { rayToWorld, toStage, type StagePoint } from '@/track/stage';
 import { planBrushTrack, previewBrushTrack } from '@/track/brushTrack';
 
@@ -81,37 +82,14 @@ describe('Untergrund: Räume offen ab Stufe, Looks je Stufe (Etappe 2, Schritt 7
   });
 
   it('der Pinsel taucht in einen offenen Raum ab: unter der Oberfläche über dem Raum bleibt die Tiefe in dessen Spuren', () => {
-    const rooms = openRooms([room], 2);
+    const field = new FreeField([room], 2, () => 0);
     const toWorld = (p: StagePoint, lane: number) => rayToWorld(p, lane);
-    const surface = () => 0;
-    // ein Punkt 9 m unter dem Boden über dem Raum: Tauchfahrt, nur Spuren des Raums kommen infrage
-    const inRoom = roomLanes(rooms, toStage(140, -9, -1), toWorld, surface)!;
-    expect(inRoom).not.toBeNull();
-    expect(inRoom.h).toBeLessThan(-0.3);
-    expect(inRoom.center).toBe(-1);
-    expect(inRoom.z0).toBeGreaterThanOrEqual(-1 - half);
-    expect(inRoom.z1).toBeLessThanOrEqual(-1 + half);
-    // knapp unter der Oberfläche: der Raum ist bis oben offen, die Raummitte liegt in den Spuren
-    const nearTop = roomLanes(rooms, toStage(140, -1.5, -1), toWorld, surface)!;
-    expect(nearTop.h).toBeLessThan(-0.3);
-    expect(nearTop.z0).toBeLessThanOrEqual(-1);
-    expect(nearTop.z1).toBeGreaterThanOrEqual(-1);
-    // unter dem Raumboden gemalt: alle Spuren des Raums (die Höhe hebt der Pinsel an)
-    const below = roomLanes(rooms, toStage(140, -16, -1), toWorld, surface)!;
-    expect(below.z0).toBeCloseTo(-1 - half + 0.15, 6);
-    expect(below.z1).toBeCloseTo(-1 + half - 0.15, 6);
-    // über dem Loch: Treffer ohne Tauchfahrt (Brücke), außerhalb der Grundfläche keiner
-    const over = roomLanes(rooms, toStage(140, 5, -1), toWorld, surface)!;
-    expect(over.h).toBeGreaterThan(0);
-    expect(roomLanes(rooms, toStage(100, -9, -1), toWorld, surface)).toBeNull();
-    // ein Kasten über dem Boden ist kein Loch
-    expect(roomLanes(openRooms([{ ...always, y: 0 }], 0), toStage(60, 3, 0), toWorld, surface)).toBeNull();
     // Strich: flach über dem Boden, dann hinab in den Raum und darin weiter
     const pts: StagePoint[] = [];
     for (let x = 60; x <= 120; x += 2) pts.push(toStage(x, 3, -1));
     for (let k = 1; k <= 10; k++) pts.push(toStage(120 + k * 1.4, 3 - k * 1.2, -1));
     for (let x = 136; x <= 150; x += 2) pts.push(toStage(x, -9, -1));
-    const plan = planBrushTrack(pts, { ground: groundWithRooms(() => 0, rooms), underground: (p) => roomLanes(rooms, p, toWorld, surface) })!;
+    const plan = planBrushTrack(pts, { field: { free: (p) => field.freeLanes(p, toWorld, 0.8), solid: (x, y, lane) => field.solid(x, y, lane), floor: (x, y, lane) => field.floorBelow(x, y, lane, 40)?.y ?? null } })!;
     expect(plan.rock).toEqual([]);
     let inside = 0;
     plan.pts.forEach((p) => {
@@ -139,11 +117,10 @@ describe('Untergrund: Räume offen ab Stufe, Looks je Stufe (Etappe 2, Schritt 7
   });
 });
 
-describe('Glättung der Tiefenwahl an Räumen (Tor 2b)', () => {
-  const rooms = openRooms([room], 2);
+describe('Glättung der Tiefenwahl an Räumen (Tor 2b, Freiraumfeld)', () => {
+  const field = new FreeField([room], 2, () => 0);
   const toWorld = (p: StagePoint, lane: number) => rayToWorld(p, lane);
-  const surface = () => 0;
-  const opts = { ground: groundWithRooms(() => 0, rooms), underground: (p: StagePoint) => roomLanes(rooms, p, toWorld, surface) };
+  const opts = { field: { free: (p: StagePoint) => field.freeLanes(p, toWorld, 0.8), solid: (x: number, y: number, lane: number) => field.solid(x, y, lane), floor: (x: number, y: number, lane: number) => field.floorBelow(x, y, lane, 40)?.y ?? null } };
   const maxStep = (plan: NonNullable<ReturnType<typeof planBrushTrack>>, x0: number, x1: number) => {
     let m = 0;
     for (let i = 1; i < plan.z.length; i++) if (plan.line[i].X >= x0 && plan.line[i].X <= x1) m = Math.max(m, Math.abs(plan.z[i] - plan.z[i - 1]) / LANE_DEPTH);
@@ -165,7 +142,7 @@ describe('Glättung der Tiefenwahl an Räumen (Tor 2b)', () => {
     });
   });
 
-  it('die Tauchfahrt in den Raum und die Fahrt darin laufen weich: kein Sprung am Lochrand, die Raummitte als Spur', () => {
+  it('die Tauchfahrt in den Raum und die Fahrt darin laufen weich: kein Sprung am Lochrand, die Bahn bleibt im Raum', () => {
     // flach über dem Boden, am Lochrand hinab, im Raum mit Wellen weiter bis ans Ende des Raums
     const pts: StagePoint[] = [];
     for (let x = 60; x <= 128; x += 2) pts.push(toStage(x, 3, -1));
@@ -179,7 +156,8 @@ describe('Glättung der Tiefenwahl an Räumen (Tor 2b)', () => {
       if (p.x < 141 || p.x > 150) return;
       inside++;
       const lane = p.z / LANE_DEPTH;
-      expect(Math.abs(lane + 1)).toBeLessThan(0.35);
+      expect(lane).toBeGreaterThan(-1 - half);
+      expect(lane).toBeLessThan(-1 + half);
       expect(p.y).toBeLessThan(-4);
       expect(p.y).toBeGreaterThan(-13.5);
     });
@@ -195,12 +173,18 @@ describe('Glättung der Tiefenwahl an Räumen (Tor 2b)', () => {
     expect(jump).toBeLessThan(0.5);
   });
 
-  it('ein Strich entlang des Raumbodens sperrt den Raum nicht: nur die Seitenwände sind Fels für den Pinsel', () => {
-    const rock = new RockField([room], 2);
-    const spansAt = (x: number, y: number) => rock.spans(toStage(x, y, -1), toWorld);
-    expect(spansAt(140, -14)).toHaveLength(0);
-    expect(spansAt(128, -9)).toHaveLength(1);
-    expect(spansAt(128, -9)[0]).toMatchObject({ id: 'e4', kind: 'wall' });
-    expect(rock.solid(140, -14, -1)).toBe(true);
+  it('ein Strich entlang des Raumbodens sperrt den Raum nicht: der Boden ist Erde unter dem Raum, die Wände sind Erde daneben', () => {
+    expect(field.solid(140, -13.5, -1)).toBe(false);
+    expect(field.solid(140, -14.2, -1)).toBe(true);
+    expect(field.solid(127, -9, -1)).toBe(true);
+    const pts: StagePoint[] = [];
+    for (let x = 60; x <= 128; x += 2) pts.push(toStage(x, 3, -1));
+    for (let k = 1; k <= 10; k++) pts.push(toStage(128 + k * 1.2, 3 - k * 1.6, -1));
+    for (let x = 141; x <= 150; x += 1.5) pts.push(toStage(x, -13.2, -1));
+    const plan = planBrushTrack(pts, opts)!;
+    expect(plan.rock).toEqual([]);
+    plan.pts.forEach((p) => {
+      if (p.x >= 141 && p.x <= 150) expect(p.y).toBeGreaterThan(-13.9);
+    });
   });
 });

@@ -1118,7 +1118,19 @@ Tunnel-Meter in eingeschlossenem Freiraum, Durchbruch-Wände als zerbrechliches 
 Feld (Leitsatz 6). (f) **Räume und Ebenen neu nach Florians Bild:** Ebenen im Editor ziehen und auseinanderziehen, Räume
 als Freiraum darin; das ausgestanzte Quadrat verschwindet. Schritte, jeder mit Messung an den Aufnahmen und Tests: Feld
 aus den heutigen Klötzchen; Pinsel auf das Feld; Spitze; Stützen und Fahrt; Ebenen-Boden und Räume im Editor; dann Tor
-2b erneut. Bis Florian entscheidet, kommen keine weiteren Sonderregeln dazu.
+2b erneut. Bis Florian entscheidet, kommen keine weiteren Sonderregeln dazu. **Bestätigt (Florian, 25.10.2026):** „mach weiter wie du vorgeschlagen hast“, nach der Erklärung, dass „Modell“ die Bauweise des Pinsels meint (heute: alles neu rechnen; neu: die Spitze). Reihenfolge: Feld, Pinsel, Spitze, Stützen und Fahrt, Ebenen und Räume; Stand je Schritt unten.
+**Stand 25.10.2026 (Freiraumfeld, Schritte Feld und Pinsel gebaut; `docs/TECH.md` 4h „Freiraumfeld“):** Ein Feld „fest
+oder frei“ aus Erde, offenen Räumen, Dreiteilern (Lippe, Rückwand, Dach, Fenster; Flanken offen), Säulen und Kästen; der
+Pinsel wählt je Punkt die freien Abschnitte am Strahl und daraus eine Kette mit kleinstem Sprung über den ganzen Strich,
+Höhlen in Reichweite ziehen an, Ein- und Ausfahrt laufen weich, die gezeigte Tiefe führt die Kette. Die Sonderregeln für
+Lippe, Rückwand, Passage, Durchfahrt und Raum-Treffer sind weg. Gelernt: (1) Eine Kette am Stück meidet Sackgassen; beim
+Malen führt die gezeigte Tiefe hinein, darum bleiben die Flanken offen, bis 8a feste Flanken und Ausfahrten bringt (die
+Prüfzone hat jetzt ein zweites Fenster). (2) An einer Öffnung müssen Luft und Höhle als ein Freiraum gelten, sonst springt
+die Bahn dort um die Wanddicke. (3) Erde knapp unter der Oberfläche muss frei bleiben und angehoben werden, sonst reißt
+die Kette vor jedem Loch. (4) In einer Höhle muss die Höhlenmitte gegen Glättung, gezeigte Tiefe und Hügelregel ankommen,
+sonst klebt die Bahn an der Wand, an der sie hereinkam. Gemessen an 98 Aufnahmen: nichts blockiert oder abgeschnitten,
+Sprünge etwa wie mit den Sonderregeln (11,3 je Strich, Vorschau 51,0; ohne Zonenregeln 11,2 und 40,1). Offen: Spitze, Stützen und Fahrt auf das
+Feld, Ebenen-Boden und Räume im Editor, dann Tor 2b erneut.
 **Status: bestätigt am 24.10.2026.** Graben in Stufen trägt Florians Vorbehalt; Autoscroll wird nach dem Ausprobieren
 entschieden. **Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Der Wasserfall bleibt ein eigenes Element (er ist
 seit Etappe 1 da) und bekommt den Schalter „Fahrt dahinter gedämpft“; die Schalter Schmuck, trägt Stützen und Splash-Zone

@@ -43,8 +43,9 @@ import { HANG_DROP, trackTypeForSkin, type TrackType } from '@/world/trackTypes'
 import type { ZoneElement, ZoneField, ZoneFile, ZoneSite, ZoneStation } from '@/zone/types';
 import { LIFT_HEIGHT_DEFAULT, allowedStarts, resolveAbilities, zoneUnlocks, type ResolvedAbilities } from '@/zone/abilities';
 import { RockField } from '@/zone/rock';
+import { cachedFreeLanes, FreeField, type FreeLanes } from '@/zone/field';
 import { SITE_OPENING_R, SITE_REACH, siteAnchor, siteTarget, siteWalls, withSiteOpenings } from '@/zone/sites';
-import { groundHoles, openRooms, roomAt, roomLanes, type Room } from '@/zone/underground';
+import { groundHoles, openRooms, roomAt, type Room } from '@/zone/underground';
 import type { LookName } from '@/world/looks';
 import { applyZoneExtras, stationPath, zoneCoins } from '@/zone/build';
 import { ZoneEditor } from '@/app/zoneEditor';
@@ -386,6 +387,9 @@ export class LevelScene implements Scene {
   private abilities: ResolvedAbilities | null = null;
   /** Festigkeitsfeld der Zone (Etappe 2, Schritt 5): fester Fels aus den Elementen bis zur Fortschrittsstufe; null ohne Zone */
   private rock: RockField | null = null;
+  /** Freiraumfeld der Zone (Tor 2b): fest oder frei, für den Pinsel */
+  private field: FreeField | null = null;
+  private freeLanes: (((p: StagePoint) => FreeLanes) & { clear(): void }) | null = null;
   private rockToastAt = -10;
   /** offene Räume unter dem Boden zur Stufe des Felds (Schritt 7): dort ist der Raumboden der Boden des Pinsels */
   private rooms: Room[] = [];
@@ -571,6 +575,9 @@ export class LevelScene implements Scene {
     const derived = this.derivedElements();
     this.rock = zone ? new RockField(derived, stage) : null;
     this.view.rock = this.rock;
+    // Freiraumfeld (Tor 2b): Erde, Fels und Räume in einem Feld; der Pinsel liest nur daraus
+    this.field = zone ? new FreeField(derived, stage, (x, lane) => this.earthAt(x, lane)) : null;
+    this.freeLanes = this.field ? cachedFreeLanes(this.field, (q, lane) => rayToWorld(q, lane), this.groundClearance) : null;
     // Untergrund (Schritt 7): offene Räume, Löcher im Boden und Fenster im Erdschnitt
     this.rooms = zone ? openRooms(derived, stage) : [];
     this.game.world?.setGroundHoles(groundHoles(this.rooms, (x) => this.terrain.groundHeight(x, 0)));
@@ -2038,17 +2045,18 @@ export class LevelScene implements Scene {
   }
 
   private brushOptions() {
+    const field = this.field;
+    const free = this.freeLanes;
     return {
-      ground: (x: number, z: number) => (this.groundAt(x, z)),
+      // mit Freiraumfeld liest der Pinsel die Höhe über der Erde (Räume kennt das Feld), sonst über dem Boden mit Räumen
+      ground: field ? (x: number, z: number) => this.earthAt(x, z) : (x: number, z: number) => this.groundAt(x, z),
       clearance: this.groundClearance,
       // Rundenschluss ab 8 m Bühne oder 60 px, je nachdem, was weiter ist
       closeSnap: Math.max(8, 60 / this.view.camera.zoom),
       // beim Nachbessern gibt die Linie höchstens 8 Bildschirm-Pixel nach
       tolerance: Math.max(0.4, 8 / this.view.camera.zoom),
-      // Fels der Zone (Schritt 5): verbotene Tiefen je Linienpunkt, gedeutet mit dem Strahl der Kamera
-      rock: this.rock && !this.rock.empty ? (p: StagePoint) => this.rock!.spans(p, (q, lane) => rayToWorld(q, lane)) : undefined,
-      // offene Räume (Schritt 7): ein Punkt unter der Oberfläche über einem Raum bleibt in dessen Spuren
-      underground: this.rooms.length ? (p: StagePoint) => roomLanes(this.rooms, p, (q, lane) => rayToWorld(q, lane), (x, lane) => this.terrain.groundHeight(x, lane)) : undefined,
+      // Freiraumfeld der Zone (Tor 2b): freie Tiefen-Abschnitte je Linienpunkt am Strahl der Kamera, fester Weltpunkt
+      field: field && free ? { free, solid: (x: number, y: number, lane: number) => field.solid(x, y, lane), floor: (x: number, y: number, lane: number) => field.floorBelow(x, y, lane, 40)?.y ?? null } : undefined,
     };
   }
 
@@ -2577,6 +2585,10 @@ export class LevelScene implements Scene {
     // über einem offenen Raum ist der Raumboden der Boden (Schritt 7)
     const r = roomAt(this.rooms, x, z);
     if (r) return r.y0 + 0.05;
+    return this.earthAt(x, z);
+  }
+  /** Höhe, unter der die Erde fest ist: der Boden, mit den Bergen des Levels, wenn Tunnel nicht erlaubt sind */
+  private earthAt(x: number, z: number): number {
     return this.allowTunnels ? this.terrain.groundHeight(x, z) : this.terrain.surfaceHeight(x, z);
   }
   private moveNode(i: number, st: StagePoint): void {

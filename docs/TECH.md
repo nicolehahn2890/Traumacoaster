@@ -473,7 +473,7 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   Spuren; ohne Zonenregeln 11,2 / 73,3 / 0,87 (die Aufnahmen entstanden ohne Zone, die Berührungen sind Zufall; mit Stufe
   2 und offenem Raum dieselben Zahlen, kaum eine Aufnahme taucht). Tests in `tests/rock.test.ts` (Seite bleibt über
   Vorschauen und beim Loslassen, Hebel gegen Fels) und `tests/underground.test.ts` (Brücke, Tauchfahrt mit Wellen,
-  Raumboden). Platzhalter weiter: Abtauchen ohne Schacht, rechteckige Löcher.
+  Raumboden). Platzhalter weiter: Abtauchen ohne Schacht, rechteckige Löcher. **Abgelöst** durch das Freiraumfeld (unten).
 - **Durchfahrt durch Fenster (Magnet) und Vorschau ohne Wackeln** (Tor 2b, zweiter Test, 25.10.; Florians Leitsätze in
   Plan Paket 5). Fenster: Trifft der Strahl der Lippe eine Öffnung, liefert `RockField.spans` eine Spanne `kind: 'window'`
   (Tiefe der Lippe, ohne Breite, keine Wand). Trifft eine Passage ein Fenster und liegt der Strich nicht ohnehin im
@@ -497,6 +497,60 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   mehr nachgeben); Spitze 20 m mit halbem Gewicht: 61,6 / 10,1 / 0,87. Die verbleibenden Sprünge kommen von Kreuzungen
   und Engstellen, an denen der frühere Strang nachgibt; dagegen hilft erst die Spitze aus dem Vorschlag „Freiraumfeld“
   (Plan Paket 5). Tests in `tests/rock.test.ts` (Durchfahrt am Stück und beim Malen, Strich im Korridor bleibt dort).
+  **Abgelöst** durch das Freiraumfeld (unten); die Vorschau ohne Wackeln bleibt.
+- **Freiraumfeld statt Sonderregeln** (Plan Paket 5, Vorschlag von Florian am 25.10. bestätigt; `src/zone/field.ts`,
+  Pinsel in `src/track/brushTrack.ts`). Ein Feld „fest oder frei“ über die Welt: `FreeField(elements, stage, earth)` mit
+  der Erde unter der Oberfläche (`earth(x, Spur)`: Boden, mit den Bergen des Levels, wenn Tunnel verboten sind), offenen
+  Räumen als Freiraum in der Erde bis zur Oberfläche (der Deckel ist weg), Dreiteilern (Umriss × Dicke mit Lippe und
+  Rückwand als Wänden ±`WALL_HALF` um die Flächen, Dach `ROOF` 2 m unter der Oberkante, Innenraum frei, Flanken offen wie
+  bei den Bergen der Level; Öffnungen als Zylinder durch die Lippe), Säulen und den Wänden und Böden von Höhlenkästen über
+  dem Boden. Abfragen: `solidKind`/`solid` (Punkt fest: Erde oder Element), `caveAt` (Höhle: offener Raum unter der
+  Oberfläche ab `CAVE_DIVE` 0,3 m oder Innenraum eines Dreiteilers, mit mittlerer Spur), `freeLanes` (freie Abschnitte am
+  Strahl eines Bühnenpunkts, Spurschritt 0,05: frei ist, was in keinem Element liegt und bis `clearance` darunter keins
+  hat; Erde bis `LIFT_MAX` 2 m unter der Oberfläche gilt als frei und wird angehoben, wenn auf der Oberfläche kein Element
+  steht; tiefer bleibt nur die Notspur mit der kleinsten Eindringtiefe; Abschnitte in einer Höhle sind eigene Abschnitte
+  mit `attract`, wenn der Strahl auch auf der mittleren Spur der Höhle in ihr liegt; `below` meldet eine Höhle unter dem
+  Strahl, in die der Strich noch nicht reicht, mit der Höhe darüber), `floorBelow` (tragende Fläche unter einem Punkt:
+  Erde, Fels, Raumboden) und `ceilingAbove` (Decke bis `CEILING` 12 m: Tunnel). `cachedFreeLanes` merkt sich Abschnitte
+  je Bühnenpunkt (die Linie wächst beim Malen nur am Ende). Die Fels-Regeln aus Schritt 5 (Lippen- und Rückwandbänder,
+  Seitenwahl je Passage, Durchfahrt) und die Raum-Treffer aus Schritt 7 (Tauchfahrt, Brücke, Anlauf) sind damit weg; das
+  Festigkeitsfeld `RockField` bleibt vorerst für Stützen, Tunnel-Meter der Fahrt und das Szenario, bis Stützen und Fahrt
+  das Feld lesen (nächster Schritt). Die Flanken der Dreiteiler sind offen geblieben (siehe Gelernt).
+  **Pinsel auf dem Feld** (`BrushOptions.field`: `free`, `solid`, `floor`; ohne Feld gilt in den Levels der Boden wie
+  bisher): je Linienpunkt die freien Abschnitte, daraus `chooseChain` eine Kette über den ganzen Strich (dynamisches
+  Programm): je Punkt kostet ein Abschnitt den Abstand der Wunschtiefe (Bildhöhe über der Erde) zu ihm in Spuren, eine
+  Höhle, in die der Strich hinein gemalt ist, zählt um `CAVE_PULL` 0,35 Spuren breiter (Magnet: Räume und Innenräume
+  ziehen an, was nah ist, und lassen in Ruhe, was weit davor liegt), feste Punkte (Station, alte Bahn, Vorschau, Fang)
+  bleiben in ihrem Abschnitt, die gezeigte Tiefe (hold) führt die Kette (so wechselt beim Loslassen nichts die Seite), und
+  ein Wechsel in einen Abschnitt, der den vorigen nicht berührt, ist ein Sprung (teuer; dort ist der Strich blockiert, die
+  Bahn endet beim Loslassen davor; Punkte ganz ohne Abschnitt ebenso). Schranken: der gewählte Abschnitt samt allen, die
+  ihn berühren (Luft und Höhle an einem Fenster oder Lochrand sind ein Freiraum, so wechselt die Bahn dort weich statt an
+  einem Punkt), knapp vor der Wand (`CHAIN_MARGIN` 0,25 m, damit die Bahn schräg auf eine Öffnung zulaufen kann); den
+  Abstand im Normalfall hält der Wunsch weich (`FIELD_GAP` 0,15 Spuren). Der Hebel „nach hinten legen“ des Nachbesserns
+  gilt nur, soweit der Abschnitt ihn lässt. In einer Höhle liest der Pinsel keine Höhe (`noRead`): Wunsch ist die Mitte
+  des Abschnitts mit `NOREAD_W` 4-fachem Gewicht (sonst klebte die Bahn an der Wand, an der sie hereinkam), die
+  Fliehkraft-Kopplung der Tiefe an die Bildkrümmung ist dort auf `CAVE_K` 0,1 gedämpft (sie drückte die Bahn mit der
+  Fallhöhe an die Wand), die gezeigte Tiefe hält dort nur mit `CAVE_HOLD` 0,1, und eine Schranke lässt dort wie an
+  Wenden schon bei kleiner Gegenkraft los. Das Feld wirkt auf den Wunsch nach Station und Hügeln (die Wände gehen vor;
+  ein Anstieg am Linienende hielt sonst die ganze Linie auf der Tiefe seines Fußes, auch im Berg). Anlauf: Was Wände an der Wunschtiefe
+  ändern, kündigt sich rückwärts entlang der Linie an (`RAMP_DECAY` 0,92 je Meter); eine Höhle unter dem Strich zieht ihn
+  nahe der Oberfläche auf ihre Mitte (`below`, Gewicht wächst bis zur Oberfläche); Ein- und Ausfahrt einer Höhle wandern
+  über `CAVE_RAMP` 6 Punkte zwischen Lesung und Mitte. Weltpunkte halten die Mindesthöhe über dem, was unter ihnen trägt
+  (`floor`), wer in der Erde steckt, kommt auf die Oberfläche. Die Vorschau meldet je Punkt `cave`, die nächste hält dort
+  schwach. Gelernt: (1) Eine Kette am Stück meidet Sackgassen (ein Innenraum mit nur einem Fenster), beim Malen führt die
+  gezeigte Tiefe hinein; darum sind die Flanken offen geblieben und die Prüfzone hat ein zweites Fenster als Ausfahrt;
+  feste Flanken kommen mit den gemalten Teilen (8a). (2) Die harte Schranke muss berührende Abschnitte zusammenfassen,
+  sonst springt die Bahn am Rand einer Öffnung um die Wanddicke. (3) Erde knapp unter der Oberfläche muss frei bleiben
+  (angehoben), sonst reißt die Kette vor jedem Loch und am vordersten Bühnenrand (Striche auf Bildhöhe −10 waren
+  abgeschnitten). (4) Die Mitte einer Höhle ist die ihres Abschnitts, nicht des verschmolzenen Freiraums (an einem
+  Fenster zog die Mitte sonst nach vorn hinaus). Messung (Replay `--zone probe`, inzwischen 98 Aufnahmen von Florian,
+  76 mit Berührung): Tiefensprünge je berührendem Strich 11,3, Vorschau-Sprünge 51,0, Loslassen 1,17 Spuren, blockiert
+  0, abgeschnitten 0; dieselben
+  Aufnahmen ohne Zonenregeln 11,2 / 40,1 / 0,94 (die Aufnahmen entstanden ohne Zone); Replay `--world` unverändert (475
+  Profile, Median 2,0 px; die Levels laufen ohne Feld). Browser: Strich an der Lippe läuft durch den Innenraum, Tauchfahrt
+  in den Raum (Bahn in der Mitte des Innenraums bzw. des Raums), beide ohne Sprung an gezeigten Punkten und mit höchstens
+  0,06 Spuren je Meter. Tests in
+  `tests/field.test.ts`, `tests/rock.test.ts` (Pinsel im Freiraumfeld), `tests/underground.test.ts`.
 
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).

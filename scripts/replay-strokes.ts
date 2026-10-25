@@ -25,11 +25,10 @@ import { sampleTrack, type TrackPath } from '../src/track/model';
 import { extendTrack, lanesTrack, strokeToTrack } from '../src/track/strokeToTrack';
 import { applyOverdraw } from '../src/track/overdraw';
 import { RubberBrush } from '../src/track/brush';
-import { BrushRefiner, joinLines, planBrushTrack, previewBrushTrack, ROOM_DIVE, spliceLine, trackLine, trackLineWithDepth, type BrushPreview, type RoomHit } from '../src/track/brushTrack';
+import { BrushRefiner, brushDebug, joinLines, planBrushTrack, previewBrushTrack, spliceLine, trackLine, trackLineWithDepth, type BrushField, type BrushPreview } from '../src/track/brushTrack';
 import { LANE_DEPTH, rayToWorld, setPerspective, setView, viewDistance, type StagePoint } from '../src/track/stage';
 import { parseZone, type ZoneFile } from '../src/zone/types';
-import { RockField } from '../src/zone/rock';
-import { groundWithRooms, openRooms, roomLanes } from '../src/zone/underground';
+import { FreeField, cachedFreeLanes, type FreeLanes } from '../src/zone/field';
 import { railBanksFor } from '../src/track/model';
 import { trackFrames } from '../src/world/trackMesh';
 import { buildTrack } from '../src/world/trackBuilder';
@@ -111,18 +110,15 @@ function build(rec: Rec, reading: Reading, level: LevelDef, terrain: Terrain, sk
   let ground = (x: number, z: number) => terrain.groundHeight(x, z);
   const closeSnap = Math.max(8, 60 / rec.zoom);
   // Zone (Etappe 2): Fels und offene Räume zur Stufe des Felds gelten für den Pinsel
-  let zoneOpts: { rock?: (p: StagePoint) => { z0: number; z1: number }[]; underground?: (p: StagePoint) => RoomHit | null } = {};
+  let zoneOpts: { field?: BrushField } = {};
+  let freeOf: ((p: StagePoint) => FreeLanes) | null = null;
   if (zoneFile && !NO_ROCK && rec.level === 0 && (rec.zone ?? ZONE) === zoneFile.name) {
     const field = zoneFile.fields.find((f) => f.id === rec.field) ?? zoneFile.fields[0];
     const stage = STAGE ?? field?.stage ?? Infinity;
-    const rock = new RockField(zoneFile.elements, stage);
-    const rooms = openRooms(zoneFile.elements, stage);
-    const base = ground;
-    ground = groundWithRooms(base, rooms);
-    zoneOpts = {
-      rock: rock.empty ? undefined : (p) => rock.spans(p, (q, lane) => rayToWorld(q, lane)),
-      underground: rooms.length ? (p) => roomLanes(rooms, p, (q, lane) => rayToWorld(q, lane), (x, lane) => base(x, lane)) : undefined,
-    };
+    // Freiraumfeld (Tor 2b): Erde, Fels und Räume der Zone in einem Feld; der Pinsel liest die Höhe über der Erde
+    const free = new FreeField(zoneFile.elements, stage, (x, lane) => terrain.groundHeight(x, lane));
+    freeOf = cachedFreeLanes(free, (q, lane) => rayToWorld(q, lane), 0.8);
+    zoneOpts = { field: { free: freeOf, solid: (x, y, lane) => free.solid(x, y, lane), floor: (x, y, lane) => free.floorBelow(x, y, lane, 40)?.y ?? null } };
   }
   const before = fixNaN(rec.before);
   if (reading === 'brush') {
@@ -166,14 +162,17 @@ function build(rec: Rec, reading: Reading, level: LevelDef, terrain: Terrain, sk
     }
     const plan = planBrushTrack(line, opts, keep, pv ?? undefined);
     if (!plan) return { path: null, note: 'zu kurz' };
+    if (process.env.TC_DEBUG_ROCK && freeOf) {
+      brushDebug.onCut = ({ line, z, rock }) => {
+        const [a, b] = rock[0];
+        const p = line[a];
+        const l = freeOf!(p);
+        console.log(`    abgeschnitten vor ${a}–${b} von ${line.length} (X ${p.X.toFixed(1)}, Y ${p.Y.toFixed(1)}, Tiefe davor ${(z[Math.max(0, a - 1)] / LANE_DEPTH).toFixed(2)}): Abschnitte ${l.intervals.map((iv) => `[${iv.a.toFixed(2)},${iv.b.toFixed(2)}${iv.cave ? ' ' + iv.cave + (iv.attract ? '!' : '') : ''}]`).join(' ') || '-'}${l.fallback !== null ? ` Notspur ${l.fallback}` : ''}; davor ${a > 0 ? freeOf!(line[a - 1]).intervals.map((iv) => `[${iv.a.toFixed(2)},${iv.b.toFixed(2)}]`).join(' ') : '-'}`);
+      };
+    }
     const debugRock = (tag: string) => {
       if (!process.env.TC_DEBUG_ROCK || !plan.rock.length) return;
-      const lines = plan.rock.map(([a, b]) => {
-        const sp = zoneOpts.rock?.(plan.line[a]) ?? [];
-        return `    ${tag}: blockiert ${a}–${b} von ${plan.line.length} (X ${plan.line[a].X.toFixed(1)}, Y ${plan.line[a].Y.toFixed(1)}, Tiefe ${(plan.z[a] / LANE_DEPTH).toFixed(2)}${keep && a < keep.length ? ', in der alten Bahn' : ''}) Spannen ${sp.map((q) => `${(q as { id?: string }).id ?? '?'}/${(q as { kind?: string }).kind ?? '?'} ${q.z0.toFixed(2)}…${q.z1.toFixed(2)}`).join(', ')}`;
-      });
-      lines.push(`    Seiten: ${[...plan.rockSides].map(([k, v]) => `${k}=${v}`).join(', ')}`);
-      console.log(lines.join('\n'));
+      console.log(plan.rock.map(([a, b]) => `    ${tag}: blockiert ${a}–${b} von ${plan.line.length} (X ${plan.line[a].X.toFixed(1)}, Y ${plan.line[a].Y.toFixed(1)}, Tiefe ${(plan.z[a] / LANE_DEPTH).toFixed(2)}${keep && a < keep.length ? ', in der alten Bahn' : ''})`).join('\n'));
     };
     debugRock('Plan');
     const limit = (SKIN_PHYSICS[skin] ?? SKIN_PHYSICS.skinWood).lateralLimit;
@@ -202,7 +201,7 @@ function build(rec: Rec, reading: Reading, level: LevelDef, terrain: Terrain, sk
         for (let k = 0; k < m; k++) release = Math.max(release, Math.abs(plan.z[k] - pv.z[k]) / LANE_DEPTH);
       }
       // Striche, die Fels oder einen Raum berühren, getrennt zählen
-      const touches = line.filter((q) => (zoneOpts.rock?.(q).length ?? 0) > 0 || (zoneOpts.underground?.(q)?.h ?? 1) < -ROOM_DIVE).length;
+      const touches = freeOf ? line.filter((q) => freeOf!(q).touched).length : 0;
       const bucket = touches > 0 ? zoneTally.zoneStrokes : zoneTally.freeStrokes;
       bucket.n++;
       bucket.jumps += jumps;

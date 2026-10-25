@@ -85,8 +85,19 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   statt 73,3), fertige Bahn 11,4 statt 10,6 Sprünge, Fahrten 30 statt 28 von 71. Tests 273 grün, Build grün, Szenario 10
   grün. System: Fenster-Spanne, Durchfahrt, Haltegewicht.
   Platzhalter: alles Bisherige. Vorschlag der Session im Plan (Paket 5): ein Freiraumfeld statt Sonderregeln (Pinsel,
-  Spitze, Stützen, Fahrt, Ebenen-Boden), wartet auf Florians Ja; bis dahin keine weiteren Sonderregeln. Beide Dev-Server
-  laufen aus dem Worktree: 5174 mit Aufnahme (Handy, LAN), 5178 ohne Aufnahme (eigene Prüfungen).
+  Spitze, Stützen, Fahrt, Ebenen-Boden). Beide Dev-Server laufen aus dem Worktree: 5174 mit Aufnahme (Handy, LAN), 5178
+  ohne Aufnahme (eigene Prüfungen).
+  Florian hat das Freiraumfeld bestätigt (25.10.). Schritt 1 und 2 davon gebaut (25.10., TECH.md 4h „Freiraumfeld“):
+  `src/zone/field.ts` als ein Feld „fest oder frei“ (Erde, offene Räume, Dreiteiler mit Dach und Fenstern, Säulen,
+  Kästen) mit den Abfragen fest, Höhle, freie Abschnitte am Strahl, tragende Fläche, Decke; der Pinsel liest in Zonen nur
+  noch dieses Feld (Kette der freien Abschnitte über den Strich, Magnet für Höhlen in Reichweite, weiche Ein- und
+  Ausfahrt, Anlauf); Lippen-/Rückwandbänder, Passagen, Durchfahrt und Raum-Treffer sind weg. System: Feld, Kette,
+  Schranken aus berührenden Abschnitten, Höhlenmitte als Wunsch. Platzhalter: Flanken der Dreiteiler offen (feste Flanken
+  mit 8a), rechteckige Räume, Stützen und Fahrt lesen noch das alte Festigkeitsfeld. Prüfzone: e1 hat ein zweites Fenster
+  (Ausfahrt). Messung an 98 Aufnahmen (Replay `--zone probe`): Tiefensprünge je berührendem Strich 11,3, Vorschau-Sprünge
+  51,0, Loslassen 1,17 Spuren, nichts blockiert oder abgeschnitten; ohne Zonenregeln 11,2 / 40,1 / 0,94. Tests 279 grün,
+  Build grün, Replay `--world` unverändert, Szenario 10 grün. Browser: Berg und Raum ohne Sprung und ohne Knick. Als
+  Nächstes: Spitze (fertige Bahn bleibt), Stützen und Fahrt auf das Feld, Ebenen-Boden und Räume im Editor, dann Tor 2b.
 - **24.10., Etappe 1 begonnen** (Branch `etappe-1-weltrenderer`, Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10).
   Schritt 1 gebaut: Weltrenderer hinter `?world=1` (Three-Szene im selben WebGL-Kontext, Pixi zeichnet davor den Himmel und
   darüber Bühne, Overlay und HUD), Kamera-Adapter (18°, Kamerafahrt, senkrechte Streckung; die Perspektive im Spiel ist seitdem
