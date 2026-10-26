@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { InstancedMesh, Mesh } from 'three';
 import { WorldCamera } from '@/world/camera';
 import { Camera } from '@/render/camera';
-import { LANE_MAX, LANE_MIN, rayToWorld, setPerspective, setView, tagRay, toStage, toView, viewDistance, viewScale, type StagePoint } from '@/track/stage';
+import { DEFAULT_CAMERA_TILT, LANE_MAX, LANE_MIN, rayToWorld, setCameraTilt, setPerspective, setView, tagRay, toStage, toView, viewDistance, viewScale, type StagePoint } from '@/track/stage';
 import { planBrushTrack } from '@/track/brushTrack';
 import { railBanksFor, sampleTrack, type TrackPath } from '@/track/model';
 import { Terrain } from '@/physics/terrain';
@@ -34,7 +34,10 @@ function stageCamera(cx: number, cy: number, zoom: number, w: number, h: number)
   return c;
 }
 
-afterEach(() => setPerspective(false));
+afterEach(() => {
+  setPerspective(false);
+  setCameraTilt(DEFAULT_CAMERA_TILT);
+});
 
 describe('Weltrenderer: 100-Punkte-Test (Richtlinie 2.1, Paket 1)', () => {
   it('Bühne: die geneigte Ortho-Kamera der Welt trifft die Bühnenformel Y = y + 0,5·Tiefe auf 100 Punkten', () => {
@@ -88,6 +91,52 @@ describe('Weltrenderer: 100-Punkte-Test (Richtlinie 2.1, Paket 1)', () => {
         const wpt = rayToWorld(tagRay(stage.toStage(b.x, b.y)), z);
         expect(wpt.x).toBeCloseTo(x, 6);
         expect(wpt.y).toBeCloseTo(y, 6);
+      }
+    }
+  });
+
+  it('Kamerawinkel-Test: bei 3°, 12°, 20° und 40° Neigung trifft die Three-Kamera Bühne und Strahl wie bei 26,57°', () => {
+    const r = lcg(41);
+    const world = new WorldCamera();
+    for (const deg of [3, 12, 20, 40]) {
+      setCameraTilt((deg * Math.PI) / 180);
+      for (const fov of [10, 30]) {
+        setPerspective(true, fov);
+        const cx = r() * 200;
+        const cy = r() * 30 - 5;
+        const zoom = 3 + r() * 40;
+        const w = 600 + Math.round(r() * 800);
+        const h = 400 + Math.round(r() * 600);
+        const stage = stageCamera(cx, cy, zoom, w, h);
+        setView(cx, cy, viewDistance(zoom, h, fov));
+        world.set({ cx, cy, zoom, width: w, height: h, persp: true, fov });
+        for (let i = 0; i < 12; i++) {
+          const x = r() * 240 - 20;
+          const y = r() * 40 - 5;
+          const z = LANE_MIN + r() * (LANE_MAX - LANE_MIN);
+          const v = toView(x, y, z);
+          const a = stage.toScreen(v.X, v.Y);
+          const b = world.toScreen(x, y, z);
+          expect(b.x).toBeCloseTo(a.x, 3);
+          expect(b.y).toBeCloseTo(a.y, 3);
+          const wpt = rayToWorld(tagRay(stage.toStage(b.x, b.y)), z);
+          expect(wpt.x).toBeCloseTo(x, 5);
+          expect(wpt.y).toBeCloseTo(y, 5);
+        }
+      }
+      // Bühne ohne Perspektive: Y = y + Tiefe · tan(Neigung)
+      setPerspective(false);
+      const stage = stageCamera(50, 5, 10, 800, 400);
+      world.set({ cx: 50, cy: 5, zoom: 10, width: 800, height: 400, persp: false, fov: 18 });
+      for (let i = 0; i < 12; i++) {
+        const x = r() * 100;
+        const y = r() * 20;
+        const z = LANE_MIN + r() * (LANE_MAX - LANE_MIN);
+        const s = toStage(x, y, z);
+        const a = stage.toScreen(s.X, s.Y);
+        const b = world.toScreen(x, y, z);
+        expect(b.x).toBeCloseTo(a.x, 3);
+        expect(b.y).toBeCloseTo(a.y, 3);
       }
     }
   });

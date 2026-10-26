@@ -5,7 +5,7 @@ import { findCrossings } from '@/track/crossings';
 import { sampleTrack } from '@/track/model';
 import { TrainSim } from '@/physics/trainSim';
 import { Terrain } from '@/physics/terrain';
-import { LANE_DEPTH, toStage, type StagePoint } from '@/track/stage';
+import { DEFAULT_CAMERA_TILT, LANE_DEPTH, setCameraTilt, toStage, type StagePoint } from '@/track/stage';
 
 const flat = new Terrain({ width: 200, terrain: [{ kind: 'flat' }] } as never);
 
@@ -157,6 +157,38 @@ describe('Pinsel-Bahn: Linie = Bahn, Tiefe frei gewählt', () => {
     // die Linie gibt beim Nachbessern höchstens die Toleranz nach
     for (let i = 0; i < plan.line.length; i++) expect(Math.hypot(plan.line[i].X - plan.drawn[i].X, plan.line[i].Y - plan.drawn[i].Y)).toBeLessThanOrEqual(1 + 1e-6);
     expect(Math.max(...Array.from(plan.z, Math.abs))).toBeLessThanOrEqual(2 * LANE_DEPTH + 1e-6);
+  });
+});
+
+describe('Pinsel „Spur halten“ (Kamerawinkel-Test, flache Kamera)', () => {
+  // Wellen und ein Hügel, wie man sie bei flacher Kamera als reine Höhe zeichnet
+  const waves = stroke([[0, 0], [10, 3], [20, 1], [30, 5], [40, 2], [50, 8], [58, 12], [66, 8], [76, 3], [90, 4]]);
+
+  it('bei 3° hält er die Spur, der heutige Pinsel liest aus derselben Linie viel Tiefe', () => {
+    setCameraTilt((3 * Math.PI) / 180);
+    try {
+      const held = planBrushTrack(waves, { ground: () => 0, holdLane: true })!;
+      const read = planBrushTrack(waves, { ground: () => 0 })!;
+      const span = (p: BrushPlan) => (Math.max(...p.z) - Math.min(...p.z)) / LANE_DEPTH;
+      expect(span(held)).toBeLessThan(0.1);
+      expect(span(read)).toBeGreaterThan(0.5);
+      // Strich = Bahn gilt für beide
+      expect(screenDeviation(held)).toBeLessThan(0.5);
+      expect(screenDeviation(read)).toBeLessThan(0.5);
+    } finally {
+      setCameraTilt(DEFAULT_CAMERA_TILT);
+    }
+  });
+
+  it('hält beim Fortsetzen die Tiefe am Ende der alten Bahn', () => {
+    setCameraTilt((3 * Math.PI) / 180);
+    try {
+      const plan = planBrushTrack(waves, { ground: () => 0, holdLane: true, holdDepth: -LANE_DEPTH })!;
+      const mid = plan.z.slice(Math.floor(plan.z.length * 0.3));
+      for (const z of mid) expect(Math.abs(z / LANE_DEPTH + 1)).toBeLessThan(0.1);
+    } finally {
+      setCameraTilt(DEFAULT_CAMERA_TILT);
+    }
   });
 });
 

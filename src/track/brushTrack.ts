@@ -16,12 +16,12 @@ import { createNode, emptyPath, sampleTrack, type TrackPath, type TrackSamples }
 import { reduceNodes } from './reduceNodes';
 import { previewNodes } from './strokeToTrack';
 import type { FreeLanes } from '@/zone/field';
-import { LANE_DEPTH, LANE_MAX, LANE_MIN, LANE_RISE, fillRays, mixPoint, rayToWorld, tagRay, toView, type StagePoint } from './stage';
+// C: Bildhöhe je Meter Tiefe (tan der Kameraneigung, folgt dem Kamerawinkel-Test)
+import { LANE_DEPTH, LANE_MAX, LANE_MIN, TILT_TAN as C, fillRays, mixPoint, rayToWorld, tagRay, toView, type StagePoint } from './stage';
 
-/** Bildhöhe je Meter Tiefe */
-const C = LANE_RISE / LANE_DEPTH;
-const Z_MIN = LANE_MIN * LANE_DEPTH;
-const Z_MAX = LANE_MAX * LANE_DEPTH;
+/** Tiefenbereich der Bühne (Meter); der Ebenen-Test darf hinten weiter (BrushOptions.zMax) */
+const STAGE_Z_MIN = LANE_MIN * LANE_DEPTH;
+const STAGE_Z_MAX = LANE_MAX * LANE_DEPTH;
 /** Abstand der Linienpunkte (Bühnen-Meter) */
 const STEP = 1;
 /** Wunschhöhe über dem Boden, wo die Tiefe frei ist */
@@ -116,6 +116,34 @@ export interface BrushOptions {
   noCut?: boolean;
   /** Fang (Etappe 2, Schritt 6): das Ende der offenen Linie gleitet auf diesen Bühnenpunkt und hält dort diese Spur (Baustelle) */
   endSnap?: { X: number; Y: number; lane: number };
+  /**
+   * Pinsel „Spur halten“ (Kamerawinkel-Test, für flache Kamera): Die Bildhöhe ist nur Höhe, die Wunschtiefe überall die
+   * Tiefe, an der der Strich ansetzt. Kreuzungen, Wenden, Loopings, Höhlen und Wände ändern die Tiefe weiter wie sonst.
+   */
+  holdLane?: boolean;
+  /** Tiefe (Meter), die „Spur halten“ hält: beim Fortsetzen das Ende der alten Bahn; ohne Angabe die Spur unter dem Anfang */
+  holdDepth?: number;
+  /**
+   * Ebenen-Test („Tiefe aus Ebenen“, mit holdLane): Wunschtiefe (Meter) am Bildpunkt aus dem Scheibenstapel, null in der
+   * Luft (dort hält die Bahn die zuletzt gelesene Tiefe). Kehren beulen dann nach vorne aus, statt die Spur zu wechseln.
+   */
+  depthAt?: (p: StagePoint) => number | Landing | null;
+  /** Ebenen-Test: tiefste erlaubte Tiefe (Meter), wenn der Scheibenstapel weiter nach hinten reicht als die Bühne */
+  zMax?: number;
+  /**
+   * Ebenen-Test, Mischung („Ebenen: Bodenhöhe“, mit depthAt): Wunschtiefe (Meter) wie beim Bildhöhen-Pinsel, mit den
+   * Scheibenkanten als Boden. Lange Wellen werden Tiefe, kurze und Hügel Höhe; Landungen und Höhlen (depthAt) gehen vor
+   */
+  groundAt?: (p: StagePoint) => number;
+}
+
+/** Ebenen-Test: Landung eines Strichpunkts auf einer Scheibe (Tiefe in Metern, Kennung der Scheibe, Höhe über ihrer Kante) */
+export interface Landing {
+  z: number;
+  id: number;
+  off: number;
+  /** in einer Höhlenöffnung (zählt sofort, ohne Mindestlänge) */
+  cave?: boolean;
 }
 
 /** Sicht des Pinsels auf das Freiraumfeld (`src/zone/field.ts`): nur diese zwei Abfragen braucht er */
@@ -153,6 +181,88 @@ const RAMP_DECAY = 0.92;
  * Öffnung zulaufen kann; den Abstand im Normalfall hält FIELD_GAP weich
  */
 const CHAIN_MARGIN = 0.25;
+/** „Spur halten“: eine Kehre wechselt höchstens so viele Spuren (zwei: Halbkreis mit 8,4 m Radius, wie die Kehren der Bühne) */
+const HOLD_TURN = 2;
+/** „Spur halten“: Anteil der Tiefen-Glättung in einer Kehre */
+const HOLD_SOFT = 0.02;
+/** Ebenen-Test: so weit (m) gleitet die Bahn nach einer Kehre zur gelesenen Tiefe zurück */
+const HOLD_RETURN = 25;
+/** Ebenen-Test: eine Kehre geht mindestens so viel tiefer, wie ihr U hoch ist (mal diesem Faktor), höchstens SLICE_TURN_MAX Spuren */
+const KEHRE_RISE = 1.2;
+/** Ebenen-Test: am Scheitel einer Kehre läuft die Tiefe so viel schneller als der Strich im Bild auf und ab */
+const KEHRE_APEX = 1.3;
+/** Ebenen-Test, Wächter: Gewicht der festgelegten Tiefen-Neigung an steilen Stellen einer Kehre, die sonst kopfüber führe */
+const KEHRE_GUARD_W = 1e4;
+const SLICE_TURN_MAX = 3;
+/** Ebenen-Test: Zieltiefe über ±SLICE_BLUR Linienpunkte gemittelt (die Kanten der Scheiben liefern Stufen) */
+const SLICE_BLUR = 4;
+/** Ebenen-Test: so viel (m) darf sich die Zieltiefe je Meter Linie höchstens ändern, vom Anfang zur Spitze hin */
+const SLICE_RATE = 0.5;
+/** Ebenen-Test, Live-Vorschau: ab so weit hinter der Spitze hält die gezeigte Tiefe, ab SLICE_PREVIEW_FREE ist sie fest */
+const SLICE_PREVIEW_TIP = 4;
+const SLICE_PREVIEW_FREE = 10;
+/** Ebenen-Test: über so viele Linienpunkte gleitet die Steifigkeit der Tiefe zwischen weich (Kehre, Landung) und normal */
+const SOFT_TAPER = 6;
+
+/**
+ * Ebenen-Test: Ein Looping legt sich als Ganzes. Die Vorschau hält im Ebenen-Modus schon wenige Meter hinter der Spitze
+ * fest; schließt sich dann ein Looping oder kreuzt die Linie sich selbst, wäre der Bereich schon festgelegt und die Bahn
+ * knickte. Er hängt deshalb nicht an der früheren Vorschau, die alte Bahn (keepLen) bleibt fest.
+ */
+function freeLoops(elements: BrushElements, n: number, fixed: Float64Array | null, holdW: Float64Array | null, keepLen: number, known: LineCrossing[] = []): void {
+  for (const l of elements.loops) {
+    // nur, wenn die Schleife neu ist: danach hält die gezeigte Lösung (an einer Kreuzung gibt es zwei, davor oder dahinter
+    // und höher, und frei kippte die Vorschau von Bild zu Bild zwischen ihnen)
+    if (known.some((c) => Math.abs(c.i - l.i) <= 3 && Math.abs(c.j - l.j) <= 3)) continue;
+    // Looping ganz; Bodenschleife (Kreuzung): der spätere Strang um die Kreuzung, damit er in der Tiefe weich vorbeikommt
+    // (dort hält die gezeigte Tiefe weich weiter, sonst kippt die Seite von Bild zu Bild)
+    const from = l.vertical ? l.i - 6 : l.j - 12;
+    for (let k = Math.max(keepLen, from); k <= Math.min(n - 1, l.j + 6); k++) {
+      if (fixed) fixed[k] = NaN;
+      if (holdW) holdW[k] = l.vertical ? 0 : Math.min(holdW[k], PREVIEW_HOLD);
+    }
+  }
+}
+/** Ebenen-Test, Live-Vorschau: so viel stärker hält die gezeigte Tiefe (ein später erkannter Looping reißt sonst mit) */
+const SLICE_HOLD = 8;
+
+/**
+ * Ebenen-Test: Zieltiefe beruhigen. Die Kanten der Scheiben und das Landen liefern Stufen; gemittelt und in der Änderung
+ * je Meter begrenzt (von der Station zur Spitze, also wie gezeichnet: die Spitze setzt fort, was schon steht) gibt es
+ * keine Zacken, die die Glättung als Schrauben und viele Knoten in die Bahn trüge. Höhlenpunkte bleiben scharf.
+ */
+function calmSlices(t: Float64Array, keep: Uint8Array): void {
+  const n = t.length;
+  const src = Float64Array.from(t);
+  for (let i = 0; i < n; i++) {
+    let sum = 0;
+    let cnt = 0;
+    for (let k = Math.max(0, i - SLICE_BLUR); k <= Math.min(n - 1, i + SLICE_BLUR); k++) {
+      sum += src[k];
+      cnt++;
+    }
+    t[i] = sum / cnt;
+  }
+  for (let i = 1; i < n; i++) {
+    const d = t[i] - t[i - 1];
+    if (Math.abs(d) > SLICE_RATE * STEP && !keep[i]) t[i] = t[i - 1] + Math.sign(d) * SLICE_RATE * STEP;
+  }
+}
+/**
+ * Ebenen-Test: Die Wunschtiefe kommt aus gemalten Scheiben und springt an ihren Kanten; die Bahn soll Bögen und Terrassen
+ * treffen, die nur 10–20 m breit sind. Darum kürzere Glättung (Grenzwellenlänge rund 40 · 0,08^¼ ≈ 21 m) und doppeltes
+ * Gewicht der Wunschtiefe
+ */
+const SLICE_SMOOTH = 0.08;
+const SLICE_W = 2;
+/** Ebenen-Test: steiler als das (Bildhöhe je Bildbreite, rund 14°) landet der Strich nicht, er ist Höhe */
+const LAND_SLOPE = 0.25;
+/** Ebenen-Test: so lang (m) muss der Strich am Stück flach auf Scheiben liegen, damit er dort landet */
+const LAND_RUN = 10;
+/** Ebenen-Test: so weit (m) darf der Abstand zur Kante schwanken, während der Strich an ihr entlangläuft */
+const CONTOUR_TOL = 1.5;
+/** „Spur halten“, neuer Strich: unter dieser Bildhöhe je Meter Tiefe (tan, rund 14°) liegen die Bodenlinien zu dicht zum Wählen */
+const HOLD_PICK_TAN = 0.25;
 
 interface Opts {
   ground: (x: number, z: number) => number;
@@ -163,6 +273,11 @@ interface Opts {
   field: BrushField | null;
   noCut: boolean;
   endSnap: { X: number; Y: number; lane: number } | null;
+  holdLane: boolean;
+  holdDepth: number;
+  depthAt: ((p: StagePoint) => number | Landing | null) | null;
+  zMax: number;
+  groundAt: ((p: StagePoint) => number) | null;
 }
 
 const withDefaults = (o: BrushOptions): Opts => ({
@@ -174,6 +289,11 @@ const withDefaults = (o: BrushOptions): Opts => ({
   field: o.field ?? null,
   noCut: !!o.noCut,
   endSnap: o.endSnap ?? null,
+  holdLane: !!o.holdLane,
+  holdDepth: o.holdDepth ?? NaN,
+  depthAt: o.depthAt ?? null,
+  zMax: o.zMax ?? STAGE_Z_MAX,
+  groundAt: o.groundAt ?? null,
 });
 
 /** Haken für Messwerkzeuge (Replay): wird gerufen, wenn die Bahn vor blockierten Punkten abgeschnitten wird */
@@ -227,6 +347,15 @@ export interface BrushPlan {
   rock: Array<[number, number]>;
   /** die Linie wurde vor dem Fels abgeschnitten (die Bahn endet davor) */
   rockCut: boolean;
+  /** Ebenen-Test: Kehren und die Richtung ihrer Tiefe (bleibt beim Loslassen und Nachbessern wie in der Vorschau) */
+  kehren: KehreSide[];
+}
+
+/** Ebenen-Test: eine Kehre (Linienpunkte von, bis) und die Richtung ihrer Tiefe (+1 nach hinten, −1 nach vorne, 0 offen) */
+export interface KehreSide {
+  a: number;
+  b: number;
+  dir: number;
 }
 
 export interface BrushElements {
@@ -238,6 +367,10 @@ export interface BrushElements {
 
 /** Bereich, in dem die Wunschtiefe gerade von der Tiefe bei a zu der bei b läuft (keep: bleibt auf der bei a) */
 interface Ramp {
+  /** Hügel (sonst Looping) */
+  hill: boolean;
+  /** Kuppe eines Hügels (Linienpunkt) */
+  top?: number;
   a: number;
   b: number;
   keep: boolean;
@@ -843,7 +976,7 @@ function applyElements(el: BrushElements, wMul: Float64Array, flat: Float64Array
       wMul[k] *= 0.3;
       flat[k] = Math.max(flat[k], HILL_FLAT);
     }
-    ramps.push({ a: h.a, b: h.b, keep: h.open || calm[h.a] > 0.5 });
+    ramps.push({ hill: true, top: h.top, a: h.a, b: h.b, keep: h.open || calm[h.a] > 0.5 });
   }
   for (const l of el.loops) {
     if (!l.vertical) continue;
@@ -854,7 +987,7 @@ function applyElements(el: BrushElements, wMul: Float64Array, flat: Float64Array
       flat[k] = Math.max(flat[k], LOOP_FLAT);
       level[k] = 0;
     }
-    ramps.push({ a, b, keep: false });
+    ramps.push({ hill: false, a, b, keep: false });
   }
   return ramps;
 }
@@ -975,10 +1108,205 @@ function nearPairs(line: StagePoint[], closed: boolean, fixed: Float64Array | nu
  * (Kraft je Paar aus dem Gleichungssystem). Die Station (Anfang) steht auf dem Boden, bei geschlossener Runde auch das
  * Ende. Dazu je Linienpunkt die Knoten-Toleranz (eng, wo die Bahn einer anderen Stelle nahekommt).
  */
-function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing[], wH: Float64Array, wMul: Float64Array, lower: Float64Array, calm: Float64Array, o: Opts, fixed: Float64Array | null = null, hold: Float64Array | null = null, holdW: Float64Array | null = null, flat: Float64Array | null = null, ramps: Ramp[] = [], level: Float64Array | null = null): { z: Float64Array; tol: Float64Array; blocked: Uint8Array; cave: Uint8Array } {
+function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing[], wH: Float64Array, wMul: Float64Array, lower: Float64Array, calm: Float64Array, o: Opts, fixed: Float64Array | null = null, hold: Float64Array | null = null, holdW: Float64Array | null = null, flat: Float64Array | null = null, ramps: Ramp[] = [], level: Float64Array | null = null, prevKehren: KehreSide[] | null = null): { z: Float64Array; tol: Float64Array; blocked: Uint8Array; cave: Uint8Array; kehren: KehreSide[] } {
   const n = line.length;
   const z = new Float64Array(n);
-  for (let i = 0; i < n; i++) z[i] = Math.max(Z_MIN, Math.min(Z_MAX, (line[i].Y - H_COMFORT) / C));
+  const Z_MIN = STAGE_Z_MIN;
+  const Z_MAX = Math.max(STAGE_Z_MAX, o.zMax);
+  // Ebenen-Test: In Hügeln ist die Tiefe nicht steifer (sie folgt den Scheiben), nur Loopings bleiben steif
+  if (o.depthAt && !o.groundAt && flat) {
+    flat = Float64Array.from(flat);
+    for (const r of ramps) if (r.hill) for (let k = calm[r.a] > 0.5 ? (r.top ?? r.b) + 1 : r.a; k <= r.b; k++) flat[k] = Math.min(flat[k], 1);
+  }
+  // „Spur halten“: gehaltene Tiefe je Linienpunkt (holdT); ohne Vorgabe die Spur, auf deren Boden der Strich ansetzt,
+  // bei flacher Kamera (Bodenlinien dichter als HOLD_PICK_TAN) die Mittelspur
+  let holdZ = NaN;
+  const holdT = new Float64Array(n);
+  /** 1 in einer Kehre von „Spur halten“: dort darf die Tiefe dem Halbkreis folgen */
+  const holdSoft = new Uint8Array(n);
+  /** Ebenen-Test: die Kehren (von, bis) und die Richtung, in die der Wächter ihre Tiefe laufen lässt */
+  const kehren: KehreSide[] = [];
+  /** Ebenen-Test: 1, wo der Strich auf einer Scheibe landet (oder in einer Höhle ist) */
+  const landed = new Uint8Array(n);
+  /** Ebenen-Test, Mischung: Bodenhöhe aus den Scheiben mit kurzer Glättung nur an Landungen, sonst wie der Bildhöhen-Pinsel */
+  const mix = !!o.depthAt && !!o.groundAt;
+  if (o.holdLane) {
+    const g0 = o.ground(rayToWorld(line[0], 0).x, 0);
+    const start = C >= HOLD_PICK_TAN ? Math.round(((line[0].Y - g0 - o.clearance) / C) / LANE_DEPTH) * LANE_DEPTH : 0;
+    holdZ = Math.max(Z_MIN, Math.min(Z_MAX, Number.isFinite(o.holdDepth) ? o.holdDepth : start));
+    holdT.fill(holdZ);
+    // Ebenen-Test: Tiefe nur an Landungen (depthAt), und nur wo der Strich flacher als LAND_SLOPE läuft (steil ist Höhe);
+    // dazwischen läuft sie gerade von Landung zu Landung, vor der ersten vom Anfang (Station, alte Bahn) aus, nach der
+    // letzten bleibt sie
+    if (o.depthAt) {
+      const hit = new Float64Array(n).fill(NaN);
+      const id = new Float64Array(n).fill(NaN);
+      const off = new Float64Array(n).fill(NaN);
+      const flatHere = new Uint8Array(n);
+      const inCave = new Uint8Array(n);
+      for (let i = 0; i < n; i++) {
+        const a = line[Math.max(0, i - 2)];
+        const b = line[Math.min(n - 1, i + 2)];
+        flatHere[i] = Math.abs(b.Y - a.Y) <= LAND_SLOPE * Math.abs(b.X - a.X) ? 1 : 0;
+        const d = o.depthAt(line[i]);
+        if (d === null) continue;
+        const l = typeof d === 'number' ? { z: d, id: NaN, off: NaN } : d;
+        hit[i] = Math.max(Z_MIN, Math.min(Z_MAX, l.z));
+        id[i] = l.id;
+        inCave[i] = typeof d !== 'number' && d.cave ? 1 : 0;
+        off[i] = l.off;
+      }
+      // Eine Landung zählt erst ab LAND_RUN Metern am Stück, und nur auf zwei Arten: flach (unter LAND_SLOPE) über
+      // Scheiben hinweg, oder im gleichen Abstand (±CONTOUR_TOL) an derselben Kante entlang, auch steil (Bergrücken). Eine
+      // Hügelflanke quert Kanten und eine kurze Kuppe ist zu kurz: beides bleibt Höhe
+      const land = new Float64Array(n).fill(NaN);
+      const keepRun = (ok: (i: number, j: number) => boolean) => {
+        for (let i = 0; i < n; ) {
+          if (!ok(i, i)) {
+            i++;
+            continue;
+          }
+          let j = i;
+          while (j + 1 < n && ok(i, j + 1)) j++;
+          if ((j - i + 1) * STEP >= LAND_RUN) for (let k = i; k <= j; k++) land[k] = hit[k];
+          i = j + 1;
+        }
+      };
+      keepRun((_, k) => !Number.isNaN(hit[k]) && flatHere[k] === 1);
+      keepRun((i, k) => !Number.isNaN(hit[k]) && !Number.isNaN(id[i]) && id[k] === id[i] && Math.abs(off[k] - off[i]) <= CONTOUR_TOL);
+      // Höhlen zählen sofort (die Öffnung ist meist kürzer als eine Landung)
+      for (let i = 0; i < n; i++) if (Number.isNaN(land[i]) && inCave[i]) land[i] = hit[i];
+      for (let i = 0; i < n; i++) landed[i] = Number.isNaN(land[i]) ? 0 : 1;
+      if (mix) {
+        // Mischung: Wunschtiefe aus der Bodenhöhe der Scheiben, wo nicht gelandet wird
+        for (let i = 0; i < n; i++) holdT[i] = landed[i] ? land[i] : Math.max(Z_MIN, Math.min(Z_MAX, o.groundAt!(line[i])));
+        calmSlices(holdT, landed);
+      } else {
+        if (Number.isNaN(land[0])) land[0] = holdZ;
+        let prev = 0;
+        for (let i = 1; i < n; i++) {
+          if (Number.isNaN(land[i])) continue;
+          for (let k = prev + 1; k < i; k++) land[k] = land[prev] + ((land[i] - land[prev]) * (k - prev)) / (i - prev);
+          prev = i;
+        }
+        for (let k = prev + 1; k < n; k++) land[k] = land[prev];
+        holdT.set(land);
+        calmSlices(holdT, landed);
+      }
+    }
+    // Kehre (Wende in x, von Schenkel zu Schenkel): von der Seite ist sie ein U auf dem Bild; die Bahn fährt es als Halbkreis
+    // durch die Tiefe, so weit, wie das U breit ist (Radius = Breite), mindestens am anderen Schenkel vorbei, höchstens
+    // HOLD_TURN Spuren. Nach oben gezeichnet nach hinten, sonst nach vorne, ohne Platz die andere Seite. Danach gilt die
+    // neue Spur. In der Kehre ist die Tiefe weich (die Glättung ließe den Halbkreis sonst überschwingen)
+    if (level) {
+      const dirX = (k: number) => {
+        const a = line[Math.max(0, k - 1)];
+        const b = line[Math.min(n - 1, k + 1)];
+        return (b.X - a.X) / (Math.hypot(b.X - a.X, b.Y - a.Y) || 1);
+      };
+      const heading = (k: number) => {
+        const a = line[Math.max(0, k - 1)];
+        const b = line[Math.min(n - 1, k + 1)];
+        return Math.atan2(b.Y - a.Y, b.X - a.X);
+      };
+      let cur = holdZ;
+      for (let i = 0; i < n; i++) {
+        if (!(level[i] > 0)) {
+          if (!o.depthAt) holdT[i] = cur;
+          continue;
+        }
+        let j = i;
+        while (j + 1 < n && level[j + 1] > 0) j++;
+        let a = Math.max(0, i - 1);
+        while (a > 0 && i - a < TURN_SPAN && Math.abs(dirX(a)) < 0.9) a--;
+        let b = Math.min(n - 1, j + 1);
+        while (b < n - 1 && b - j < TURN_SPAN && Math.abs(dirX(b)) < 0.9) b++;
+        const s0 = Math.sign(dirX(a)) || 1;
+        let ext = line[a].X;
+        for (let k = a; k <= b; k++) ext = s0 > 0 ? Math.max(ext, line[k].X) : Math.min(ext, line[k].X);
+        const width = Math.abs(ext - (line[a].X + line[b].X) / 2);
+        const dz = Math.max(PASS_SIDE + 0.4, Math.min(HOLD_TURN * LANE_DEPTH, 2 * width));
+        // Halbkreis: Tiefe nach dem Drehwinkel der Bildrichtung, z = von + (nach − von)·(1 − cos)/2
+        const turn = new Float64Array(b - a + 1);
+        for (let k = a + 1; k <= b; k++) {
+          let d = heading(k) - heading(k - 1);
+          while (d > Math.PI) d -= 2 * Math.PI;
+          while (d < -Math.PI) d += 2 * Math.PI;
+          turn[k - a] = turn[k - a - 1] + Math.abs(d);
+        }
+        const total = Math.max(1e-9, turn[b - a]);
+        const half = (k: number) => (1 - Math.cos((Math.PI * turn[k - a]) / total)) / 2;
+        // Ebenen-Test: Die Kehre ist ein Halbkreis durch die Tiefe, danach gleitet die Bahn über HOLD_RETURN Meter zur
+        // gelesenen Tiefe zurück. (Eine Beule vor und zurück ließ die Tiefe genau am Scheitel stillstehen, wo x umkehrt: dort
+        // entstand ein Knick wie eine winzige Schleife, Radius unter 2 m, der Zug entgleiste.)
+        if (o.depthAt) {
+          // kausal (die Spitze ändert nicht, was schon steht): Tiefe nach dem schon gezeichneten Drehwinkel (bis 180°).
+          // Die Kehre fährt ihren Halbkreis von der Tiefe an der Einfahrt aus und nimmt dabei keinen Zug der Scheiben
+          // mit (sonst hob ein Zug nach hinten den Halbkreis nach vorne am Scheitel auf: Die Tiefe stand still, die Bahn
+          // drehte senkrecht wie ein halber Looping und fuhr kopfüber). Sie ist mindestens KEHRE_RISE-mal so tief, wie das U
+          // wirklich hoch ist (Bild Y = Höhe + Tiefe · C: nach oben gezeichnet und nach hinten ist das U flacher, als es
+          // aussieht, nach vorne höher), und am Scheitel läuft die Tiefe KEHRE_APEX-mal so schnell wie die wirkliche Höhe.
+          // Ob das reicht, prüft nach dem Lösen der Wächter
+          let yMin = Infinity;
+          let yMax = -Infinity;
+          for (let k = a; k <= b; k++) {
+            yMin = Math.min(yMin, line[k].Y);
+            yMax = Math.max(yMax, line[k].Y);
+          }
+          let apexY = 0;
+          let apexTurn = 1;
+          for (let k = a + 1; k <= b; k++) {
+            if (turn[k - a] < Math.PI / 2) continue;
+            apexY = Math.abs(line[k].Y - line[k - 1].Y);
+            apexTurn = Math.max(1e-3, turn[k - a] - turn[k - a - 1]);
+            break;
+          }
+          const up = Math.sign(line[b].Y - line[a].Y) || 1;
+          // e = +1: die Tiefe nimmt dem U Höhe (Bild Y = Höhe + Tiefe · C), −1: sie gibt ihm Höhe dazu
+          const depthFor = (e: number) => {
+            const rise = (KEHRE_RISE * (yMax - yMin)) / Math.max(0.2, 1 + e * KEHRE_RISE * C);
+            const apex = (KEHRE_APEX * apexY) / Math.max(0.2, 1 + e * KEHRE_APEX * C) / (0.5 * apexTurn);
+            return Math.max(PASS_SIDE + 0.4, Math.min(SLICE_TURN_MAX * LANE_DEPTH, Math.max(2 * Math.abs(ext - line[a].X), rise, apex)));
+          };
+          const base = holdT[a];
+          const trend = holdT[a] - holdT[Math.max(0, a - 6)];
+          // wie in der Vorschau davor (sonst kippte die Kehre von Bild zu Bild), sonst dem Zug der Tiefe folgen, außer das U
+          // würde dadurch viel höher (steile Kamera, über etwa 14°)
+          const was = prevKehren?.find((q) => q.dir && Math.abs(q.a - a) <= 3);
+          let sgn = was ? was.dir : Math.abs(trend) > 0.5 && KEHRE_APEX * C <= 1 / 3 ? Math.sign(trend) : up;
+          let dzK = depthFor(sgn * up);
+          if (base + sgn * dzK > Z_MAX || base + sgn * dzK < Z_MIN) {
+            sgn = -sgn;
+            dzK = depthFor(sgn * up);
+          }
+          const prof = (k: number) => (1 - Math.cos(Math.min(Math.PI, turn[k - a]))) / 2;
+          const endOffset = base + sgn * dzK * prof(b) - holdT[b];
+          for (let k = a; k <= b; k++) {
+            holdT[k] = Math.max(Z_MIN, Math.min(Z_MAX, base + sgn * dzK * prof(k)));
+            holdSoft[k] = 1;
+          }
+          for (let k = b + 1; k < n && k - b <= HOLD_RETURN; k++) {
+            const w = (k - b) / HOLD_RETURN;
+            holdT[k] = Math.max(Z_MIN, Math.min(Z_MAX, holdT[k] + endOffset * (1 - w * w * (3 - 2 * w))));
+          }
+          kehren.push({ a, b, dir: was ? sgn : 0 });
+          i = b;
+          continue;
+        }
+        const dir = Math.sign(line[b].Y - line[a].Y) || 1;
+        let next = cur + dir * dz;
+        if (next > Z_MAX + 1e-6 || next < Z_MIN - 1e-6) next = cur - dir * dz;
+        next = Math.max(Z_MIN, Math.min(Z_MAX, next));
+        for (let k = a; k <= b; k++) {
+          holdT[k] = cur + (next - cur) * half(k);
+          holdSoft[k] = 1;
+        }
+        cur = next;
+        i = b;
+      }
+    }
+  }
+  for (let i = 0; i < n; i++) z[i] = o.holdLane ? holdT[i] : Math.max(Z_MIN, Math.min(Z_MAX, (line[i].Y - H_COMFORT) / C));
   const target = new Float64Array(n);
   const upper = new Float64Array(n);
   const low = new Float64Array(n);
@@ -1008,9 +1336,10 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
   const bounds = () => {
     for (let i = 0; i < n; i++) {
       const g = o.ground(rayToWorld(line[i], z[i] / LANE_DEPTH).x, z[i] / LANE_DEPTH);
-      target[i] = (line[i].Y - g - H_COMFORT) / C;
-      // unter der vordersten Bodenlinie gezeichnet: ganz vorne bleiben (die Höhe wird dort angehoben)
-      upper[i] = Math.max(Z_MIN, Math.min(Z_MAX, (line[i].Y - g - o.clearance) / C));
+      target[i] = o.holdLane ? holdT[i] : (line[i].Y - g - H_COMFORT) / C;
+      // unter der vordersten Bodenlinie gezeichnet: ganz vorne bleiben (die Höhe wird dort angehoben); „Spur halten“
+      // weicht dafür nicht nach vorne aus, dort hebt nur die Mindesthöhe (worldPoints)
+      upper[i] = o.holdLane ? Z_MAX : Math.max(Z_MIN, Math.min(Z_MAX, (line[i].Y - g - o.clearance) / C));
       low[i] = Math.min(upper[i], Math.max(Z_MIN, lower[i]));
       read[i] = target[i];
       // Freiraumfeld: Schranken des gewählten Abschnitts (er enthält schon den Boden mit Luft darunter); der Hebel „nach
@@ -1021,9 +1350,30 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
         if (lower[i] > low[i]) low[i] = Math.min(upper[i], lower[i]);
       }
     }
-    for (let i = 0; i < n; i++) if (calm[i] > 0) target[i] = calm[i] * upper[0] + (1 - calm[i]) * target[i];
+    const startZ = o.holdLane ? holdZ : upper[0];
+    for (let i = 0; i < n; i++) if (calm[i] > 0) target[i] = calm[i] * startZ + (1 - calm[i]) * target[i];
     // Looping und Hügel: Wunschtiefe gerade von Fuß zu Fuß (Tiefe der letzten Lösung, vor der ersten die Wunschtiefe)
     for (const r of ramps) {
+      // Ebenen-Test: Hügel und ein Anstieg am Strichende liegen auf den Scheiben, über die sie gezeichnet sind (ein Strich über
+      // einen Berg liegt auf dem Berg). Der Lifthügel an der Station läuft gerade von der Station zur Scheibe unter seiner
+      // Kuppe (ein gerader Kettenaufzug in die Tiefe), danach folgt er den Scheiben; Loopings bleiben gerade
+      if (mix && r.hill) {
+        const za = solved ? z[r.a] : target[r.a];
+        const zb = r.keep ? za : solved ? z[r.b] : target[r.b];
+        for (let i = r.a + 1; i < r.b; i++) if (!landed[i]) target[i] = za + ((zb - za) * (i - r.a)) / (r.b - r.a);
+        if (r.keep && !landed[r.b]) target[r.b] = za;
+        continue;
+      }
+      if (o.depthAt && r.hill) {
+        if (!(calm[r.a] > 0.5)) continue;
+        const t = r.top ?? r.b;
+        const za = solved ? z[r.a] : target[r.a];
+        const zb = holdT[t];
+        // die Tiefe wächst mit der Höhe (flach am Fuß bleibt die Bahn vor den vorderen Terrassen)
+        const rise = Math.max(1e-6, line[t].Y - line[r.a].Y);
+        for (let i = r.a + 1; i <= t; i++) target[i] = za + (zb - za) * Math.max(0, Math.min(1, (line[i].Y - line[r.a].Y) / rise));
+        continue;
+      }
       const za = solved ? z[r.a] : target[r.a];
       const zb = r.keep ? za : solved ? z[r.b] : target[r.b];
       for (let i = r.a + 1; i < r.b; i++) target[i] = za + ((zb - za) * (i - r.a)) / (r.b - r.a);
@@ -1113,7 +1463,7 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
   // Fang an einer Baustelle: das Ende der offenen Linie hält die Spur des Anschlusspunkts wie die Station ihre
   const endPin = o.endSnap && !closed ? n - 1 : -1;
   const station = (i: number) => i === 0 || (closed && i === n - 1) || seam(i) || isFixed(i) || i === endPin;
-  const fixedAt = (i: number) => (isFixed(i) ? fixed![i] : i === endPin ? o.endSnap!.lane * LANE_DEPTH : upper[0]);
+  const fixedAt = (i: number) => (isFixed(i) ? fixed![i] : i === endPin ? o.endSnap!.lane * LANE_DEPTH : o.holdLane ? holdZ : upper[0]);
   const pinStation = () => {
     pins.set(0, fixedAt(0));
     if (endPin >= 0) pins.set(endPin, fixedAt(endPin));
@@ -1151,6 +1501,28 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
   const B = new Band2(n);
   // Schranken-Feder: deutlich steifer als der Rest des Systems (das Fliehkraft-Gewicht kann groß werden)
   let pinW = PIN_W;
+  // Steifigkeit der Tiefe je Punkt: in Kehren und an Landungen weicher. Der Wechsel gleitet über ±SOFT_TAPER Punkte
+  // (geometrisch gemittelt), sonst knickt die Bahn genau dort, wo die Steifigkeit springt (Mini-Knicke am Kehrenanfang)
+  const soft = new Float64Array(n);
+  for (let i = 0; i < n; i++) soft[i] = Math.log((holdSoft[i] ? HOLD_SOFT : 1) * (o.depthAt && (!mix || landed[i]) ? SLICE_SMOOTH : 1));
+  if (o.depthAt) {
+    const src = Float64Array.from(soft);
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      let cnt = 0;
+      for (let k = Math.max(0, i - SOFT_TAPER); k <= Math.min(n - 1, i + SOFT_TAPER); k++) {
+        sum += src[k];
+        cnt++;
+      }
+      soft[i] = sum / cnt;
+    }
+  }
+  for (let i = 0; i < n; i++) soft[i] = Math.exp(soft[i]);
+  // Wächter der Kehren: festgelegte Tiefen-Neigung z(i+1) − z(i−1) je Linienpunkt (Gewicht 0: frei)
+  const guardW = new Float64Array(n);
+  const guardT = new Float64Array(n);
+  /** 1 in einer Kehre, die der Wächter korrigiert: Dort hält die gezeigte Vorschau nicht (sie hielte den Fehler fest) */
+  const guarded = new Uint8Array(n);
   const solveOnce = () => {
     const { d0, d1, d2 } = B;
     d1.fill(0);
@@ -1158,16 +1530,17 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
     const b = new Float64Array(n);
     for (let i = 0; i < n; i++) {
       // in einer Höhle und davor, wo sie den Strich schon auf ihre Mitte zieht, wiegt der Wunsch mehr
-      const wr = wH[i] * (noRead[i] ? NOREAD_W : 1 + (NOREAD_W - 1) * caveBelowW[i]);
+      // „Spur halten“: auch steil gezeichnet hält die Spur (die Steilheit ist dort Höhe, nicht Tiefe)
+      const wr = (o.holdLane ? (mix && !landed[i] ? wH[i] : Math.max(o.depthAt ? SLICE_W : 1, wH[i])) : wH[i]) * (noRead[i] ? NOREAD_W : 1 + (NOREAD_W - 1) * caveBelowW[i]);
       d0[i] = wr + magW[i];
       b[i] = wr * target[i] + magW[i] * magZ[i];
-      if (hold && holdW && !Number.isNaN(hold[i])) {
+      if (hold && holdW && !Number.isNaN(hold[i]) && !guarded[i]) {
         d0[i] += holdW[i];
         b[i] += holdW[i] * hold[i];
       }
     }
     for (let i = 1; i < n - 1; i++) {
-      const l = LAMBDA * (flat ? flat[i] : 1) + (1 + C * C) * wK[i];
+      const l = LAMBDA * (flat ? flat[i] : 1) * soft[i] + (1 + C * C) * wK[i];
       d0[i - 1] += l;
       d0[i] += 4 * l;
       d0[i + 1] += l;
@@ -1182,15 +1555,26 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
     // Scheitel von Wenden: Höhe flach, also z(i+1) − z(i−1) = (Y(i+1) − Y(i−1)) / c
     if (level) {
       for (let i = 1; i < n - 1; i++) {
-        const w = TURN_LEVEL_W * level[i];
+        // wo der Wächter die Neigung festlegt, gilt seine
+        const w = guardW[i] ? 0 : TURN_LEVEL_W * level[i];
         if (!w) continue;
-        const t = (line[i + 1].Y - line[i - 1].Y) / C;
+        // „Spur halten“: die Kehre nimmt ihre geplanten zwei Spuren, die übrige Bildbewegung wird Höhe
+        const t = o.holdLane ? holdT[i + 1] - holdT[i - 1] : (line[i + 1].Y - line[i - 1].Y) / C;
         d0[i - 1] += w;
         d0[i + 1] += w;
         d2[i - 1] -= w;
         b[i + 1] += w * t;
         b[i - 1] -= w * t;
       }
+    }
+    for (let i = 1; i < n - 1; i++) {
+      const w = guardW[i];
+      if (!w) continue;
+      d0[i - 1] += w;
+      d0[i + 1] += w;
+      d2[i - 1] -= w;
+      b[i + 1] += w * guardT[i];
+      b[i - 1] -= w * guardT[i];
     }
     let maxD = 0;
     for (let i = 0; i < n; i++) maxD = Math.max(maxD, d0[i]);
@@ -1360,7 +1744,7 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
     const M = CHAIN_MARGIN;
     const JUMP = 100;
     const natural = new Float64Array(n);
-    for (let i = 0; i < n; i++) natural[i] = (line[i].Y - o.ground(rayToWorld(line[i], z[i] / LANE_DEPTH).x, z[i] / LANE_DEPTH) - H_COMFORT) / C;
+    for (let i = 0; i < n; i++) natural[i] = o.holdLane ? holdT[i] : (line[i].Y - o.ground(rayToWorld(line[i], z[i] / LANE_DEPTH).x, z[i] / LANE_DEPTH) - H_COMFORT) / C;
     interface Opt {
       a: number;
       b: number;
@@ -1486,7 +1870,8 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
   const order = crossings.filter((c) => c.laterFront === undefined);
   if (order.length || near.length) {
     settle(false);
-    for (const c of order) c.laterFront = c.natural ? z[c.j] <= z[c.i] : z[c.i] - PASS_SIDE >= Z_MIN + 0.5 || z[c.i] + PASS_SIDE > upper[c.j];
+    // Ebenen-Test: die Seite, auf der der spätere Strang ohnehin liegt (sonst schnappte er beim Erkennen der Kreuzung um)
+    for (const c of order) c.laterFront = c.natural || o.depthAt ? z[c.j] <= z[c.i] : z[c.i] - PASS_SIDE >= Z_MIN + 0.5 || z[c.i] + PASS_SIDE > upper[c.j];
   }
   if (near.length) {
     // Engstellen entlang paralleler Stränge: eine Seite je Strangpaar (Paare, die über ±2 Linienpunkte zusammenhängen),
@@ -1558,6 +1943,83 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
     pinStation();
     settle(true);
   }
+  // Wächter (Ebenen-Test): An den steilen Stellen einer Kehre (der Strich läuft auf dem Bild eher auf und ab) muss die
+  // Tiefe KEHRE_APEX-mal so schnell laufen wie die wirkliche Höhe (Bild Y = Höhe + Tiefe · C), sonst dreht die Bahn dort
+  // senkrecht wie ein halber Looping und fährt kopfüber (Florian 26.10.2026: Überkopffahrten nur im Looping; Loopings
+  // haben keine Kehren). Wo nicht, wird die Neigung dort festgelegt und neu gelöst. Die Richtung je Kehre bleibt von
+  // Vorschau zu Vorschau und beim Loslassen (KehreSide)
+  const guardTip = new Uint8Array(n);
+  /** Ziel-Neigung an einem Wächterpunkt für die Richtung der Kehre (an Spitzen mindestens die Trennung der Schenkel) */
+  const guardNeed = (k: KehreSide, m: number) => {
+    const dY = line[m + 1].Y - line[m - 1].Y;
+    const e = k.dir * Math.sign(dY);
+    const apex = (1.1 * KEHRE_APEX * Math.abs(dY)) / (1 + e * KEHRE_APEX * C);
+    return k.dir * (guardTip[m] ? Math.max(apex, 0.55 * PASS_SIDE) : apex);
+  };
+  /** wie weit die Lösung die Ziel-Neigung einer Kehre erreicht (schlechtester Punkt, 1 = ganz), und ob davon schon etwas fest ist */
+  const guardReach = (k: KehreSide) => {
+    let worst = Infinity;
+    let fixedPart = false;
+    for (let m = Math.max(1, k.a - 1); m <= Math.min(n - 2, k.b + 1); m++) {
+      if (!guardW[m]) continue;
+      worst = Math.min(worst, (z[m + 1] - z[m - 1]) / guardT[m]);
+      if (isFixed(m - 1) || isFixed(m + 1)) fixedPart = true;
+    }
+    return { worst, fixedPart };
+  };
+  const flipped = new Set<KehreSide>();
+  for (let guard = 0; guard < 4 && kehren.length; guard++) {
+    let added = 0;
+    // Erreicht eine Kehre ihre Neigung nicht (Kreuzungen und Engstellen legen die Reihenfolge der Stränge fest), dreht sie
+    // einmal in die andere Richtung, solange davon noch nichts fest gezeigt ist
+    if (guard > 0) {
+      for (const k of kehren) {
+        const r = guardReach(k);
+        if (r.worst >= 0.7 || r.fixedPart || flipped.has(k)) continue;
+        flipped.add(k);
+        k.dir = -k.dir;
+        for (let m = Math.max(1, k.a - 1); m <= Math.min(n - 2, k.b + 1); m++) if (guardW[m]) guardT[m] = guardNeed(k, m);
+        added++;
+      }
+    }
+    for (const k of kehren) {
+      for (let i = Math.max(2, k.a); i <= Math.min(n - 3, k.b); i++) {
+        const dX = line[i + 1].X - line[i - 1].X;
+        const dY = line[i + 1].Y - line[i - 1].Y;
+        const dz = z[i + 1] - z[i - 1];
+        const steep = Math.abs(dX) < Math.abs(dY) && Math.abs(dz) < KEHRE_APEX * Math.abs(dY - C * dz);
+        // Spitze (die Richtung in x kehrt ohne senkrechten Punkt um, die Bahn dreht auf wenigen Metern): Dort trennt die
+        // Tiefe die beiden Schenkel über ±2 m um PASS_SIDE, verteilt auf drei Punkte (auf einem knickte die Bahn)
+        const tip = (line[i].X - line[i - 1].X) * (line[i + 1].X - line[i].X) < 0 && Math.abs(z[i + 2] - z[i - 2]) < PASS_SIDE;
+        if (!steep && !tip) continue;
+        if (!k.dir) {
+          // Richtung, der Reihe nach: wie die Vorschau die Kehre schon fest gezeigt hat (sonst Zickzack von Bild zu Bild);
+          // wie eine greifende Engstelle die Schenkel trennt (eine enge Kehre, deren Schenkel im Bild nah liegen: gegen sie
+          // gewann mal das eine, mal das andere); sonst wohin die Tiefe läuft, außer das U würde dadurch viel höher (steile
+          // Kamera), dann die Richtung, die ihm Höhe nimmt
+          let shown = 0;
+          for (let m = k.a + 1; m <= i; m++) if (isFixed(m) && isFixed(m - 1)) shown += z[m] - z[m - 1];
+          let vote = 0;
+          near.forEach((q, p) => {
+            if (isHeld[p] && q.i <= k.a + 1 && q.j >= k.b - 1) vote += side[p];
+          });
+          k.dir = Math.abs(shown) > 0.2 ? Math.sign(shown) : vote ? Math.sign(vote) : Math.abs(dz) > 0.1 && KEHRE_APEX * C <= 1 / 3 ? Math.sign(dz) : Math.sign(dY) || 1;
+        }
+        for (const m of tip ? [i - 1, i, i + 1] : [i]) {
+          if (guardW[m] || (isFixed(m - 1) && isFixed(m + 1))) continue;
+          guardTip[m] = tip ? 1 : 0;
+          guardT[m] = guardNeed(k, m);
+          guardW[m] = KEHRE_GUARD_W;
+          added++;
+        }
+      }
+      if (k.dir) for (let i = k.a; i <= k.b; i++) guarded[i] = 1;
+    }
+    if (!added) break;
+    pins.clear();
+    pinStation();
+    settle(true);
+  }
   // Reste der Schranken-Federn abschneiden: nie unter den Boden, nie aus der Bühne (Festes bleibt genau)
   for (let i = 0; i < n; i++) z[i] = isFixed(i) ? fixed![i] : Math.min(upper[i], Math.max(low[i], z[i]));
   // Knoten-Toleranz: eng, wo zwei Stellen sich nahekommen (die Knoten dürfen den Abstand dort nicht auffressen)
@@ -1568,7 +2030,7 @@ function solveDepth(line: StagePoint[], closed: boolean, crossings: LineCrossing
     for (const c of [q.i, q.j]) for (let k = Math.max(0, c - 1); k <= Math.min(n - 1, c + 1); k++) tol[k] = TIGHT_TOL;
   }
   brushDebug.onSolve?.({ line, z, target, low, upper, noRead, wH, read });
-  return { z, tol, blocked, cave: noRead };
+  return { z, tol, blocked, cave: noRead, kehren };
 }
 
 /** Läufe (von, bis) der blockierten Linienpunkte */
@@ -1632,8 +2094,9 @@ export function pathFromPoints(pts: Vec3[], closed: boolean, tolAt?: ArrayLike<n
 }
 
 function replan(plan: BrushPlan, o: Opts): void {
-  const { z, tol, blocked } = solveDepth(plan.line, plan.closed, plan.crossings, plan.wH, plan.wMul, plan.lower, plan.calm, o, plan.fixed, plan.hold, plan.holdW, plan.flat, plan.ramps, plan.level);
+  const { z, tol, blocked, kehren } = solveDepth(plan.line, plan.closed, plan.crossings, plan.wH, plan.wMul, plan.lower, plan.calm, o, plan.fixed, plan.hold, plan.holdW, plan.flat, plan.ramps, plan.level, plan.kehren);
   plan.z = z;
+  plan.kehren = kehren;
   plan.rock = blockedRuns(blocked);
   plan.pts = worldPoints(plan.line, plan.z, plan.closed, o);
   plan.path = pathFromPoints(plan.pts, plan.closed, tol);
@@ -1676,6 +2139,13 @@ function depthWeights(line: StagePoint[], closed: boolean): { calm: Float64Array
     for (let k = i; k >= Math.max(0, i - TURN_SPAN) && !before; k--) before = clear(k);
     for (let k = i; k <= Math.min(n - 1, i + TURN_SPAN) && !after; k++) after = clear(k);
     if (before * after < 0) level[i] = (1 - Math.abs(dir(i).x)) ** 2;
+  }
+  // sehr enge Wende: Die Richtung springt zwischen zwei Nachbarn direkt um (kein Punkt dazwischen ist unklar), dann ist der
+  // senkrechtere der beiden der Scheitel (sonst blieb die Kehre unerkannt und die Bahn drehte im Bild kopfüber)
+  for (let i = 0; i < n - 1; i++) {
+    if (clear(i) * clear(i + 1) >= 0) continue;
+    const k = Math.abs(dir(i).x) < Math.abs(dir(i + 1).x) ? i : i + 1;
+    level[k] = Math.max(level[k], (1 - Math.abs(dir(k).x)) ** 2);
   }
   const wH = new Float64Array(n);
   for (let i = 0; i < n; i++) {
@@ -1724,7 +2194,8 @@ export function planBrushTrack(points: StagePoint[], options: BrushOptions = {},
   let fixedAtRelease = keptDepth(n, keepDepth);
   if (shown && !prep.closed) {
     fixedAtRelease = fixedAtRelease ?? new Float64Array(n).fill(NaN);
-    for (let i = 0; i < Math.min(n - PREVIEW_FREE, shown.length - 3); i++) if (Number.isNaN(fixedAtRelease[i])) fixedAtRelease[i] = shown[i];
+    const free = o.depthAt ? SLICE_PREVIEW_FREE : PREVIEW_FREE;
+    for (let i = 0; i < Math.min(n - free, shown.length - 3); i++) if (Number.isNaN(fixedAtRelease[i])) fixedAtRelease[i] = shown[i];
   }
   let hold: Float64Array | null = null;
   let holdW: Float64Array | null = null;
@@ -1737,6 +2208,7 @@ export function planBrushTrack(points: StagePoint[], options: BrushOptions = {},
       holdW[i] = PREVIEW_HOLD * (prep.closed ? Math.min(1, (n - 1 - i) / RING_FADE) : 1) * (shownPreview?.cave?.[i] ? CAVE_HOLD : 1);
     }
   }
+  if (o.depthAt) freeLoops(elements, n, fixedAtRelease, holdW, keepDepth ? keepDepth.length - 2 : 0, shownPreview?.crossings ?? []);
   const plan: BrushPlan = {
     drawn: prep.line.map((p) => ({ ...p })),
     line: prep.line,
@@ -1758,6 +2230,7 @@ export function planBrushTrack(points: StagePoint[], options: BrushOptions = {},
     ramps,
     rock: [],
     rockCut: false,
+    kehren: shownPreview?.kehren ?? [],
   };
   keepOrder(plan.crossings, shownPreview?.crossings);
   replan(plan, o);
@@ -1814,6 +2287,8 @@ export interface BrushPreview {
   cave: Uint8Array;
   /** Kreuzungen mit der gewählten Reihenfolge (bleibt von Vorschau zu Vorschau und beim Loslassen gleich) */
   crossings: LineCrossing[];
+  /** Ebenen-Test: Kehren mit der Richtung ihrer Tiefe (bleibt ebenso) */
+  kehren?: KehreSide[];
 }
 
 /** Reihenfolge an Kreuzungen übernehmen, die es schon gab (Linienpunkte höchstens 3 auseinander) */
@@ -1838,7 +2313,10 @@ export function previewBrushTrack(points: StagePoint[], options: BrushOptions, p
   const n = prep.line.length;
   const { calm, wH, level } = depthWeights(prep.line, false);
   const fixed = keptDepth(n, keepDepth) ?? new Float64Array(n).fill(NaN);
-  if (prev) for (let i = 0; i < Math.min(n - PREVIEW_FREE, prev.z.length - 3); i++) if (Number.isNaN(fixed[i])) fixed[i] = prev.z[i];
+  // Ebenen-Test: früher halten und festlegen, damit die Bahn hinter der Spitze ruhig bleibt (Florian: „springt“)
+  const free = o.depthAt ? SLICE_PREVIEW_FREE : PREVIEW_FREE;
+  const tip = o.depthAt ? SLICE_PREVIEW_TIP : PREVIEW_TIP;
+  if (prev) for (let i = 0; i < Math.min(n - free, prev.z.length - 3); i++) if (Number.isNaN(fixed[i])) fixed[i] = prev.z[i];
   let hold: Float64Array | null = null;
   let holdW: Float64Array | null = null;
   if (prev) {
@@ -1846,24 +2324,26 @@ export function previewBrushTrack(points: StagePoint[], options: BrushOptions, p
     holdW = new Float64Array(n);
     for (let i = 0; i < Math.min(n, prev.z.length - 3); i++) {
       const d = n - 1 - i;
-      if (!Number.isNaN(fixed[i]) || d <= PREVIEW_TIP) continue;
-      const w = Math.min(1, (d - PREVIEW_TIP) / (PREVIEW_FREE - PREVIEW_TIP));
+      if (!Number.isNaN(fixed[i]) || d <= tip) continue;
+      const w = Math.min(1, (d - tip) / (free - tip));
       hold[i] = prev.z[i];
       // in einer Höhle hält die gezeigte Tiefe nur schwach: dort zieht die Höhlenmitte, die erste Lösung klebte an der Wand
-      holdW[i] = PREVIEW_HOLD * w * w * (3 - 2 * w) * (prev.cave?.[i] ? CAVE_HOLD : 1);
+      holdW[i] = PREVIEW_HOLD * (o.depthAt ? SLICE_HOLD : 1) * w * w * (3 - 2 * w) * (prev.cave?.[i] ? CAVE_HOLD : 1);
     }
   }
   const crossings = findLineCrossings(prep.line, false);
   keepOrder(crossings, prev?.crossings);
   const wMul = new Float64Array(n).fill(1);
   const flat = new Float64Array(n).fill(1);
-  const ramps = applyElements(findElements(prep.line, crossings), wMul, flat, calm, level);
-  const { z, blocked, cave } = solveDepth(prep.line, false, crossings, wH, wMul, new Float64Array(n).fill(-Infinity), calm, o, fixed, hold, holdW, flat, ramps, level);
+  const elements = findElements(prep.line, crossings);
+  const ramps = applyElements(elements, wMul, flat, calm, level);
+  if (o.depthAt) freeLoops(elements, n, fixed, holdW, keepDepth ? keepDepth.length - 2 : 0, prev?.crossings ?? []);
+  const { z, blocked, cave, kehren } = solveDepth(prep.line, false, crossings, wH, wMul, new Float64Array(n).fill(-Infinity), calm, o, fixed, hold, holdW, flat, ramps, level, prev?.kehren ?? null);
   const nodes = previewNodes(worldPoints(prep.line, z, false, o), []);
   if (nodes.length) nodes[0].kind = 'station';
   const rock: StagePoint[] = [];
   for (let i = 0; i < n; i++) if (blocked[i]) rock.push(prep.line[i]);
-  return { path: { ...emptyPath(), nodes, closed: false, brush: true }, z, crossings, rock, cave };
+  return { path: { ...emptyPath(), nodes, closed: false, brush: true }, z, crossings, rock, cave, kehren };
 }
 
 /** Anfang und Ende einer Linie weich auf zwei Punkte gleiten lassen (je über blend Bühnen-Meter) */
@@ -2174,6 +2654,9 @@ export class BrushRefiner {
   private pickLever(reason: string, k: number, f = -1): Lever | null {
     // im Looping hilft kein Hebel, ohne ihn plattzudrücken: Er bleibt, wie gezeichnet (zu langsam ist Spiel)
     if (this.plan.elements.loops.some((l) => l.vertical && f >= l.i - 4 && f <= l.j + 4)) return null;
+    // Ebenen-Test: Die Tiefe kommt aus den Scheiben und bleibt, wie gezeigt. „Kuppe nach hinten“ und „Fliehkraft über die
+    // Tiefe“ verschoben sie nach dem Loslassen um bis zu 19 m und machten enge Zacken; hier rundet nur die Linie
+    if (this.o.depthAt) return reason === 'derail' ? (k <= 4 ? 'relax' : null) : reason === 'fall' ? (k <= 3 ? 'flatten' : null) : null;
     // gerade nur, wenn es passt: Kommt der Zug nicht hinauf, darf der Hügel zuerst wieder nach hinten
     if (reason === 'stall') return k === 1 && this.hillAt(f) >= 0 ? 'unramp' : k <= 5 ? 'pushBack' : null;
     if (reason === 'fall') return k <= 3 ? 'flatten' : k <= 6 ? 'relax' : null;

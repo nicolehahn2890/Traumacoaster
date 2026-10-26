@@ -50,6 +50,12 @@ export class Game {
       options.context = this.world.context;
       options.clearBeforeRender = false;
     }
+    // Kamerawinkel-Test als claude.ai-Artifact: Verbietet die Seitenregel (CSP) eval, braucht Pixi seinen Ersatz
+    try {
+      new Function('');
+    } catch {
+      await import('pixi.js/unsafe-eval');
+    }
     await this.app.init(options);
     host.appendChild(this.app.canvas);
     if (this.world) {

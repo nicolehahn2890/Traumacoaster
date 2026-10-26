@@ -26,8 +26,8 @@ export const LANE_DEPTH = 8.4;
  * Levelrand (x = 0): „gerade nach hinten“ lief bei 60 m schon 42°, bei 120 m 61° schräg über das Bild.
  */
 export const LANE_SCALE = 1;
-/** Anhebung der Bodenlinie pro Spur in Bühnen-Metern */
-export const LANE_RISE = 4.2;
+/** Anhebung der Bodenlinie pro Spur in Bühnen-Metern (folgt der Kameraneigung, setCameraTilt) */
+export let LANE_RISE = 4.2;
 
 export const laneScale = (z: number): number => Math.pow(LANE_SCALE, z);
 export const laneRise = (z: number): number => z * LANE_RISE;
@@ -84,10 +84,26 @@ export const laneAtmosphere = (z: number): number => (z - LANE_MIN) / (LANE_MAX 
  * einheitlich mit dem Maßstab auf Zielhöhe (viewScale) und korrigieren jeden Punkt über toLaneOf nach. Ohne Perspektive
  * ist D unendlich, und alles hier fällt auf toStage/toWorld zurück.
  */
-export const CAMERA_TILT = Math.atan(LANE_RISE / LANE_DEPTH);
-const TILT_SIN = Math.sin(CAMERA_TILT);
+export const DEFAULT_CAMERA_TILT = Math.atan(LANE_RISE / LANE_DEPTH);
+export let CAMERA_TILT = DEFAULT_CAMERA_TILT;
+let TILT_SIN = Math.sin(CAMERA_TILT);
+/** Bildhöhe je Meter Tiefe (tan der Neigung): LANE_RISE / LANE_DEPTH */
+export let TILT_TAN = LANE_RISE / LANE_DEPTH;
 /** Spurabstand entlang der Blickrichtung der geneigten Kamera (Meter) */
-export const DEPTH_VIEW = LANE_DEPTH * Math.cos(CAMERA_TILT);
+export let DEPTH_VIEW = LANE_DEPTH * Math.cos(CAMERA_TILT);
+
+/**
+ * Kamerawinkel-Test: Neigung zur Laufzeit drehen (Bogenmaß, > 0). Die Welt bleibt, wie sie ist (Spurtiefe LANE_DEPTH);
+ * mit der Kamera ändern sich Bodenlinien-Anhebung, Tiefe entlang der Blickrichtung und die senkrechte Streckung
+ * (src/world/camera.ts). Bühne, Strahlen und Pinsel lesen die Werte bei jedem Aufruf, so bleibt der Strich auf der Bahn.
+ */
+export function setCameraTilt(rad: number): void {
+  CAMERA_TILT = rad;
+  TILT_SIN = Math.sin(rad);
+  TILT_TAN = Math.tan(rad);
+  LANE_RISE = LANE_DEPTH * TILT_TAN;
+  DEPTH_VIEW = LANE_DEPTH * Math.cos(rad);
+}
 
 export interface ViewState {
   persp: boolean;

@@ -28,10 +28,8 @@ export const laneToZ = (z: number): number => -z * LANE_DEPTH;
 /** Welt-Z → Spur */
 export const zToLane = (Z: number): number => -Z / LANE_DEPTH;
 
-const SIN = Math.sin(CAMERA_TILT);
-const COS = Math.cos(CAMERA_TILT);
-/** senkrechte Streckung der Bühne: ein senkrechter Meter erscheint so lang wie ein waagerechter */
-export const VERTICAL_STRETCH = 1 / COS;
+/** senkrechte Streckung der Bühne: ein senkrechter Meter erscheint so lang wie ein waagerechter (folgt der Neigung) */
+export const verticalStretch = (): number => 1 / Math.cos(CAMERA_TILT);
 /** Abstand der Ortho-Kamera (beliebig, nur für near/far) */
 const ORTHO_DISTANCE = 400;
 
@@ -51,6 +49,9 @@ export class WorldCamera {
   /** Kamera für dieses Bild stellen */
   set(view: CameraView): void {
     this.view = { ...view };
+    const SIN = Math.sin(CAMERA_TILT);
+    const COS = Math.cos(CAMERA_TILT);
+    const VERTICAL_STRETCH = 1 / COS;
     const wM = view.width / view.zoom;
     const hM = view.height / view.zoom;
     const target = new Vector3(view.cx, view.cy, 0);

@@ -126,6 +126,13 @@ export interface TrainSimOptions {
   insideRock?: (x: number, y: number, z: number) => boolean;
   /** Durchbruch-Wände der Zone (Etappe 2, Schritt 6): quer zur Bahn bei x auf Spur z von y bis y + h; schnell genug (energy, m/s) zersplittert sie, sonst hält sie */
   walls?: Array<{ id: string; x: number; y: number; z: number; h: number; energy: number }>;
+  /**
+   * Ebenen-Test (Kamerawinkel-Branch): Höhe zählt, wie sie im Bild wirkt. Abstand (m) einer Bezugskamera: ein Punkt in
+   * der Tiefe Z (m, hinten positiv) erscheint um k = D / (D + Z) kleiner, die Lageenergie ist g · y · k. Ein Hügel weit
+   * hinten kostet so so viel Schwung, wie er groß aussieht; als Potenzial gerechnet gewinnt der Zug keine Energie aus dem
+   * Nichts (auf gleicher Höhe nach hinten wird er etwas schneller, nach vorne etwas langsamer, wie es im Bild auf- und absteigt)
+   */
+  depthPerspective?: number;
 }
 
 const STATION_PUSH = 2.0; // m/s: rollt auf ebener Strecke gut 10 m aus und bleibt stehen
@@ -279,9 +286,14 @@ export class TrainSim {
     const L = this.samples.length;
     let aGrav = 0;
     let anyAuto = false;
+    const D = this.opts.depthPerspective;
     for (let c = 0; c < this.opts.cars; c++) {
       const st = stateAt(this.samples, this.s - c * this.opts.carLength);
-      aGrav += -g * st.t3y;
+      if (D) {
+        // −d(g·y·k)/ds mit k = D / (D + Z): k · (y′ − y · k · Z′ / D)
+        const k = D / Math.max(1, D + st.z * LANE_DEPTH);
+        aGrav += -g * k * (st.t3y - (st.y * k * st.t3z) / D);
+      } else aGrav += -g * st.t3y;
       if (st.auto) anyAuto = true;
     }
     aGrav /= this.opts.cars;

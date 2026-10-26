@@ -110,7 +110,7 @@ const REVERSAL_MIN = 0.8; // m Rückweg, der einen Anstiegs-Kandidaten zur Boden
 const STEEP_ANGLE = (40 * Math.PI) / 180;
 const STEEP_WINDOW = 4; // Bühnen-Meter, über die der Anstieg im Mittel steil sein muss
 const CLIMB_LOOK = 8; // Bühnen-Meter Vorausblick: kehrt x darin nicht um, war es ein Anstieg
-const CLIMB_RISE_SURE = 2.2 * LANE_RISE; // so hoch über dem Fuß ohne Umkehr: sicher ein Anstieg (keine Kehre reicht so weit)
+const CLIMB_RISE_SURE = (): number => 2.2 * LANE_RISE; // so hoch über dem Fuß ohne Umkehr: sicher ein Anstieg (keine Kehre reicht so weit)
 const TURN_RAMP_RISE = 3; // Bühnen-Meter: steigt der Strich bis zum Scheitel einer Kehre noch so viel, beginnt der Bogen erst oben
 const CLIMB_RAMP_WINDOW = 6; // m: dreht sich der steile Strich über diese Länge weniger als …
 const CLIMB_RAMP_TURN = (20 * Math.PI) / 180; // … ist er eine gerade Rampe (Anstieg), keine Beuge einer Bodenkehre
@@ -403,7 +403,7 @@ class Scanner {
         if (retreat >= REVERSAL_MIN) {
           if (climb.ramp) return commitClimb();
           climb = null;
-        } else if (cum[i] >= climb.decideAt || Y[i] - Y[climb.foot] >= CLIMB_RISE_SURE) return commitClimb();
+        } else if (cum[i] >= climb.decideAt || Y[i] - Y[climb.foot] >= CLIMB_RISE_SURE()) return commitClimb();
       }
       if (retreat >= TURN_DETECT) {
         sec.i1 = extIdx;
