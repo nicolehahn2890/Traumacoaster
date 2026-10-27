@@ -40,8 +40,10 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Werte, Paletten, Stile, Zuletzt), Farbe auf Flächen ziehen, Weiter füllen, Pipette (auch Finger halten);
   Verlaufswerkzeug G mit Regler am Objekt; Füllstapel als Liste, Ebenenstapel; Stile (sichern, verknüpfen, neu
   festlegen, kopieren und einfügen); Zonenpalette mit Namen und Farben je Look; Verläufe im SVG hin und zurück.
-  426 Tests, Build, Szenarien 11 bis 23 mit 83 Prüfungen grün (`ZONENEDITOR-PLAN.md` Stufe 3, `TECH.md` 4j). Wartet auf
-  **Tor S3**; am iPad und am Handy (60 fps) noch nicht geprüft.
+  426 Tests, Build, Szenarien 11 bis 23 mit 83 Prüfungen grün (`ZONENEDITOR-PLAN.md` Stufe 3, `TECH.md` 4j).
+  **Tor S3 am Mac bestanden (27.10.):** „Es scheint alles erstmal zu funktionieren“; Kleinigkeiten aus S2 und S3 sammelt
+  Florian und geht sie später mit uns durch. Er testet vorerst nur am Mac, iPad und Tablet optimieren wir später; die
+  Handy-Messung (60 fps) ist noch offen. Weiter mit Stufe 4 „Spiel im Editor“.
 
 - **25.10., Etappe 2 begonnen** (Branch `etappe-2-bahn-und-welt` von `main`; die zwölf Arbeitsschritte mit drei Toren stehen in
   `docs/GROSSER-PLAN.md`, Paket 10, von Florian bestätigt). Technik in `docs/TECH.md` 4h.
@@ -294,7 +296,7 @@ ab sechs CPU-Kernen), `?dev=1` (Overlay mit fps, Draw-Calls, Partikeln; Taste F 
 (Weltrenderer der Etappe 1, Perspektive 18° Standard; dort `?persp=0` für die Bühne, `?aa=0` ohne Kantenglättung).
 Eigene automatische Tests im Dev-Server mit `TC_NO_RECORD=1`, damit sie die echten Aufnahmen nicht verfälschen.
 
-## 3. Nächster Schritt: Tor S3 des Zonen-Editors
+## 3. Nächster Schritt: Stufe 4 des Zonen-Editors (Spiel im Editor)
 
 **Seit 27.10.2026 gilt:** Etappe 2 ruht; gebaut wird der Zonen-Editor nach `docs/ZONENEDITOR-PLAN.md`, Abschnitt 6, auf
 dem Branch `zoneneditor`. Stufe 1 ist gebaut, Tor S1 bestanden (27.10.); Stufe 2 ist im Kern gebaut (27.10.) und wartet
@@ -302,9 +304,9 @@ auf Tor S2: Florian zeichnet Bild 1 und 2 (Kontur, Unterteilung, Höhlenöffnung
 SVG öffnet sauber in Illustrator und kommt zurück. Seit dem Abend des 27.10. ist auch der Rest von Stufe 2 gebaut
 (Drehen, Ausrichten, Boolesche Operationen, Vereinfachen, Kurvenstift, Band, Einrasten, Skizze), danach Formgruppen,
 Bogen, 45°-Einrasten und Zahlen. Tor S2 gab Florian am 27.10. frei („sieht gut aus“, Kleinigkeiten folgen). Stufe 3
-(Farbe, Verläufe, Stile) ist gebaut und wartet auf **Tor S3**: Bild 3, 4 und 5 im Editor nachbauen und im Spielblick
-prüfen, 60 fps am Handy, Florians Urteil über Farbe und Verlauf. Danach Stufe 4 (Spiel im Editor) oder was das Tor
-ergibt; aus der Werkzeugliste in Plan 4.3 fehlen noch Schnittmaske (Stufe 6), Kontur in Fläche und Hilfslinien. Für das iPad den HTTPS-Zugang nutzen (Profil aus `/__tc-ca.pem` installieren und voll vertrauen,
+(Farbe, Verläufe, Stile) ist gebaut, Tor S3 am Mac bestanden (27.10.; Handy-Messung offen, Kleinigkeiten sammelt Florian).
+Jetzt Stufe 4 (Spiel im Editor, Plan 4.9): Pinsel liest die Tiefe aus den Ebenen, Stützen auf Kanten, Probebahn und
+Testfahrt im Editor; der Editor muss zuerst am Mac laufen, iPad und Tablet später; aus der Werkzeugliste in Plan 4.3 fehlen noch Schnittmaske (Stufe 6), Kontur in Fläche und Hilfslinien. Für das iPad den HTTPS-Zugang nutzen (Profil aus `/__tc-ca.pem` installieren und voll vertrauen,
 `TECH.md` 12). Der Text unten beschreibt den Stand vor der Pause und gilt wieder, wenn der große Plan weiterläuft.
 
 ### Vor der Pause: Etappe 2 des großen Plans

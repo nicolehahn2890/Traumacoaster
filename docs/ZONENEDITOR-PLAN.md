@@ -3,7 +3,9 @@
 Stand 27.10.2026. **Startfragen A1 bis A7 von Florian am 27.10.2026 beantwortet (alle wie empfohlen, Abschnitt 9);
 Stufe 0 und Stufe 1 gebaut, Tor S1 bestanden (Florian, 27.10.2026); Stufe 2 ganz gebaut, Tor S2: „sieht gut aus“
 (Florian, 27.10.2026; ein paar Kleinigkeiten meldet er nach); Stufe 3 gebaut (Farbmenü, Verläufe, Füllstapel,
-Ebenenstapel, Luftperspektive, Stile, Looks, SVG), wartet auf Tor S3.** Gebaut wird Stufe für
+Ebenenstapel, Luftperspektive, Stile, Looks, SVG), Tor S3 am Mac bestanden („Es scheint alles erstmal zu
+funktionieren“; Kleinigkeiten aus S2 und S3 sammelt Florian und geht sie später mit uns durch); weiter mit Stufe 4.
+Der Editor muss zuerst am Mac laufen, iPad und Tablet optimieren wir später (Florian, 27.10.2026).** Gebaut wird Stufe für
 Stufe mit Tor, auf dem Branch `zoneneditor`. Der große Plan (`docs/GROSSER-PLAN.md`)
 ruht seit heute auf Florians Wunsch; Etappe 2 steht nach Schritt 7, dem Freiraumfeld und der Freigabe der Ebenen-Probe,
 Tor 2b ist offen. Die Session von Etappe 2 hat die Pause per Nachricht bekommen (27.10.2026).
@@ -1087,6 +1089,10 @@ als Vorlagenwerkzeug für gemalte Teile.
 ## 9. Offene Entscheidungen
 
 ### Florians Antworten vom 27.10.2026
+
+- **Mac zuerst (an Tor S3):** „ich teste nur am mac weil es primär erstmal da laufen muss. iPad und Tablet optimieren
+  wir dann.“ Die Tore prüft er vorerst am Mac; was am iPad fehlt, ist spätere Optimierung, kein offener Torpunkt. Das
+  Spiel selbst bleibt fürs Handy: „60 fps am Handy“ bleibt eine echte Prüfung (für S3 noch offen).
 
 - **Startfragen:** „Ja zu A1 bis A7“; die Oberfläche des Editors **so minimalistisch und ruhig wie möglich**.
 - **Abstand (Befund 1):** „Dann muss der hintere Shape in der Größe verändert werden“, also „Bild halten“ wie empfohlen.
