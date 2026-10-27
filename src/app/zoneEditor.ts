@@ -26,7 +26,8 @@ import type { WorldRenderer } from '@/world/renderer';
 import type { WorldView } from '@/render/worldView';
 import { TRACK_TYPES, type TrackType } from '@/world/trackTypes';
 import { loadZone, onZoneChange, saveZone } from '@/zone/io';
-import { KIND_DEFAULTS, ZONE_ANCHORS, ZONE_DEPTH_ROLES, ZONE_GOAL_TYPES, formatGoals, newCoinGroup, newElement, newField, newQueue, newSite, newStation, parseGoals, round, type ZoneCoinGroup, type ZoneElement, type ZoneElementKind, type ZoneField, type ZoneFile, type ZoneQueue, type ZoneSite, type ZoneStation } from '@/zone/types';
+import { BODY_ROLE_WORDS, KIND_DEFAULTS, ZONE_ANCHORS, ZONE_BODY_ROLES, ZONE_DEPTH_ROLES, ZONE_GOAL_TYPES, fitBodyBounds, formatGoals, newCoinGroup, newElement, newElementId, newField, newQueue, newSite, newStation, parseGoals, round, type ZoneCoinGroup, type ZoneElement, type ZoneElementKind, type ZoneField, type ZoneFile, type ZoneQueue, type ZoneSite, type ZoneStation } from '@/zone/types';
+import { applySvgBodies, svgToBodies, zoneToSvg } from '@/zone/svg';
 import { applyZoneExtras, buildZoneCoins, buildZoneQueue, buildZoneSite, buildZoneStation, itemPosition } from '@/zone/build';
 import { COIN_SHAPES } from '@/zone/groups';
 import { SITE_OPENING_R, siteTarget } from '@/zone/sites';
@@ -96,6 +97,9 @@ export class ZoneEditor {
   private readonly saveBtn = new Button('Speichern', BTN);
   private readonly typeBtn = new Button('', BTN);
   private readonly rideBtn = new Button('Testfahrt', BTN);
+  /** SVG-Austausch der Körper (Ebenen-Probe): Formen am Mac in einem Zeichenprogramm bearbeiten und zurückspielen */
+  private readonly svgOutBtn = new Button('SVG ↓', BTN);
+  private readonly svgInBtn = new Button('SVG ↑', BTN);
   private readonly status = label('', 14, INK, false, { wordWrap: true, wordWrapWidth: 520 });
   /** Auswahlrahmen um das gewählte Element (Bildschirm-Kasten der Welt, je Bild neu) */
   private readonly frame = new Graphics();
@@ -117,8 +121,10 @@ export class ZoneEditor {
     this.saveBtn.onTap = () => void this.save();
     this.typeBtn.onTap = () => this.cycleType();
     this.rideBtn.onTap = () => this.testRide();
-    this.hud.addChild(this.frame, this.modeBtn, this.saveBtn, this.typeBtn, this.rideBtn, this.status, this.hint);
-    this.buttons.push(this.modeBtn, this.saveBtn, this.typeBtn, this.rideBtn);
+    this.svgOutBtn.onTap = () => this.exportSvg();
+    this.svgInBtn.onTap = () => this.importSvg();
+    this.hud.addChild(this.frame, this.modeBtn, this.saveBtn, this.typeBtn, this.rideBtn, this.svgOutBtn, this.svgInBtn, this.status, this.hint);
+    this.buttons.push(this.modeBtn, this.saveBtn, this.typeBtn, this.rideBtn, this.svgOutBtn, this.svgInBtn);
     this.status.anchor.set(0, 0);
     this.hint.anchor.set(0, 0);
     this.hint.alpha = 0.8;
@@ -280,7 +286,7 @@ export class ZoneEditor {
     this.drag = null;
     this.fieldDrag = null;
     for (const p of this.palette) p.btn.visible = this.mode === 'build';
-    this.saveBtn.visible = this.typeBtn.visible = this.rideBtn.visible = this.mode === 'build';
+    this.saveBtn.visible = this.typeBtn.visible = this.rideBtn.visible = this.svgOutBtn.visible = this.svgInBtn.visible = this.mode === 'build';
     this.applyActiveField();
     this.refreshLabels();
   }
@@ -647,6 +653,40 @@ export class ZoneEditor {
     const el = item.el;
     // Metadaten (Plan 2.1, 8a.1)
     const lower = k.toLowerCase();
+    if (el.kind === 'body') {
+      // Körper (Ebenen-Probe): Rolle, Öffnungsstufe, Boden, Raum, Bild
+      if (lower === 'r') {
+        const i = ZONE_BODY_ROLES.indexOf(el.role ?? 'front');
+        el.role = ZONE_BODY_ROLES[(i + 1) % ZONE_BODY_ROLES.length];
+        if (el.role === 'front') delete el.role;
+        this.commit(el);
+        return true;
+      }
+      if (lower === 'o') {
+        el.openFrom = ((el.openFrom ?? 0) + 1) % 4 || undefined;
+        this.commit(el);
+        return true;
+      }
+      if (lower === 'b') {
+        el.ground = !el.ground || undefined;
+        this.commit(el);
+        return true;
+      }
+      if (k === '+' || k === '-') {
+        el.room = round(Math.max(0, (el.room ?? 0) + (k === '+' ? 2 : -2))) || undefined;
+        this.commit(el);
+        return true;
+      }
+      if (lower === 'i') {
+        const v = window.prompt('Bild des Körpers (Pfad unter public/, etwa zones/ebenen/bogen.webp; leer: Farbfläche)', el.image ?? '');
+        if (v !== null) {
+          if (v.trim()) el.image = v.trim();
+          else delete el.image;
+          this.commit(el);
+        }
+        return true;
+      }
+    }
     if (lower === 'm') {
       el.foundation = !el.foundation || undefined;
       this.commit(el);
@@ -751,6 +791,45 @@ export class ZoneEditor {
     this.refreshLabels();
   }
 
+  /** alle Körper als SVG herunterladen (1 m = 10 px, Kennungen als id; Vorlage zum Malen und Bearbeiten) */
+  private exportSvg(): void {
+    const svg = zoneToSvg(this.zone);
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `zone-${this.zone.name}.svg`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    this.host.toast.show(`SVG mit ${this.zone.elements.filter((e) => e.kind === 'body').length} Körpern geschrieben`, 2);
+  }
+
+  /** SVG-Datei wählen: Pfade mit bekannter Kennung ersetzen die Form des Körpers, neue werden neue Körper */
+  private importSvg(): void {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.svg,image/svg+xml';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const text = await file.text();
+      const bodies = svgToBodies(text);
+      if (!bodies.length) {
+        this.host.toast.show('Keine Formen in der SVG-Datei gefunden', 2.5);
+        return;
+      }
+      const changed = applySvgBodies(this.zone, bodies, () => newElementId(this.zone));
+      for (const el of changed) {
+        fitBodyBounds(el);
+        this.host.world.updateZoneElement(el);
+      }
+      this.dirty = true;
+      this.host.refreshRock();
+      this.refreshLabels();
+      this.host.toast.show(`${changed.length} Körper aus SVG übernommen`, 2.5);
+    };
+    input.click();
+  }
+
   /** Hot-Reload: Datei auf der Platte hat sich geändert */
   private async reload(): Promise<void> {
     const zone = await loadZone(this.zone.name);
@@ -817,6 +896,14 @@ export class ZoneEditor {
     if (el.growth) meta.push(`ab Stufe ${el.growth}`);
     if (el.depthRole) meta.push(`Rolle ${ROLE_NAMES[el.depthRole]}`);
     if (el.kind === 'cave') meta.push(el.openFrom ? `offen ab Stufe ${el.openFrom}` : 'immer offen');
+    if (el.kind === 'body') {
+      meta.push(`Rolle ${BODY_ROLE_WORDS[el.role ?? 'front']}`);
+      meta.push(`${el.path?.length ?? 0} Punkte${el.holes?.length ? `, ${el.holes.length} ${el.holes.length === 1 ? 'Loch' : 'Löcher'}` : ''}`);
+      if (el.room) meta.push(`Raum ${el.room} m dahinter`);
+      if (el.ground) meta.push('Boden');
+      if (el.openFrom) meta.push(`offen ab Stufe ${el.openFrom}`);
+      if (el.image) meta.push(`Bild ${el.image}`);
+    }
     return `${def?.label ?? el.kind} ${el.id} · x ${el.x} m · Höhe ${el.y} m · Spur ${el.z > 0 ? '+' : ''}${el.z} · ${size}${meta.length ? ' · ' + meta.join(' · ') : ''}`;
   }
 
@@ -876,7 +963,9 @@ export class ZoneEditor {
       this.hint.text = 'Esc: Werkzeug weg';
     } else if (el) {
       this.status.text = this.describe(el);
-      this.hint.text = `Ziehen verschiebt · Bild auf/ab (oder [ ]) Tiefe, Shift fein · Pfeile Breite und Höhe${el.d !== undefined ? ' · Shift+Pfeile links/rechts Dicke' : ''} · M Fundament · O ${el.kind === 'cave' ? 'offen ab Stufe' : 'Öffnung'}${el.openings?.length ? ' (Alt+Pfeile verschieben, + − Radius)' : ''} · A Anker · G Stufe · R Rolle · Entf löschen · Esc abwählen · Cmd+S speichern`;
+      this.hint.text = el.kind === 'body'
+        ? 'Ziehen verschiebt · Bild auf/ab (oder [ ]) Tiefe, Shift fein · Shift+Pfeile links/rechts Dicke · R Rolle · O offen ab Stufe · B Boden · + − Raum dahinter · I Bild · G Stufe · Form: SVG ↓ bearbeiten, SVG ↑ zurück · Entf löschen · Esc abwählen · Cmd+S speichern'
+        : `Ziehen verschiebt · Bild auf/ab (oder [ ]) Tiefe, Shift fein · Pfeile Breite und Höhe${el.d !== undefined ? ' · Shift+Pfeile links/rechts Dicke' : ''} · M Fundament · O ${el.kind === 'cave' ? 'offen ab Stufe' : 'Öffnung'}${el.openings?.length ? ' (Alt+Pfeile verschieben, + − Radius)' : ''} · A Anker · G Stufe · R Rolle · Entf löschen · Esc abwählen · Cmd+S speichern`;
     } else if (item) {
       this.status.text = this.describeItem(item);
       this.hint.text = item.kind === 'station' ? 'Ziehen verschiebt · Bild auf/ab Tiefe · D Richtung · Pfeile links/rechts Länge · Entf löschen'
@@ -918,6 +1007,10 @@ export class ZoneEditor {
     this.saveBtn.position.set(x, y);
     y += 34;
     this.rideBtn.position.set(x, y);
+    y += 40;
+    this.svgOutBtn.position.set(x, y);
+    y += 34;
+    this.svgInBtn.position.set(x, y);
     this.statusTop = top + 62;
     this.portrait = h > w;
     this.status.x = this.hint.x = safe.left + 148;

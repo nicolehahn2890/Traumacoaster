@@ -2046,7 +2046,7 @@ export class LevelScene implements Scene {
     const free = this.freeLanes;
     return {
       // mit Freiraumfeld liest der Pinsel die Höhe über der Erde (Räume kennt das Feld), sonst über dem Boden mit Räumen
-      ground: field ? (x: number, z: number) => this.earthAt(x, z) : (x: number, z: number) => this.groundAt(x, z),
+      ground: field ? (x: number, z: number) => field.surfaceAt(x, z) : (x: number, z: number) => this.groundAt(x, z),
       clearance: this.groundClearance,
       // Rundenschluss ab 8 m Bühne oder 60 px, je nachdem, was weiter ist
       closeSnap: Math.max(8, 60 / this.view.camera.zoom),
@@ -2582,7 +2582,7 @@ export class LevelScene implements Scene {
     // über einem offenen Raum ist der Raumboden der Boden (Schritt 7)
     const r = roomAt(this.rooms, x, z);
     if (r) return r.y0 + 0.05;
-    return this.earthAt(x, z);
+    return this.field ? this.field.surfaceAt(x, z) : this.earthAt(x, z);
   }
   /** Höhe, unter der die Erde fest ist: der Boden, mit den Bergen des Levels, wenn Tunnel nicht erlaubt sind */
   private earthAt(x: number, z: number): number {

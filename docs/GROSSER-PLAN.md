@@ -1167,7 +1167,10 @@ Formen wie in seinen Collagen statt Klötzchen und Blöcken, damit man ein Gefü
 Formen, die sich wie in Illustrator bearbeiten oder sogar erstellen lassen. Dann hat er perfekte Formvorlagen für seine
 gemalten Elemente und sieht früh, wo echte 3D-Geometrie nötig ist und wo eine 2D-Verschiebung reicht. Die Session hält
 das für richtig (Antwort vom selben Tag): geschlossene Kurvenpfade als geometrische Wahrheit jedes Körpers, das Feld
-liest den Pfad, Bilder sind nur der Look; Schritte dazu unten, sobald Florian sie freigibt.
+liest den Pfad, Bilder sind nur der Look. **Freigegeben (Florian, 25.10.2026):** so bauen, in der empfohlenen
+Reihenfolge (Körper aus Kurvenpfaden im Feld, SVG-Import und -Export, Umriss aus Bild, Punktbearbeitung im Editor,
+Szene 06 mit Stufenschaltung). Der Pfad-Editor muss nicht auf dem Handy laufen: der ganze Baukasten für die Level
+passiert am Mac, wichtig ist nur, dass das Spiel auf dem Handy läuft.
 **Status: bestätigt am 24.10.2026.** Graben in Stufen trägt Florians Vorbehalt; Autoscroll wird nach dem Ausprobieren
 entschieden. **Nachtrag 25.10.2026 (Etappe 2, von Florian bestätigt):** Der Wasserfall bleibt ein eigenes Element (er ist
 seit Etappe 1 da) und bekommt den Schalter „Fahrt dahinter gedämpft“; die Schalter Schmuck, trägt Stützen und Splash-Zone

@@ -5,7 +5,7 @@
  */
 import { Color, DoubleSide, Group, Mesh, SphereGeometry } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { buildCave, buildColumn, buildFlat, buildPortal, buildThreePart, buildWater, buildWaterfall, type BuiltElement } from '@/world/elements';
+import { buildBody, buildCave, buildColumn, buildFlat, buildPortal, buildThreePart, buildWater, buildWaterfall, type BuiltElement } from '@/world/elements';
 import type { Foundation } from '@/world/foundations';
 import { paintedMaterial } from '@/world/looks';
 import { buildQueuePlaceholder, buildSitePlaceholder, buildStationPlaceholder } from '@/world/stationElements';
@@ -135,6 +135,8 @@ export function buildZoneElement(el: ZoneElement): BuiltElement {
 
 function buildRaw(el: ZoneElement, color: string, d: number): BuiltElement {
   switch (el.kind) {
+    case 'body':
+      return buildBody({ x: el.x, y: el.y, z: el.z, path: el.path ?? [], holes: el.holes ?? [], d: el.d ?? 6, role: el.role ?? 'front', room: el.room ?? 0, color, image: el.image ? `${import.meta.env.BASE_URL}${el.image}` : undefined, openFrom: el.openFrom ?? 0 });
     case 'threePart':
       return buildThreePart(threePartOutline(el), el.z, d, (el.openings ?? []).map((o) => ({ x: el.x + o.dx, y: el.y + o.dy, r: o.r })), color);
     case 'column':

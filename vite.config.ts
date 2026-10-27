@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import type { Plugin } from 'vite';
-import { appendFileSync, existsSync, mkdirSync, watch, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 
 /**
@@ -80,6 +80,20 @@ function zoneStore(): Plugin {
           }
           res.end();
         });
+      });
+      // Zonendateien und ihre Bilder direkt von der Platte (ohne Vites Verzeichnisliste, die public/zones nicht beobachtet):
+      // so erscheinen neue Zonen und neu abgelegte Bilder ohne Neustart, und nichts wird zwischengespeichert
+      const types: Record<string, string> = { json: 'application/json', webp: 'image/webp', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', svg: 'image/svg+xml' };
+      server.middlewares.use('/zones', (req, res, next) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+        const rel = decodeURIComponent((req.url ?? '').replace(/^\/+/, '').split(/[?#]/)[0]);
+        if (!/^[a-z0-9-]{1,40}\/[\w.-]{1,120}$/.test(rel) || rel.includes('..')) return next();
+        const file = `${dir}/${rel}`;
+        if (!existsSync(file)) return next();
+        const ext = rel.split('.').pop()!.toLowerCase();
+        res.setHeader('Content-Type', types[ext] ?? 'application/octet-stream');
+        res.setHeader('Cache-Control', 'no-store');
+        res.end(readFileSync(file));
       });
       mkdirSync(dir, { recursive: true });
       if (existsSync(dir)) {

@@ -12,6 +12,8 @@ import type { BeltLevel, GoalType } from '@/levels/types';
 import { COIN_SHAPES, type ZoneCoinGroup } from './groups';
 import { ZONE_ABILITIES, type FieldAbilityOverrides, type ZoneAbility, type ZoneUpgrade } from './abilities';
 import { LOOK_NAMES, type LookName } from '@/world/looks';
+import { cleanPath, pathBounds, presetPath, type ZonePath } from './path';
+export type { PathPoint, ZonePath } from './path';
 export type { FieldAbilityOverrides, ZoneAbility, ZoneUpgrade } from './abilities';
 
 /** Zielarten, die ein Feld heute eintragen kann (Katalog v1 aus Paket 4.1, soweit der Prüfer sie schon kennt) */
@@ -25,8 +27,17 @@ export interface ZoneGoal {
 
 export type { ZoneCoinGroup } from './groups';
 
-export type ZoneElementKind = 'flat' | 'threePart' | 'column' | 'cave' | 'water' | 'waterfall' | 'portal';
-export const ZONE_KINDS: readonly ZoneElementKind[] = ['flat', 'threePart', 'column', 'cave', 'water', 'waterfall', 'portal'];
+export type ZoneElementKind = 'body' | 'flat' | 'threePart' | 'column' | 'cave' | 'water' | 'waterfall' | 'portal';
+export const ZONE_KINDS: readonly ZoneElementKind[] = ['body', 'flat', 'threePart', 'column', 'cave', 'water', 'waterfall', 'portal'];
+
+/**
+ * Rolle eines Körpers (Ebenen-Probe, Plan Paket 5; Vokabular des Elemente-Bogens): Vorderkörper und Innenwand sind
+ * fest, Füllung, Saum, Licht und Nebel sind reine Bildebenen ohne Festes
+ */
+export type ZoneBodyRole = 'front' | 'wall' | 'fill' | 'rim' | 'light' | 'fog';
+export const ZONE_BODY_ROLES: readonly ZoneBodyRole[] = ['front', 'wall', 'fill', 'rim', 'light', 'fog'];
+export const BODY_ROLE_WORDS: Record<ZoneBodyRole, string> = { front: 'Vorderkörper', wall: 'Innenwand', fill: 'Füllung', rim: 'Saum', light: 'Licht', fog: 'Nebel' };
+export const bodySolid = (role: ZoneBodyRole | undefined): boolean => (role ?? 'front') === 'front' || role === 'wall';
 
 export interface ZoneElement {
   /** kurz und eindeutig in der Zone (e1, e2, …) */
@@ -54,8 +65,19 @@ export interface ZoneElement {
   growth?: number;
   /** Tiefenrolle einer Kulisse: Rückwand (hinter der Bahn), Mitte, Vorderlippe (vor der Bahn) */
   depthRole?: ZoneDepthRole;
-  /** Höhlenkasten: offen ab dieser Fortschrittsstufe (Plan 5.2; ohne Angabe immer offen); davor liegt der Deckel geschlossen */
+  /** Höhlenkasten oder Körper mit Löchern und Raum: offen ab dieser Fortschrittsstufe (Plan 5.2; ohne Angabe immer offen); davor liegt der Deckel geschlossen */
   openFrom?: number;
+  /** Körper: geschlossener Kurvenpfad lokal zum Fußpunkt (Meter), Löcher als weitere Pfade; w und h sind die Maße seiner Grenzen */
+  path?: ZonePath;
+  holes?: ZonePath[];
+  /** Körper: Rolle (ohne Angabe Vorderkörper) */
+  role?: ZoneBodyRole;
+  /** Körper: Tiefe des freien Innenraums hinter der Rückfläche (Meter); dahinter ist die Rückwand fest; 0 oder leer: keiner */
+  room?: number;
+  /** Körper: Bild (mit Alphakanal) relativ zum öffentlichen Ordner, etwa `zones/ebenen/bogen.webp`; ohne Bild eine Farbfläche */
+  image?: string;
+  /** Körper: zählt für den Pinsel als Boden (die Bahn liest ihre Höhe über seiner Oberkante) */
+  ground?: boolean;
 }
 
 export interface ZoneOpening {
@@ -172,8 +194,9 @@ export interface KindDefaults {
   color: string;
 }
 
-/** Platzhalter-Maße je Typ (Plan 8a.1, Richtwerte der Alpen-Visuals) */
+/** Platzhalter-Maße je Typ (Plan 8a.1, Richtwerte der Alpen-Visuals); Körper: Vorgabeform Blob */
 export const KIND_DEFAULTS: readonly KindDefaults[] = [
+  { kind: 'body', label: 'Körper', w: 24, h: 12, d: 6, color: '#8aa0b8' },
   { kind: 'flat', label: 'Kulisse', w: 8, h: 6, color: '#7cc242' },
   { kind: 'threePart', label: 'Dreiteiler', w: 24, h: 14, d: 7.5, color: '#a0765a' },
   { kind: 'column', label: 'Säule', w: 2, h: 10, color: '#8a5f2a' },
@@ -247,12 +270,48 @@ export function newElement(zone: ZoneFile, kind: ZoneElementKind, x: number, y: 
   const d = kindDefaults(kind);
   const el: ZoneElement = { id: newElementId(zone), kind, x: round(x, 2), y: round(y, 2), z: round(z, 2), w: d.w, h: d.h, color: d.color };
   if (d.d !== undefined) el.d = d.d;
+  if (kind === 'body') {
+    const preset = presetPath('blob', d.w, d.h);
+    el.path = cleanPath(preset.path);
+    el.role = 'front';
+    el.ground = true;
+    el.x = round(x - d.w / 2, 2);
+  }
   return el;
+}
+
+/** Maße eines Körpers aus seinem Pfad nachführen (w, h aus den Grenzen) */
+export function fitBodyBounds(el: ZoneElement): void {
+  if (el.kind !== 'body' || !el.path) return;
+  const b = pathBounds(el.path);
+  el.w = round(Math.max(0.2, b.maxX - b.minX), 2);
+  el.h = round(Math.max(0, b.maxY - b.minY), 2);
 }
 
 export const round = (v: number, digits = 2): number => Math.round(v * 10 ** digits) / 10 ** digits;
 
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** Pfad aus der Datei: mindestens drei Anker mit Zahlen, Griffe nur, wenn beide Zahlen sind */
+function parsePath(v: unknown): ZonePath | null {
+  if (!Array.isArray(v) || v.length < 3) return null;
+  const out: ZonePath = [];
+  for (const raw of v) {
+    const p = raw as Record<string, unknown>;
+    if (!p || !num(p.x) || !num(p.y)) return null;
+    const q: ZonePath[number] = { x: p.x, y: p.y };
+    if (num(p.inX) && num(p.inY)) {
+      q.inX = p.inX;
+      q.inY = p.inY;
+    }
+    if (num(p.outX) && num(p.outY)) {
+      q.outX = p.outX;
+      q.outY = p.outY;
+    }
+    out.push(q);
+  }
+  return cleanPath(out);
+}
 
 /** Zonendatei prüfen: unbekannte Felder bleiben erhalten, falsche Elemente fallen weg; null, wenn die Datei keine Zone ist */
 export function parseZone(json: unknown): ZoneFile | null {
@@ -308,7 +367,21 @@ export function parseZone(json: unknown): ZoneFile | null {
     if ((ZONE_ANCHORS as readonly string[]).includes(String(e.anchor))) el.anchor = e.anchor as ZoneAnchor;
     if (num(e.growth) && e.growth > 0) el.growth = Math.floor(e.growth);
     if ((ZONE_DEPTH_ROLES as readonly string[]).includes(String(e.depthRole))) el.depthRole = e.depthRole as ZoneDepthRole;
-    if (el.kind === 'cave' && num(e.openFrom) && e.openFrom > 0) el.openFrom = Math.floor(e.openFrom);
+    if ((el.kind === 'cave' || el.kind === 'body') && num(e.openFrom) && e.openFrom > 0) el.openFrom = Math.floor(e.openFrom);
+    if (el.kind === 'body') {
+      const path = parsePath(e.path);
+      if (!path) continue;
+      el.path = path;
+      if (Array.isArray(e.holes)) {
+        const holes = e.holes.map(parsePath).filter((h): h is ZonePath => !!h);
+        if (holes.length) el.holes = holes;
+      }
+      if ((ZONE_BODY_ROLES as readonly string[]).includes(String(e.role))) el.role = e.role as ZoneBodyRole;
+      if (num(e.room) && e.room > 0) el.room = e.room;
+      if (typeof e.image === 'string' && /^[\w./-]{1,120}$/.test(e.image) && !e.image.includes('..')) el.image = e.image;
+      if (e.ground === true) el.ground = true;
+      fitBodyBounds(el);
+    }
     ids.add(el.id);
     elements.push(el);
   }
@@ -391,7 +464,27 @@ export function serializeZone(zone: ZoneFile): string {
       if (e.anchor) out.anchor = e.anchor;
       if (e.growth) out.growth = e.growth;
       if (e.depthRole) out.depthRole = e.depthRole;
-      if (e.kind === 'cave' && e.openFrom) out.openFrom = e.openFrom;
+      if ((e.kind === 'cave' || e.kind === 'body') && e.openFrom) out.openFrom = e.openFrom;
+      if (e.kind === 'body' && e.path) {
+        const pt = (p: ZonePath[number]) => {
+          const o: Record<string, number> = { x: round(p.x), y: round(p.y) };
+          if (p.inX || p.inY) {
+            o.inX = round(p.inX ?? 0);
+            o.inY = round(p.inY ?? 0);
+          }
+          if (p.outX || p.outY) {
+            o.outX = round(p.outX ?? 0);
+            o.outY = round(p.outY ?? 0);
+          }
+          return o;
+        };
+        out.path = e.path.map(pt);
+        if (e.holes?.length) out.holes = e.holes.map((h) => h.map(pt));
+        if (e.role && e.role !== 'front') out.role = e.role;
+        if (e.room) out.room = round(e.room);
+        if (e.image) out.image = e.image;
+        if (e.ground) out.ground = true;
+      }
       return out;
     });
   const fields = [...zone.fields]

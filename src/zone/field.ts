@@ -3,7 +3,10 @@
  * über die ganze Welt, aus dem Pinsel, Stützen und Fahrt ihre Regeln lesen, statt je Form eine eigene zu haben.
  *
  * Fest sind: die Erde unter der Oberfläche (außer in offenen Räumen, die bis zur Oberfläche offen sind, weil der Deckel
- * weg ist), Dreiteiler (Umriss × Dicke: Lippe und Rückwand als Wände in der Tiefe, das Dach als Wand unter der Oberkante,
+ * weg ist), Körper (Ebenen-Probe: gemalte Ebenen mit Kurvenpfad, Dicke und Löchern; Vorderkörper und Innenwände sind
+ * fest, ein Körper mit Raum hat dahinter einen freien Innenraum mit fester Rückwand; vor seiner Öffnungsstufe sind Löcher
+ * und Raum zu, der Deckel liegt davor; Körper mit Boden-Rolle zählen für den Pinsel als Erde: ihre Oberkante ist der
+ * Boden, knapp darunter wird angehoben), Dreiteiler (Umriss × Dicke: Lippe und Rückwand als Wände in der Tiefe, das Dach als Wand unter der Oberkante,
  * dazwischen ein freier Innenraum; seine Flanken sind offen wie bei den Bergen der Level, feste Flanken und echte
  * Öffnungsvolumen kommen mit den gemalten Teilen, Plan 8a), Säulen (Zylinder) und die Wände und Böden von Höhlenkästen
  * über dem Boden. Alles andere ist frei. Kulissen ohne Volumen (Flächen, Wasser, Wasserfall, Portal) sind kein Festes;
@@ -18,8 +21,9 @@
  * Fahrt). Reine Daten und Funktionen, ohne Renderer.
  */
 import { LANE_DEPTH, LANE_MAX, LANE_MIN, type StagePoint } from '@/track/stage';
-import { kindDefaults, type ZoneElement } from './types';
+import { bodySolid, kindDefaults, type ZoneElement } from './types';
 import { threePartOutline, topAt } from './build';
+import { flattenPath, inPolygon, polyBounds, polyTopAt, type Bounds, type Poly } from './path';
 
 /** Sicherheitsabstand der Bahn zu Festem in der Tiefe (Spuren): die Bahn streift keine Wand */
 export const FIELD_MARGIN = 0.12;
@@ -43,6 +47,10 @@ export const LIFT_REACH = 6;
 const STEP = 0.05;
 /** eine Decke bis zu dieser Höhe (Meter) über einem Punkt macht ihn zum Tunnel */
 export const CEILING = 12;
+/** Dicke der Rückwand eines Raums hinter einem Körper (Meter) */
+export const ROOM_WALL = 1.5;
+/** Dicke eines Körpers ohne Angabe (Meter) */
+export const BODY_DEPTH = 6;
 
 /** was einen freien Abschnitt am Strahl begrenzt: die Erde (Mindesthöhe über dem Boden), ein Element, der Bühnenrand */
 export type WallKind = 'earth' | 'element' | 'edge';
@@ -107,6 +115,22 @@ interface Box {
   y0: number;
   y1: number;
 }
+/** Körper (Ebenen-Probe): Umriss und Löcher in Welt-Metern, Band in der Tiefe, Raum dahinter */
+interface Body {
+  id: string;
+  zc: number;
+  half: number;
+  poly: Poly;
+  holes: Poly[];
+  bounds: Bounds;
+  /** zählt als Boden für den Pinsel (Oberkante ist Erde) */
+  ground: boolean;
+  /** Tiefe des freien Raums hinter der Rückfläche (Meter), 0: keiner */
+  room: number;
+  /** Löcher und Raum offen (Öffnungsstufe erreicht) */
+  open: boolean;
+}
+
 /** offener Raum unter der Oberfläche: Freiraum in der Erde vom Raumboden bis zur Oberfläche */
 export interface Cavity {
   id: string;
@@ -117,20 +141,13 @@ export interface Cavity {
   floor: number;
 }
 
-export function inPolygon(poly: Array<[number, number]>, x: number, y: number): boolean {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i];
-    const [xj, yj] = poly[j];
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}
+export { inPolygon } from './path';
 
 export class FreeField {
   private readonly slabs: Slab[] = [];
   private readonly columns: Column[] = [];
   private readonly boxes: Box[] = [];
+  private readonly bodies: Body[] = [];
   readonly cavities: Cavity[] = [];
 
   /**
@@ -142,6 +159,13 @@ export class FreeField {
       if ((el.growth ?? 0) > stage) continue;
       const d = el.d ?? kindDefaults(el.kind).d ?? 8;
       const half = d / 2 / LANE_DEPTH;
+      if (el.kind === 'body') {
+        if (!el.path || !bodySolid(el.role)) continue;
+        const poly: Poly = flattenPath(el.path).map(([x, y]) => [x + el.x, y + el.y]);
+        const holes: Poly[] = (el.holes ?? []).map((h) => flattenPath(h).map(([x, y]) => [x + el.x, y + el.y] as [number, number]));
+        this.bodies.push({ id: el.id, zc: el.z, half: (el.d ?? BODY_DEPTH) / 2 / LANE_DEPTH, poly, holes, bounds: polyBounds(poly), ground: !!el.ground, room: el.room ?? 0, open: (el.openFrom ?? 0) <= stage });
+        continue;
+      }
       if (el.kind === 'threePart') {
         const outline = threePartOutline(el);
         const xs = outline.map((p) => p[0]);
@@ -170,7 +194,49 @@ export class FreeField {
 
   /** gibt es außer der Erde etwas Festes oder einen Raum? */
   get empty(): boolean {
-    return !this.slabs.length && !this.columns.length && !this.boxes.length && !this.cavities.length;
+    return !this.slabs.length && !this.columns.length && !this.boxes.length && !this.cavities.length && !this.bodies.length;
+  }
+
+  private bodyHit(b: Body, x: number, y: number): boolean {
+    return x >= b.bounds.minX && x <= b.bounds.maxX && y >= b.bounds.minY && y <= b.bounds.maxY && inPolygon(b.poly, x, y);
+  }
+  private inHole(b: Body, x: number, y: number): boolean {
+    for (const h of b.holes) if (inPolygon(h, x, y)) return true;
+    return false;
+  }
+
+  /** was ein Körper am Punkt ist: fest (Erde, wenn er Boden ist), Höhle (Loch oder Raum) oder nichts */
+  private bodyAt(x: number, y: number, lane: number): { kind: SolidKind; cave: { id: string; center: number } | null } {
+    for (const b of this.bodies) {
+      if (!this.bodyHit(b, x, y)) continue;
+      const front = b.zc - b.half;
+      const back = b.zc + b.half;
+      const roomBack = back + b.room / LANE_DEPTH;
+      const center = b.open && b.room > 0 ? b.zc + b.room / 2 / LANE_DEPTH : b.zc;
+      if (lane >= front && lane <= back) {
+        if (b.open && this.inHole(b, x, y)) return { kind: 'none', cave: { id: b.id, center } };
+        return { kind: b.ground ? 'earth' : 'element', cave: null };
+      }
+      if (b.open && b.room > 0 && lane > back) {
+        if (lane <= roomBack) return { kind: 'none', cave: { id: b.id, center } };
+        if (lane <= roomBack + ROOM_WALL / LANE_DEPTH) return { kind: 'element', cave: null };
+      }
+    }
+    return { kind: 'none', cave: null };
+  }
+
+  /**
+   * Oberfläche für den Pinsel an (x, Spur): die Erde, oder die Oberkante eines Körpers mit Boden-Rolle, der die Spur
+   * trifft, wenn sie höher liegt (die Bahn liest ihre Höhe darüber; Löcher zählen nicht, die Oberkante ist der Umriss)
+   */
+  surfaceAt(x: number, lane: number): number {
+    let top = this.earth(x, lane);
+    for (const b of this.bodies) {
+      if (!b.ground || Math.abs(lane - b.zc) > b.half || x < b.bounds.minX || x > b.bounds.maxX) continue;
+      const t = polyTopAt(b.poly, x);
+      if (t !== null && t > top) top = t;
+    }
+    return top;
   }
 
   /** offener Raum, in dem der Punkt liegt (unter der Oberfläche, über dem Raumboden), sonst null */
@@ -206,6 +272,10 @@ export class FreeField {
 
   /** was am Weltpunkt (x, Höhe, Spur) fest ist */
   solidKind(x: number, y: number, lane: number): SolidKind {
+    if (this.bodies.length) {
+      const b = this.bodyAt(x, y, lane);
+      if (b.kind !== 'none') return b.kind;
+    }
     for (const s of this.slabs) if (this.slabSolid(s, x, y, lane)) return 'element';
     for (const c of this.columns) if (y >= c.y0 && y <= c.y1 && Math.hypot(x - c.cx, (lane - c.zc) * LANE_DEPTH) <= c.r) return 'element';
     for (const b of this.boxes) {
@@ -223,8 +293,12 @@ export class FreeField {
     return this.solidKind(x, y, lane) !== 'none';
   }
 
-  /** Höhle am Punkt: offener Raum unter der Oberfläche oder Innenraum eines Dreiteilers; Kennung und mittlere Spur */
+  /** Höhle am Punkt: Loch oder Raum eines Körpers, offener Raum unter der Oberfläche oder Innenraum eines Dreiteilers; Kennung und mittlere Spur */
   caveAt(x: number, y: number, lane: number): { id: string; center: number } | null {
+    if (this.bodies.length) {
+      const b = this.bodyAt(x, y, lane);
+      if (b.cave) return b.cave;
+    }
     if (y < this.earth(x, lane) - CAVE_DIVE) {
       const c = this.cavityAt(x, y, lane);
       if (c) return { id: c.id, center: (c.lane0 + c.lane1) / 2 };
@@ -255,7 +329,7 @@ export class FreeField {
       const below = this.solidKind(w.x, w.y - clearance, lane);
       if (below === 'element') return { free: false, blocker: 'element', cave: null };
       if (kind === 'earth' || below === 'earth') {
-        const top = this.earth(w.x, lane);
+        const top = this.surfaceAt(w.x, lane);
         const need = top + clearance - w.y;
         const liftable = this.solidKind(w.x, top + clearance * 0.5, lane) !== 'element';
         const nearCave = this.cavities.some((c) => w.x >= c.x0 - LIFT_REACH && w.x <= c.x1 + LIFT_REACH && lane >= c.lane0 - 0.35 && lane <= c.lane1 + 0.35);

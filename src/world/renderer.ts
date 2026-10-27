@@ -337,7 +337,11 @@ export class WorldRenderer {
   /** Fortschrittsstufe setzen: Einträge, die erst später wachsen, und Räume, die erst später offen sind, verschwinden (Plan 2.1, 5.2) */
   setStage(stage: number): void {
     this.stage = stage;
-    for (const e of this.zone.values()) e.built.group.visible = e.growth <= stage && e.openFrom <= stage;
+    for (const e of this.zone.values()) {
+      e.built.group.visible = e.growth <= stage && e.openFrom <= stage;
+      // Deckel eines Körpers: zu vor seiner Öffnungsstufe (Ebenen-Probe)
+      if (e.built.lid) e.built.lid.visible = stage < (e.built.lidFrom ?? 0);
+    }
   }
 
   updateZoneElement(el: ZoneElement): void {
@@ -349,6 +353,7 @@ export class WorldRenderer {
     this.removeZoneElement(id);
     built.group.userData.elementId = id;
     built.group.visible = growth <= this.stage && openFrom <= this.stage;
+    if (built.lid) built.lid.visible = this.stage < (built.lidFrom ?? 0);
     this.zoneGroup.add(built.group);
     this.zone.set(id, { origin: { x: origin.x, y: origin.y, z: origin.z }, built, growth, openFrom });
     this.refreshFoundations();

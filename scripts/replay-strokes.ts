@@ -119,6 +119,7 @@ function build(rec: Rec, reading: Reading, level: LevelDef, terrain: Terrain, sk
     const free = new FreeField(zoneFile.elements, stage, (x, lane) => terrain.groundHeight(x, lane));
     freeOf = cachedFreeLanes(free, (q, lane) => rayToWorld(q, lane), 0.8);
     zoneOpts = { field: { free: freeOf, solid: (x, y, lane) => free.solid(x, y, lane), floor: (x, y, lane) => free.floorBelow(x, y, lane, 40)?.y ?? null } };
+    ground = (x, lane) => free.surfaceAt(x, lane);
   }
   const before = fixNaN(rec.before);
   if (reading === 'brush') {

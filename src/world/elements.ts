@@ -6,14 +6,15 @@
  * Tiefenvolumen), Höhlenkasten (offene Front, Boden tragfähig), Wasserfläche (Stützen verboten), Wasserfall (Band),
  * Portal (Ring um eine Öffnung). Koordinaten: x entlang der Bühne, y Höhe, z Tiefe in Spuren.
  */
-import { BoxGeometry, CanvasTexture, CircleGeometry, Color, CylinderGeometry, DoubleSide, Group, Mesh, MeshLambertMaterial, Path, PlaneGeometry, Shape, ShapeGeometry, SRGBColorSpace, TorusGeometry, type Material, type MeshLambertMaterialParameters } from 'three';
+import { AdditiveBlending, BoxGeometry, CanvasTexture, CircleGeometry, Color, CylinderGeometry, DoubleSide, ExtrudeGeometry, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, Path, PlaneGeometry, Shape, ShapeGeometry, SRGBColorSpace, TextureLoader, TorusGeometry, type BufferGeometry, type Material, type MeshLambertMaterialParameters } from 'three';
+import { flattenPath, polyBounds, type ZonePath } from '@/zone/path';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { LANE_DEPTH } from '@/track/stage';
 import { laneToZ } from './camera';
 import type { Foundation, FootHit } from './foundations';
 import { paintedMaterial } from './looks';
 
-export type ElementKind = 'flat' | 'threePart' | 'column' | 'cave' | 'water' | 'waterfall' | 'portal';
+export type ElementKind = 'body' | 'flat' | 'threePart' | 'column' | 'cave' | 'water' | 'waterfall' | 'portal';
 
 /** Öffnung in einer Vorderlippe (Welt-Koordinaten, Radius in Metern) */
 export interface Opening {
@@ -31,7 +32,153 @@ export interface BuiltElement {
   openings?: Opening[];
   /** Vorderlippe des Dreiteilers (die Freilegung löst sie um den Anschlusspunkt auf, Schritt 6) */
   lip?: Mesh;
+  /** Deckel eines Körpers mit Löchern und Raum: sichtbar vor seiner Öffnungsstufe (`lidFrom`) */
+  lid?: Mesh;
+  lidFrom?: number;
   dispose(): void;
+}
+
+export interface BodySpec {
+  /** Fußpunkt (Meter) und Spur */
+  x: number;
+  y: number;
+  z: number;
+  /** Pfad und Löcher lokal zum Fußpunkt */
+  path: ZonePath;
+  holes: ZonePath[];
+  /** Dicke (Meter) */
+  d: number;
+  role: 'front' | 'wall' | 'fill' | 'rim' | 'light' | 'fog';
+  room: number;
+  color: string;
+  /** Bild (URL) mit Alphakanal, auf die Grenzen des Umrisses gelegt */
+  image?: string;
+  /** Deckel vor dieser Stufe (0: nie) */
+  openFrom: number;
+}
+
+/** Kurvenpfad als Three-Form (lokal) */
+export function shapeOfPath(path: ZonePath, holes: ZonePath[] = []): Shape {
+  const trace = (p: ZonePath, target: Shape | Path) => {
+    if (!p.length) return;
+    target.moveTo(p[0].x, p[0].y);
+    for (let i = 0; i < p.length; i++) {
+      const a = p[i];
+      const b = p[(i + 1) % p.length];
+      if (!a.outX && !a.outY && !b.inX && !b.inY) target.lineTo(b.x, b.y);
+      else target.bezierCurveTo(a.x + (a.outX ?? 0), a.y + (a.outY ?? 0), b.x + (b.inX ?? 0), b.y + (b.inY ?? 0), b.x, b.y);
+    }
+    target.closePath();
+  };
+  const shape = new Shape();
+  trace(path, shape);
+  for (const h of holes) {
+    const hp = new Path();
+    trace(h, hp);
+    shape.holes.push(hp);
+  }
+  return shape;
+}
+
+/** UV auf die Grenzen der Form legen: das Bild deckt genau das umschließende Rechteck des Umrisses */
+function fitUv(geo: BufferGeometry, b: { minX: number; maxX: number; minY: number; maxY: number }): void {
+  const pos = geo.getAttribute('position');
+  const uv = geo.getAttribute('uv');
+  if (!pos || !uv) return;
+  const w = Math.max(1e-6, b.maxX - b.minX);
+  const h = Math.max(1e-6, b.maxY - b.minY);
+  for (let i = 0; i < pos.count; i++) uv.setXY(i, (pos.getX(i) - b.minX) / w, (pos.getY(i) - b.minY) / h);
+  uv.needsUpdate = true;
+}
+
+const loader = new TextureLoader();
+
+/**
+ * Körper (Ebenen-Probe): eine gemalte Ebene mit organischer Form. Vorderkörper mit Dicke ab 1 m als Körper mit Tiefe
+ * (die Flanken in Farbe), sonst eine flache Karte in der Tiefe der Spur; Bild mit Alphakanal auf die Grenzen gelegt;
+ * Füllung, Saum, Innenwand flach; Licht additiv, Nebel durchscheinend; ein Raum hinter dem Körper bekommt eine dunkle
+ * Rückwand als Platzhalter; Löcher und Raum sind vor der Öffnungsstufe von einem Deckel (Umriss ohne Löcher) bedeckt
+ */
+export function buildBody(spec: BodySpec): BuiltElement {
+  const Zc = laneToZ(spec.z);
+  const g = new Group();
+  g.position.set(spec.x, spec.y, 0);
+  const materials: Material[] = [];
+  const bounds = shapeBounds(spec.path);
+  const open = spec.openFrom <= 0;
+  const solid = spec.role === 'front' || spec.role === 'wall';
+  const extruded = spec.role === 'front' && spec.d >= 1;
+  const baseColor = new Color(spec.color);
+  let capMat: Material;
+  if (spec.role === 'light') capMat = new MeshBasicMaterial({ color: baseColor, transparent: true, opacity: 0.55, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
+  else if (spec.role === 'fog') capMat = new MeshBasicMaterial({ color: baseColor, transparent: true, opacity: 0.5, depthWrite: false, side: DoubleSide });
+  else capMat = mat(spec.color);
+  materials.push(capMat);
+  if (spec.image) {
+    const tex = loader.load(spec.image);
+    tex.colorSpace = SRGBColorSpace;
+    const m = capMat as MeshLambertMaterial | MeshBasicMaterial;
+    m.map = tex;
+    m.color.set('#ffffff');
+    m.transparent = true;
+    m.alphaTest = spec.role === 'light' || spec.role === 'fog' ? 0.02 : 0.5;
+    m.needsUpdate = true;
+  }
+  const shape = shapeOfPath(spec.path, spec.holes);
+  let main: Mesh;
+  if (extruded) {
+    const geo = new ExtrudeGeometry(shape, { depth: spec.d, bevelEnabled: false, curveSegments: 10 });
+    fitUv(geo, bounds);
+    const side = mat(baseColor.clone().multiplyScalar(0.78).getStyle());
+    materials.push(side);
+    main = new Mesh(geo, [capMat, side]);
+    main.position.z = Zc - spec.d / 2;
+  } else {
+    const geo = new ShapeGeometry(shape, 10);
+    fitUv(geo, bounds);
+    main = new Mesh(geo, capMat);
+    // Karte in der Tiefe der Spur; Vorderkörper und Innenwand auf der Vorderfläche ihrer Dicke
+    main.position.z = solid ? Zc + Math.min(spec.d, 0.9) / 2 : Zc;
+  }
+  main.name = 'body';
+  g.add(main);
+  let lid: Mesh | undefined;
+  if (spec.openFrom > 0 && (spec.holes.length || spec.room > 0)) {
+    const lidMat = mat(baseColor.clone().multiplyScalar(0.6).getStyle());
+    materials.push(lidMat);
+    const geo = new ShapeGeometry(shapeOfPath(spec.path), 10);
+    fitUv(geo, bounds);
+    lid = new Mesh(geo, lidMat);
+    lid.name = 'lid';
+    lid.position.z = (extruded ? Zc + spec.d / 2 : main.position.z) + 0.05;
+    lid.visible = !open;
+    g.add(lid);
+  }
+  if (solid && spec.room > 0) {
+    const wallMat = mat('#1a1622');
+    materials.push(wallMat);
+    const geo = new ShapeGeometry(shapeOfPath(spec.path), 8);
+    const wall = new Mesh(geo, wallMat);
+    wall.name = 'room-wall';
+    wall.position.z = Zc - spec.d / 2 - spec.room;
+    g.add(wall);
+  }
+  const built = finish('body', g, materials, { lid, lidFrom: spec.openFrom });
+  // Bildebenen ohne Festes (Füllung, Saum, Licht, Nebel) werfen und fangen keine Schatten: eine Füllung hinter einem
+  // Bogen warf sonst ein scharfes Rechteck auf dessen Vorderseite
+  if (!solid) g.traverse((o) => {
+    const m = o as Mesh;
+    if (m.geometry) {
+      m.castShadow = false;
+      m.receiveShadow = false;
+    }
+  });
+  return built;
+}
+
+/** Grenzen der Kurve selbst (nicht der Griffe): darauf liegt das Bild */
+function shapeBounds(path: ZonePath): { minX: number; maxX: number; minY: number; maxY: number } {
+  return polyBounds(flattenPath(path, 0.2));
 }
 
 const INK = '#1e2a3a';
