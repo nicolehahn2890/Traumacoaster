@@ -516,3 +516,47 @@ describe('Einrasten', () => {
     expect(a.path.length).toBe(4);
   });
 });
+
+describe('Umschalt in 45°-Schritten', () => {
+  it('constrain45 nimmt die nächste Richtung und projiziert die Länge', async () => {
+    const { constrain45 } = await import('@/zoneeditor/pathTools');
+    expect(constrain45({ x: 0, y: 0 }, { x: 10, y: 1 })).toEqual({ x: 10, y: 0 });
+    expect(constrain45({ x: 1, y: 1 }, { x: 1.5, y: 9 })).toEqual({ x: 1, y: 9 });
+    const d = constrain45({ x: 0, y: 0 }, { x: 4, y: 5 });
+    expect(d.x).toBeCloseTo(4.5, 9);
+    expect(d.y).toBeCloseTo(4.5, 9);
+    expect(constrain45({ x: 0, y: 0 }, { x: -3, y: -0.2 })).toEqual({ x: -3, y: 0 });
+  });
+
+  it('Zeichenstift mit Umschalt: die Kanten laufen waagrecht und senkrecht, auch wenn der Zeiger daneben liegt', () => {
+    const t = setup();
+    t.tools.setTool('pen');
+    tap(t.tools, 300, 200);
+    tap(t.tools, 500, 214, SHIFT);
+    tap(t.tools, 509, 400, SHIFT);
+    tap(t.tools, 300, 393, SHIFT);
+    t.tools.key('enter');
+    const s = t.selected()!;
+    const pts = s.path.map((p) => ({ x: p.x + s.x, y: p.y + s.y }));
+    expect(pts[1].y).toBeCloseTo(pts[0].y, 9);
+    expect(pts[2].x).toBeCloseTo(pts[1].x, 9);
+    expect(pts[3].y).toBeCloseTo(pts[2].y, 9);
+  });
+
+  it('Anker mit Umschalt ziehen: nur senkrecht', () => {
+    const t = setup();
+    t.tools.setTool('pen');
+    for (const [x, y] of [[300, 200], [500, 200], [500, 400], [300, 400], [301, 201]]) tap(t.tools, x, y);
+    const s = t.selected()!;
+    t.tools.setTool('direct');
+    const before = s.path.map((p) => ({ x: p.x + s.x, y: p.y + s.y }));
+    t.tools.down(1, { x: 500, y: 200 }, M);
+    t.tools.move(1, { x: 507, y: 150 }, SHIFT);
+    t.tools.move(1, { x: 512, y: 120 }, SHIFT);
+    t.tools.up(1);
+    const after = s.path.map((p) => ({ x: p.x + s.x, y: p.y + s.y }));
+    const i = before.findIndex((p) => Math.abs(p.x - 10) < 1e-6 && Math.abs(p.y - 10) < 1e-6);
+    expect(after[i].x).toBeCloseTo(10, 6);
+    expect(after[i].y).toBeCloseTo(18, 6);
+  });
+});

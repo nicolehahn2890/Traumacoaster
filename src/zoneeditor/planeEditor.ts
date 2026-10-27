@@ -19,7 +19,7 @@ import { CAMERA_TILT, viewState } from '@/track/stage';
 import { loadZone, onZoneChange, saveZone, uploadZoneFile } from '@/zone/io';
 import type { ZoneFile } from '@/zone/types';
 import { buildSliceStack } from '@/zone/slices';
-import { flattenPath } from '@/zone/path';
+import { flattenPath, type ZonePath } from '@/zone/path';
 import { planesToSvg, slug, svgToPlanes } from '@/zone/svgPlanes';
 import { depthLimits, groupPlanes, normalizeGroups, reorderPlanes, ungroup } from '@/zone/planeGroups';
 import { alignShapes, distributeShapes, rotateShape, unionBounds, type AlignMode } from '@/zone/shapeOps';
@@ -27,6 +27,7 @@ import { copyGroups, expandToUnits, groupMembersOf, groupShapes, inContext, move
 import {
   cloneNodes,
   depthBeside,
+  archPath,
   ellipsePath,
   faceFill,
   findPlane,
@@ -70,7 +71,7 @@ import {
 import { History } from './history';
 import { EditorOverlay, emptyOverlay } from './overlay';
 import { SketchLayer } from './sketches';
-import { NO_MODS, PathTools, regionRing, regionTest, simplifyShape, type Mods, type PathTool } from './pathTools';
+import { constrain45, NO_MODS, PathTools, regionRing, regionTest, simplifyShape, type Mods, type PathTool } from './pathTools';
 import { booleanShapes, type BoolOp } from '@/zone/pathfinder';
 import { EditorUi, type Isolate, type LayerRow, type Tool } from './ui';
 import { EditorViews, type ViewMode } from './views';
@@ -105,7 +106,7 @@ type Gesture =
   | { kind: 'rotate'; pointerId: number; plane: string; pivot: Pt; a0: number; angle: number; orig: Map<string, ZoneShape> }
   /** gewählte Formen einer Ebene am gemeinsamen Rahmen skalieren */
   | { kind: 'scale'; pointerId: number; plane: string; axis: 'xy' | 'x' | 'y'; anchor: Pt; h0: Pt; orig: Map<string, { x: number; y: number; sx: number; sy: number }> }
-  | { kind: 'create'; pointerId: number; plane: string; shape: 'rect' | 'ellipse'; a: Pt; b: Pt }
+  | { kind: 'create'; pointerId: number; plane: string; shape: 'rect' | 'ellipse' | 'arch'; a: Pt; b: Pt }
   /** Skizze anpassen: verschieben (innen) oder an einer Ecke gleichmäßig skalieren (die Ecke gegenüber bleibt) */
   | { kind: 'sketchMove'; pointerId: number; id: string; start: Pt; orig: Pt }
   | { kind: 'sketchScale'; pointerId: number; id: string; anchor: Pt; h0: Pt; orig: { x: number; y: number; w: number; h: number } }
@@ -123,6 +124,13 @@ const TAP_TIME = 260;
 const TAP_DIST = 12;
 const PATH_TOOLS: readonly Tool[] = ['direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife'];
 const isPathTool = (t: Tool): t is PathTool => PATH_TOOLS.includes(t);
+
+/** Pfad einer Grundform im Rahmen w × h um den Ursprung */
+function primitivePath(kind: 'rect' | 'ellipse' | 'arch', w: number, h: number): ZonePath {
+  if (kind === 'rect') return rectPath(w, h);
+  if (kind === 'arch') return archPath(w, h);
+  return ellipsePath(w / 2, h / 2);
+}
 
 export class PlaneEditor {
   private nodes: ZoneNode[];
@@ -706,7 +714,7 @@ export class PlaneEditor {
         const plane = findPlane(this.nodes, g.plane);
         if (plane) {
           const { a, b } = this.createBox(g);
-          const local = g.shape === 'rect' ? rectPath(b.x - a.x || 0.01, b.y - a.y || 0.01) : ellipsePath(Math.max(0.01, (b.x - a.x) / 2), Math.max(0.01, (b.y - a.y) / 2));
+          const local = primitivePath(g.shape, b.x - a.x || 0.01, b.y - a.y || 0.01);
           const cx = (a.x + b.x) / 2;
           const cy = (a.y + b.y) / 2;
           const tmp: ZoneShape = { id: '_', kind: 'shape', parent: plane.id, order: 0, name: '', x: cx, y: cy, sx: 1, sy: 1, path: local, fill: '#000000' };
@@ -1754,7 +1762,7 @@ export class PlaneEditor {
         this.history.cancel();
         return;
       }
-      this.gesture = { kind: 'create', pointerId, plane: plane.id, shape: this.tool === 'rect' ? 'rect' : 'ellipse', a, b: a };
+      this.gesture = { kind: 'create', pointerId, plane: plane.id, shape: this.tool === 'ellipse' || this.tool === 'arch' ? this.tool : 'rect', a, b: a };
       return;
     }
     // Auswahl: zuerst Dreh- und Rahmengriffe, dann Formen unter dem Strahl, sonst ins Leere (Rechteck)
@@ -1926,8 +1934,10 @@ export class PlaneEditor {
         const a0 = plane ? this.planePoint(plane, g.start) : null;
         const a1 = plane ? this.planePoint(plane, p) : null;
         if (!s || !a0 || !a1) continue;
-        s.x = o.x + (a1.x - a0.x);
-        s.y = o.y + (a1.y - a0.y);
+        // mit Umschalt waagrecht, senkrecht oder schräg in der Ebene (wie in Illustrator)
+        const d = this.shiftDown ? constrain45(a0, a1) : a1;
+        s.x = o.x + (d.x - a0.x);
+        s.y = o.y + (d.y - a0.y);
       }
     } else {
       const plane = findPlane(this.nodes, g.plane);
@@ -1984,14 +1994,14 @@ export class PlaneEditor {
         let cy = (a.y + b.y) / 2;
         // nur getippt: eine Form in Vorgabegröße (Meter im Bild etwa so groß wie ein Wagen mal drei)
         if (w < 0.3 && h < 0.3) {
-          w = g.shape === 'rect' ? 10 : 9;
-          h = 6;
+          w = g.shape === 'rect' ? 10 : g.shape === 'arch' ? 8 : 9;
+          h = g.shape === 'arch' ? 10 : 6;
           cx = g.a.x;
           cy = g.a.y;
         }
-        const path = g.shape === 'rect' ? rectPath(Math.max(0.1, w), Math.max(0.1, h)) : ellipsePath(Math.max(0.05, w / 2), Math.max(0.05, h / 2));
+        const path = primitivePath(g.shape, Math.max(0.1, w), Math.max(0.1, h));
         const s = newShape(this.nodes, plane.id, path, cx, cy, placeholderFill(plane.z));
-        s.name = `${g.shape === 'rect' ? 'Rechteck' : 'Ellipse'} ${s.id.slice(1)}`;
+        s.name = `${{ rect: 'Rechteck', ellipse: 'Ellipse', arch: 'Bogen' }[g.shape]} ${s.id.slice(1)}`;
         this.nodes.push(s);
         this.selected = s.id;
         this.active = plane.id;
@@ -2074,7 +2084,7 @@ export class PlaneEditor {
     else if (k === 'k') this.setTool('knife');
     else if (k === 'm') this.setTool('rect');
     else if (k === 'l') this.setTool('ellipse');
-    else if (k === 'u') this.setTool(this.tool === 'rect' ? 'ellipse' : 'rect');
+    else if (k === 'u') this.setTool(this.tool === 'rect' ? 'ellipse' : this.tool === 'ellipse' ? 'arch' : 'rect');
     else if (k === '1') this.setView('game');
     else if (k === '2') this.setView('front');
     else if (k === '3') this.setView('free');

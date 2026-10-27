@@ -361,6 +361,31 @@ function nearestOnSegment(path: ZonePath, i: number, p: Pt): { t: number; d: num
   return { t, d: dst(t) };
 }
 
+const S45 = Math.SQRT1_2;
+const DIRS45: ReadonlyArray<[number, number]> = [
+  [1, 0],
+  [S45, S45],
+  [0, 1],
+  [-S45, S45],
+  [-1, 0],
+  [-S45, -S45],
+  [0, -1],
+  [S45, -S45],
+];
+
+/**
+ * Umschalt wie in Illustrator: q auf die nächste Richtung in 45°-Schritten von a aus (waagrecht, senkrecht, schräg),
+ * die Länge als Projektion auf diese Richtung
+ */
+export function constrain45(a: Pt, q: Pt): Pt {
+  const dx = q.x - a.x;
+  const dy = q.y - a.y;
+  const k = (((Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) % 8) + 8) % 8) as number;
+  const [ux, uy] = DIRS45[k];
+  const len = dx * ux + dy * uy;
+  return { x: a.x + ux * len, y: a.y + uy * len };
+}
+
 /** Linienenden gelten bis 3 cm (wie das Einrasten der Flächen) als angeklebt */
 const GLUE_DIST = 0.03;
 
@@ -572,6 +597,18 @@ export class PathTools {
     const a = this.host.planePoint(plane, p);
     const b = this.host.planePoint(plane, { x: p.x + 10, y: p.y });
     return a && b ? Math.max(1e-6, Math.hypot(b.x - a.x, b.y - a.y) / 10) : 0.1;
+  }
+
+  /** nächster Anker des Zeichen- oder Kurvenstifts: mit Umschalt in 45°-Schritten vom letzten aus, sonst eingerastet */
+  private penPoint(pen: Pen, plane: ZonePlane, p: Pt): Pt | null {
+    const last = pen.pts[pen.pts.length - 1];
+    if (this.mods.shift && last) {
+      const q = this.host.planePoint(plane, p);
+      this.snapMark = null;
+      return q ? constrain45(last, q) : null;
+    }
+    const into = pen.into ? (this.shapeOf(pen.into)?.shape ?? null) : null;
+    return this.snapped(plane, into, p);
   }
 
   /** Zeichenstift: Punkt der Ebene unter p, eingerastet an Ankern (zuerst) und Kanten der Form, in die gezeichnet wird */
@@ -838,7 +875,8 @@ export class PathTools {
   private moveAnchors(d: Extract<Drag, { kind: 'anchors' }>, p0: Pt): void {
     let p = p0;
     this.snapMark = null;
-    if (d.grab && this.host.snapping()) {
+    const straight = this.mods.shift;
+    if (d.grab && this.host.snapping() && !straight) {
       // wo der gegriffene Anker landen würde; rastet er ein, verschiebt sich der ganze Zug entsprechend
       const want = { x: d.grab.x + (p0.x - d.start.x), y: d.grab.y + (p0.y - d.start.y) };
       const moving = new Set(d.sels.map((x) => `${x.shape}|${refKey(x.ref)}`));
@@ -856,8 +894,14 @@ export class PathTools {
       const a0 = this.local(o.shape, o.plane, d.start);
       const a1 = this.local(o.shape, o.plane, p);
       if (!a0 || !a1) continue;
-      const dx = a1.x - a0.x;
-      const dy = a1.y - a0.y;
+      let dx = a1.x - a0.x;
+      let dy = a1.y - a0.y;
+      if (straight) {
+        // die Richtung in Metern der Ebene einrasten (die Form kann gestreckt sein)
+        const c = constrain45({ x: 0, y: 0 }, { x: dx * o.shape.sx, y: dy * o.shape.sy });
+        dx = c.x / o.shape.sx;
+        dy = c.y / o.shape.sy;
+      }
       const refs: PathRef[] = [];
       for (const [key, g] of groups) {
         if (g.shape !== id) continue;
@@ -891,24 +935,30 @@ export class PathTools {
     if (!q || pen.drag === null) return;
     const near = dist(p, pen.start) < DRAG_DIST;
     if (pen.auto) {
-      // Kurvenstift: Ziehen verschiebt den Anker, die Kurve läuft weiter glatt hindurch
+      // Kurvenstift: Ziehen verschiebt den Anker, die Kurve läuft weiter glatt hindurch (mit Umschalt in 45°-Schritten
+      // vom vorigen Anker aus)
       if (this.curveTap && near && !this.curveTap.moved) return;
       if (this.curveTap) this.curveTap.moved = true;
-      pen.pts[pen.drag] = { x: q.x, y: q.y };
+      const prev = pen.pts[pen.drag - 1];
+      const at = mods.shift && prev ? constrain45(prev, q) : q;
+      pen.pts[pen.drag] = { x: at.x, y: at.y };
       this.autoHandles(pen, false);
       this.host.redraw();
       return;
     }
     if (pen.closing) {
       const o = pen.closing;
-      const dx = q.x - o.x;
-      const dy = q.y - o.y;
+      // mit Umschalt die Griffe in 45°-Schritten
+      const h = mods.shift ? constrain45(o, q) : q;
+      const dx = h.x - o.x;
+      const dy = h.y - o.y;
       // mit Wahltaste nur der Griff zum Schluss hin, sonst beide gleich (der Startpunkt wird rund)
       pen.pts[0] = near ? { ...o } : mods.alt ? { ...o, inX: -dx, inY: -dy } : { x: o.x, y: o.y, inX: -dx, inY: -dy, outX: dx, outY: dy };
     } else {
       const a = pen.pts[pen.drag];
-      const dx = q.x - a.x;
-      const dy = q.y - a.y;
+      const h = mods.shift ? constrain45(a, q) : q;
+      const dx = h.x - a.x;
+      const dy = h.y - a.y;
       // Ziehen gibt eine Kurve mit zwei gleichen Griffen; mit Wahltaste nur der Griff nach vorn (Ecke mit Kurve)
       pen.pts[pen.drag] = near ? { x: a.x, y: a.y } : mods.alt ? { x: a.x, y: a.y, inX: a.inX, inY: a.inY, outX: dx, outY: dy } : { x: a.x, y: a.y, inX: -dx, inY: -dy, outX: dx, outY: dy };
     }
@@ -1032,9 +1082,13 @@ export class PathTools {
     const pen = this.pen;
     const plane = pen ? findPlane(this.host.nodes(), pen.plane) : this.host.activePlane();
     if (p && plane && (this.tool === 'pen' || this.tool === 'curve')) {
-      const into = pen?.into ? (this.shapeOf(pen.into)?.shape ?? null) : null;
-      this.snapped(plane, into, p);
-      this.hoverSnap = this.snapMark;
+      if (pen) {
+        const q = this.penPoint(pen, plane, p);
+        this.hoverSnap = this.snapMark ?? (this.mods.shift && q && pen.pts.length ? this.host.screenOf(plane, q) : null);
+      } else {
+        this.snapped(plane, null, p);
+        this.hoverSnap = this.snapMark;
+      }
     } else this.hoverSnap = null;
     this.host.redraw();
   }
@@ -1314,8 +1368,7 @@ export class PathTools {
       this.finishPen(false);
       return;
     }
-    const into = pen.into ? (this.shapeOf(pen.into)?.shape ?? null) : null;
-    const q = this.snapped(plane, into, p);
+    const q = this.penPoint(pen, plane, p);
     if (!q) return;
     pen.pts.push({ x: q.x, y: q.y });
     pen.drag = pen.pts.length - 1;
@@ -1439,8 +1492,7 @@ export class PathTools {
       this.host.redraw();
       return;
     }
-    const into = pen.into ? (this.shapeOf(pen.into)?.shape ?? null) : null;
-    const q = this.snapped(plane, into, p);
+    const q = this.penPoint(pen, plane, p);
     if (!q) return;
     pen.pts.push({ x: q.x, y: q.y });
     pen.auto.push(true);

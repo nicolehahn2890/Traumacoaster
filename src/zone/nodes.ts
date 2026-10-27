@@ -306,6 +306,32 @@ export function ellipsePath(rx: number, ry: number): ZonePath {
   ];
 }
 
+/**
+ * Bogen (Portalform, Plan 4.3) im Rahmen w × h um den Ursprung: unten gerade, senkrechte Seiten bis zur Kämpferlinie,
+ * oben ein halber Kreis; ist der Rahmen flacher als halb so hoch wie breit, eine halbe Ellipse ohne Seiten
+ */
+export function archPath(w: number, h: number): ZonePath {
+  const a = w / 2;
+  const b = h / 2;
+  const ry = Math.min(a, h);
+  const kx = a * KAPPA;
+  const ky = ry * KAPPA;
+  const spring = b - ry;
+  if (spring <= -b + 1e-6)
+    return [
+      { x: a, y: -b, outX: 0, outY: ky },
+      { x: 0, y: b, inX: kx, inY: 0, outX: -kx, outY: 0 },
+      { x: -a, y: -b, inX: 0, inY: ky },
+    ];
+  return [
+    { x: -a, y: -b },
+    { x: a, y: -b },
+    { x: a, y: spring, outX: 0, outY: ky },
+    { x: 0, y: b, inX: kx, inY: 0, outX: -kx, outY: 0 },
+    { x: -a, y: spring, inX: 0, inY: ky },
+  ];
+}
+
 /** neue Form in einer Ebene, über allen Formen dieser Ebene */
 export function newShape(nodes: readonly ZoneNode[], planeId: string, path: ZonePath, x: number, y: number, fill: string, name?: string): ZoneShape {
   const id = nextNodeId(nodes, 's');

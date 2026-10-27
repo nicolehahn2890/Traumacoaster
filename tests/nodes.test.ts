@@ -274,3 +274,22 @@ describe('Skizzen als Pause-Ebenen', () => {
     expect(JSON.stringify(ser(clone(back)))).toBe(JSON.stringify(out));
   });
 });
+
+describe('Grundform Bogen', () => {
+  it('unten gerade, senkrechte Seiten, oben ein Halbkreis; flach eine halbe Ellipse', async () => {
+    const { archPath: arch, shapeLocalPolys: polys, newPlane: np, newShape: ns } = await import('@/zone/nodes');
+    const p = arch(8, 10);
+    expect(p.length).toBe(5);
+    const ys = p.map((a) => a.y);
+    expect(Math.min(...ys)).toBe(-5);
+    expect(Math.max(...ys)).toBe(5);
+    // Fläche: 8 × 6 Rechteck plus Halbkreis mit Radius 4
+    const s = ns([np([], 0)], 'p1', p, 0, 0, '#445566');
+    const ring = polys(s).outline;
+    let a = 0;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) a += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+    expect(a / 2).toBeCloseTo(48 + (Math.PI * 16) / 2, 0);
+    expect(arch(8, 3).length).toBe(3);
+  });
+});
+

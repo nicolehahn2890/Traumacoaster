@@ -10,7 +10,7 @@ import { PLANE_ROLE_WORDS, PLANE_ROLES, type PlaneRole, type ZoneGroup, type Zon
 import type { PathContext } from './pathTools';
 import { VIEW_WORDS, type ViewMode } from './views';
 
-export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse';
+export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch';
 export type Isolate = 'off' | 'front' | 'only';
 export const ISOLATE_WORDS: Record<Isolate, string> = { off: 'alle Ebenen', front: 'davor ausgeblendet', only: 'nur diese' };
 
@@ -217,6 +217,7 @@ const ICONS: Record<Tool, string> = {
   knife: '<svg viewBox="0 0 24 24"><path d="M4 20L18 4c1.5 2 1.5 5-1 8l-6 6"/><path d="M11 13l2 2"/></svg>',
   rect: '<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>',
   ellipse: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6"/></svg>',
+  arch: '<svg viewBox="0 0 24 24"><path d="M5.5 20v-8.5a6.5 6.5 0 0 1 13 0V20z"/></svg>',
 };
 const EYE = '<svg viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>';
 const EYE_OFF = '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1C11 6 11.5 6 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.2 3.8M6.2 7.6A16.6 16.6 0 0 0 2 12s3.5 6 10 6c1.7 0 3.2-.4 4.4-1"/></svg>';
@@ -259,8 +260,9 @@ const TOOL_TITLES: Record<Tool, string> = {
   knife: 'Messer (K): quer durch eine Form ziehen',
   rect: 'Rechteck (M)',
   ellipse: 'Ellipse (L)',
+  arch: 'Bogen (U wechselt Rechteck, Ellipse, Bogen): Portalform, unten gerade, oben rund',
 };
-const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse'];
+const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse', 'arch'];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
