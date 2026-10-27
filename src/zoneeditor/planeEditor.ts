@@ -39,6 +39,7 @@ import {
   nextNodeId,
   parseNodes,
   placeholderFill,
+  planePathToShape,
   planesOf,
   findGroup,
   groupMembers,
@@ -50,6 +51,7 @@ import {
   serializeNodes,
   setGapBehind,
   shapeBounds,
+  shapeFromPlanePath,
   shapeFaces,
   shapeLocalPolys,
   shapesOf,
@@ -64,7 +66,8 @@ import {
 } from '@/zone/nodes';
 import { History } from './history';
 import { EditorOverlay, emptyOverlay } from './overlay';
-import { NO_MODS, PathTools, regionRing, regionTest, type Mods, type PathTool } from './pathTools';
+import { NO_MODS, PathTools, regionRing, regionTest, simplifyShape, type Mods, type PathTool } from './pathTools';
+import { booleanShapes, type BoolOp } from '@/zone/pathfinder';
 import { EditorUi, type Isolate, type LayerRow, type Tool } from './ui';
 import { EditorViews, type ViewMode } from './views';
 
@@ -695,6 +698,8 @@ export class PlaneEditor {
       deleteShape: () => this.deleteShape(),
       flip: (axis) => this.flip(axis),
       align: (mode) => this.alignSelected(mode),
+      combine: (op) => this.booleanSelected(op),
+      simplify: () => this.simplifySelected(),
       distribute: (axis) => this.distributeSelected(axis),
       copy: () => this.copy(),
       paste: () => this.paste(),
@@ -1031,6 +1036,58 @@ export class PlaneEditor {
   private distributeSelected(axis: 'x' | 'y'): void {
     if (!this.selectionBox() || this.selection.length < 3) return;
     this.edit(() => distributeShapes(this.selectedShapes(), axis));
+  }
+
+  /**
+   * Boolesche Operation über die gewählten Formen einer Ebene (src/zone/pathfinder.ts): sie werden durch das Ergebnis
+   * ersetzt; Farbe und Platz in der Reihenfolge von der vordersten, beim Abziehen von der hintersten
+   */
+  private booleanSelected(op: BoolOp): void {
+    const box = this.selectionBox();
+    const shapes = [...this.selectedShapes()].sort((a, b) => a.order - b.order);
+    if (!box || shapes.length < 2) return;
+    const res = booleanShapes(shapes, op);
+    if (!res.length) {
+      this.ui.toast(op === 'intersect' ? 'Keine Schnittmenge: die Formen überlappen nicht' : 'Davon bleibt nichts übrig');
+      return;
+    }
+    const base = op === 'minus' ? shapes[0] : shapes[shapes.length - 1];
+    this.edit(() => {
+      const drop = new Set(shapes.map((s) => s.id));
+      this.nodes = this.nodes.filter((n) => !drop.has(n.id));
+      this.zone.nodes = this.nodes;
+      const ids: string[] = [];
+      res.forEach((r, i) => {
+        const s = shapeFromPlanePath(this.nodes, box.plane.id, r.outline, base.fill);
+        if (r.holes.length) s.holes = r.holes.map((h) => planePathToShape(s, h));
+        s.name = res.length > 1 ? `${base.name} ${i + 1}` : base.name;
+        s.order = base.order + i * 0.001;
+        this.nodes.push(s);
+        ids.push(s.id);
+      });
+      this.selection = ids;
+    });
+    const word = { unite: 'Vereint', minus: 'Abgezogen', intersect: 'Schnittmenge', exclude: 'Überlappung ausgeschlossen' }[op];
+    this.ui.toast(`${word}: ${res.length} ${res.length === 1 ? 'Form' : 'Formen'} (Teilungslinien und Flächenfarben fallen dabei weg)`);
+  }
+
+  /** gewählte Formen vereinfachen: höchstens 1,5 Bildpunkte daneben, so wie sie gerade zu sehen sind */
+  private simplifySelected(): void {
+    const shapes = this.selectedShapes().filter((s) => !s.locked);
+    if (!shapes.length) return;
+    let saved = 0;
+    this.edit(() => {
+      for (const s of shapes) {
+        const plane = findPlane(this.nodes, s.parent);
+        const b = shapeBounds(s);
+        const c = plane ? this.screenOf(plane, { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 }) : null;
+        const q0 = plane && c ? this.planePoint(plane, c) : null;
+        const q1 = plane && c ? this.planePoint(plane, { x: c.x + 10, y: c.y }) : null;
+        const mpp = q0 && q1 ? Math.hypot(q1.x - q0.x, q1.y - q0.y) / 10 : 0.05;
+        saved += simplifyShape(s, mpp * 1.5);
+      }
+    });
+    this.ui.toast(saved ? `Vereinfacht: ${saved} ${saved === 1 ? 'Anker' : 'Anker'} weniger` : 'Schon einfach: kein Anker zu viel');
   }
 
   /** alle Formen der gewählten Ebenen wählen (Cmd+A) */

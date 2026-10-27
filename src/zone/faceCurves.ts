@@ -239,6 +239,17 @@ function ringCurves(ring: Poly, srcs: Src[]): ZonePath {
 }
 
 /**
+ * ein Rand (Vieleck, dessen Kanten auf den geglätteten Pfaden liegen) als Pfad mit den Kurven dieser Pfade; step: die
+ * Glättung, mit der der Rand entstand (für Boolesche Operationen über mehrere Formen)
+ */
+export function curvesOnPaths(ring: Poly, paths: ReadonlyArray<{ path: ZonePath; closed: boolean }>, step = FLATTEN_STEP): ZonePath {
+  return ringCurves(
+    ring,
+    paths.map(({ path, closed }) => sample(path, closed, step)),
+  );
+}
+
+/**
  * Fläche einer Form (aus shapeFaces(shape) mit Feinheit 1) als Umriss und Löcher mit Kurven, in Pfad-Koordinaten der
  * Form
  */

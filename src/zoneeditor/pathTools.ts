@@ -408,6 +408,27 @@ function reprojectGlue(shape: ZoneShape, glue: readonly Glue[], ref: PathRef): v
   }
 }
 
+/**
+ * Pfade einer Form vereinfachen (Plan 4.3 „Pfad vereinfachen“): jeder Pfad wird neu mit wenigen Ankern angepasst,
+ * höchstens tol (Ebenen-Meter) daneben, Knicke bleiben Ecken; Enden von Teilungslinien bleiben an ihren Kanten. Ein Pfad
+ * ändert sich nur, wenn er Anker spart. Gibt die Zahl der gesparten Anker
+ */
+export function simplifyShape(shape: ZoneShape, tol: number): number {
+  const t = tol / (Math.max(Math.abs(shape.sx), Math.abs(shape.sy)) || 1);
+  const glue = glueOf(shape);
+  let saved = 0;
+  const changed: PathRef[] = [];
+  for (const { ref, path, closed } of shapePaths(shape)) {
+    const fit = fitCurve(flattenPath(path, t / 2, closed), t, closed).map(roundPoint);
+    if (fit.length >= path.length || fit.length < (closed ? 3 : 2)) continue;
+    saved += path.length - fit.length;
+    setPath(shape, ref, fit);
+    changed.push(ref);
+  }
+  for (const ref of changed) reprojectGlue(shape, glue, ref);
+  return saved;
+}
+
 /** Anker nach Form und Pfad gruppiert */
 function byPath(sels: readonly AnchorSel[]): Map<string, { shape: string; ref: PathRef; idx: number[] }> {
   const out = new Map<string, { shape: string; ref: PathRef; idx: number[] }>();

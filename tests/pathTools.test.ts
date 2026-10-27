@@ -390,3 +390,19 @@ describe('Mehrfachauswahl von Punkten', () => {
     expect(topCorners.every((p) => p.outX || p.outY)).toBe(true);
   });
 });
+
+describe('Vereinfachen', () => {
+  it('ein Kreis aus vielen Ecken wird eine glatte Form mit wenigen Ankern; ein Rechteck bleibt, wie es ist', async () => {
+    const { simplifyShape } = await import('@/zoneeditor/pathTools');
+    const { newPlane: np, newShape: ns, rectPath: rp } = await import('@/zone/nodes');
+    const nodes: ZoneNode[] = [np([], 0)];
+    const many = Array.from({ length: 60 }, (_, k) => ({ x: 5 * Math.cos((k / 60) * 2 * Math.PI), y: 5 * Math.sin((k / 60) * 2 * Math.PI) }));
+    const c = ns(nodes, 'p1', many, 0, 0, '#445566');
+    const saved = simplifyShape(c, 0.05);
+    expect(saved).toBeGreaterThan(50);
+    expect(c.path.length).toBeLessThanOrEqual(8);
+    const r = ns(nodes, 'p1', rp(4, 2), 0, 0, '#445566');
+    expect(simplifyShape(r, 0.05)).toBe(0);
+    expect(r.path.length).toBe(4);
+  });
+});
