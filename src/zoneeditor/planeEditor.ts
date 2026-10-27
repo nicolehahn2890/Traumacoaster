@@ -2428,8 +2428,23 @@ export class PlaneEditor {
         this.ui.toast('Stil gelöscht; verknüpfte Flächen behalten sein Aussehen');
       },
       hasSelection: () => this.styleTargets().length > 0,
+      previewLook: (look) => {
+        const w = this.host.world;
+        if (look) {
+          if (this.lookBefore === null) this.lookBefore = w.currentLook;
+          w.setLook(look);
+        } else if (this.lookBefore !== null) {
+          w.setLook(this.lookBefore);
+          this.lookBefore = null;
+        }
+        this.meshDirty = true;
+        this.uiDirty = true;
+      },
     };
   }
+
+  /** Look vor der Vorschau eines Palettenfelds (wird danach wiederhergestellt) */
+  private lookBefore: import('@/world/looks').LookName | null = null;
 
   /** Ziele für Stile: die gewählte Fläche (Direktauswahl) oder die gewählten, nicht gesperrten Formen */
   private styleTargets(): Array<{ shape: ZoneShape; face: Face | null }> {
@@ -2568,13 +2583,18 @@ export class PlaneEditor {
     this.uiDirty = true;
   }
 
-  /** Feld der Zonenpalette ändern (Name, Farbe); Ziehen im Wähler ist ein Schritt */
-  private editSwatch(id: string, patch: { name?: string; color?: string }, phase: PickPhase): void {
+  /** Feld der Zonenpalette ändern (Name, Farbe im Look, Look zurück wie Tag); Ziehen im Wähler ist ein Schritt */
+  private editSwatch(id: string, patch: { name?: string; color?: string; look?: import('@/world/looks').LookName; clear?: boolean }, phase: PickPhase): void {
     const sw = swatchesOf(this.nodes).find((x) => x.id === id);
     if (!sw) return;
     if (phase === 'start' || phase === 'tap') this.history.begin(this.nodes);
     if (patch.name) sw.name = patch.name;
-    if (patch.color) sw.color = patch.color;
+    const look = patch.look ?? 'day';
+    if (patch.clear && look !== 'day' && sw.looks) {
+      delete sw.looks[look];
+      if (!Object.keys(sw.looks).length) delete sw.looks;
+    } else if (patch.color && look === 'day') sw.color = patch.color;
+    else if (patch.color) sw.looks = { ...sw.looks, [look]: patch.color };
     if (phase === 'end' || phase === 'tap') {
       if (this.history.commit(this.nodes)) this.changed();
     } else this.changed();

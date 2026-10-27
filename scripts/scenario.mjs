@@ -1349,7 +1349,7 @@ if (want('19')) {
   await page.click('.ze-color .ze-chip.add');
   await sleep(100);
   const s4 = await editor();
-  const field = page.locator('.ze-color .ze-chips').first().locator('.ze-chip').first();
+  const field = page.locator('.ze-color .ze-pchip').first();
   await drag(await field.boundingBox(), at.down);
   await page.keyboard.press('Escape');
   const r3 = await shapeOf(at.rect);
@@ -1764,6 +1764,64 @@ if (want('22')) {
   await page.click('.ze-color .ze-cedit .ze-btn:text-is("Löschen")');
   check((await styles()).length === 0, 'Stil gelöscht');
   await page.screenshot({ path: 'screenshots/scenario-22-stile.png' });
+}
+
+// 23. Zonen-Editor, Stufe 3: Looks als Palettentausch. Ein Feld der Zonenpalette bekommt im Look „Nacht“ eine eigene
+// Farbe; beim Bearbeiten zeigt das Bild die Nacht, danach wieder den Tag; die Zonendatei hält beide Farben.
+if (want('23')) {
+  await page.goto(`${BASE}?zone=szenario-looks&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const at = await page.evaluate(async () => {
+    const N = await import('/src/zone/nodes.ts');
+    const ed = window.tcGame.current.planeEditor;
+    let out = null;
+    ed.edit(() => {
+      const p = N.newPlane(ed.nodes, 0);
+      ed.nodes.push(p);
+      ed.nodes.push({ id: 'c1', kind: 'swatch', name: 'Fels', color: '#aa3355' });
+      const P = (x, y) => ed.planePoint(p, { x, y });
+      const m = (P(460, 400).x - P(400, 400).x) / 60;
+      const c = P(450, 400);
+      const s = N.newShape(ed.nodes, p.id, N.rectPath(160 * m, 120 * m), c.x, c.y, '@c1');
+      ed.nodes.push(s);
+      out = { x: 450, y: 400 };
+    });
+    for (let i = 0; i < 3; i++) window.tcGame.app.ticker.update(performance.now());
+    return out;
+  });
+  const pixel = async () => {
+    await page.evaluate(() => {
+      const g = window.tcGame;
+      if (g.current.view?.paper) g.current.view.paper.visible = false;
+      for (let i = 0; i < 3; i++) g.app.ticker.update(performance.now());
+    });
+    const png = await page.screenshot();
+    const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+    const i = (Math.round(at.y) * info.width + Math.round(at.x)) * info.channels;
+    return [data[i], data[i + 1], data[i + 2]];
+  };
+  const near = (a, hex) => Math.max(...a.map((v, i) => Math.abs(v - parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16)))) <= 4;
+  await page.click('.ze-colorbtn');
+  await page.click('.ze-ctabs .ze-btn:text-is("Paletten")');
+  const named = await page.locator('.ze-color .ze-pchip span').first().textContent();
+  await page.click('.ze-color .ze-csub .ze-btn:text-is("Bearbeiten")');
+  await page.locator('.ze-color .ze-pchip').first().click();
+  await page.click('.ze-color .ze-clooks .ze-btn:has-text("Nacht")');
+  const look1 = await page.evaluate(() => window.tcGame.world.currentLook);
+  await page.click('.ze-ctabs .ze-btn:text-is("Werte")');
+  const hex = page.locator('.ze-color .ze-hex input');
+  await hex.fill('#112244');
+  await hex.press('Enter');
+  await sleep(100);
+  const night = await pixel();
+  await page.click('.ze-color .ze-cedit .ze-btn:text-is("Fertig")');
+  const look2 = await page.evaluate(() => window.tcGame.world.currentLook);
+  const day = await pixel();
+  const saved = await page.evaluate(() => window.tcGame.current.planeEditor.nodes.find((n) => n.id === 'c1'));
+  check(named === 'Fels' && look1 === 'night' && near(night, '#112244'), `Feld „${named}“ im Look Nacht bearbeitet: das Bild zeigt die Nacht (rgb(${night.join(', ')}))`);
+  check(look2 === 'day' && near(day, '#aa3355') && saved.color === '#aa3355' && saved.looks?.night === '#112244', `nach „Fertig“ wieder Tag (rgb(${day.join(', ')})); das Feld hält Tag und Nacht`);
+  await page.evaluate(() => { if (window.tcGame.current.view?.paper) window.tcGame.current.view.paper.visible = true; });
+  await page.screenshot({ path: 'screenshots/scenario-23-looks.png' });
 }
 
 await browser.close();

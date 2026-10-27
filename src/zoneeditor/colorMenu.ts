@@ -8,6 +8,10 @@
  * Platzhalter: das genaue Aussehen und die Platzhalter-Palette (bis Florian Paletten festlegt).
  */
 import { hexToRgb, rgbToHex, type PaintColor, type ZoneSwatch } from '@/zone/paint';
+import { LOOK_NAMES, type LookName } from '@/world/looks';
+
+/** Looks in der Zonenpalette (Palettentausch je Fortschrittsstufe, Paket 2 und Paket 0 Regel 9) */
+const LOOK_WORDS: Record<LookName, string> = { day: 'Tag', dusk: 'Abend', night: 'Nacht', neon: 'Neon' };
 
 export type PickPhase = 'start' | 'move' | 'end' | 'tap';
 
@@ -23,7 +27,10 @@ export interface ColorMenuHost {
   swatches(): readonly ZoneSwatch[];
   /** neues Feld der Zonenpalette mit diesem Wert; gibt seine Kennung */
   addSwatch(hex: string): string | null;
-  editSwatch(id: string, patch: { name?: string; color?: string }, phase: PickPhase): void;
+  /** Feld ändern: Name, Farbe (im Look look, ohne Angabe Tag), clear nimmt die Farbe des Looks zurück (dann wie Tag) */
+  editSwatch(id: string, patch: { name?: string; color?: string; look?: LookName; clear?: boolean }, phase: PickPhase): void;
+  /** Look im Bild zeigen (Vorschau beim Bearbeiten eines Felds); null stellt den vorigen wieder her */
+  previewLook(look: LookName | null): void;
   deleteSwatch(id: string): void;
   recent(): readonly PaintColor[];
   /** Stile der Zone mit Vorschau (CSS-Hintergrund) und ob die Auswahl mit ihm verknüpft ist */
@@ -100,11 +107,11 @@ export const COLOR_CSS = `
 .ze-colorbtn{width:30px;height:30px;min-width:30px;padding:0;margin:0 3px 0 6px;border-radius:50%;border:2px solid rgba(231,229,224,.85);box-shadow:inset 0 0 0 1px rgba(0,0,0,.35);cursor:pointer;touch-action:none;flex:none}
 .ze-colorbtn.on{border-color:#8db4ff}
 @media (pointer:coarse){.ze-colorbtn{width:36px;height:36px}}
-.ze-color{right:calc(env(safe-area-inset-right,0px) + 12px);top:calc(env(safe-area-inset-top,0px) + 64px);width:316px;padding:8px;display:none;z-index:3}
-@media (pointer:coarse){.ze-color{top:calc(env(safe-area-inset-top,0px) + 72px);width:334px}}
+.ze-color{right:calc(env(safe-area-inset-right,0px) + 12px);top:calc(env(safe-area-inset-top,0px) + 64px);width:344px;padding:8px;display:none;z-index:3}
+@media (pointer:coarse){.ze-color{top:calc(env(safe-area-inset-top,0px) + 72px);width:360px}}
 @media (max-width:820px){.ze-color{top:calc(env(safe-area-inset-top,0px) + 116px)}}
 .ze-color.open{display:block}
-.ze-ctabs{display:flex;gap:2px;margin-bottom:8px}
+.ze-ctabs{display:flex;gap:4px;margin-bottom:8px}
 .ze-ctabs .ze-btn{flex:1;min-width:0;height:28px;padding:0 2px;font-size:11px;color:#bdbab3}
 .ze-ctabs .ze-btn.on{color:#e7e5e0}
 @media (pointer:coarse){.ze-ctabs .ze-btn{height:34px}}
@@ -123,6 +130,14 @@ export const COLOR_CSS = `
 .ze-hex{display:flex;align-items:center;gap:8px;margin-top:6px;color:#8f8c86}
 .ze-hex input,.ze-cedit input{flex:1;min-width:0;font:inherit;color:#e7e5e0;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:5px 7px;user-select:text;-webkit-user-select:text}
 .ze-cedit{display:flex;align-items:center;gap:4px;margin-bottom:8px}
+.ze-pchip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 9px 0 4px;border-radius:14px;background:rgba(255,255,255,.06);border:2px solid transparent;cursor:pointer;touch-action:none;max-width:100%}
+@media (pointer:coarse){.ze-pchip{height:34px}}
+.ze-pchip.on{border-color:#e7e5e0}
+.ze-pchip i{width:20px;height:20px;border-radius:50%;flex:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.3)}
+.ze-pchip span{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ze-clooks{display:flex;gap:2px;margin:-2px 0 8px}
+.ze-clooks .ze-btn{flex:1;min-width:0;height:28px;padding:0 4px;font-size:11px;gap:4px}
+.ze-clooks .ze-btn i{width:10px;height:10px;border-radius:50%;flex:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.35)}
 .ze-schip{width:44px;height:28px;border-radius:6px;border:2px solid transparent;box-shadow:inset 0 0 0 1px rgba(0,0,0,.3);cursor:pointer;touch-action:none;flex:none}
 @media (pointer:coarse){.ze-schip{width:50px;height:34px}}
 .ze-schip.on{border-color:#e7e5e0}
@@ -174,6 +189,8 @@ export class ColorMenu {
   private editing: string | null = null;
   /** Stil, der gerade bearbeitet wird (Name, neu festlegen, löschen) */
   private editingStyle: string | null = null;
+  /** Look, dessen Farbe beim Bearbeiten eines Felds geändert wird */
+  private editLook: LookName = 'day';
   /** Bearbeiten-Modus der Zonenpalette und der Stile: Antippen öffnet ein Feld oder einen Stil, statt ihn aufzulegen */
   private editMode = false;
   private shownKey = '';
@@ -208,15 +225,24 @@ export class ColorMenu {
       this.syncFromHost(true);
       this.render();
     } else {
-      this.editing = null;
+      this.leaveField();
       this.editingStyle = null;
       this.editMode = false;
     }
   }
 
+  /** Feld nicht mehr bearbeiten: der Look im Bild kommt zurück */
+  private leaveField(): void {
+    if (this.editing && this.editLook !== 'day') this.host.previewLook(null);
+    this.editing = null;
+    this.editLook = 'day';
+  }
+
   private setMode(m: Mode): void {
     this.mode = m;
-    this.editMode = false;
+    // ein Feld bleibt beim Wechsel zu einem Wähler in Bearbeitung; zu den Stilen nicht
+    if (m === 'styles') this.leaveField();
+    if (!this.editing) this.editMode = false;
     this.editingStyle = null;
     try {
       localStorage.setItem(MODE_KEY, m);
@@ -249,12 +275,12 @@ export class ColorMenu {
   private editedHex(): string | null {
     const sw = this.editing ? this.host.swatches().find((s) => s.id === this.editing) : undefined;
     if (this.editing && !sw) this.editing = null;
-    return sw ? sw.color : null;
+    return sw ? (this.editLook === 'day' ? sw.color : (sw.looks?.[this.editLook] ?? sw.color)) : null;
   }
 
   /** gewählte Farbe weitergeben: an das bearbeitete Feld oder als aktuelle Farbe */
   private emit(hex: string, phase: PickPhase): void {
-    if (this.editing) this.host.editSwatch(this.editing, { color: hex }, phase);
+    if (this.editing) this.host.editSwatch(this.editing, { color: hex, look: this.editLook }, phase);
     else this.host.pick(hex, phase);
     this.button.style.background = this.host.resolve(this.host.current());
   }
@@ -307,18 +333,44 @@ export class ColorMenu {
     row.append(
       input,
       textButton('Löschen', 'Feld aus der Zonenpalette nehmen; Flächen behalten seine Farbe als Wert', () => {
+        this.leaveField();
         this.host.deleteSwatch(sw.id);
-        this.editing = null;
         this.render();
       }),
       textButton('Fertig', 'Feld fertig bearbeitet', () => {
-        this.editing = null;
+        this.leaveField();
         this.editMode = false;
         this.syncFromHost(true);
         this.render();
       }),
     );
-    return row;
+    // je Look eine Farbe (Palettentausch); ohne eigene gilt die des Tages. Das Bild zeigt den gewählten Look
+    const looks = el('div', 'ze-clooks');
+    for (const lk of LOOK_NAMES) {
+      const own = lk === 'day' || !!sw.looks?.[lk];
+      const b = textButton('', own ? `Farbe im Look ${LOOK_WORDS[lk]}` : `Look ${LOOK_WORDS[lk]}: noch wie Tag; eine Farbe wählen gibt ihm eine eigene`, () => {
+        this.editLook = lk;
+        this.host.previewLook(lk === 'day' ? null : lk);
+        this.syncFromHost(true);
+        this.render();
+      }, lk === this.editLook ? 'on' : '');
+      const dot = el('i');
+      dot.style.background = lk === 'day' ? sw.color : (sw.looks?.[lk] ?? sw.color);
+      b.append(dot, document.createTextNode(own ? LOOK_WORDS[lk] : `${LOOK_WORDS[lk]} =`));
+      looks.append(b);
+    }
+    const wrap = el('div');
+    wrap.append(row, looks);
+    if (this.editLook !== 'day' && sw.looks?.[this.editLook]) {
+      const back = textButton(`${LOOK_WORDS[this.editLook]} wie Tag`, `Eigene Farbe im Look ${LOOK_WORDS[this.editLook]} zurücknehmen`, () => {
+        this.host.editSwatch(sw.id, { look: this.editLook, clear: true }, 'tap');
+        this.syncFromHost(true);
+        this.render();
+      });
+      back.style.cssText = 'margin:-4px 0 8px;height:26px;font-size:11px';
+      wrap.append(back);
+    }
+    return wrap;
   }
 
   /** Scheibe (Farbton im Ring, Sättigung und Helligkeit im Quadrat); mit harmony die Harmonie-Farben dazu */
@@ -517,17 +569,22 @@ export class ColorMenu {
     const zone = el('div', 'ze-chips');
     const cur = this.host.current();
     for (const sw of this.host.swatches()) {
-      const chip = this.chip(`@${sw.id}`, sw.color, () => {
+      // Felder mit Namen (am iPad gibt es keine Tooltips)
+      const chip = el('div', `ze-pchip${cur === `@${sw.id}` || this.editing === sw.id ? ' on' : ''}`);
+      const dot = el('i');
+      dot.style.background = this.host.resolve(`@${sw.id}`);
+      chip.append(dot, el('span', '', sw.name));
+      chip.title = this.editMode ? `${sw.name}: antippen bearbeitet` : `${sw.name} (antippen: auf die Auswahl, ziehen: auf eine Fläche)`;
+      this.source(chip, () => `@${sw.id}`, () => {
         if (this.editMode) {
+          this.leaveField();
           this.editing = sw.id;
           this.syncFromHost(true);
           this.render();
           return;
         }
         this.host.pick(`@${sw.id}`, 'tap');
-      });
-      chip.title = this.editMode ? `${sw.name}: antippen bearbeitet` : sw.name;
-      chip.classList.toggle('on', cur === `@${sw.id}` || this.editing === sw.id);
+      }, this.host.resolve(`@${sw.id}`));
       zone.append(chip);
     }
     const add = el('div', 'ze-chip add', '+');
