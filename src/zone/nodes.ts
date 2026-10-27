@@ -168,7 +168,24 @@ export interface ZoneStationNode {
   length: number;
 }
 
-export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup | ZoneSketch | ZoneSwatch | ZoneStyle | ZoneAir | ZoneStationNode;
+/**
+ * Feld (Stufe 4, Plan 4.9 „Felder mit Kamerabegrenzung und Rahmen für Hoch- und Querformat“): ein Spielbereich der Zone
+ * in Metern der Spur-0-Ebene wie die Felder des Klötzchen-Editors (`ZoneField`): weiche Kamerabegrenzung, Zoom-Grenze
+ * „Feld passt ins Bild“, Absperrband an den Rändern. Ziele, Stufen und Schalter des Felds reisen bis zu ihrem Paket
+ * unverändert mit (rest, wie in der Zonendatei)
+ */
+export interface ZoneFieldNode {
+  id: string;
+  kind: 'field';
+  name: string;
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+  rest?: Record<string, unknown>;
+}
+
+export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup | ZoneSketch | ZoneSwatch | ZoneStyle | ZoneAir | ZoneStationNode | ZoneFieldNode;
 
 export const isPlane = (n: ZoneNode): n is ZonePlane => n.kind === 'plane';
 export const isShape = (n: ZoneNode): n is ZoneShape => n.kind === 'shape';
@@ -178,6 +195,37 @@ export const isSwatch = (n: ZoneNode): n is ZoneSwatch => n.kind === 'swatch';
 export const isStyle = (n: ZoneNode): n is ZoneStyle => n.kind === 'style';
 export const isAir = (n: ZoneNode): n is ZoneAir => n.kind === 'air';
 export const isStationNode = (n: ZoneNode): n is ZoneStationNode => n.kind === 'station';
+export const isFieldNode = (n: ZoneNode): n is ZoneFieldNode => n.kind === 'field';
+
+/** Felder der Zone in ihrer Reihenfolge */
+export function fieldNodesOf(nodes: readonly ZoneNode[]): ZoneFieldNode[] {
+  return nodes.filter(isFieldNode);
+}
+
+/** kleinstes Feld (Meter) */
+export const FIELD_MIN = 10;
+/** Seitenverhältnis des Handybilds quer (19,5 : 9 wie die iPhones seit X; Platzhalter, bis es Geräteprofile gibt) */
+export const PHONE_ASPECT = 19.5 / 9;
+
+/**
+ * Rahmen eines Felds fürs Handy (Plan 4.9 „Rahmen für Hoch- und Querformat“): was die Kamera quer und hoch zeigt, wenn das
+ * Feld ganz ins Bild passt (wie `Camera.fitBounds` mit 2 % Rand; weiter heraus zoomt das Spiel im Feld nicht). Meter der
+ * Spur-0-Ebene, um die Mitte des Felds
+ */
+export function fieldFrames(f: { x0: number; x1: number; y0: number; y1: number }, aspect = PHONE_ASPECT, margin = 0.02): Array<{ name: 'quer' | 'hoch'; x0: number; x1: number; y0: number; y1: number }> {
+  const w = f.x1 - f.x0;
+  const h = f.y1 - f.y0;
+  const cx = (f.x0 + f.x1) / 2;
+  const cy = (f.y0 + f.y1) / 2;
+  const k = 1 - 2 * margin;
+  return (['quer', 'hoch'] as const).map((name) => {
+    // Breite durch Höhe des Bildschirms; der Zoom passt Breite oder Höhe des Felds ein, die andere Richtung zeigt mehr
+    const a = name === 'quer' ? aspect : 1 / aspect;
+    const vw = Math.max(w / k, (h / k) * a);
+    const vh = vw / a;
+    return { name, x0: cx - vw / 2, x1: cx + vw / 2, y0: cy - vh / 2, y1: cy + vh / 2 };
+  });
+}
 
 /** Luftperspektive der Zone, falls gesetzt */
 export function airOf(nodes: readonly ZoneNode[]): ZoneAir | undefined {
@@ -267,9 +315,9 @@ export function newGroup(nodes: readonly ZoneNode[], name?: string): ZoneGroup {
 
 /**
  * nächste freie Kennung mit Vorsilbe (p für Ebenen, s für Formen, g für Gruppen, k für Skizzen, c für Palettenfelder,
- * y für Stile), hochgezählt wie die Kennungen der Zonendatei
+ * y für Stile, f für Felder), hochgezählt wie die Kennungen der Zonendatei
  */
-export function nextNodeId(nodes: readonly ZoneNode[], prefix: 'p' | 's' | 'g' | 'k' | 'c' | 'y'): string {
+export function nextNodeId(nodes: readonly ZoneNode[], prefix: 'p' | 's' | 'g' | 'k' | 'c' | 'y' | 'f'): string {
   const ids = new Set(nodes.map((n) => n.id));
   let n = nodes.filter((x) => x.id.startsWith(prefix)).length + 1;
   while (ids.has(`${prefix}${n}`)) n++;
@@ -919,6 +967,13 @@ export function parseNodes(v: unknown): ZoneNode[] {
       }
       out.push(c);
       ids.add(c.id);
+    } else if (o.kind === 'field' && num(o.x0) && num(o.x1) && num(o.y0) && num(o.y1)) {
+      const f: ZoneFieldNode = { id: o.id, kind: 'field', name: typeof o.name === 'string' ? o.name.slice(0, 40) : o.id, x0: Math.min(o.x0, o.x1), x1: Math.max(o.x0, o.x1), y0: Math.min(o.y0, o.y1), y1: Math.max(o.y0, o.y1) };
+      const rest: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(o)) if (!['id', 'kind', 'name', 'x0', 'x1', 'y0', 'y1'].includes(k)) rest[k] = v;
+      if (Object.keys(rest).length) f.rest = JSON.parse(JSON.stringify(rest)) as Record<string, unknown>;
+      out.push(f);
+      ids.add(f.id);
     } else if (o.kind === 'station' && !out.some(isStationNode) && typeof o.parent === 'string' && num(o.x)) {
       const st: ZoneStationNode = { id: o.id, kind: 'station', parent: o.parent, x: o.x, dir: o.dir === -1 ? -1 : 1, length: num(o.length) && o.length >= 4 && o.length <= 60 ? o.length : 14 };
       out.push(st);
@@ -1005,7 +1060,7 @@ export function parseNodes(v: unknown): ZoneNode[] {
   const planeIds = new Set(out.filter(isPlane).map((p) => p.id));
   const groupIds = new Set(out.filter(isGroup).map((g) => g.id));
   for (const p of out) if (isPlane(p) && p.group && !groupIds.has(p.group)) delete p.group;
-  return out.filter((n) => isPlane(n) || isGroup(n) || isSwatch(n) || isStyle(n) || isAir(n) || planeIds.has(n.parent));
+  return out.filter((n) => isPlane(n) || isGroup(n) || isSwatch(n) || isStyle(n) || isAir(n) || isFieldNode(n) || planeIds.has(n.parent));
 }
 
 const LOOK_KEYS = ['day', 'dusk', 'night', 'neon'];
@@ -1092,6 +1147,7 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
     }
   }
   for (const st of nodes.filter(isStationNode)) out.push({ id: st.id, kind: 'station', parent: st.parent, x: round(st.x, 3), dir: st.dir, length: round(st.length, 2) });
+  for (const f of fieldNodesOf(nodes)) out.push({ id: f.id, kind: 'field', name: f.name, x0: round(f.x0, 2), x1: round(f.x1, 2), y0: round(f.y0, 2), y1: round(f.y1, 2), ...(f.rest ? JSON.parse(JSON.stringify(f.rest)) : {}) });
   for (const k of nodes.filter(isSketch)) {
     if (!k.src.startsWith('/zones/')) continue;
     const o: Record<string, unknown> = { id: k.id, kind: 'sketch', parent: k.parent, name: k.name, src: k.src, x: round(k.x, 3), y: round(k.y, 3), w: round(k.w, 3), h: round(k.h, 3), opacity: round(k.opacity, 2) };
@@ -1106,6 +1162,7 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
 export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
   return nodes.map((n): ZoneNode => {
     if (isGroup(n) || isSketch(n) || isAir(n) || isStationNode(n)) return { ...n };
+    if (isFieldNode(n)) return { ...n, ...(n.rest ? { rest: JSON.parse(JSON.stringify(n.rest)) as Record<string, unknown> } : {}) };
     if (isPlane(n)) return { ...n, ...(n.fills ? { fills: cloneFills(n.fills) } : {}) };
     if (isSwatch(n)) return { ...n, ...(n.looks ? { looks: { ...n.looks } } : {}) };
     if (isStyle(n)) return { ...n, ...(n.fills ? { fills: cloneFills(n.fills) } : {}) };

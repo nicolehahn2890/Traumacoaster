@@ -40,7 +40,7 @@ import { cutIndexNear, retractIndex } from '@/track/strokeBuffer';
 import { DEFAULT_CAMERA_TILT, laneRise, laneScale, nearestLane, rayToWorld, setCameraTilt, setPerspective, tagRay, toStage, toView, viewState, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
 import { HANG_DROP, trackTypeForSkin, type TrackType } from '@/world/trackTypes';
-import type { ZoneElement, ZoneField, ZoneFile, ZoneSite, ZoneStation } from '@/zone/types';
+import { fieldsOf, type ZoneElement, type ZoneField, type ZoneFile, type ZoneSite, type ZoneStation } from '@/zone/types';
 import { LIFT_HEIGHT_DEFAULT, allowedStarts, resolveAbilities, zoneUnlocks, type ResolvedAbilities } from '@/zone/abilities';
 import { cachedFreeLanes, FreeField, type FreeLanes } from '@/zone/field';
 import { SITE_OPENING_R, SITE_REACH, siteAnchor, siteTarget, siteWalls, withSiteOpenings } from '@/zone/sites';
@@ -530,7 +530,8 @@ export class LevelScene implements Scene {
         } else if (!EDITOR2_URL) {
           // ohne Editor (Handy): ?field=<Kennung> wählt ein Feld der Zone, sonst das erste
           const want = new URLSearchParams(location.search).get('field');
-          this.setActiveField(zone.fields.find((f) => f.id === want) ?? zone.fields[0] ?? null);
+          const fields = fieldsOf(zone);
+          this.setActiveField(fields.find((f) => f.id === want) ?? fields[0] ?? null);
         }
       }
     }
@@ -551,8 +552,12 @@ export class LevelScene implements Scene {
           cameraPanel: this.cameraPanel,
           surface: document.getElementById('app') ?? game.app.canvas,
           // vom Bauen zum Spielen: Pinsel und Stützen lesen die Ebenen neu
-          planesChanged: () => this.refreshPlaneStack(),
+          planesChanged: () => {
+            this.refreshPlaneStack();
+            this.editorField(true);
+          },
           setGameUi: (on) => {
+            if (!on) this.editorField(false);
             this.hud.visible = on;
             this.laneHud.visible = on;
             this.lengthPill.visible = on;
@@ -594,11 +599,18 @@ export class LevelScene implements Scene {
     else this.resetStationPiece();
     this.resize(game.width, game.height);
     this.fitCamera(true);
-    // Zonen-Editor: Start mit dem ersten Feld im Bild, damit die Zone als ganzes Bild erscheint (Testszenen, Stufe 4)
-    const startField = this.planeEditor ? zone?.fields[0] : undefined;
-    if (startField) {
-      this.view.camera.fitBounds({ minX: startField.x0, maxX: startField.x1, minY: startField.y0, maxY: startField.y1 }, 0.02, 30);
-      this.view.camera.snap();
+    // Zonen-Editor: Start mit dem ersten Feld im Bild, damit die Zone als ganzes Bild erscheint (Testszenen, Stufe 4), und
+    // zwar im freien Bereich zwischen den Leisten, damit seine Kanten greifbar sind
+    const startField = this.planeEditor && zone ? fieldsOf(zone)[0] : undefined;
+    if (startField && this.planeEditor) {
+      const cam = this.view.camera;
+      const fr = this.planeEditor.freeRect();
+      const k = 0.92;
+      const zoom = Math.min(30, ((fr.x1 - fr.x0) * k) / (startField.x1 - startField.x0), ((fr.y1 - fr.y0) * k) / (startField.y1 - startField.y0));
+      // Mitte des Felds in die Mitte des freien Bereichs (Bühne: y nach oben, Bildschirm: nach unten)
+      const cx = (startField.x0 + startField.x1) / 2 + (game.width / 2 - (fr.x0 + fr.x1) / 2) / zoom;
+      const cy = (startField.y0 + startField.y1) / 2 - (game.height / 2 - (fr.y0 + fr.y1) / 2) / zoom;
+      cam.set(cx, cy, zoom);
     }
     this.updateGoals();
     this.updateHint();
@@ -782,6 +794,22 @@ export class LevelScene implements Scene {
       this.setPath(piece, false);
     }
     this.ensureStartAllowed();
+  }
+
+  /**
+   * Zonen-Editor (Stufe 4): beim Spielen gilt das Feld mit der Station (sonst das erste) wie am Handy, mit Kamera, Zoom-Grenze,
+   * Absperrband, Zielen und Schaltern; beim Bauen ist die Kamera wieder frei
+   */
+  private editorField(play: boolean): void {
+    const zone = this.sandbox?.zone;
+    if (!zone || !this.planeEditor) return;
+    if (!play) {
+      if (this.activeField) this.setActiveField(null);
+      return;
+    }
+    const fields = fieldsOf(zone);
+    const st = this.zoneStation();
+    this.setActiveField((st && fields.find((f) => st.x >= f.x0 && st.x <= f.x1 && st.y >= f.y0 && st.y <= f.y1)) ?? fields[0] ?? null);
   }
 
   /** Feld der Zone aktiv schalten (null: ganze Zone): Kamera weich begrenzt, Zoom-Grenze „Feld passt ins Bild“, Absperrband */

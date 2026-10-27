@@ -17,7 +17,7 @@ import type { WorldView } from '@/render/worldView';
 import type { CameraTiltPanel } from '@/ui/cameraTiltPanel';
 import { CAMERA_TILT, viewState } from '@/track/stage';
 import { loadZone, onZoneChange, saveZone, uploadZoneFile } from '@/zone/io';
-import type { ZoneFile } from '@/zone/types';
+import { fieldsOf, fieldToNode, type ZoneFile } from '@/zone/types';
 import { buildSliceStack } from '@/zone/slices';
 import { flattenPath, type ZonePath } from '@/zone/path';
 import { planesToSvg, slug, svgToPlanes } from '@/zone/svgPlanes';
@@ -64,6 +64,7 @@ import {
   shapeToPlane,
   setFaceFill,
   slicesToNodes,
+  isFieldNode,
   isStationNode,
   styleMap,
   stylesOf,
@@ -75,6 +76,10 @@ import {
   type ZoneNode,
   type ZonePlane,
   type ZoneShape,
+  fieldNodesOf,
+  fieldFrames,
+  FIELD_MIN,
+  type ZoneFieldNode,
 } from '@/zone/nodes';
 import { History } from './history';
 import { EditorOverlay, emptyOverlay } from './overlay';
@@ -135,7 +140,12 @@ type Gesture =
   | { kind: 'gradNew'; pointerId: number; plane: string; a: Pt; start: Pt; moved: boolean }
   | { kind: 'gradEnd'; pointerId: number; end: 'a' | 'b' }
   | { kind: 'gradStop'; pointerId: number; index: number; off: boolean }
-  | { kind: 'gradMid'; pointerId: number; index: number };
+  | { kind: 'gradMid'; pointerId: number; index: number }
+  /** Feld (Stufe 4): verschieben (innen) oder an Kante oder Ecke ziehen; Weg in Metern der Spur-0-Ebene, vom Anfang aus */
+  | { kind: 'field'; pointerId: number; id: string; mode: FieldGrip; start: Pt; orig: { x0: number; x1: number; y0: number; y1: number } };
+
+/** Griff eines Felds: innen (verschieben), Kanten n, s, o, w und Ecken (Himmelsrichtungen, n oben) */
+type FieldGrip = 'move' | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 /** Ziel des Verlaufswerkzeugs als Verweis: Form (at: Punkt im Pfad einer Fläche) oder Ebene */
 type GradRef = { shape: string; at: Pt | null } | { plane: string };
@@ -260,6 +270,10 @@ export class PlaneEditor {
   private dockFace: { shape: string; at: Pt } | null = null;
   /** Station setzen: die nächste angetippte Andockkante bekommt sie */
   private stationPlacing = false;
+  /** gewähltes Feld im Werkzeug Felder */
+  private fieldSel: string | null = null;
+  /** Spur-0-Ebene als Bezug für Felder (Meter der Bühne, wie die Felder des Klötzchen-Editors) */
+  private readonly ground0: ZonePlane = { id: '_feld', kind: 'plane', parent: null, name: '', z: 0, x: 0, y: 0, scale: 1, role: 'play' };
   /** kopierter Anstrich (Cmd+Wahl+C, Pipette mit Wahltaste); mit Kennung, wenn er von einem Stil kam */
   private styleClip: StyleClip | null = null;
   /** Vorschaubilder der Stile (Daten-URL je Inhalt) */
@@ -274,6 +288,8 @@ export class PlaneEditor {
     private readonly zone: ZoneFile,
   ) {
     this.nodes = zone.nodes ?? [];
+    // Felder des Klötzchen-Editors werden Feldknoten (Stufe 4); die Zonendatei behält sie beim Sichern als Spiegel
+    if (!this.nodes.some(isFieldNode) && zone.fields.length) this.nodes.push(...zone.fields.map(fieldToNode));
     zone.nodes = this.nodes;
     this.active = planesOf(this.nodes)[0]?.id ?? null;
     this.views = new EditorViews(host.world);
@@ -420,6 +436,14 @@ export class PlaneEditor {
     this.changed();
   }
 
+  /**
+   * Felder der Zonendatei im Gleichschritt mit den Feldknoten (Spiel, Handy und Klötzchen-Editor lesen sie über fieldsOf;
+   * ohne Feldknoten fiele es sonst auf die alten Felder zurück, ein entferntes letztes Feld käme wieder)
+   */
+  private syncFields(): void {
+    this.zone.fields = this.nodes.some(isFieldNode) ? fieldsOf(this.zone) : [];
+  }
+
   /** nach jeder Änderung: neu zeichnen, Liste und Leisten nachführen, Sicherungskopie planen */
   private changed(markDirty = true): void {
     // Gruppen bleiben Läufe benachbarter Ebenen; leere fallen weg
@@ -428,6 +452,7 @@ export class PlaneEditor {
       this.nodes = norm;
       this.zone.nodes = norm;
     }
+    this.syncFields();
     if (this.groupSel && !findGroup(this.nodes, this.groupSel)) this.groupSel = null;
     normalizeShapeGroups(this.nodes);
     const alive = this.inGroup.findIndex((g) => groupMembersOf(this.nodes, g).length < 2);
@@ -519,6 +544,11 @@ export class PlaneEditor {
   }
 
   // ------------------------------------------------------------------ Bild
+
+  /** freier Bildbereich zwischen den Leisten des Editors (Bildschirm-Pixel) */
+  freeRect(): { x0: number; y0: number; x1: number; y1: number } {
+    return this.ui.freeRect(this.width, this.height);
+  }
 
   resize(w: number, h: number): void {
     this.width = w;
@@ -637,6 +667,7 @@ export class PlaneEditor {
       dropChoice: this.building && this.dropChoice ? this.resolve(this.dropChoice.color) : null,
       material: this.building ? this.selectionMaterial() : null,
       dock: this.building && this.tool === 'dock' && !this.fillMode ? this.dockInfo() : null,
+      field: this.building && this.tool === 'field' && !this.fillMode ? this.fieldInfo() : null,
     });
     this.ui.setStack(this.stackView());
     this.syncColorFromSelection();
@@ -766,6 +797,7 @@ export class PlaneEditor {
     st.loupe = this.loupe;
     if (this.building && this.tool === 'gradient') this.gradOverlay(st);
     if (this.building && this.tool === 'dock') this.dockOverlay(st);
+    if (this.building && this.tool === 'field') this.fieldOverlay(st);
     const tf = this.dropAt ? this.faceAtScreen(this.dropAt) : null;
     if (tf) st.target = [tf.face.outline, ...tf.face.holes].map((r) => r.map(([x, y]) => this.screenOf(tf.plane, shapeToPlane(tf.shape, x, y), tf.shape)).filter((q): q is Pt => !!q));
     const sk = this.adjusting();
@@ -993,6 +1025,23 @@ export class PlaneEditor {
           this.nodes = this.nodes.filter((n) => !isStationNode(n));
           this.zone.nodes = this.nodes;
         });
+      },
+      fieldAdd: () => this.fieldAdd(),
+      fieldRename: () => {
+        const f = this.nodes.find((n): n is ZoneFieldNode => isFieldNode(n) && n.id === this.fieldSel);
+        const name = f ? window.prompt('Name des Felds', f.name) : null;
+        if (f && name !== null && name.trim()) this.edit(() => (f.name = name.trim().slice(0, 40)));
+      },
+      fieldRemove: () => {
+        const id = this.fieldSel;
+        if (!id) return;
+        this.edit(() => {
+          this.nodes = this.nodes.filter((n) => n.id !== id);
+          this.zone.nodes = this.nodes;
+        });
+        this.fieldSel = null;
+        this.uiDirty = true;
+        this.drawOverlay();
       },
       gradKind: (kind) => {
         if (this.grad) {
@@ -1757,6 +1806,8 @@ export class PlaneEditor {
 
   private async save(): Promise<void> {
     this.zone.nodes = this.nodes;
+    // Spiegel für den Klötzchen-Editor und ältere Leser: die Felder auch als Felder der Zonendatei
+    this.syncFields();
     const ok = await saveZone(this.zone);
     if (ok) {
       this.lastSaveAt = performance.now();
@@ -1828,7 +1879,9 @@ export class PlaneEditor {
       return;
     }
     this.history.reset();
-    this.setNodes(z.nodes ?? []);
+    const nodes = z.nodes ?? [];
+    if (!nodes.some(isFieldNode) && z.fields.length) nodes.push(...z.fields.map(fieldToNode));
+    this.setNodes(nodes);
     this.dirty = false;
     this.ui.toast('Zonendatei neu geladen');
   }
@@ -2027,6 +2080,10 @@ export class PlaneEditor {
       this.dockDown(p);
       return;
     }
+    if (this.tool === 'field') {
+      this.fieldDown(pointerId, p);
+      return;
+    }
     if (this.tool === 'pipette' && this.mods.alt) {
       // Pipette mit Wahltaste: den ganzen Anstrich aufnehmen (und auf die Auswahl legen, wie in Illustrator)
       const f = this.faceAtScreen(p, true);
@@ -2196,6 +2253,10 @@ export class PlaneEditor {
       this.fillAt(g, p);
       return;
     }
+    if (g.kind === 'field') {
+      this.fieldMove(g, p);
+      return;
+    }
     if (g.kind === 'gradNew' || g.kind === 'gradEnd' || g.kind === 'gradStop' || g.kind === 'gradMid') {
       this.gradMove(g, p);
       return;
@@ -2294,7 +2355,7 @@ export class PlaneEditor {
       return;
     }
     this.gesture = null;
-    if (g.kind === 'fill') {
+    if (g.kind === 'fill' || g.kind === 'field') {
       if (this.history.commit(this.nodes)) this.changed();
       return;
     }
@@ -2957,6 +3018,136 @@ export class PlaneEditor {
     this.drawOverlay();
   }
 
+  // ------------------------------------------------------------------ Felder (Stufe 4)
+
+  private fieldInfo(): NonNullable<import('./ui').ContextExtra['field']> {
+    const fs = fieldNodesOf(this.nodes);
+    const f = fs.find((x) => x.id === this.fieldSel);
+    return { count: fs.length, sel: f ? { name: f.name, w: f.x1 - f.x0, h: f.y1 - f.y0 } : null };
+  }
+
+  /** Ecken eines Rechtecks der Spur-0-Ebene im Bild (unten links, unten rechts, oben rechts, oben links) */
+  private groundRect(r: { x0: number; x1: number; y0: number; y1: number }): Pt[] | null {
+    const pts = [
+      { x: r.x0, y: r.y0 },
+      { x: r.x1, y: r.y0 },
+      { x: r.x1, y: r.y1 },
+      { x: r.x0, y: r.y1 },
+    ].map((q) => this.screenOf(this.ground0, q));
+    return pts.every(Boolean) ? (pts as Pt[]) : null;
+  }
+
+  /** Felder als Rahmen in der Spur-0-Ebene; am gewählten Griffe und die Handy-Rahmen quer und hoch */
+  private fieldOverlay(st: ReturnType<typeof emptyOverlay>): void {
+    for (const f of fieldNodesOf(this.nodes)) {
+      const pts = this.groundRect(f);
+      if (!pts) continue;
+      const on = f.id === this.fieldSel;
+      st.fields.push({ pts, on, name: f.name });
+      if (!on) continue;
+      for (const fr of fieldFrames(f)) {
+        const fp = this.groundRect(fr);
+        if (fp) st.frames.push({ pts: fp, name: fr.name === 'quer' ? 'Handy quer' : 'Handy hoch' });
+      }
+      const [a, b, c, d] = pts;
+      const mid = (u: Pt, v: Pt): Pt => ({ x: (u.x + v.x) / 2, y: (u.y + v.y) / 2 });
+      st.handles.push(a, b, c, d, mid(a, b), mid(b, c), mid(c, d), mid(d, a));
+    }
+  }
+
+  /** Werkzeug Felder: Griff des gewählten Felds, sonst ein Feld unter dem Zeiger wählen und verschieben, sonst abwählen */
+  private fieldDown(pointerId: number, p: Pt): void {
+    const q = this.planePoint(this.ground0, p);
+    if (!q) return;
+    const fs = fieldNodesOf(this.nodes);
+    const r = this.overlay.handleSize + 6;
+    let grip: { f: ZoneFieldNode; mode: FieldGrip } | null = null;
+    const sel = fs.find((f) => f.id === this.fieldSel);
+    const pts = sel ? this.groundRect(sel) : null;
+    if (sel && pts) {
+      const [a, b, c, d] = pts;
+      const mid = (u: Pt, v: Pt): Pt => ({ x: (u.x + v.x) / 2, y: (u.y + v.y) / 2 });
+      const near = (u: Pt) => Math.hypot(u.x - p.x, u.y - p.y) <= r;
+      const spots: Array<[Pt, FieldGrip]> = [[a, 'sw'], [b, 'se'], [c, 'ne'], [d, 'nw'], [mid(a, b), 's'], [mid(b, c), 'e'], [mid(c, d), 'n'], [mid(d, a), 'w']];
+      const hit = spots.find(([u]) => near(u));
+      if (hit) grip = { f: sel, mode: hit[1] };
+      else {
+        // an einer Kante entlang (zwischen den Griffen)
+        const seg = (u: Pt, v: Pt) => {
+          const dx = v.x - u.x;
+          const dy = v.y - u.y;
+          const l2 = dx * dx + dy * dy || 1;
+          const k = Math.max(0, Math.min(1, ((p.x - u.x) * dx + (p.y - u.y) * dy) / l2));
+          return Math.hypot(u.x + dx * k - p.x, u.y + dy * k - p.y);
+        };
+        const edges: Array<[number, FieldGrip]> = [[seg(a, b), 's'], [seg(b, c), 'e'], [seg(c, d), 'n'], [seg(d, a), 'w']];
+        const e = edges.filter(([dd]) => dd <= r).sort((x, y) => x[0] - y[0])[0];
+        if (e) grip = { f: sel, mode: e[1] };
+      }
+    }
+    if (!grip) {
+      // das kleinste Feld unter dem Zeiger (Felder dürfen sich überlappen)
+      const inside = fs.filter((f) => q.x >= f.x0 && q.x <= f.x1 && q.y >= f.y0 && q.y <= f.y1).sort((x, y) => (x.x1 - x.x0) * (x.y1 - x.y0) - (y.x1 - y.x0) * (y.y1 - y.y0));
+      if (inside.length) grip = { f: inside[0], mode: 'move' };
+    }
+    if (!grip) {
+      this.fieldSel = null;
+      this.uiDirty = true;
+      this.drawOverlay();
+      return;
+    }
+    this.fieldSel = grip.f.id;
+    this.history.begin(this.nodes);
+    this.gesture = { kind: 'field', pointerId, id: grip.f.id, mode: grip.mode, start: q, orig: { x0: grip.f.x0, x1: grip.f.x1, y0: grip.f.y0, y1: grip.f.y1 } };
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
+  private fieldMove(g: Extract<Gesture, { kind: 'field' }>, p: Pt): void {
+    const f = this.nodes.find((n): n is ZoneFieldNode => isFieldNode(n) && n.id === g.id);
+    const q = this.planePoint(this.ground0, p);
+    if (!f || !q) return;
+    // halbe Meter (Felder sind grob; das Absperrband steht an ihrem Rand)
+    const snap = (v: number) => Math.round(v * 2) / 2;
+    const dx = q.x - g.start.x;
+    const dy = q.y - g.start.y;
+    const o = g.orig;
+    let { x0, x1, y0, y1 } = o;
+    if (g.mode === 'move') {
+      x0 = snap(o.x0 + dx);
+      y0 = snap(o.y0 + dy);
+      x1 = x0 + (o.x1 - o.x0);
+      y1 = y0 + (o.y1 - o.y0);
+    } else {
+      if (g.mode.includes('w')) x0 = Math.min(snap(o.x0 + dx), o.x1 - FIELD_MIN);
+      if (g.mode.includes('e')) x1 = Math.max(snap(o.x1 + dx), o.x0 + FIELD_MIN);
+      if (g.mode.includes('s')) y0 = Math.min(snap(o.y0 + dy), o.y1 - FIELD_MIN);
+      if (g.mode.includes('n')) y1 = Math.max(snap(o.y1 + dy), o.y0 + FIELD_MIN);
+    }
+    Object.assign(f, { x0, x1, y0, y1 });
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
+  /** neues Feld aus dem Bildausschnitt (der freie Bereich zwischen den Leisten, mit Rand), auf halbe Meter */
+  private fieldAdd(): void {
+    const fr = this.freeRect();
+    const a = this.planePoint(this.ground0, { x: fr.x0 + (fr.x1 - fr.x0) * 0.1, y: fr.y1 - (fr.y1 - fr.y0) * 0.1 });
+    const b = this.planePoint(this.ground0, { x: fr.x1 - (fr.x1 - fr.x0) * 0.1, y: fr.y0 + (fr.y1 - fr.y0) * 0.1 });
+    if (!a || !b) return;
+    const snap = (v: number) => Math.round(v * 2) / 2;
+    const x0 = snap(Math.min(a.x, b.x));
+    const y0 = snap(Math.min(a.y, b.y));
+    const x1 = Math.max(snap(Math.max(a.x, b.x)), x0 + FIELD_MIN);
+    const y1 = Math.max(snap(Math.max(a.y, b.y)), y0 + FIELD_MIN);
+    const id = nextNodeId(this.nodes, 'f');
+    this.edit(() => this.nodes.push({ id, kind: 'field', name: `Feld ${id.slice(1)}`, x0, x1, y0, y1 }));
+    this.fieldSel = id;
+    this.uiDirty = true;
+    this.drawOverlay();
+    this.ui.toast('Feld angelegt: Ecken und Kanten ziehen, innen verschieben; „Spielen“ fährt darin');
+  }
+
   // ------------------------------------------------------------------ Füllstapel (Stufe 3)
 
   /** Stil der Auswahl kopieren, einfügen, als Stil sichern, lösen (Leiste des Füllstapels, Cmd+Wahl+C/V) */
@@ -3507,6 +3698,7 @@ export class PlaneEditor {
     else if (k === 'i') this.setTool('pipette');
     else if (k === 'g') this.setTool('gradient');
     else if (k === 'd') this.setTool('dock');
+    else if (k === 'r') this.setTool('field');
     else if (k === '1') this.setView('game');
     else if (k === '2') this.setView('front');
     else if (k === '3') this.setView('free');

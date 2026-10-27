@@ -49,9 +49,13 @@ export interface OverlayState {
   hatch: Array<{ rings: Pt[][]; material: 'solid' | 'dig' | 'airy' }>;
   /** Station auf ihrer Andockkante (Rahmen des Bahnsteigs) */
   station: Pt[] | null;
+  /** Felder (Stufe 4): Umriss in der Spur-0-Ebene, das gewählte hervorgehoben, Name an der linken oberen Ecke */
+  fields: Array<{ pts: Pt[]; on: boolean; name: string }>;
+  /** Handy-Rahmen des gewählten Felds (quer, hoch): was die Kamera ganz herausgezoomt zeigt */
+  frames: Array<{ pts: Pt[]; name: string }>;
 }
 
-export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [], target: null, loupe: null, gradient: null, dock: [], hatch: [], station: null });
+export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [], target: null, loupe: null, gradient: null, dock: [], hatch: [], station: null, fields: [], frames: [] });
 
 const ring = (pts: Pt[]): string => (pts.length ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z` : '');
 const open = (pts: Pt[]): string => (pts.length > 1 ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}` : '');
@@ -79,6 +83,10 @@ export class EditorOverlay {
   private readonly dockOn = document.createElementNS(NS, 'path');
   private readonly stationPath = document.createElementNS(NS, 'path');
   private readonly dockOff = document.createElementNS(NS, 'path');
+  private readonly fieldPath = document.createElementNS(NS, 'path');
+  private readonly fieldOnPath = document.createElementNS(NS, 'path');
+  private readonly framePath = document.createElementNS(NS, 'path');
+  private readonly labelGroup = document.createElementNS(NS, 'g');
   /** Kantenlänge der Rahmen-Griffe (Pixel); auf Touch-Geräten größer */
   handleSize = 9;
 
@@ -115,7 +123,10 @@ export class EditorOverlay {
     this.dockOn.setAttribute('class', 'ze-dock');
     this.dockOff.setAttribute('class', 'ze-dock off');
     this.stationPath.setAttribute('class', 'ze-station');
-    this.el.append(defs, this.hatchPaths.solid, this.hatchPaths.dig, this.hatchPaths.airy, this.dockOff, this.dockOn, this.stationPath);
+    this.fieldPath.setAttribute('class', 'ze-field');
+    this.fieldOnPath.setAttribute('class', 'ze-field on');
+    this.framePath.setAttribute('class', 'ze-frame');
+    this.el.append(defs, this.hatchPaths.solid, this.hatchPaths.dig, this.hatchPaths.airy, this.dockOff, this.dockOn, this.stationPath, this.framePath, this.fieldPath, this.fieldOnPath, this.labelGroup);
     this.el.append(this.targetPath, this.gradGroup, this.loupeRing, this.gridPath, this.groupPath, this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.regionPath, this.tangentPath, this.anchorGroup, this.knobGroup, this.handleGroup, this.snapRing);
   }
 
@@ -165,6 +176,23 @@ export class EditorOverlay {
     this.dockOn.setAttribute('d', s.dock.filter((d) => !d.off).map((d) => open(d.pts)).join(''));
     this.dockOff.setAttribute('d', s.dock.filter((d) => d.off).map((d) => open(d.pts)).join(''));
     this.stationPath.setAttribute('d', s.station ? ring(s.station) : '');
+    this.fieldPath.setAttribute('d', s.fields.filter((f) => !f.on).map((f) => ring(f.pts)).join(''));
+    this.fieldOnPath.setAttribute('d', s.fields.filter((f) => f.on).map((f) => ring(f.pts)).join(''));
+    this.framePath.setAttribute('d', s.frames.map((f) => ring(f.pts)).join(''));
+    // Namen: Felder an ihrer linken oberen Ecke, Rahmen an ihrer
+    const labels = [...s.fields.map((f) => ({ at: f.pts[3], text: f.name })), ...s.frames.map((f) => ({ at: f.pts[3], text: f.name }))].filter((l) => !!l.at);
+    while (this.labelGroup.childNodes.length > labels.length) this.labelGroup.lastChild!.remove();
+    while (this.labelGroup.childNodes.length < labels.length) {
+      const t = document.createElementNS(NS, 'text');
+      t.setAttribute('class', 'ze-flabel');
+      this.labelGroup.append(t);
+    }
+    labels.forEach((l, i) => {
+      const t = this.labelGroup.childNodes[i] as SVGTextElement;
+      t.setAttribute('x', (l.at.x + 6).toFixed(1));
+      t.setAttribute('y', (l.at.y + 16).toFixed(1));
+      t.textContent = l.text;
+    });
     this.drawGradient(s.gradient);
     this.loupeRing.style.display = s.loupe ? '' : 'none';
     if (s.loupe) {

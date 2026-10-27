@@ -849,8 +849,19 @@ Plan: `docs/ZONENEDITOR-PLAN.md`, Stufe 4 und 4.9. Ohne DOM: `src/zone/dock.ts`,
   wölbt eine lange Gerade sonst um Meter auf). Eine Bodenkante dockt nur an, wenn in ihrer Ebene nichts Festes darüber
   liegt: Höhlenboden und Höhlenwand liegen darum auf eigenen Ebenen, und die Bögen des Plateaus sind Löcher mit Schwelle
   (nur durch ein Loch geht der Pinsel nach hinten, unten offene Bögen lassen ihn vorn).
-- **Startbild:** Hat die Zone Felder, beginnt der Zonen-Editor mit dem ersten Feld im Bild (`fitBounds` mit 2 % Rand);
-  sonst wie bisher an der Station.
+- **Felder** (`ZoneFieldNode`, Kennung `f…`, Plan 4.9): Rechteck in Metern der Spur-0-Ebene wie `ZoneField`; Ziele,
+  Stufe und Schalter reisen in `rest` unverändert mit. `fieldsOf(zone)` gibt die Feldknoten als `ZoneField` (über
+  `parseField`), sonst die Felder des Klötzchen-Editors; der Zonen-Editor übernimmt diese beim Laden als Knoten
+  (`fieldToNode`) und schreibt sie beim Sichern als Spiegel zurück nach `zone.fields`. Werkzeug R (`fieldDown`,
+  `fieldMove`, `fieldOverlay`, `fieldAdd`): antippen wählt (das kleinste unter dem Zeiger), acht Griffe und die Kanten
+  ziehen, innen verschieben, auf halbe Meter, mindestens `FIELD_MIN` (10 m); Rückgängig über die Knoten. `fieldFrames`
+  rechnet die Handy-Rahmen (19,5 : 9 quer und hoch, Platzhalter) wie `Camera.fitBounds` mit 2 % Rand: was das Spiel im
+  Feld ganz herausgezoomt zeigt. Beim Spielen im Editor (`editorField`) gilt das Feld mit der Station (sonst das erste)
+  über `setActiveField` wie am Handy (weiche Kamerabegrenzung, Zoom-Grenze, Absperrband, Ziele, Schalter); beim Bauen
+  ist die Kamera wieder frei.
+- **Startbild:** Hat die Zone Felder, beginnt der Zonen-Editor mit dem ersten Feld im freien Bereich zwischen den Leisten
+  (`EditorUi.freeRect`: rechts der Werkzeuge, links der Ebenenliste, unter Kopf- und Ansichtsleiste, über der Leiste
+  unten; 8 % Rand), damit seine Kanten greifbar sind; sonst wie bisher an der Station.
 - **Prüfungen:** `tests/dock.test.ts`, `tests/planeStack.test.ts`; Szenario 24 (Andockkanten, Material, Handy-Link),
   25 (Station, Strich über der Kante: Tiefe der Ebene, Stützen auf Kanten, Fahrt), 26 (Höhle: Strich durch den Mund
   landet auf der Rückwand, Stützen auf dem unteren Rand der Öffnung), 27 (die drei Testszenen: Startbild, Station,

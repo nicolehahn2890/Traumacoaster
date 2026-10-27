@@ -13,7 +13,7 @@ import { VIEW_WORDS, type ViewMode } from './views';
 import { COLOR_CSS, ColorMenu, type ColorMenuHost } from './colorMenu';
 import { STACK_CSS, StackPanel, type StackActions, type StackView } from './stackPanel';
 
-export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch' | 'gradient' | 'pipette' | 'dock';
+export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch' | 'gradient' | 'pipette' | 'dock' | 'field';
 export type Isolate = 'off' | 'front' | 'only';
 export const ISOLATE_WORDS: Record<Isolate, string> = { off: 'alle Ebenen', front: 'davor ausgeblendet', only: 'nur diese' };
 
@@ -78,6 +78,10 @@ export interface UiActions extends StackActions {
   stationPlace(): void;
   stationFlip(): void;
   stationRemove(): void;
+  /** Felder (Stufe 4): neues Feld aus dem Bildausschnitt, das gewählte umbenennen oder entfernen */
+  fieldAdd(): void;
+  fieldRename(): void;
+  fieldRemove(): void;
   /** Verlaufswerkzeug: Art (Farbe, Deckkraft), linear oder radial, umkehren, Deckkraft des Stopps, Stopp löschen, Verlauf entfernen */
   gradKind(kind: 'gradient' | 'fade'): void;
   gradRadial(radial: boolean): void;
@@ -138,6 +142,8 @@ export interface ContextExtra {
   material?: Material | 'mixed' | null;
   /** Werkzeug Andockkanten: Zahl der Kanten, angetippte Fläche (Name, Material) */
   dock?: { edges: number; off: number; face: { name: string; material: Material } | null; station: { has: boolean; placing: boolean; ok: boolean } } | null;
+  /** Werkzeug Felder: Zahl der Felder, das gewählte (Name, Breite, Höhe in Metern) */
+  field?: { count: number; sel: { name: string; w: number; h: number } | null } | null;
 }
 
 export interface LayerRow {
@@ -174,6 +180,10 @@ const CSS = `
 .ze-dock.off{stroke:rgba(255,255,255,.55);stroke-width:2;stroke-dasharray:4 5}
 .ze-hatch{stroke:none}
 .ze-station{fill:rgba(255,170,70,.35);stroke:#ffaa46;stroke-width:2}
+.ze-field{fill:none;stroke:rgba(255,255,255,.75);stroke-width:1.5;stroke-dasharray:7 5;filter:drop-shadow(0 1px 1px rgba(0,0,0,.45))}
+.ze-field.on{stroke:#ffd166;stroke-width:2.5;stroke-dasharray:none;fill:rgba(255,209,102,.06)}
+.ze-frame{fill:none;stroke:rgba(255,209,102,.8);stroke-width:1.2;stroke-dasharray:2 4}
+.ze-flabel{font:600 12px system-ui,sans-serif;fill:#fff;paint-order:stroke;stroke:rgba(0,0,0,.55);stroke-width:3px}
 .ze-gline-under{stroke:rgba(0,0,0,.55);stroke-width:4;stroke-linecap:round}
 .ze-gline{stroke:#ffffff;stroke-width:1.6;stroke-linecap:round}
 .ze-gcircle{fill:none;stroke:#ffffff;stroke-width:1;stroke-dasharray:4 4;opacity:.8}
@@ -286,6 +296,7 @@ const ICONS: Record<Tool, string> = {
   gradient: '<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M7 15l10-6"/><circle cx="7" cy="15" r="1.8" fill="#16181c"/><circle cx="17" cy="9" r="1.8" fill="currentColor"/></svg>',
   pipette: '<svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5M13 6l5 5-9 9H4v-5z"/><path d="M16.5 2.5a2.1 2.1 0 0 1 3 0l2 2a2.1 2.1 0 0 1 0 3L19 10"/></svg>',
   dock: '<svg viewBox="0 0 24 24"><path d="M3 13c3-3 6-4 9-4s6 1 9 4" stroke-width="2.4"/><path d="M5 21l2-6M12 21v-8M19 21l-2-6" stroke-width="1.4"/></svg>',
+  field: '<svg viewBox="0 0 24 24"><path d="M3 8V4h4M17 4h4v4M21 16v4h-4M7 20H3v-4" stroke-width="2"/><rect x="7" y="8" width="10" height="8" rx="1" stroke-width="1.2" stroke-dasharray="2 2"/></svg>',
 };
 const EYE = '<svg viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>';
 const EYE_OFF = '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1C11 6 11.5 6 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.2 3.8M6.2 7.6A16.6 16.6 0 0 0 2 12s3.5 6 10 6c1.7 0 3.2-.4 4.4-1"/></svg>';
@@ -333,8 +344,9 @@ const TOOL_TITLES: Record<Tool, string> = {
   gradient: 'Verlauf (G): über eine Fläche ziehen; Enden, Stopps und Mitten am Objekt ziehen, auf die Linie tippen gibt einen Stopp',
   pipette: 'Pipette (I): Farbe aus dem Bild aufnehmen; am iPad auch mit dem Finger lange halten',
   dock: 'Andockkanten (D): grüne Oberkanten tragen Bahn und Stützen; eine Kante antippen schaltet ihr Stück aus und an, eine Fläche antippen zeigt ihr Material (Schraffur: fest dicht, grabbar weit, luftig gepunktet)',
+  field: 'Felder (R): Spielbereich mit Kamerabegrenzung; ein Feld antippen, Ecken und Kanten ziehen, innen verschieben; die Rahmen zeigen, was das Handy quer und hoch höchstens sieht',
 };
-const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse', 'arch', 'gradient', 'pipette', 'dock'];
+const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse', 'arch', 'gradient', 'pipette', 'dock', 'field'];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -417,6 +429,27 @@ export class EditorUi {
   private readonly banner = el('div', 'ze-panel ze-banner');
   private readonly bannerText = el('span');
   private toastTimer = 0;
+
+  /**
+   * freier Bildbereich zwischen den Leisten (Bildschirm-Pixel): rechts von den Werkzeugen, links von der Ebenenliste,
+   * unter Kopf- und Ansichtsleiste, über der Leiste unten (ausgeblendete Leisten zählen nicht)
+   */
+  freeRect(width: number, height: number): { x0: number; y0: number; x1: number; y1: number } {
+    const box = (e: HTMLElement) => {
+      const r = e.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && getComputedStyle(e).display !== 'none' ? r : null;
+    };
+    const t = box(this.tools);
+    const l = box(this.layers);
+    const heads = [box(this.top), box(this.views)].filter((r): r is DOMRect => !!r);
+    const c = box(this.context);
+    return {
+      x0: t ? t.right + 12 : 0,
+      x1: l ? l.left - 12 : width,
+      y0: heads.length ? Math.max(...heads.map((r) => r.bottom)) + 12 : 0,
+      y1: c ? c.top - 12 : height,
+    };
+  }
   /** Zeile, deren Name gerade bearbeitet wird (dann nicht neu aufbauen) */
   private editing: string | null = null;
   /** gerade gezogene Abstandspille, Tiefe oder Zeile (dann nur Zahlen nachführen) */
@@ -1099,14 +1132,14 @@ export class EditorUi {
    * gewählte Formen Farbe und Reihenfolge, sonst für die gewählten Ebenen Rolle und Isolieren
    */
   setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false, extra: ContextExtra = {}): void {
-    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null, filling = null, grad = null, dropChoice = null, material = null, dock = null } = extra;
+    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null, filling = null, grad = null, dropChoice = null, material = null, dock = null, field = null } = extra;
     const plane = planes.at(-1) ?? null;
     const shape = shapes.at(-1) ?? null;
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
     const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : path.kind === 'band' ? `b|${path.shape}` : `l|${path.form}|${path.count}|${path.smooth}`;
     const gi = units ?? { units: shapes.length, groups: 0, inside: false };
     const numKey = this.sub === 'numbers' && nums ? `${[nums.x, nums.y, nums.w, nums.h].map((v) => v.toFixed(2)).join(',')}|${this.keepRatio}` : `${!!nums}`;
-    const key = dropChoice ? `drop|${dropChoice}` : filling ? `fill|${filling}` : grad ? `grad|${JSON.stringify(grad)}` : dock ? `dock|${JSON.stringify(dock)}|${this.sub}` : path ? `${pk}|${material}|${this.sub}` : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
+    const key = dropChoice ? `drop|${dropChoice}` : filling ? `fill|${filling}` : grad ? `grad|${JSON.stringify(grad)}` : dock ? `dock|${JSON.stringify(dock)}|${this.sub}` : field ? `field|${JSON.stringify(field)}` : path ? `${pk}|${material}|${this.sub}` : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
     this.context.replaceChildren();
@@ -1128,6 +1161,12 @@ export class EditorUi {
         button('Als Verlaufsstopp', 'Dort, wo die Farbe fiel, einen Stopp mit dieser Farbe in den Verlauf setzen', () => this.a.dropChoice('stop')),
         button('Abbrechen', 'Nichts ändern (Esc)', () => this.a.dropChoice('cancel')),
       );
+    } else if (field) {
+      // Werkzeug Felder: das gewählte mit Maßen, sonst ein Hinweis; anlegen immer, umbenennen und entfernen am gewählten
+      if (field.sel) this.context.append(el('span', 'ze-label', `${field.sel.name} · ${Math.round(field.sel.w)} × ${Math.round(field.sel.h)} m · Rahmen: quer und hoch auf dem Handy`));
+      else this.context.append(el('span', 'ze-label', field.count ? 'Ein Feld antippen: Ecken und Kanten ziehen, innen verschieben' : 'Kein Feld: „Feld anlegen“ rahmt den Bildausschnitt'));
+      this.context.append(el('span', 'ze-sep'), button('Feld anlegen', 'Neues Feld aus dem Bildausschnitt', () => this.a.fieldAdd()));
+      if (field.sel) this.context.append(button('Umbenennen', 'Name des Felds', () => this.a.fieldRename()), button('Feld entfernen', 'Das gewählte Feld löschen', () => this.a.fieldRemove()));
     } else if (dock) {
       // Werkzeug Andockkanten: Zahlen, und für die angetippte Fläche ihr Material
       if (dock.station.placing) {

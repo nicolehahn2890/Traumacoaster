@@ -13,7 +13,7 @@ import { COIN_SHAPES, type ZoneCoinGroup } from './groups';
 import { ZONE_ABILITIES, type FieldAbilityOverrides, type ZoneAbility, type ZoneUpgrade } from './abilities';
 import { LOOK_NAMES, type LookName } from '@/world/looks';
 import { cleanPath, pathBounds, presetPath, type ZonePath } from './path';
-import { parseNodes, serializeNodes, type ZoneNode } from './nodes';
+import { isFieldNode, parseNodes, serializeNodes, type ZoneFieldNode, type ZoneNode } from './nodes';
 export type { PathPoint, ZonePath } from './path';
 export type { FieldAbilityOverrides, ZoneAbility, ZoneUpgrade } from './abilities';
 
@@ -316,6 +316,63 @@ function parsePath(v: unknown): ZonePath | null {
   return cleanPath(out);
 }
 
+/** ein Feld der Zonendatei lesen (Klötzchen-Editor und Feldknoten des Zonen-Editors), null, wenn es keins ist */
+export function parseField(raw: unknown): ZoneField | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const f = raw as Record<string, unknown>;
+  if (typeof f.id !== 'string' || !num(f.x0) || !num(f.x1) || !num(f.y0) || !num(f.y1)) return null;
+  const beltOf = (v: unknown): BeltLevel | undefined => (num(v) ? (Math.max(0, Math.min(4, Math.floor(v))) as BeltLevel) : undefined);
+  const abilityList = (v: unknown): ZoneAbility[] | undefined => {
+    if (!Array.isArray(v)) return undefined;
+    const out = v.filter((a, i, arr) => (ZONE_ABILITIES as readonly string[]).includes(String(a)) && arr.indexOf(a) === i) as ZoneAbility[];
+    return out.length ? out : undefined;
+  };
+  const field: ZoneField = { id: f.id, x0: Math.min(f.x0, f.x1), x1: Math.max(f.x0, f.x1), y0: Math.min(f.y0, f.y1), y1: Math.max(f.y0, f.y1) };
+  if (typeof f.name === 'string') field.name = f.name.slice(0, 40);
+  if (Array.isArray(f.goals)) {
+    const goals: ZoneGoal[] = [];
+    for (const raw2 of f.goals) {
+      const g = raw2 as Record<string, unknown>;
+      if (!g || !(ZONE_GOAL_TYPES as readonly string[]).includes(String(g.type))) continue;
+      const goal: ZoneGoal = { type: g.type as GoalType };
+      if (num(g.value)) goal.value = g.value;
+      if (g.bonus === true) goal.bonus = true;
+      goals.push(goal);
+    }
+    if (goals.length) field.goals = goals.slice(0, 6);
+  }
+  if (num(f.stage) && f.stage >= 0) field.stage = Math.min(9, Math.floor(f.stage));
+  if (num(f.upgrade) && f.upgrade >= 0) field.upgrade = Math.min(9, Math.floor(f.upgrade));
+  // Überschreibungen des Felds (Plan 3.1, 2.1)
+  const on = abilityList(f.on);
+  if (on) field.on = on;
+  const off = abilityList(f.off);
+  if (off) field.off = off;
+  const belt = beltOf(f.belt);
+  if (belt !== undefined) field.belt = belt;
+  if (num(f.chain) && f.chain > 0) field.chain = f.chain;
+  if (num(f.budget) && f.budget > 0) field.budget = f.budget;
+  if (num(f.maxHeight) && f.maxHeight > 0) field.maxHeight = f.maxHeight;
+  if (num(f.lift) && f.lift > 0) field.lift = f.lift;
+  return field;
+}
+
+/**
+ * Felder der Zone: die Feldknoten des Zonen-Editors (Stufe 4), sonst die Felder des Klötzchen-Editors. Ziele, Stufen und
+ * Schalter eines Feldknotens stehen in seinem rest
+ */
+export function fieldsOf(zone: ZoneFile): ZoneField[] {
+  const nodes = (zone.nodes ?? []).filter(isFieldNode);
+  if (!nodes.length) return zone.fields;
+  return nodes.map((n) => parseField({ ...(n.rest ?? {}), id: n.id, name: n.name, x0: n.x0, x1: n.x1, y0: n.y0, y1: n.y1 })).filter((f): f is ZoneField => !!f);
+}
+
+/** Feld des Klötzchen-Editors als Feldknoten (Ziele, Stufen und Schalter in rest) */
+export function fieldToNode(f: ZoneField): ZoneFieldNode {
+  const { id, name, x0, x1, y0, y1, ...rest } = f;
+  return { id, kind: 'field', name: name ?? id, x0, x1, y0, y1, ...(Object.keys(rest).length ? { rest: JSON.parse(JSON.stringify(rest)) as Record<string, unknown> } : {}) };
+}
+
 /** Zonendatei prüfen: unbekannte Felder bleiben erhalten, falsche Elemente fallen weg; null, wenn die Datei keine Zone ist */
 export function parseZone(json: unknown): ZoneFile | null {
   if (!json || typeof json !== 'object') return null;
@@ -391,36 +448,8 @@ export function parseZone(json: unknown): ZoneFile | null {
   const fields: ZoneField[] = [];
   const fieldIds = new Set<string>();
   for (const raw of Array.isArray(o.fields) ? o.fields : []) {
-    if (!raw || typeof raw !== 'object') continue;
-    const f = raw as Record<string, unknown>;
-    if (typeof f.id !== 'string' || fieldIds.has(f.id) || !num(f.x0) || !num(f.x1) || !num(f.y0) || !num(f.y1)) continue;
-    const field: ZoneField = { id: f.id, x0: Math.min(f.x0, f.x1), x1: Math.max(f.x0, f.x1), y0: Math.min(f.y0, f.y1), y1: Math.max(f.y0, f.y1) };
-    if (typeof f.name === 'string') field.name = f.name.slice(0, 40);
-    if (Array.isArray(f.goals)) {
-      const goals: ZoneGoal[] = [];
-      for (const raw2 of f.goals) {
-        const g = raw2 as Record<string, unknown>;
-        if (!g || !(ZONE_GOAL_TYPES as readonly string[]).includes(String(g.type))) continue;
-        const goal: ZoneGoal = { type: g.type as GoalType };
-        if (num(g.value)) goal.value = g.value;
-        if (g.bonus === true) goal.bonus = true;
-        goals.push(goal);
-      }
-      if (goals.length) field.goals = goals.slice(0, 6);
-    }
-    if (num(f.stage) && f.stage >= 0) field.stage = Math.min(9, Math.floor(f.stage));
-    if (num(f.upgrade) && f.upgrade >= 0) field.upgrade = Math.min(9, Math.floor(f.upgrade));
-    // Überschreibungen des Felds (Plan 3.1, 2.1)
-    const on = abilityList(f.on);
-    if (on) field.on = on;
-    const off = abilityList(f.off);
-    if (off) field.off = off;
-    const belt = beltOf(f.belt);
-    if (belt !== undefined) field.belt = belt;
-    if (num(f.chain) && f.chain > 0) field.chain = f.chain;
-    if (num(f.budget) && f.budget > 0) field.budget = f.budget;
-    if (num(f.maxHeight) && f.maxHeight > 0) field.maxHeight = f.maxHeight;
-    if (num(f.lift) && f.lift > 0) field.lift = f.lift;
+    const field = parseField(raw);
+    if (!field || fieldIds.has(field.id)) continue;
     fieldIds.add(field.id);
     fields.push(field);
   }

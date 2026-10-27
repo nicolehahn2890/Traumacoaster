@@ -2079,9 +2079,16 @@ if (want('27')) {
       const ed = s.planeEditor;
       const planes = ed.nodes.filter((n) => n.kind === 'plane');
       const st = ed.nodes.find((n) => n.kind === 'station');
-      return { cx: v.cx, cy: v.cy, planes: planes.length, shapes: ed.nodes.filter((n) => n.kind === 'shape').length, station: st ? { plane: planes.find((p) => p.id === st.parent)?.name, x: st.x } : null, lanes: Object.fromEntries(planes.map((p) => [p.name, (p.z - 1) / 8.4])) };
+      // Ecken des Felds im Bild (Spur-0-Ebene) gegen den freien Bereich zwischen den Leisten
+      const g = { id: '_t', kind: 'plane', parent: null, name: '', z: 0, x: 0, y: 0, scale: 1, role: 'play' };
+      const fr = ed.freeRect();
+      const inside = [[0, -10], [120, -10], [120, 55], [0, 55]].every(([x, y]) => {
+        const q = ed.screenOf(g, { x, y });
+        return q && q.x >= fr.x0 && q.x <= fr.x1 && q.y >= fr.y0 && q.y <= fr.y1;
+      });
+      return { inside, zoom: v.zoom, planes: planes.length, shapes: ed.nodes.filter((n) => n.kind === 'shape').length, station: st ? { plane: planes.find((p) => p.id === st.parent)?.name, x: st.x } : null, lanes: Object.fromEntries(planes.map((p) => [p.name, (p.z - 1) / 8.4])) };
     });
-    check(Math.abs(start.cx - 60) < 0.5 && Math.abs(start.cy - 22.5) < 0.5, `${sc.zone}: Editor startet mit dem Feld im Bild (Mitte ${start.cx.toFixed(1)}, ${start.cy.toFixed(1)}; ${start.planes} Ebenen, ${start.shapes} Formen)`);
+    check(start.inside, `${sc.zone}: Editor startet mit dem ganzen Feld im freien Bereich zwischen den Leisten (Zoom ${start.zoom.toFixed(1)}; ${start.planes} Ebenen, ${start.shapes} Formen)`);
     await page.keyboard.press('Tab');
     await sleep(1500);
     const piece = await page.evaluate(() => {
@@ -2147,6 +2154,70 @@ if (want('27')) {
     }
     check(ride && (ride.t > 1 || ride.mode === 'result'), `${sc.zone}: Fahrt läuft (${ride?.mode}, ${Number(ride?.t ?? 0).toFixed(1)} s${ride?.fail ? `, ${ride.fail}` : ''})`);
   }
+}
+
+// 28. Zonen-Editor, Stufe 4: Felder (Werkzeug R). Ein Feld antippen wählt es (Maße in der Leiste, Handy-Rahmen quer und
+// hoch), die rechte Kante ziehen macht es breiter (Rückgängig stellt es zurück), „Feld anlegen“ und „Feld entfernen“;
+// beim Spielen gilt das Feld wie am Handy (Kamera weich begrenzt), beim Bauen ist die Kamera wieder frei.
+if (want('28')) {
+  await page.goto(`${BASE}?zone=test-huegel&editor=2&dev=1&fast=6`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  await page.keyboard.press('r');
+  await sleep(200);
+  const ed = () => page.evaluate(() => {
+    const e = window.tcGame.current.planeEditor;
+    const fs = e.nodes.filter((n) => n.kind === 'field');
+    return { fields: fs.map((f) => ({ id: f.id, x0: f.x0, x1: f.x1, y0: f.y0, y1: f.y1 })), bar: document.querySelector('.ze-context')?.textContent ?? '', frames: document.querySelectorAll('.ze-frame').length ? document.querySelector('.ze-frame').getAttribute('d')?.split('M').length - 1 : 0 };
+  });
+  const s0 = await ed();
+  check(s0.fields.length === 1 && /Ein Feld antippen/.test(s0.bar), `Werkzeug Felder: das Feld der Testszene, noch keins gewählt (${s0.fields.length})`);
+  // innen antippen: gewählt, Maße und Rahmen
+  const inner = await page.evaluate(() => {
+    const e = window.tcGame.current.planeEditor;
+    const g = { id: '_t', kind: 'plane', parent: null, name: '', z: 0, x: 0, y: 0, scale: 1, role: 'play' };
+    return { mid: e.screenOf(g, { x: 40, y: 20 }), right: e.screenOf(g, { x: 120, y: 22.5 }) };
+  });
+  await page.mouse.click(inner.mid.x, inner.mid.y);
+  await sleep(200);
+  const s1 = await ed();
+  check(/Test · 120 × 65 m/.test(s1.bar) && s1.frames === 2, `Feld gewählt: Maße in der Leiste, zwei Handy-Rahmen (${s1.bar.slice(0, 40)}…, Rahmen ${s1.frames})`);
+  // rechte Kante 100 px nach rechts
+  await page.mouse.move(inner.right.x, inner.right.y);
+  await page.mouse.down();
+  for (let k = 1; k <= 10; k++) await page.mouse.move(inner.right.x + k * 10, inner.right.y);
+  await page.mouse.up();
+  await sleep(200);
+  const s2 = await ed();
+  const wider = s2.fields[0].x1 - 120;
+  // 100 px beim Zoom des Startbilds (auf halbe Meter)
+  const want28 = 100 / (await page.evaluate(() => window.tcGame.current.view.cameraView().zoom));
+  check(Math.abs(wider - want28) < 1.5 && s2.fields[0].x0 === 0, `Rechte Kante gezogen: Feld ${wider.toFixed(1)} m breiter (100 px = ${want28.toFixed(1)} m), linke Kante bleibt`);
+  await page.keyboard.press('Meta+z');
+  await sleep(200);
+  const s3 = await ed();
+  check(s3.fields[0].x1 === 120, `Rückgängig: Feld wieder 120 m breit (${s3.fields[0].x1})`);
+  await page.click('.ze-context .ze-btn:text-is("Feld anlegen")');
+  await sleep(200);
+  const s4 = await ed();
+  check(s4.fields.length === 2 && /Feld 2/.test(s4.bar), `Feld anlegen: zweites Feld, gewählt (${s4.fields.length})`);
+  await page.click('.ze-context .ze-btn:text-is("Feld entfernen")');
+  await sleep(200);
+  const s5 = await ed();
+  const mirror = await page.evaluate(() => window.tcGame.current.sandbox?.zone?.fields?.map((f) => f.id) ?? null);
+  check(s5.fields.length === 1 && mirror?.join(',') === 'f1', `Feld entfernen: wieder eins, die Felder der Zonendatei folgen (${s5.fields.length}; ${mirror?.join(',')})`);
+  // spielen: das Feld der Station gilt (Kamera weich begrenzt), bauen: frei
+  await page.keyboard.press('Tab');
+  await sleep(800);
+  const play = await page.evaluate(() => {
+    const s = window.tcGame.current;
+    const b = s.view.camera.softBounds;
+    return { field: s.activeField?.id ?? null, bounds: b ? [b.minX, b.maxX, b.minY, b.maxY] : null, minZoom: s.view.camera.minZoom };
+  });
+  check(play.field === 'f1' && play.bounds?.join(',') === '0,120,-10,55', `Spielen: Feld f1 aktiv, Kamera begrenzt (${play.bounds?.join(', ')}; Zoom ab ${play.minZoom?.toFixed(1)})`);
+  await page.keyboard.press('Tab');
+  await sleep(400);
+  const build = await page.evaluate(() => ({ field: window.tcGame.current.activeField?.id ?? null, bounds: window.tcGame.current.view.camera.softBounds }));
+  check(build.field === null && !build.bounds, `Bauen: kein Feld aktiv, Kamera frei`);
 }
 
 await browser.close();

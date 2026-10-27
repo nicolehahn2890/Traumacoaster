@@ -17,7 +17,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanPath, flattenPath, smoothPath, translatePath, type Poly, type ZonePath } from '../src/zone/path';
-import { holdPicture, type HoldView, type Material, type PlaneRole, type ZoneAir, type ZoneGroup, type ZoneNode, type ZonePlane, type ZoneShape, type ZoneStationNode } from '../src/zone/nodes';
+import { holdPicture, type HoldView, type Material, type PlaneRole, type ZoneAir, type ZoneFieldNode, type ZoneGroup, type ZoneNode, type ZonePlane, type ZoneShape, type ZoneStationNode } from '../src/zone/nodes';
 import type { GradientFill, ZoneSwatch } from '../src/zone/paint';
 import { dockEdges, stationOf } from '../src/zone/dock';
 import { emptyZone, parseZone, serializeZone } from '../src/zone/types';
@@ -218,6 +218,7 @@ function build(scene: SceneSpec): ZoneNode[] {
   const st = planeIds.get(scene.station.plane);
   if (!st) throw new Error(`Station: Ebene ${scene.station.plane} fehlt`);
   nodes.push({ id: 'station', kind: 'station', parent: st, x: scene.station.x, dir: 1, length: 14 } satisfies ZoneStationNode);
+  nodes.push({ id: 'f1', kind: 'field', name: 'Test', ...FIELD } satisfies ZoneFieldNode);
   return nodes;
 }
 
@@ -473,6 +474,7 @@ function boegen(): SceneSpec {
 for (const scene of [huegel(), grotte(), boegen()]) {
   seed = 7;
   const nodes = build(scene);
+  // das Feld als Feldknoten (Zonen-Editor) und als Spiegel in den Feldern der Zonendatei (Klötzchen-Editor)
   const zone = { ...emptyZone(scene.name, FIELD.x1 - FIELD.x0, 'steel'), fields: [{ id: 'f1', name: 'Test', ...FIELD }], nodes };
   const text = serializeZone(zone);
   const back = parseZone(JSON.parse(text));

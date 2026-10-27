@@ -1069,9 +1069,17 @@ Etappe 2); Bahn durch die Höhle gezeichnet und gefahren, Stützen auf Kanten; R
   Festen, Fuß dort, wo die Stütze im Bild hinter einer Fläche verschwindet) und Fahrt (Tunnel) lesen es. Szenarien 25 bis
   27 grün. **Rest:** In den Testszenen schweben noch 2 bis 4 Stützen je Strich, vor allem vor steilen Wänden ohne Kante
   darunter (Grotte, Bogenland); ob es dort Wandhalter geben soll, ist eine Gestaltungsfrage für Florian.
-**Noch offen aus Stufe 4:** die übrigen Spielobjekte auf Kanten (Schlange,
-Felder mit Kamerabegrenzung und Rahmen, Ziele, Stufen, Schalter, Coins, Baustellen; bis dahin der Klötzchen-Editor),
-Feldrahmen, Durchblick-Prüfung. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
+- *Felder mit Kamerabegrenzung und Rahmen* (27.10.): Werkzeug R im Zonen-Editor; ein Feld antippen, Ecken und Kanten
+  ziehen, innen verschieben, „Feld anlegen“, „Umbenennen“, „Feld entfernen“; am gewählten Feld zeigen zwei gestrichelte
+  Rahmen, was das Handy quer und hoch ganz herausgezoomt zeigt (gerechnet für 19,5 : 9; **Deutung** von „Rahmen für Hoch-
+  und Querformat“, eigene Rahmen je Format zum Ziehen gibt es noch nicht). Beim Spielen gilt das Feld der Station wie am
+  Handy (Kamera weich begrenzt, Zoom-Grenze, Absperrband), beim Bauen ist die Kamera frei. Felder sind Knoten der Zone
+  (Rückgängig, Sicherungskopie); Felder aus dem Klötzchen-Editor werden beim Laden übernommen und beim Sichern
+  zurückgespiegelt. Der Editor startet mit dem ersten Feld im freien Bereich zwischen den Leisten. Szenario 28.
+  **Noch nicht im Zonen-Editor:** Ziele, Fortschritts- und Aufwertungsstufe, Schalter eines Felds (sie bleiben erhalten,
+  bearbeitet werden sie bis dahin im Klötzchen-Editor).
+**Noch offen aus Stufe 4:** die übrigen Spielobjekte auf Kanten (Schlange, Ziele, Stufen, Schalter, Coins, Baustellen;
+bis dahin der Klötzchen-Editor), Durchblick-Prüfung. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
 lang, die Schraffuren. **Nicht geprüft:** Szene 06 in Formen (Tor S4), Stroke-Replay mit dem Ebenen-Pinsel (der Replay
 kennt den Modus nicht), 60 fps am Handy.
 
