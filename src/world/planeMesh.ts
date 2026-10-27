@@ -17,7 +17,7 @@
  */
 import { BufferAttribute, BufferGeometry, DataTexture, DoubleSide, FloatType, Group, Mesh, NearestFilter, RGBAFormat, ShaderMaterial, ShapeUtils, UniformsLib, UniformsUtils, Vector2, Vector3, type IUniform, type Raycaster } from 'three';
 import { airAmount, airOf, facePaint, planeHidden, planesOf, shapeFaces, shapesOf, styleMap, swatchMap, type ZoneNode, type ZonePlane, type ZoneShape } from '@/zone/nodes';
-import { BLEND_MODES, MAX_LAYERS, RAMP, hexToRgb, layersClear, paintLayers, rampOf, resolveColor, type Box, type SwatchMap, type ZoneFill } from '@/zone/paint';
+import { BLEND_MODES, MAX_LAYERS, RAMP, hexToRgb, layersClear, paintLayers, rampOf, resolveColor, visibleLayers, type Box, type SwatchMap, type ZoneFill } from '@/zone/paint';
 import { faceBox, type Face } from '@/zone/faces';
 import type { LookName } from './looks';
 
@@ -104,7 +104,8 @@ void main() {
   vec4 hf = texelFetch(uPaint, ivec2(0, vRows.x), 0);
   vec4 hp = texelFetch(uPaint, ivec2(0, vRows.y), 0);
   vSolid = vec4(0.0);
-  if (hf.x < 1.5 && hp.x < 0.5 && hf.y > 0.999) vSolid = vec4(mix(texelFetch(uPaint, ivec2(2, vRows.x), 0).rgb, uAir, hp.z), 1.0);
+  // (eine einzige Schicht, und sie ist eine Farbe: nach dem Kürzen verdeckter Schichten kann es auch ein Verlauf sein)
+  if (hf.x < 1.5 && texelFetch(uPaint, ivec2(1, vRows.x), 0).x < 0.5 && hp.x < 0.5 && hf.y > 0.999) vSolid = vec4(mix(texelFetch(uPaint, ivec2(2, vRows.x), 0).rgb, uAir, hp.z), 1.0);
   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
   gl_Position = projectionMatrix * mvPosition;
   #include <fog_vertex>
@@ -306,7 +307,7 @@ export class PlaneLayer {
           if (!pl) return;
           const tri = triangulateFace(face);
           if (!tri.index.length) return;
-          const part = { shape, plane, rank, tri, face: fi, row: addRow(pl.layers, pl.opacity), planeRow };
+          const part = { shape, plane, rank, tri, face: fi, row: addRow(visibleLayers(pl.layers), pl.opacity), planeRow };
           (planeClear || layersClear(pl.layers, pl.opacity) ? clear : solid).push(part);
         });
       });

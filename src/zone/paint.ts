@@ -278,6 +278,19 @@ export function paintLayers(paint: Paint, styles: ReadonlyMap<string, ZoneStyle>
   return { layers, opacity: clamp01((style ? style.opacity : paint.opacity) ?? 1) };
 }
 
+/**
+ * Schichten ab der obersten, die alles darunter verdeckt (deckende Farbe oder deckender Verlauf, Mischmodus normal,
+ * volle Deckkraft): was darunter liegt, ist nicht zu sehen und braucht keine Rechnung (Leistung am Handy)
+ */
+export function visibleLayers(layers: readonly ZoneFill[]): ZoneFill[] {
+  let from = 0;
+  layers.forEach((f, i) => {
+    if (f.hidden || f.type === 'fade' || f.blend !== 'normal' || f.opacity < 1) return;
+    if (f.type === 'color' || f.stops.every((st) => st.a >= 1)) from = i;
+  });
+  return layers.slice(from);
+}
+
 /** kann die Fläche durchsichtig werden (Deckkraft unter 1 oder ein Deckkraftverlauf)? */
 export function layersClear(layers: readonly ZoneFill[], opacity = 1): boolean {
   return opacity < 1 || layers.some((f) => f.type === 'fade');

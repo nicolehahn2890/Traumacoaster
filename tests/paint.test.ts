@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cloneNodes, facePaint, flipShape, newPlane, newShape, parseNodes, rectPath, serializeNodes, setFaceFill, setFacePaint, shapeFaces, swatchMap, type ZoneNode, type ZoneShape } from '@/zone/nodes';
-import { evalLayers, fillsInBox, fillsToBox, gradientT, MAX_LAYERS, paintLayers, parseFill, rampOf, RAMP, resolveColor, serializeFill, type GradientFill, type ZoneFill, type ZoneStyle, type ZoneSwatch } from '@/zone/paint';
+import { evalLayers, fillsInBox, fillsToBox, gradientT, MAX_LAYERS, paintLayers, parseFill, rampOf, RAMP, resolveColor, serializeFill, visibleLayers, type GradientFill, type ZoneFill, type ZoneStyle, type ZoneSwatch } from '@/zone/paint';
 import { rotateShape } from '@/zone/shapeOps';
 
 const grad = (a: string, b: string, extra: Partial<GradientFill> = {}): GradientFill => ({ type: 'gradient', stops: [{ t: 0, color: a, a: 1 }, { t: 1, color: b, a: 1 }], x0: -1, y0: 0, x1: 1, y1: 0, blend: 'normal', opacity: 1, ...extra });
@@ -122,6 +122,21 @@ describe('Schichten auswerten (wie der Shader)', () => {
     const rel = fillsToBox([grad('#000000', '#ffffff', { x0: 15, y0: 1, x1: 25, y1: 3 })], box)!;
     expect(rel[0]).toMatchObject({ x0: 0.25, y0: 0.25, x1: 0.75, y1: 0.75 });
     expect(fillsInBox(rel, box)![0]).toMatchObject({ x0: 15, y0: 1, x1: 25, y1: 3 });
+  });
+});
+
+describe('Leistung: verdeckte Schichten', () => {
+  it('unter einer deckenden Füllung wird nichts gerechnet; durchscheinende und gemischte zählen nicht als deckend', () => {
+    const base = { type: 'color' as const, color: '#000000', blend: 'normal' as const, opacity: 1 };
+    const opaque = grad('#ff0000', '#00ff00');
+    const thin = { ...grad('#ff0000', '#00ff00'), opacity: 0.5 };
+    const mul = { ...base, color: '#ffffff', blend: 'multiply' as const };
+    expect(visibleLayers([base, opaque, mul])).toEqual([opaque, mul]);
+    expect(visibleLayers([base, thin])).toEqual([base, thin]);
+    expect(visibleLayers([base, { ...opaque, stops: [{ t: 0, color: '#ff0000', a: 1 }, { t: 1, color: '#00ff00', a: 0.2 }] }]).length).toBe(2);
+    // das Ergebnis bleibt gleich
+    const sw = new Map<string, ZoneSwatch>();
+    expect(evalLayers(visibleLayers([base, opaque, mul]), 0.3, 0, sw)).toEqual(evalLayers([base, opaque, mul], 0.3, 0, sw));
   });
 });
 
