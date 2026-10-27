@@ -21,7 +21,8 @@ const r3 = (v: number): number => Math.round(v * 1000) / 1000 || 0;
  */
 export function rotateShape(shape: ZoneShape, orig: ZoneShape, pivot: Pt, angle: number): void {
   if (Math.abs(angle) < 1e-9) {
-    Object.assign(shape, { x: orig.x, y: orig.y, sx: orig.sx, sy: orig.sy, path: orig.path, holes: orig.holes, cuts: orig.cuts, regions: orig.regions, fills: orig.fills });
+    Object.assign(shape, { x: orig.x, y: orig.y, sx: orig.sx, sy: orig.sy, path: orig.path, holes: orig.holes, cuts: orig.cuts, regions: orig.regions, fills: orig.fills, dockOff: orig.dockOff });
+    if (!orig.dockOff) delete shape.dockOff;
     if (!orig.holes) delete shape.holes;
     if (!orig.cuts) delete shape.cuts;
     if (!orig.regions) delete shape.regions;
@@ -65,6 +66,11 @@ export function rotateShape(shape: ZoneShape, orig: ZoneShape, pivot: Pt, angle:
     shape.fills = cloneFills(orig.fills);
     mapFillPoints(shape.fills, rs);
   }
+  if (orig.dockOff)
+    shape.dockOff = orig.dockOff.map(([x, y]) => {
+      const [a, b] = rs(x, y);
+      return [r3(a), r3(b)];
+    });
   const dx = orig.x - pivot.x;
   const dy = orig.y - pivot.y;
   shape.x = r3(pivot.x + c * dx - s * dy);

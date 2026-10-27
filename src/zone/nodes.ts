@@ -105,9 +105,15 @@ export interface ZoneCut {
  * Füllung einer Fläche: gilt für die Fläche, die den Punkt (x, y) in Pfad-Koordinaten enthält; fill null ist ein Loch.
  * So bleibt eine Füllung an „ihrer“ Fläche, auch wenn Linien und Anker sich bewegen (wie Illustrators Interaktiv malen)
  */
+/** Material einer Fläche für Bahn, Stützen und Freiraum (Stufe 4, src/zone/dock.ts) */
+export type Material = 'solid' | 'dig' | 'airy' | 'free';
+export const MATERIALS: readonly Material[] = ['solid', 'dig', 'airy', 'free'];
+
 export interface ZoneRegion extends Paint {
   x: number;
   y: number;
+  /** Material dieser Fläche (ohne Angabe das der Form) */
+  material?: Material;
 }
 
 export interface ZoneShape {
@@ -138,6 +144,10 @@ export interface ZoneShape {
   style?: string;
   /** Deckkraft der Flächen (unter 1: durchsichtig) */
   opacity?: number;
+  /** Material aller Flächen ohne eigenes (Stufe 4; ohne Angabe grabbar) */
+  material?: Material;
+  /** abgeschaltete Andockkanten: je ein Punkt am Kantenstück (Pfad-Koordinaten) */
+  dockOff?: Array<[number, number]>;
   /** Formgruppen, in denen sie liegt, von außen nach innen (src/zone/shapeGroups.ts) */
   groups?: string[];
   hidden?: boolean;
@@ -496,6 +506,8 @@ export function copyPaint(p: Paint): Paint {
  */
 export function setFacePaint(shape: ZoneShape, face: Face, paint: Paint): void {
   const faces = shapeFaces(shape);
+  // das Material der Fläche bleibt (es steht im selben Füllpunkt)
+  const material = (shape.regions ?? []).find((r) => insideWithHoles(face.outline, face.holes, r.x, r.y))?.material;
   // eine Form aus einer einzigen Fläche trägt ihren Anstrich selbst (dann zeigen Leiste und Farbknopf ihn auch)
   if (faces.length === 1 && paint.fill !== null) {
     const own = copyPaint(paint);
@@ -511,8 +523,9 @@ export function setFacePaint(shape: ZoneShape, face: Face, paint: Paint): void {
   }
   const live = (r: ZoneRegion) => faces.some((f) => insideWithHoles(f.outline, f.holes, r.x, r.y));
   const rest = (shape.regions ?? []).filter((r) => !insideWithHoles(face.outline, face.holes, r.x, r.y) && live(r));
-  const own = paint.fill === null ? { fill: null } : copyPaint(paint);
-  const regions = samePaint(own, shape) ? rest : [...rest, { x: round(face.inner[0], 3), y: round(face.inner[1], 3), ...own }];
+  const own: Paint & { material?: Material } = paint.fill === null ? { fill: null } : copyPaint(paint);
+  if (material && paint.fill !== null) own.material = material;
+  const regions = samePaint(own, shape) && !own.material ? rest : [...rest, { x: round(face.inner[0], 3), y: round(face.inner[1], 3), ...own }];
   if (regions.length) shape.regions = regions;
   else delete shape.regions;
 }
@@ -765,6 +778,7 @@ export function flipShape(shape: ZoneShape, axis: 'x' | 'y'): void {
   if (shape.holes) shape.holes = shape.holes.map(flip);
   if (shape.cuts) shape.cuts = shape.cuts.map((c) => ({ ...c, path: flip(c.path) }));
   if (shape.regions) shape.regions = shape.regions.map((r) => ({ ...r, x: r.x * fx || 0, y: r.y * fy || 0 }));
+  if (shape.dockOff) shape.dockOff = shape.dockOff.map(([x, y]) => [x * fx || 0, y * fy || 0]);
   const mirror = (x: number, y: number): [number, number] => [x * fx || 0, y * fy || 0];
   mapFillPoints(shape.fills, mirror);
   for (const r of shape.regions ?? []) mapFillPoints(r.fills, mirror);
@@ -949,6 +963,7 @@ export function parseNodes(v: unknown): ZoneNode[] {
           if (!r || !num(r.x) || !num(r.y)) continue;
           const region: ZoneRegion = { x: r.x, y: r.y, fill: parseColor(r.fill) };
           if (region.fill !== null) readPaint(region, r);
+          if ((MATERIALS as readonly string[]).includes(String(r.material))) region.material = r.material as Material;
           regions.push(region);
         }
         if (regions.length) s.regions = regions;
@@ -956,6 +971,11 @@ export function parseNodes(v: unknown): ZoneNode[] {
       if (Array.isArray(o.groups)) {
         const groups = o.groups.filter((g): g is string => typeof g === 'string' && /^fg\d{1,6}$/.test(g)).slice(0, 16);
         if (groups.length) s.groups = groups;
+      }
+      if ((MATERIALS as readonly string[]).includes(String(o.material))) s.material = o.material as Material;
+      if (Array.isArray(o.dockOff)) {
+        const pts = o.dockOff.filter((q): q is [number, number] => Array.isArray(q) && q.length === 2 && num(q[0]) && num(q[1])).slice(0, 500);
+        if (pts.length) s.dockOff = pts.map(([x, y]) => [x, y]);
       }
       if (o.hidden === true) s.hidden = true;
       if (o.locked === true) s.locked = true;
@@ -1037,10 +1057,13 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
       if (s.holes?.length) o.holes = s.holes.map(pathOut);
       if (s.cuts?.length) o.cuts = s.cuts.map((c) => ({ closed: c.closed, path: pathOut(c.path) }));
       writePaint(o, s);
+      if (s.material) o.material = s.material;
+      if (s.dockOff?.length) o.dockOff = s.dockOff.map(([x, y]) => [round(x, 3), round(y, 3)]);
       if (s.regions?.length)
         o.regions = s.regions.map((r) => {
           const q: Record<string, unknown> = { x: round(r.x, 3), y: round(r.y, 3), fill: r.fill };
           if (r.fill !== null) writePaint(q, r);
+          if (r.material) q.material = r.material;
           return q;
         });
       if (s.groups?.length) o.groups = [...s.groups];
@@ -1074,6 +1097,7 @@ export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
       ...(n.regions ? { regions: n.regions.map((r) => ({ ...r, ...(r.fills ? { fills: cloneFills(r.fills) } : {}) })) } : {}),
       ...(n.fills ? { fills: cloneFills(n.fills) } : {}),
       ...(n.groups ? { groups: [...n.groups] } : {}),
+      ...(n.dockOff ? { dockOff: n.dockOff.map(([x, y]): [number, number] => [x, y]) } : {}),
     };
   });
 }

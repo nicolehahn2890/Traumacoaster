@@ -6,13 +6,14 @@
  *
  * Diese Datei baut nur Elemente und meldet Bedienungen über `UiActions`; was sie bedeuten, entscheidet der Editor.
  */
-import { PLANE_ROLE_WORDS, PLANE_ROLES, type PlaneRole, type ZoneGroup, type ZonePlane, type ZoneShape, type ZoneSketch } from '@/zone/nodes';
+import { PLANE_ROLE_WORDS, PLANE_ROLES, type Material, type PlaneRole, type ZoneGroup, type ZonePlane, type ZoneShape, type ZoneSketch } from '@/zone/nodes';
+import { MATERIAL_WORDS, MATERIALS } from '@/zone/dock';
 import type { PathContext } from './pathTools';
 import { VIEW_WORDS, type ViewMode } from './views';
 import { COLOR_CSS, ColorMenu, type ColorMenuHost } from './colorMenu';
 import { STACK_CSS, StackPanel, type StackActions, type StackView } from './stackPanel';
 
-export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch' | 'gradient' | 'pipette';
+export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch' | 'gradient' | 'pipette' | 'dock';
 export type Isolate = 'off' | 'front' | 'only';
 export const ISOLATE_WORDS: Record<Isolate, string> = { off: 'alle Ebenen', front: 'davor ausgeblendet', only: 'nur diese' };
 
@@ -71,6 +72,8 @@ export interface UiActions extends StackActions {
   deletePlane(): void;
   /** „Weiter füllen“ nach dem Fallenlassen einer Farbe beenden */
   fillDone(): void;
+  /** Material der Auswahl (Fläche oder Formen) oder der im Werkzeug Andockkanten angetippten Fläche */
+  setMaterial(m: Material): void;
   /** Verlaufswerkzeug: Art (Farbe, Deckkraft), linear oder radial, umkehren, Deckkraft des Stopps, Stopp löschen, Verlauf entfernen */
   gradKind(kind: 'gradient' | 'fade'): void;
   gradRadial(radial: boolean): void;
@@ -127,6 +130,10 @@ export interface ContextExtra {
   grad?: { kind: 'gradient' | 'fade'; has: boolean; radial: boolean; stop: { a: number } | null; stops: number; targets: number } | null;
   /** Farbe fiel auf eine Fläche mit Verlauf (Farbe aufgelöst) */
   dropChoice?: string | null;
+  /** Material der Auswahl (gemischt: null) */
+  material?: Material | 'mixed' | null;
+  /** Werkzeug Andockkanten: Zahl der Kanten, angetippte Fläche (Name, Material) */
+  dock?: { edges: number; off: number; face: { name: string; material: Material } | null } | null;
 }
 
 export interface LayerRow {
@@ -159,6 +166,9 @@ const CSS = `
 .ze-groupbox{fill:none;stroke:rgba(255,255,255,.7);stroke-width:1;stroke-dasharray:2 4}
 .ze-target{fill:rgba(255,255,255,.14);stroke:#ffffff;stroke-width:2;stroke-dasharray:5 4}
 .ze-loupe{stroke:#ffffff;stroke-width:4;filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))}
+.ze-dock{fill:none;stroke:#7fe08a;stroke-width:3.5;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 1px 1px rgba(0,0,0,.5))}
+.ze-dock.off{stroke:rgba(255,255,255,.55);stroke-width:2;stroke-dasharray:4 5}
+.ze-hatch{stroke:none}
 .ze-gline-under{stroke:rgba(0,0,0,.55);stroke-width:4;stroke-linecap:round}
 .ze-gline{stroke:#ffffff;stroke-width:1.6;stroke-linecap:round}
 .ze-gcircle{fill:none;stroke:#ffffff;stroke-width:1;stroke-dasharray:4 4;opacity:.8}
@@ -265,6 +275,7 @@ const ICONS: Record<Tool, string> = {
   arch: '<svg viewBox="0 0 24 24"><path d="M5.5 20v-8.5a6.5 6.5 0 0 1 13 0V20z"/></svg>',
   gradient: '<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M7 15l10-6"/><circle cx="7" cy="15" r="1.8" fill="#16181c"/><circle cx="17" cy="9" r="1.8" fill="currentColor"/></svg>',
   pipette: '<svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5M13 6l5 5-9 9H4v-5z"/><path d="M16.5 2.5a2.1 2.1 0 0 1 3 0l2 2a2.1 2.1 0 0 1 0 3L19 10"/></svg>',
+  dock: '<svg viewBox="0 0 24 24"><path d="M3 13c3-3 6-4 9-4s6 1 9 4" stroke-width="2.4"/><path d="M5 21l2-6M12 21v-8M19 21l-2-6" stroke-width="1.4"/></svg>',
 };
 const EYE = '<svg viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>';
 const EYE_OFF = '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1C11 6 11.5 6 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.2 3.8M6.2 7.6A16.6 16.6 0 0 0 2 12s3.5 6 10 6c1.7 0 3.2-.4 4.4-1"/></svg>';
@@ -311,8 +322,9 @@ const TOOL_TITLES: Record<Tool, string> = {
   arch: 'Bogen (U wechselt Rechteck, Ellipse, Bogen): Portalform, unten gerade, oben rund',
   gradient: 'Verlauf (G): über eine Fläche ziehen; Enden, Stopps und Mitten am Objekt ziehen, auf die Linie tippen gibt einen Stopp',
   pipette: 'Pipette (I): Farbe aus dem Bild aufnehmen; am iPad auch mit dem Finger lange halten',
+  dock: 'Andockkanten (D): grüne Oberkanten tragen Bahn und Stützen; eine Kante antippen schaltet ihr Stück aus und an, eine Fläche antippen zeigt ihr Material (Schraffur: fest dicht, grabbar weit, luftig gepunktet)',
 };
-const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse', 'arch', 'gradient', 'pipette'];
+const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse', 'arch', 'gradient', 'pipette', 'dock'];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -407,7 +419,7 @@ export class EditorUi {
   /** nach Wischen oder Ziehen kommt noch ein click; den schlucken */
   private swallowClick = false;
   /** Leiste unten zeigt für mehrere Formen die Knöpfe zum Ausrichten oder Verbinden, für die Ebene die der Skizze */
-  private sub: 'align' | 'combine' | 'sketch' | 'numbers' | 'roles' | null = null;
+  private sub: 'align' | 'combine' | 'sketch' | 'numbers' | 'roles' | 'material' | null = null;
   /** Breite und Höhe in den Zahlen gemeinsam ändern */
   private keepRatio = false;
   /** Bildauswahl für Skizzen */
@@ -1032,14 +1044,14 @@ export class EditorUi {
    * gewählte Formen Farbe und Reihenfolge, sonst für die gewählten Ebenen Rolle und Isolieren
    */
   setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false, extra: ContextExtra = {}): void {
-    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null, filling = null, grad = null, dropChoice = null } = extra;
+    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null, filling = null, grad = null, dropChoice = null, material = null, dock = null } = extra;
     const plane = planes.at(-1) ?? null;
     const shape = shapes.at(-1) ?? null;
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
     const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : path.kind === 'band' ? `b|${path.shape}` : `l|${path.form}|${path.count}|${path.smooth}`;
     const gi = units ?? { units: shapes.length, groups: 0, inside: false };
     const numKey = this.sub === 'numbers' && nums ? `${[nums.x, nums.y, nums.w, nums.h].map((v) => v.toFixed(2)).join(',')}|${this.keepRatio}` : `${!!nums}`;
-    const key = dropChoice ? `drop|${dropChoice}` : filling ? `fill|${filling}` : grad ? `grad|${JSON.stringify(grad)}` : path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
+    const key = dropChoice ? `drop|${dropChoice}` : filling ? `fill|${filling}` : grad ? `grad|${JSON.stringify(grad)}` : dock ? `dock|${JSON.stringify(dock)}|${this.sub}` : path ? `${pk}|${material}|${this.sub}` : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
     this.context.replaceChildren();
@@ -1061,6 +1073,13 @@ export class EditorUi {
         button('Als Verlaufsstopp', 'Dort, wo die Farbe fiel, einen Stopp mit dieser Farbe in den Verlauf setzen', () => this.a.dropChoice('stop')),
         button('Abbrechen', 'Nichts ändern (Esc)', () => this.a.dropChoice('cancel')),
       );
+    } else if (dock) {
+      // Werkzeug Andockkanten: Zahlen, und für die angetippte Fläche ihr Material
+      this.context.append(el('span', 'ze-label', dock.edges ? `${dock.edges} Andockkanten${dock.off ? `, ${dock.off} aus` : ''}: antippen schaltet ein Stück aus und an` : 'Keine Andockkanten: Ebenen mit Rolle „spielbar“ und feste oder grabbare Flächen haben Oberkanten'));
+      if (dock.face) {
+        this.context.append(el('span', 'ze-sep'), el('span', 'ze-label', dock.face.name));
+        for (const m of MATERIALS) this.context.append(button(MATERIAL_WORDS[m], `Material: ${MATERIAL_WORDS[m]}`, () => this.a.setMaterial(m), dock.face.material === m ? 'on' : ''));
+      }
     } else if (grad) {
       const word = grad.kind === 'fade' ? 'Deckkraftverlauf' : 'Verlauf';
       if (!grad.targets) this.context.append(el('span', 'ze-label', 'Verlauf: über eine Fläche ziehen; über gewählte Formen gezogen bekommen alle einen gemeinsamen'));
@@ -1115,6 +1134,24 @@ export class EditorUi {
       this.context.append(el('span', 'ze-label', path.shape ? `Band in ${path.shape}: auf eine Kante drücken und nach innen ziehen` : 'Band: erst eine Form wählen, dann auf ihre Kante drücken und nach innen ziehen'));
     } else if (path?.kind === 'face') {
       this.context.append(el('span', 'ze-label', `${path.shape.name} · Fläche`));
+      if (this.sub === 'material') {
+        for (const m of MATERIALS) this.context.append(button(MATERIAL_WORDS[m], `Material: ${MATERIAL_WORDS[m]} (fest und grabbar tragen, luftig und frei lassen die Bahn durch)`, () => this.a.setMaterial(m), material === m ? 'on' : ''));
+        this.context.append(
+          el('span', 'ze-sep'),
+          button('Fertig', 'Zurück', () => {
+            this.sub = null;
+            this.contextKey = '-';
+            this.setContext(planes, shapes, isolate, path, canPaste, extra);
+          }),
+        );
+        this.context.classList.add('show');
+        return;
+      }
+      this.context.append(button(`Material: ${material && material !== 'mixed' ? MATERIAL_WORDS[material] : 'gemischt'}`, 'Material der Fläche: fest, grabbar, luftig, frei', () => {
+        this.sub = 'material';
+        this.contextKey = '-';
+        this.setContext(planes, shapes, isolate, path, canPaste, extra);
+      }));
       this.context.append(button('Füllungen', 'Füllstapel der Fläche: Farben und Verläufe mit Mischmodus und Deckkraft', () => this.a.stackOpen('paint')));
       this.context.append(button('Loch', 'Fläche zum Loch machen (Entf); eine Farbe füllt sie wieder', () => this.a.faceFill(null), path.fill === null ? 'on' : ''));
     } else if (shape && this.sub === 'numbers' && nums) {
@@ -1171,6 +1208,17 @@ export class EditorUi {
           this.setContext(planes, shapes, isolate, path, canPaste, extra);
         }),
       );
+    } else if (shape && this.sub === 'material') {
+      this.context.append(el('span', 'ze-label', shapes.length > 1 ? `Material von ${shapes.length} Formen` : `Material von ${shape.name}`));
+      for (const m of MATERIALS) this.context.append(button(MATERIAL_WORDS[m], `Material: ${MATERIAL_WORDS[m]} (fest und grabbar tragen, luftig und frei lassen die Bahn durch)`, () => this.a.setMaterial(m), material === m ? 'on' : ''));
+      this.context.append(
+        el('span', 'ze-sep'),
+        button('Fertig', 'Zurück zur Leiste der Formen', () => {
+          this.sub = null;
+          this.contextKey = '-';
+          this.setContext(planes, shapes, isolate, path, canPaste, extra);
+        }),
+      );
     } else if (shape && this.sub && this.sub !== 'numbers' && shapes.length > 1 && shapes.every((s) => s.parent === shape.parent)) {
       const what = gi.groups ? `${gi.units} Teile` : `${shapes.length} Formen`;
       if (this.sub === 'align') {
@@ -1201,7 +1249,7 @@ export class EditorUi {
         button(FLIP_X, 'Waagrecht spiegeln (Shift+H)', () => this.a.flip('x')),
         button(FLIP_Y, 'Senkrecht spiegeln (Shift+V)', () => this.a.flip('y')),
       );
-      const open = (sub: 'align' | 'combine' | 'numbers') => () => {
+      const open = (sub: 'align' | 'combine' | 'numbers' | 'material') => () => {
         this.sub = sub;
         this.contextKey = '-';
         this.setContext(planes, shapes, isolate, path, canPaste, extra);
@@ -1214,6 +1262,7 @@ export class EditorUi {
       this.context.append(button('Vereinfachen', 'Weniger Anker, höchstens 1,5 Bildpunkte daneben', () => this.a.simplify()));
       if (nums) this.context.append(button('Zahlen', 'Lage, Größe und Drehung als Zahlen', open('numbers')));
       this.context.append(button('Füllungen', many ? 'Füllstapel der zuletzt gewählten Form' : 'Füllstapel der Form: Farben und Verläufe mit Mischmodus und Deckkraft', () => this.a.stackOpen('paint')));
+      this.context.append(button(`Material: ${material && material !== 'mixed' ? MATERIAL_WORDS[material] : 'gemischt'}`, 'Material der Formen: fest, grabbar, luftig, frei (Stufe 4: fest und grabbar tragen Bahn und Stützen)', open('material')));
       if (gi.units > 1 && onePlane) this.context.append(button('Gruppieren', 'Zu einer Gruppe (Cmd+G): Tippen wählt sie ganz, doppelt tippen geht hinein', () => this.a.shapeGroup()));
       if (gi.groups) this.context.append(button('Auflösen', 'Gruppe auflösen, die Formen bleiben (Shift+Cmd+G)', () => this.a.shapeUngroup()));
       if (gi.units === 1) this.context.append(button(FORWARD, 'In der Ebene nach vorn (])', () => this.a.orderShape(1)), button(BACKWARD, 'In der Ebene nach hinten ([)', () => this.a.orderShape(-1)));
@@ -1287,7 +1336,7 @@ export class EditorUi {
           : button(many ? 'Ebenen löschen' : 'Ebene löschen', many ? 'Die gewählten Ebenen mit allen Formen löschen' : 'Ebene mit allen Formen löschen', () => this.a.deletePlane()),
       );
     }
-    this.context.classList.toggle('show', !!(dropChoice || filling || grad || path || shape || plane));
+    this.context.classList.toggle('show', !!(dropChoice || filling || grad || dock || path || shape || plane));
     if (this.toastEl.classList.contains('show')) this.placeToast();
     this.placeStack();
   }

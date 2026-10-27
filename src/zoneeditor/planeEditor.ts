@@ -84,6 +84,7 @@ import { evalLayers, gradientT, hexToRgb, isHex, MAX_LAYERS, paintLayers, rampOf
 import { addStop, lineT, moveStop, ownPaint, readGradient, removeGradient, removeStop, reverseStops, setMid, targetBox, topGradient, writeGradient, writePaint, type GradKind, type GradLine, type GradTarget } from '@/zone/gradients';
 import type { StackRow, StackView } from './stackPanel';
 import { bakeStyle, linkedStyle, linkStyle, paintToStyle, pasteStyle, styleFromClip, unlinkStyle, type StyleClip } from '@/zone/styles';
+import { DEFAULT_MATERIAL, dockEdges, faceMaterial, setFaceMaterial, toggleDock, type DockEdge } from '@/zone/dock';
 import { faceAt, faceBox, type Face } from '@/zone/faces';
 import type { ColorMenuHost, PickPhase } from './colorMenu';
 import { EditorUi, type Isolate, type LayerRow, type Tool } from './ui';
@@ -249,6 +250,11 @@ export class PlaneEditor {
   private stackSel: number | null = null;
   /** Ziel, zu dem die gewählte Zeile gehört (wechselt es, gilt sie nicht mehr) */
   private stackKey = '';
+  /** Stand der Knoten (zählt bei jeder Änderung hoch; Zwischenspeicher wie die Andockkanten hängen daran) */
+  private version = 0;
+  private dockCache: { version: number; edges: DockEdge[] } | null = null;
+  /** im Werkzeug Andockkanten angetippte Fläche (Form, Punkt im Pfad) */
+  private dockFace: { shape: string; at: Pt } | null = null;
   /** kopierter Anstrich (Cmd+Wahl+C, Pipette mit Wahltaste); mit Kennung, wenn er von einem Stil kam */
   private styleClip: StyleClip | null = null;
   /** Vorschaubilder der Stile (Daten-URL je Inhalt) */
@@ -424,6 +430,7 @@ export class PlaneEditor {
     this.meshDirty = true;
     this.uiDirty = true;
     this.ranks = null;
+    this.version++;
     window.clearTimeout(this.thumbTimer);
     this.thumbTimer = window.setTimeout(() => this.drawThumbs(), 180);
     if (markDirty) {
@@ -621,6 +628,8 @@ export class PlaneEditor {
       filling: this.building && this.fillMode ? this.resolve(this.fillMode) : null,
       grad: this.building && this.tool === 'gradient' && !this.fillMode ? this.gradInfo() : null,
       dropChoice: this.building && this.dropChoice ? this.resolve(this.dropChoice.color) : null,
+      material: this.building ? this.selectionMaterial() : null,
+      dock: this.building && this.tool === 'dock' && !this.fillMode ? this.dockInfo() : null,
     });
     this.ui.setStack(this.stackView());
     this.syncColorFromSelection();
@@ -749,6 +758,7 @@ export class PlaneEditor {
     if (this.building) st.grid = this.gridLines();
     st.loupe = this.loupe;
     if (this.building && this.tool === 'gradient') this.gradOverlay(st);
+    if (this.building && this.tool === 'dock') this.dockOverlay(st);
     const tf = this.dropAt ? this.faceAtScreen(this.dropAt) : null;
     if (tf) st.target = [tf.face.outline, ...tf.face.holes].map((r) => r.map(([x, y]) => this.screenOf(tf.plane, shapeToPlane(tf.shape, x, y), tf.shape)).filter((q): q is Pt => !!q));
     const sk = this.adjusting();
@@ -962,6 +972,7 @@ export class PlaneEditor {
       },
       deletePlane: () => this.deletePlane(),
       fillDone: () => this.endFill(),
+      setMaterial: (m) => this.setMaterial(m),
       gradKind: (kind) => {
         if (this.grad) {
           this.grad.kind = kind;
@@ -1990,6 +2001,10 @@ export class PlaneEditor {
       this.gradDown(pointerId, p);
       return;
     }
+    if (this.tool === 'dock') {
+      this.dockDown(p);
+      return;
+    }
     if (this.tool === 'pipette' && this.mods.alt) {
       // Pipette mit Wahltaste: den ganzen Anstrich aufnehmen (und auf die Auswahl legen, wie in Illustrator)
       const f = this.faceAtScreen(p, true);
@@ -2775,6 +2790,115 @@ export class PlaneEditor {
     }
   }
 
+  // ------------------------------------------------------------------ Spielangaben (Stufe 4)
+
+  /** Andockkanten aller spielbaren Ebenen, zwischengespeichert bis zur nächsten Änderung */
+  private docks(): DockEdge[] {
+    if (this.dockCache?.version !== this.version) this.dockCache = { version: this.version, edges: dockEdges(this.nodes) };
+    return this.dockCache.edges;
+  }
+
+  /** Material der Auswahl: gewählte Fläche, sonst die Formen (gemischt, wenn sie sich unterscheiden) */
+  private selectionMaterial(): ReturnType<typeof faceMaterial> | 'mixed' | null {
+    const face = isPathTool(this.tool) ? this.paths.selectedFace() : null;
+    if (face) return faceMaterial(face.shape, face.face);
+    const ms = new Set(this.selectedShapes().map((s) => s.material ?? DEFAULT_MATERIAL));
+    return ms.size === 1 ? [...ms][0] : ms.size ? 'mixed' : null;
+  }
+
+  /** Material setzen: angetippte Fläche (Werkzeug Andockkanten), gewählte Fläche oder alle Flächen der gewählten Formen */
+  private setMaterial(m: ReturnType<typeof faceMaterial>): void {
+    const df = this.tool === 'dock' ? this.dockTarget() : null;
+    const face = df ?? (isPathTool(this.tool) ? this.paths.selectedFace() : null);
+    this.edit(() => {
+      if (face) {
+        setFaceMaterial(face.shape, face.face, m);
+        return;
+      }
+      for (const s of this.selectedShapes()) {
+        if (m === DEFAULT_MATERIAL) delete s.material;
+        else s.material = m;
+        for (const r of s.regions ?? []) delete r.material;
+      }
+    });
+  }
+
+  private dockTarget(): { shape: ZoneShape; face: Face } | null {
+    const shape = this.dockFace ? findShape(this.nodes, this.dockFace.shape) : undefined;
+    if (!shape || !this.dockFace) return null;
+    const faces = shapeFaces(shape);
+    const i = faceAt(faces, this.dockFace.at.x, this.dockFace.at.y);
+    return i >= 0 ? { shape, face: faces[i] } : null;
+  }
+
+  private dockInfo(): NonNullable<import('./ui').ContextExtra['dock']> {
+    const e = this.docks();
+    const t = this.dockTarget();
+    return { edges: e.length, off: e.filter((x) => x.off).length, face: t ? { name: t.shape.name, material: faceMaterial(t.shape, t.face) } : null };
+  }
+
+  /** Andockkanten (grün, aus gestrichelt) und Material der Flächen spielbarer Ebenen als Schraffur */
+  private dockOverlay(st: ReturnType<typeof emptyOverlay>): void {
+    for (const e of this.docks()) {
+      const plane = findPlane(this.nodes, e.plane);
+      if (!plane) continue;
+      const pts = e.pts.map((q) => this.screenOf(plane, q)).filter((q): q is Pt => !!q);
+      if (pts.length > 1) st.dock.push({ pts, off: e.off });
+    }
+    for (const plane of planesOf(this.nodes)) {
+      if (plane.role !== 'play' || !this.planeShown(plane)) continue;
+      for (const s of shapesOf(this.nodes, plane.id)) {
+        if (s.hidden) continue;
+        for (const f of shapeFaces(s)) {
+          if (facePaint(s, f).fill === null) continue;
+          const m = faceMaterial(s, f);
+          if (m === 'free') continue;
+          const rings = [f.outline, ...f.holes].map((r) => r.map(([x, y]) => this.screenOf(plane, shapeToPlane(s, x, y), s)).filter((q): q is Pt => !!q));
+          st.hatch.push({ rings, material: m });
+        }
+      }
+    }
+    const t = this.dockTarget();
+    const tp = t ? findPlane(this.nodes, t.shape.parent) : undefined;
+    if (t && tp) st.face = [t.face.outline, ...t.face.holes].map((r) => r.map(([x, y]) => this.screenOf(tp, shapeToPlane(t.shape, x, y), t.shape)).filter((q): q is Pt => !!q));
+  }
+
+  /** Werkzeug Andockkanten: Kante antippen schaltet ihr Stück, sonst wird die Fläche darunter angetippt (Material) */
+  private dockDown(p: Pt): void {
+    const r = this.overlay.handleSize + 6;
+    let best: { e: DockEdge; d: number } | null = null;
+    for (const e of this.docks()) {
+      const plane = findPlane(this.nodes, e.plane);
+      if (!plane) continue;
+      const pts = e.pts.map((q) => this.screenOf(plane, q)).filter((q): q is Pt => !!q);
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const l2 = dx * dx + dy * dy;
+        const t = l2 > 1e-9 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
+        const d = Math.hypot(a.x + dx * t - p.x, a.y + dy * t - p.y);
+        if (d <= r && (!best || d < best.d)) best = { e, d };
+      }
+    }
+    if (best) {
+      const shape = findShape(this.nodes, best.e.shape);
+      const plane = shape ? findPlane(this.nodes, shape.parent) : undefined;
+      if (shape && plane && !shape.locked && !planeLocked(this.nodes, plane)) {
+        const e = best.e;
+        this.edit(() => toggleDock(shape, e));
+        this.ui.toast(e.off ? 'Kantenstück trägt wieder' : 'Kantenstück abgeschaltet: hier steht nichts');
+      }
+      this.drawOverlay();
+      return;
+    }
+    const f = this.faceAtScreen(p);
+    this.dockFace = f ? { shape: f.shape.id, at: { ...f.local } } : null;
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
   // ------------------------------------------------------------------ Füllstapel (Stufe 3)
 
   /** Stil der Auswahl kopieren, einfügen, als Stil sichern, lösen (Leiste des Füllstapels, Cmd+Wahl+C/V) */
@@ -3324,6 +3448,7 @@ export class PlaneEditor {
     else if (k === 'u') this.setTool(this.tool === 'rect' ? 'ellipse' : this.tool === 'ellipse' ? 'arch' : 'rect');
     else if (k === 'i') this.setTool('pipette');
     else if (k === 'g') this.setTool('gradient');
+    else if (k === 'd') this.setTool('dock');
     else if (k === '1') this.setView('game');
     else if (k === '2') this.setView('front');
     else if (k === '3') this.setView('free');

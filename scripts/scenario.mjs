@@ -1824,6 +1824,73 @@ if (want('23')) {
   await page.screenshot({ path: 'screenshots/scenario-23-looks.png' });
 }
 
+// 24. Zonen-Editor, Stufe 4: Andockkanten und Material. Werkzeug D zeigt die Oberkanten spielbarer Ebenen (auch den
+// Boden einer Höhle), eine Kante antippen schaltet ihr Stück aus, eine Fläche antippen zeigt ihr Material; luftig trägt
+// nicht; Material über die Leiste der Form.
+if (want('24')) {
+  await page.goto(`${BASE}?zone=szenario-kanten&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const at = await page.evaluate(async () => {
+    const N = await import('/src/zone/nodes.ts');
+    const ed = window.tcGame.current.planeEditor;
+    let out = null;
+    ed.edit(() => {
+      const p = N.newPlane(ed.nodes, 0);
+      ed.nodes.push(p);
+      const back = N.newPlane(ed.nodes, 30);
+      back.role = 'backdrop';
+      ed.nodes.push(back);
+      const P = (x, y) => ed.planePoint(p, { x, y });
+      const m = (P(460, 400).x - P(400, 400).x) / 60;
+      const a = P(330, 470);
+      const b = P(640, 430);
+      const r = N.newShape(ed.nodes, p.id, N.rectPath(160 * m, 80 * m), a.x, a.y, '#5b7f7a');
+      ed.nodes.push(r);
+      const c = N.newShape(ed.nodes, p.id, N.rectPath(240 * m, 200 * m), b.x, b.y, '#3d5a63');
+      c.holes = [N.ellipsePath(70 * m, 50 * m)];
+      ed.nodes.push(c);
+      const q = ed.planePoint(back, { x: 400, y: 250 });
+      ed.nodes.push(N.newShape(ed.nodes, back.id, N.rectPath(30, 8), q.x, q.y, '#c6d4dc'));
+      out = { rect: r.id, cave: c.id, plane: p.id };
+    });
+    for (let i = 0; i < 3; i++) window.tcGame.app.ticker.update(performance.now());
+    return out;
+  });
+  const info = () => page.evaluate(() => {
+    const ed = window.tcGame.current.planeEditor;
+    const e = ed.docks();
+    return { edges: e.length, off: e.filter((x) => x.off).length, bar: document.querySelector('.ze-context')?.textContent ?? '', mids: e.map((x) => ({ shape: x.shape, s: ed.screenOf(ed.nodes.find((n) => n.id === x.plane), x.mid) })) };
+  });
+  await page.keyboard.press('d');
+  await sleep(150);
+  const i1 = await info();
+  check(i1.edges === 3 && /3 Andockkanten/.test(i1.bar), `Werkzeug D: drei Andockkanten (Oberkante der Form, Oberkante und Boden der Höhle), die Kulisse hat keine (${i1.edges})`);
+  // Oberkante der kleinen Form antippen: aus
+  const top = i1.mids.find((m) => m.shape === at.rect).s;
+  await page.mouse.click(top.x, top.y);
+  await sleep(150);
+  const i2 = await info();
+  const off = await page.evaluate((id) => window.tcGame.current.planeEditor.nodes.find((n) => n.id === id).dockOff?.length ?? 0, at.rect);
+  check(i2.off === 1 && off === 1 && /1 aus/.test(i2.bar), 'Kante angetippt: ihr Stück ist aus (die Form merkt sich einen Punkt daran)');
+  // die Form selbst antippen: Material in der Leiste, luftig trägt nicht
+  await page.mouse.click(top.x, top.y + 30);
+  await sleep(100);
+  await page.click('.ze-context .ze-btn:text-is("luftig")');
+  await sleep(150);
+  const i3 = await info();
+  const mat = await page.evaluate((id) => window.tcGame.current.planeEditor.nodes.find((n) => n.id === id).material, at.rect);
+  check(mat === 'airy' && i3.edges === 2, `Fläche angetippt, Material luftig: sie trägt nicht mehr (${i3.edges} Kanten)`);
+  await page.screenshot({ path: 'screenshots/scenario-24-kanten.png' });
+  // Material über die Leiste der Form
+  await page.keyboard.press('v');
+  const cave = i1.mids.find((m) => m.shape === at.cave).s;
+  await page.mouse.click(cave.x + 100, cave.y + 20);
+  await page.click('.ze-context .ze-btn:has-text("Material")');
+  await page.click('.ze-context .ze-btn:text-is("fest")');
+  const mat2 = await page.evaluate((id) => window.tcGame.current.planeEditor.nodes.find((n) => n.id === id).material, at.cave);
+  check(mat2 === 'solid', 'Material der Höhle über die Leiste der Form: fest');
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));

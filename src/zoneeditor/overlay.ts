@@ -44,9 +44,12 @@ export interface OverlayState {
   loupe: (Pt & { color: string }) | null;
   /** Verlaufsregler am Objekt (Bild 5): Anfang, Ende, Stopps mit ihrer Farbe, Mitten; radial mit Kreis */
   gradient: { a: Pt; b: Pt; radial: boolean; stops: Array<Pt & { color: string; on: boolean; off: boolean }>; mids: Pt[] } | null;
+  /** Andockkanten (grün, abgeschaltet gestrichelt) und Material der Flächen (Schraffur), Stufe 4 */
+  dock: Array<{ pts: Pt[]; off: boolean }>;
+  hatch: Array<{ rings: Pt[][]; material: 'solid' | 'dig' | 'airy' }>;
 }
 
-export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [], target: null, loupe: null, gradient: null });
+export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [], target: null, loupe: null, gradient: null, dock: [], hatch: [] });
 
 const ring = (pts: Pt[]): string => (pts.length ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z` : '');
 const open = (pts: Pt[]): string => (pts.length > 1 ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}` : '');
@@ -70,6 +73,9 @@ export class EditorOverlay {
   private readonly targetPath = document.createElementNS(NS, 'path');
   private readonly loupeRing = document.createElementNS(NS, 'circle');
   private readonly gradGroup = document.createElementNS(NS, 'g');
+  private readonly hatchPaths = { solid: document.createElementNS(NS, 'path'), dig: document.createElementNS(NS, 'path'), airy: document.createElementNS(NS, 'path') };
+  private readonly dockOn = document.createElementNS(NS, 'path');
+  private readonly dockOff = document.createElementNS(NS, 'path');
   /** Kantenlänge der Rahmen-Griffe (Pixel); auf Touch-Geräten größer */
   handleSize = 9;
 
@@ -92,6 +98,20 @@ export class EditorOverlay {
     this.targetPath.setAttribute('fill-rule', 'evenodd');
     this.loupeRing.setAttribute('class', 'ze-loupe');
     this.loupeRing.setAttribute('r', '26');
+    // Schraffuren als Muster: fest dicht, grabbar weit, luftig gepunktet
+    const defs = document.createElementNS(NS, 'defs');
+    defs.innerHTML =
+      '<pattern id="ze-h-solid" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="rgba(255,255,255,.55)" stroke-width="2"/></pattern>' +
+      '<pattern id="ze-h-dig" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><line x1="0" y1="0" x2="0" y2="12" stroke="rgba(255,214,140,.6)" stroke-width="1.5"/></pattern>' +
+      '<pattern id="ze-h-airy" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="5" cy="5" r="1.4" fill="rgba(170,230,255,.7)"/></pattern>';
+    for (const [k, p] of Object.entries(this.hatchPaths)) {
+      p.setAttribute('class', 'ze-hatch');
+      p.setAttribute('fill', `url(#ze-h-${k})`);
+      p.setAttribute('fill-rule', 'evenodd');
+    }
+    this.dockOn.setAttribute('class', 'ze-dock');
+    this.dockOff.setAttribute('class', 'ze-dock off');
+    this.el.append(defs, this.hatchPaths.solid, this.hatchPaths.dig, this.hatchPaths.airy, this.dockOff, this.dockOn);
     this.el.append(this.targetPath, this.gradGroup, this.loupeRing, this.gridPath, this.groupPath, this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.regionPath, this.tangentPath, this.anchorGroup, this.knobGroup, this.handleGroup, this.snapRing);
   }
 
@@ -137,6 +157,9 @@ export class EditorOverlay {
   draw(s: OverlayState): void {
     this.facePath.setAttribute('d', s.face ? s.face.map(ring).join('') : '');
     this.targetPath.setAttribute('d', s.target ? s.target.map(ring).join('') : '');
+    for (const k of ['solid', 'dig', 'airy'] as const) this.hatchPaths[k].setAttribute('d', s.hatch.filter((h) => h.material === k).map((h) => h.rings.map(ring).join('')).join(''));
+    this.dockOn.setAttribute('d', s.dock.filter((d) => !d.off).map((d) => open(d.pts)).join(''));
+    this.dockOff.setAttribute('d', s.dock.filter((d) => d.off).map((d) => open(d.pts)).join(''));
     this.drawGradient(s.gradient);
     this.loupeRing.style.display = s.loupe ? '' : 'none';
     if (s.loupe) {
