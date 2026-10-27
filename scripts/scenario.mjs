@@ -2062,12 +2062,13 @@ if (want('26')) {
 // 27. Testszenen (Florian, 27.10.2026; scripts/testzonen.ts): drei Zonen aus organischen, verschachtelten Ebenen. Je Zone
 // startet der Editor mit dem Feld im Bild; gespielt steht die Station mit Vorgabestück da, ein Strich ab ihrem Ende landet
 // in den erwarteten Tiefen (Hügel: vorn, dann Hügel 2; Grotte: durch den Höhlenmund bis an die Höhlenwand; Bogenland: über
-// das Plateau, dann durch ein Fenster an die Wand der Unterwelt), die Stützen stehen auf Kanten, die Fahrt läuft.
+// das Plateau, dann durch ein Fenster an die Wand der Unterwelt; mit dem Freiraumfeld aus Flächen taucht sie erst im
+// Fenster ab, nicht verdeckt hinter der Plateauwand), die Stützen stehen auf Kanten, die Fahrt läuft.
 if (want('27')) {
   const scenes = [
     { zone: 'test-huegel', pts: [['Hügel 1 vorn', 0, 9.2], ['Hügel 1 vorn', 28, 10.2], ['Hügel 1 vorn', 36, 11.6], ['Hügel 2', 44, 24.2], ['Hügel 2', 52, 22.6], ['Hügel 2', 60, 20]], first: 'Hügel 1 vorn', last: 'Hügel 2' },
     { zone: 'test-grotte', pts: [['Fels vorn', 0, 8.2], ['Fels vorn', 26, 9], ['Fels vorn', 34, 11], ['Fels vorn', 40, 12], ['Fels vorn', 46, 12], ['Fels vorn', 54, 12], ['Fels vorn', 62, 12], ['Fels vorn', 70, 12], ['Fels vorn', 76, 12]], first: 'Fels vorn', last: 'Höhlenwand' },
-    { zone: 'test-boegen', pts: [['Plateau', 0, 28.4], ['Plateau', 26, 32.3], ['Plateau', 34, 32.6], ['Plateau', 40, 24], ['Plateau', 46, 14], ['Plateau', 52, 9], ['Plateau', 58, 8], ['Plateau', 62, 9]], first: 'Plateau', last: 'Unterwelt Wand' },
+    { zone: 'test-boegen', pts: [['Plateau', 0, 28.4], ['Plateau', 26, 32.3], ['Plateau', 34, 32.6], ['Plateau', 40, 24], ['Plateau', 46, 12], ['Plateau', 50, 8.6], ['Plateau', 55, 8], ['Plateau', 60, 8], ['Plateau', 64, 8.6]], first: 'Plateau', last: 'Unterwelt Wand' },
   ];
   for (const sc of scenes) {
     await page.goto(`${BASE}?zone=${sc.zone}&editor=2&dev=1&fast=6`, { waitUntil: 'networkidle' });

@@ -58,7 +58,7 @@ import { captureLevel, type LevelLayers } from '../mapTransition';
 import type { SkyState } from '@/render/sky';
 import { brushHoldsLane, brushUsesSliceGround, brushUsesSlices, CameraTiltPanel, initialFov, initialTiltDeg, preferSliceBrush } from '@/ui/cameraTiltPanel';
 import { buildSliceStack, deepestDock, groundDepth, landingAt, type SliceStack } from '@/zone/slices';
-import { buildPlaneStack, PlaneFoundation, planeDeepestDock, planeGroundDepth, planeLanding, type PlaneStack } from '@/zone/planeStack';
+import { buildPlaneStack, PlaneField, PlaneFoundation, planeDeepestDock, planeGroundDepth, planeLanding, type PlaneStack } from '@/zone/planeStack';
 import { buildSliceElement } from '@/world/sliceMesh';
 /** Ebenen-Test: Bezugskamera der Fahrphysik (m), etwa die Kamera bei 10 px/m und 30° Bildwinkel im Querformat */
 const SLICE_PHYSICS_D = 70;
@@ -402,6 +402,9 @@ export class LevelScene implements Scene {
   private slices: SliceStack | null = null;
   /** Ebenen des Zonen-Editors als Tiefe für den Pinsel und Fundament der Stützen (Stufe 4) */
   private planeStack: PlaneStack | null = null;
+  /** Freiraumfeld aus Flächen (Stufe 4, Plan 4.9): Pinsel, Stützen und Fahrt halten sich aus dem Festen der Ebenen */
+  private planeField: PlaneField | null = null;
+  private planeFree: (((p: StagePoint) => FreeLanes) & { clear(): void }) | null = null;
   /** Station auf einer Andockkante (Knoten des Zonen-Editors), geht der Station des Klötzchen-Editors vor */
   private planeStation: ZoneStation | null = null;
   /** aktives Feld der Zone: Kamera bleibt darin (weich), Zoom höchstens „Feld passt ins Bild“, Absperrband an den Rändern */
@@ -2137,11 +2140,19 @@ export class LevelScene implements Scene {
       tolerance: Math.max(0.4, 8 / this.view.camera.zoom),
       // Freiraumfeld der Zone (Tor 2b): freie Tiefen-Abschnitte je Linienpunkt am Strahl der Kamera, fester Weltpunkt
       // Ebenen-Test: Die Scheiben ersetzen das Freiraumfeld (das nur die fünf Spuren kennt)
-      field: field && free && !this.slices && !this.planeStack ? { free, solid: (x: number, y: number, lane: number) => field.solid(x, y, lane), floor: (x: number, y: number, lane: number) => field.floorBelow(x, y, lane, 40)?.y ?? null } : undefined,
+      field: this.planeBrushField() ?? (field && free && !this.slices && !this.planeStack ? { free, solid: (x: number, y: number, lane: number) => field.solid(x, y, lane), floor: (x: number, y: number, lane: number) => field.floorBelow(x, y, lane, 40)?.y ?? null } : undefined),
       holdLane: brushHoldsLane(),
       holdDepth: Number.isFinite(this.brushHoldZ) ? this.brushHoldZ : this.planeStartDepth(),
       ...this.layerDepth(),
     };
+  }
+
+  /** Freiraumfeld aus Flächen für den Pinsel (Ebenen-Zone mit Ebenen-Pinsel), sonst undefined */
+  private planeBrushField() {
+    const pf = this.planeField;
+    const free = this.planeFree;
+    if (!pf || !free || this.slices || !brushUsesSlices()) return undefined;
+    return { free, solid: (x: number, y: number, lane: number) => pf.solid(x, y, lane), floor: (x: number, y: number, lane: number) => pf.floorBelow(x, y, lane, 40) };
   }
 
   /**
@@ -2172,7 +2183,12 @@ export class LevelScene implements Scene {
   private refreshPlaneStack(rock = true): void {
     const nodes = this.sandbox?.zone?.nodes ?? [];
     this.planeStack = nodes.length ? buildPlaneStack(nodes) : null;
-    this.game.world?.setPlaneFoundation(this.planeStack ? new PlaneFoundation(this.planeStack) : null);
+    const field = this.planeStack ? new PlaneField(this.planeStack) : null;
+    this.planeField = field && !field.empty ? field : null;
+    this.game.world?.setPlaneFoundation(this.planeStack ? new PlaneFoundation(this.planeStack, this.planeField) : null);
+    this.planeFree = this.planeField ? cachedFreeLanes(this.planeField, (q, lane) => rayToWorld(q, lane), this.groundClearance) : null;
+    // Stützen: kein Fuß und keine Stütze im Festen der Ebenen (dort fährt die Bahn im Tunnel)
+    this.view.planeSolid = this.planeField ? (x, y, z) => this.planeField!.solid(x, y, z) : null;
     // Ebenen-Zone: einmal auf „Ebenen: Bodenhöhe“ (eine eigene Wahl im Kamera-Panel bleibt)
     if (this.planeStack) preferSliceBrush();
     // Station auf einer Andockkante: ihr Bahnhof in die Welt, ihr Vorgabestück als Bahn, solange nichts gezeichnet ist
@@ -2884,7 +2900,7 @@ export class LevelScene implements Scene {
     const field = this.field;
     const zone = this.sandbox?.zone;
     // Tunnel-Meter (Plan 5.1): unter einer Decke des Freiraumfelds (Innenraum eines Dreiteilers, Höhle)
-    return { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), ...(chain ? { chainHeight: chain } : {}), ...(field && !field.empty ? { insideRock: (x: number, y: number, z: number) => field.ceilingAbove(x, y, z) } : {}), ...(zone ? { walls: siteWalls(zone.sites, this.openedSites) } : {}), ...(this.slices || this.planeStack ? { depthPerspective: SLICE_PHYSICS_D } : {}) };
+    return { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), ...(chain ? { chainHeight: chain } : {}), ...(this.planeField ? { insideRock: (x: number, y: number, z: number) => this.planeField!.ceilingAbove(x, y, z) } : field && !field.empty ? { insideRock: (x: number, y: number, z: number) => field.ceilingAbove(x, y, z) } : {}), ...(zone ? { walls: siteWalls(zone.sites, this.openedSites) } : {}), ...(this.slices || this.planeStack ? { depthPerspective: SLICE_PHYSICS_D } : {}) };
   }
 
   /** Startart im Feld (Etappe 2, Schritt 1): erlaubt die Stufe die gewählte nicht, nimmt die Bahn die erste erlaubte */

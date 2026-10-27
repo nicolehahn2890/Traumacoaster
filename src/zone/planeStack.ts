@@ -13,11 +13,12 @@
  *
  * Ohne Renderer und DOM; Weltpunkte kommen über `rayToWorld` aus der Bühne, Ebenen-Punkte über Lage und Maßstab der Ebene.
  */
-import { LANE_DEPTH, rayToWorld, type StagePoint } from '@/track/stage';
+import { LANE_DEPTH, LANE_MAX, LANE_MIN, rayToWorld, toStage, type StagePoint } from '@/track/stage';
 import type { Foundation, FootHit } from '@/world/foundations';
 import type { Landing } from '@/track/brushTrack';
 import { DOCK_GAP, GROUND_COMFORT, LAND_ABOVE, LAND_BELOW } from './slices';
 import { dockEdges, faceMaterial, groundAt, isFirm, type DockEdge } from './dock';
+import type { FreeInterval, FreeLanes } from './field';
 import { flattenPath, insideWithHoles, type Poly } from './path';
 import { facePaint, FLATTEN_STEP, planeHidden, planesOf, shapeFaces, shapesOf, type PlaneRole, type ZoneNode, type ZonePlane, type ZoneShape } from './nodes';
 
@@ -210,25 +211,182 @@ export function planeDeepestDock(stack: PlaneStack): number {
  * Fundament (wie `SliceFoundation`): der Fuß steht auf der Andockkante der hintersten spielbaren Ebene, an der die Bahn
  * andockt oder die vor ihr liegt, und die unter dem Anschlusspunkt eine Kante hat; die Kante verdeckt ihn. Anders als im
  * dichten Scheibenstapel zählt auch die Ebene, an der die Bahn andockt (DOCK_GAP dahinter), sonst stünde eine Bahn auf
- * der vordersten Ebene in der Luft. Sperrt nichts
+ * der vordersten Ebene in der Luft. Mit dem Freiraumfeld aus Flächen zählen Kanten nur an der Ebene der Bahn und knapp
+ * dahinter; vor der Stütze liegende Ebenen tragen sie dort, wo sie im Bild hinter ihrer festen Fläche verschwindet (die
+ * Kante, gerade nach hinten verlängert, läge im Bild über der sichtbaren Kante, die Stütze endete sichtbar in der Luft).
+ * Der höhere Fuß zählt. Sperrt nichts
  */
 export class PlaneFoundation implements Foundation {
-  constructor(private readonly stack: PlaneStack) {}
+  constructor(
+    private readonly stack: PlaneStack,
+    private readonly field: PlaneField | null = null,
+  ) {}
 
   surfaceBelow(x: number, y: number, z: number): FootHit | null {
     const reach = z + (DOCK_GAP + 0.05) / LANE_DEPTH;
+    let foot: number | null = null;
     for (let k = this.stack.planes.length - 1; k >= 0; k--) {
       const sp = this.stack.planes[k];
-      if (sp.role !== 'play' || sp.lane > reach) continue;
+      if (sp.role !== 'play' || sp.lane > reach || (this.field && sp.lane < z - 1e-6)) continue;
       const qx = (x - sp.plane.x) / sp.plane.scale;
       const qy = (y - sp.plane.y) / sp.plane.scale;
       const g = groundAt(sp.docks, qx, qy);
-      if (g !== null) return { y: sp.plane.y + sp.plane.scale * g, kind: 'element' };
+      if (g !== null) {
+        foot = sp.plane.y + sp.plane.scale * g;
+        break;
+      }
+    }
+    const behind = this.field?.floorBelow(x, y, z) ?? null;
+    if (behind !== null && (foot === null || behind > foot)) foot = behind;
+    return foot === null ? null : { y: foot, kind: 'element' };
+  }
+
+  blocks(): boolean {
+    return false;
+  }
+}
+
+// ------------------------------------------------------------------ Freiraumfeld aus Flächen (Plan 4.9)
+
+/**
+ * Dicke der hintersten Fläche an einer Stelle, hinter der keine Ebene mehr kommt (Meter; Plan 4.9 „oder bis zu einer
+ * eingestellten Tiefe“; Platzhalter, bis eine Ebene ihre eigene bekommt)
+ */
+export const PLANE_THICK = 6;
+/** Spurschritt der Abtastung am Strahl (wie im Freiraumfeld der Zone) */
+const FIELD_STEP = 0.05;
+/** Festes bis zu dieser Höhe (Meter) über der Bahn macht die Stelle zum Tunnel (wie `CEILING` im Freiraumfeld der Zone) */
+const PLANE_CEILING = 12;
+
+/**
+ * Freiraumfeld aus Flächen (Plan 4.9, „fest und grabbar sind fest, luftig und frei sind frei; die Dicke einer Ebene reicht
+ * bis zur nächsten Ebene dahinter oder bis zu einer eingestellten Tiefe“), im Bild gedacht wie „Bild halten“: Fest ist ein
+ * Punkt, wenn er im Bild hinter einer festen oder grabbaren Fläche einer spielbaren Ebene liegt, und zwar bis zur nächsten
+ * Ebene dahinter, die ihn im Bild deckt (die hinterste höchstens PLANE_THICK); eine Kulisse deckt mit allem Gefüllten bis
+ * ganz hinten. Luftig und frei sind frei, Vordergrund und Luft zählen nicht. Die Ebenen sind Blätter: Ein Loch ist darum
+ * kein Tunnel, und eine Fläche hat keine Oberseite, die die geneigte Kamera sähe (beides zeigte das Bild nicht). Die Bahn
+ * kann so nie verdeckt hinter einer festen Fläche liegen, nur vor ihr oder durch eine Öffnung dahinter.
+ *
+ * Abfragen wie das Freiraumfeld der Zone (`field.ts`), damit Pinsel, Stützen und Fahrt es ebenso lesen: fester Weltpunkt,
+ * freie Tiefen-Abschnitte am Strahl eines Bühnenpunkts, Boden unter einem Punkt, Decke darüber (Tunnel). Seine Wände
+ * zählen für den Pinsel wie Erde, ohne den Abstand der Elementwände: Die Bahn liegt schon DOCK_GAP vor ihrer Ebene.
+ * Höhlen im Sinn des Zonenfelds (Räume, die anziehen) kennt es nicht; wohin ein Strich in eine Öffnung geht, sagt die
+ * Landung (`planeLanding`).
+ */
+export class PlaneField {
+  /** spielbare Ebenen und Kulissen von vorn nach hinten */
+  private readonly layers: StackPlane[];
+  /** hinterste Spur der Abtastung (die tiefste Andockkante, mindestens die Bühne) */
+  private readonly laneMax: number;
+  /** nichts Festes in der Zone */
+  readonly empty: boolean;
+
+  constructor(stack: PlaneStack) {
+    this.layers = stack.planes.filter((sp) => sp.role === 'play' || sp.role === 'backdrop');
+    this.laneMax = Math.max(LANE_MAX, (planeDeepestDock(stack) + DOCK_GAP) / LANE_DEPTH);
+    this.empty = !this.layers.some((sp) => sp.solids.length || (sp.role === 'backdrop' && sp.filled.length));
+  }
+
+  /**
+   * Bildpunkt in Tiefe d (Meter) fest? Die hinterste Ebene davor, die ihn deckt, entscheidet; sie reicht bis zur nächsten,
+   * die ihn deckt, und nur ohne eine solche höchstens PLANE_THICK
+   */
+  solidAt(p: StagePoint, d: number): boolean {
+    let last: StackPlane | null = null;
+    let firm = false;
+    let k = 0;
+    for (; k < this.layers.length; k++) {
+      const sp = this.layers[k];
+      if (sp.plane.z > d) break;
+      const q = planePoint(sp, p);
+      if (!inArea(sp.filled, q.x, q.y)) continue;
+      last = sp;
+      firm = sp.role === 'backdrop' || inArea(sp.solids, q.x, q.y);
+    }
+    if (!last || !firm) return false;
+    if (last.role === 'backdrop' || d < last.plane.z + PLANE_THICK) return true;
+    for (; k < this.layers.length; k++) {
+      const q = planePoint(this.layers[k], p);
+      if (inArea(this.layers[k].filled, q.x, q.y)) return true;
+    }
+    return false;
+  }
+
+  /** fester Weltpunkt (x, Höhe y, Spur) */
+  solid(x: number, y: number, lane: number): boolean {
+    return this.solidAt(toStage(x, y, lane), lane * LANE_DEPTH);
+  }
+
+  /**
+   * freie Tiefen-Abschnitte am Strahl des Bühnenpunkts (Spuren): frei ist eine Spur, wenn der Punkt dort und clearance
+   * darunter nicht fest ist (die Bahn hält ihre Mindesthöhe über Festem)
+   */
+  freeLanes(p: StagePoint, toWorld: (p: StagePoint, lane: number) => { x: number; y: number }, clearance: number): FreeLanes {
+    const free = (lane: number): boolean => {
+      const w = toWorld(p, lane);
+      return !this.solid(w.x, w.y, lane) && !this.solid(w.x, w.y - clearance, lane);
+    };
+    const intervals: FreeInterval[] = [];
+    let cur: FreeInterval | null = null;
+    let touched = false;
+    const count = Math.round((this.laneMax - LANE_MIN) / FIELD_STEP) + 1;
+    for (let k = 0; k < count; k++) {
+      const lane = LANE_MIN + k * FIELD_STEP;
+      if (!free(lane)) {
+        touched = true;
+        if (cur) cur.bKind = 'earth';
+        cur = null;
+        continue;
+      }
+      if (cur) cur.b = lane;
+      else {
+        cur = { a: lane, b: lane, aKind: k === 0 ? 'edge' : 'earth', bKind: 'edge', cave: null, attract: false };
+        intervals.push(cur);
+      }
+    }
+    // Enden zwischen letzter freier und erster fester Spur genau suchen
+    const refine = (freeLane: number, blockedLane: number): number => {
+      let f = freeLane;
+      let bl = blockedLane;
+      for (let k = 0; k < 6; k++) {
+        const mid = (f + bl) / 2;
+        if (free(mid)) f = mid;
+        else bl = mid;
+      }
+      return f;
+    };
+    for (const iv of intervals) {
+      if (iv.aKind !== 'edge') iv.a = refine(iv.a, iv.a - FIELD_STEP);
+      if (iv.bKind !== 'edge') iv.b = refine(iv.b, iv.b + FIELD_STEP);
+    }
+    return { intervals, fallback: null, touched, below: null };
+  }
+
+  /** Oberseite des Festen unter dem Punkt (Höhe), null, wenn bis maxDrop darunter nichts kommt */
+  floorBelow(x: number, y: number, lane: number, maxDrop = 80): number | null {
+    const step = 0.25;
+    let prev = y;
+    for (let dd = step; dd <= maxDrop; dd += step) {
+      const yy = y - dd;
+      if (!this.solid(x, yy, lane)) {
+        prev = yy;
+        continue;
+      }
+      let lo = yy;
+      let hi = prev;
+      for (let k = 0; k < 6; k++) {
+        const mid = (lo + hi) / 2;
+        if (this.solid(x, mid, lane)) lo = mid;
+        else hi = mid;
+      }
+      return hi;
     }
     return null;
   }
 
-  blocks(): boolean {
+  /** liegt über dem Punkt (bis maxH Meter) Festes? Dann fährt die Bahn dort im Tunnel */
+  ceilingAbove(x: number, y: number, lane: number, maxH = PLANE_CEILING): boolean {
+    for (let dd = 0.5; dd <= maxH; dd += 0.5) if (this.solid(x, y + dd, lane)) return true;
     return false;
   }
 }

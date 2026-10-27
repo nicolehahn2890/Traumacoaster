@@ -829,6 +829,19 @@ Plan: `docs/ZONENEDITOR-PLAN.md`, Stufe 4 und 4.9. Ohne DOM: `src/zone/dock.ts`,
 - **Editor:** Werkzeug D (`dockDown`, `dockOverlay`): Kante antippen schaltet, sonst die Fläche darunter (Material in der
   Leiste); „Station setzen“ legt den Knoten auf die getroffene Kante. Überlagerung: `OverlayState.dock`, `hatch` (SVG-
   Muster), `station`. Handy-Link: Dev-Server `/__lan` (IPv4 im WLAN), `ui.togglePhone`.
+- **Freiraumfeld aus Flächen** (`PlaneField` in `planeStack.ts`, Plan 4.9): im Bild gedacht wie „Bild halten“. Ein Punkt
+  (Bildpunkt p, Tiefe d) ist fest, wenn die hinterste spielbare Ebene oder Kulisse vor d, die p deckt (`planePoint`),
+  dort eine feste oder grabbare Fläche hat; eine Fläche reicht bis zur nächsten Ebene, die p deckt, die hinterste
+  höchstens `PLANE_THICK` (6 m, Platzhalter), eine Kulisse bis ganz hinten; luftig und frei sind frei, Vordergrund und
+  Luft zählen nicht. So ist ein Loch kein Tunnel und eine Fläche hat keine Oberseite, die die geneigte Kamera sähe (das
+  Bild zeigt Blätter); die Bahn liegt nie verdeckt hinter Festem, nur davor oder durch eine Öffnung dahinter. Abfragen wie
+  `FreeField`: `solid`, `freeLanes` (Abtastung je 0,05 Spuren bis zur tiefsten Andockkante; Wände als `earth`, also ohne
+  den Abstand FIELD_GAP der Elementwände, die Bahn liegt schon DOCK_GAP vor ihrer Ebene), `floorBelow`, `ceilingAbove`.
+  Der Level gibt es dem Pinsel (`planeBrushField`, nur mit Ebenen-Pinsel), der Fahrt (`insideRock`, Tunnel) und den
+  Stützen (`WorldView.planeSolid`: keine Stütze, wo die Bahn im Festen liegt). `PlaneFoundation` nimmt mit Feld nur Kanten
+  der Ebene der Bahn und knapp dahinter; vor der Stütze liegende Ebenen tragen sie dort, wo sie im Bild hinter ihrer
+  Fläche verschwindet (`floorBelow`), der höhere Fuß zählt (die gerade nach hinten verlängerte Kante läge im Bild über der
+  sichtbaren).
 - **Testszenen** (`scripts/testzonen.ts`, `npx tsx scripts/testzonen.ts`): drei Zonen nur aus Formen auf Ebenen,
   `test-huegel`, `test-grotte`, `test-boegen` (Palette, Luftperspektive, Station, ein Feld 120 × 65 m). Formen in
   Bildkoordinaten, jede Ebene mit `holdPicture` aus der Tiefe 0 in ihre Tiefe gebracht, für die Kamera des Startbilds

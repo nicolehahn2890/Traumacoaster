@@ -59,6 +59,8 @@ export class WorldView {
   chainHeight: number | undefined;
   /** Festigkeitsfeld der Zone (Etappe 2, Schritt 5): kein Stützenfuß im Fels */
   private fieldValue: FreeField | null = null;
+  /** Freiraumfeld aus Flächen (Ebenen-Zone, Stufe 4): dort ist die Bahn im Tunnel, keine Stütze */
+  planeSolid: ((x: number, y: number, z: number) => boolean) | null = null;
   /** Freiraumfeld der Zone (Tor 2b): fest für Stützen (kein Fuß im Festen) und Fundament (Füße auf allem, was trägt) */
   get field(): FreeField | null {
     return this.fieldValue;
@@ -152,7 +154,7 @@ export class WorldView {
     // Weltrenderer: Profil aus denselben Abtastpunkten und derselben Schräglage wie die Schienen der Bühne; die Berge
     // bekommen an den Portalen ihre Öffnungen
     if (!preview) this.worldR?.setTunnelPortals(portals);
-    this.worldR?.setTrack(samples, this.trackR.railBanks, trackTypeForSkin(skin), preview, (x, y, z) => terrain.insideMountain(x, y, z) || !!this.fieldValue?.solid(x, y, z), {
+    this.worldR?.setTrack(samples, this.trackR.railBanks, trackTypeForSkin(skin), preview, (x, y, z) => terrain.insideMountain(x, y, z) || !!this.fieldValue?.solid(x, y, z) || !!this.planeSolid?.(x, y, z), {
       type: path.startType,
       stationLength: this.stationLength,
       groundY: terrain.groundHeight(samples.x[0], samples.z[0]),

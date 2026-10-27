@@ -1061,8 +1061,15 @@ Etappe 2); Bahn durch die Höhle gezeichnet und gefahren, Stützen auf Kanten; R
   Inhalt; Szene 06 für Tor S4 bleibt eigens). **Befund:** Ein Teil der Stützen schwebt, wo die Bahn zwischen zwei Ebenen
   liegt oder tief in einer Höhle hinter Bögen andockt (Grotte 5 von 10, Bogenland 4 von 7, Hügel 2 von 6); das gehört zu
   „Stützen auf Kanten“ und zum Freiraumfeld.
-**Noch offen aus Stufe 4:** Freiraumfeld aus Flächen (die Bahn darf noch durch feste Flächen anderer Ebenen fahren; der
-Pinsel nutzt das Feld in Ebenen-Zonen wie bei den Scheiben nicht), die übrigen Spielobjekte auf Kanten (Schlange,
+- *Freiraumfeld aus Flächen* (27.10.): fest und grabbar sind fest, luftig und frei sind frei; eine Fläche reicht bis zur
+  nächsten Ebene dahinter, die die Stelle deckt, die hinterste höchstens 6 m (Platzhalter für die „eingestellte Tiefe“).
+  Gerechnet im Bild wie „Bild halten“ (die Ebenen sind Blätter): Ein Loch ist kein Tunnel, eine Fläche hat keine
+  sichtbare Oberseite. Folge: Die Bahn liegt nie verdeckt hinter Festem; sie läuft davor und taucht nur durch Öffnungen in
+  die Tiefe (Grotte: vor der Felswand zum Mund, dann hinein; Bogenland: erst im Fenster). Pinsel, Stützen (keine im
+  Festen, Fuß dort, wo die Stütze im Bild hinter einer Fläche verschwindet) und Fahrt (Tunnel) lesen es. Szenarien 25 bis
+  27 grün. **Rest:** In den Testszenen schweben noch 2 bis 4 Stützen je Strich, vor allem vor steilen Wänden ohne Kante
+  darunter (Grotte, Bogenland); ob es dort Wandhalter geben soll, ist eine Gestaltungsfrage für Florian.
+**Noch offen aus Stufe 4:** die übrigen Spielobjekte auf Kanten (Schlange,
 Felder mit Kamerabegrenzung und Rahmen, Ziele, Stufen, Schalter, Coins, Baustellen; bis dahin der Klötzchen-Editor),
 Feldrahmen, Durchblick-Prüfung. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
 lang, die Schraffuren. **Nicht geprüft:** Szene 06 in Formen (Tor S4), Stroke-Replay mit dem Ebenen-Pinsel (der Replay

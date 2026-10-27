@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { LANE_DEPTH, toStage } from '@/track/stage';
-import { buildPlaneStack, PlaneFoundation, planeDeepestDock, planeGroundDepth, planeLanding } from '@/zone/planeStack';
+import { LANE_DEPTH, rayToWorld, toStage, type StagePoint } from '@/track/stage';
+import { buildPlaneStack, PLANE_THICK, PlaneField, PlaneFoundation, planeDeepestDock, planeGroundDepth, planeLanding } from '@/zone/planeStack';
 import { DOCK_GAP } from '@/zone/slices';
 import { ellipsePath, newPlane, newShape, rectPath, type PlaneRole, type ZoneNode } from '@/zone/nodes';
 
@@ -89,3 +89,84 @@ describe('Tiefe aus Ebenen', () => {
     expect(f.blocks()).toBe(false);
   });
 });
+
+describe('Freiraumfeld aus Flächen', () => {
+  it('fest ist, was im Bild hinter einer festen Fläche liegt, bis zur nächsten Ebene, die es deckt; die hinterste höchstens PLANE_THICK', () => {
+    const nodes: ZoneNode[] = [];
+    // vorn ein Hügel (Rechteck bis y 5), dahinter ein höherer (bis y 10)
+    addPlane(nodes, 1, 'play', [0, -5, 40, 20]);
+    addPlane(nodes, 1.5, 'play', [0, 0, 40, 20]);
+    const f = new PlaneField(buildPlaneStack(nodes)!);
+    // Bildpunkt (0, 0) auf Spur 1: vor dem vorderen Hügel frei, dahinter fest (er deckt ihn), bis hinter den zweiten
+    const p = toStage(0, 0, 1);
+    expect(f.solidAt(p, 1 * LANE_DEPTH - 0.5)).toBe(false);
+    expect(f.solidAt(p, 1 * LANE_DEPTH + 0.5)).toBe(true);
+    expect(f.solidAt(p, 1.5 * LANE_DEPTH + PLANE_THICK - 0.5)).toBe(true);
+    expect(f.solidAt(p, 1.5 * LANE_DEPTH + PLANE_THICK + 0.5)).toBe(false);
+    // eine Ebene weit dahinter, die den Punkt deckt: die vordere reicht bis zu ihr, auch über PLANE_THICK hinaus
+    const far: ZoneNode[] = [];
+    addPlane(far, 1, 'play', [0, -5, 40, 20]);
+    addPlane(far, 3, 'play', [0, 0, 200, 120]);
+    const ff = new PlaneField(buildPlaneStack(far)!);
+    expect(ff.solidAt(p, 1 * LANE_DEPTH + PLANE_THICK + 2)).toBe(true);
+    // Bildpunkt über dem vorderen Hügel, im hinteren: frei bis zu dessen Ebene
+    const q = toStage(0, 8, 1.5);
+    expect(f.solidAt(q, 1.5 * LANE_DEPTH - 0.5)).toBe(false);
+    expect(f.solidAt(q, 1.5 * LANE_DEPTH + 0.5)).toBe(true);
+    // Weltpunkt: dasselbe über toStage
+    expect(f.solid(0, 8, 1.4)).toBe(false);
+    expect(f.solid(0, 8, 1.6)).toBe(true);
+  });
+
+  it('luftig ist frei, eine Kulisse deckt bis ganz hinten', () => {
+    const airy: ZoneNode[] = [];
+    addPlane(airy, 1, 'play', [0, 0, 20, 10]);
+    (airy.find((n) => n.kind === 'shape') as { material?: string }).material = 'airy';
+    addPlane(airy, 3, 'play', [50, 0, 10, 10]);
+    expect(new PlaneField(buildPlaneStack(airy)!).solidAt(toStage(0, 0, 1), 1.5 * LANE_DEPTH)).toBe(false);
+    const back: ZoneNode[] = [];
+    addPlane(back, 1, 'play', [50, 0, 10, 10]);
+    addPlane(back, 2, 'backdrop', [0, 0, 40, 40]);
+    const fb = new PlaneField(buildPlaneStack(back)!);
+    const p = toStage(0, 0, 2);
+    expect(fb.solidAt(p, 1.9 * LANE_DEPTH)).toBe(false);
+    expect(fb.solidAt(p, 2.1 * LANE_DEPTH)).toBe(true);
+    expect(fb.solidAt(p, 400)).toBe(true);
+  });
+
+  it('ein Loch ist kein Tunnel: frei bis zur Wand dahinter; daneben frei nur vor der Platte; Boden und Decke im Bild', () => {
+    const nodes: ZoneNode[] = [];
+    // eine Platte mit Loch, die Wand 16,8 m dahinter
+    addPlane(nodes, 1, 'play', [0, 0, 40, 20], [6, 5]);
+    addPlane(nodes, 3, 'play', [0, 0, 120, 80]);
+    const f = new PlaneField(buildPlaneStack(nodes)!);
+    const toWorld = (p: StagePoint, lane: number) => rayToWorld(p, lane);
+    const inHole = f.freeLanes(toStage(0, 0, 1), toWorld, 0.8);
+    expect(inHole.intervals.length).toBe(1);
+    expect(inHole.intervals[0].aKind).toBe('edge');
+    expect(inHole.intervals[0].b).toBeGreaterThan(2.9);
+    expect(inHole.intervals[0].b).toBeLessThan(3.01);
+    const beside = f.freeLanes(toStage(14, 0, 1), toWorld, 0.8);
+    expect(beside.intervals[0].b).toBeLessThan(1.01);
+    expect(beside.touched).toBe(true);
+    // Boden: hinter der Platte (Spur 1,25) dort, wo der Punkt im Bild unter ihre Oberkante (y 10) sinkt; Decke ebenso
+    const lift = rayToWorld(toStage(14, 0, 1.25), 1).y - 0;
+    expect(f.floorBelow(14, 15, 1.25)).toBeCloseTo(10 - lift, 1);
+    expect(f.ceilingAbove(14, 5, 1.25)).toBe(true);
+    expect(f.ceilingAbove(14, 12, 1.25)).toBe(false);
+  });
+
+  it('eine Stütze hinter einer Fläche endet dort, wo sie im Bild hinter ihr verschwindet', () => {
+    const nodes: ZoneNode[] = [];
+    // Hügel vorn mit Oberkante y 5, weit dahinter ein zweiter (außer Reichweite der Stütze)
+    addPlane(nodes, 1, 'play', [0, -5, 40, 20]);
+    addPlane(nodes, 2.5, 'play', [0, -5, 40, 20]);
+    const st = buildPlaneStack(nodes)!;
+    // Anschluss hinter dem vorderen Hügel (Spur 1,5) in 4 m Höhe: in der Welt unter seiner Kante, im Bild darüber
+    expect(new PlaneFoundation(st).surfaceBelow(0, 4, 1.5)).toBeNull();
+    const lift = rayToWorld(toStage(0, 0, 1.5), 1).y;
+    const hit = new PlaneFoundation(st, new PlaneField(st)).surfaceBelow(0, 4, 1.5);
+    expect(hit?.y).toBeCloseTo(5 - lift, 1);
+  });
+});
+

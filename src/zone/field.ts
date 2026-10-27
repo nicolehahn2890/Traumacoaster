@@ -435,7 +435,7 @@ export class FreeField {
 }
 
 /** freie Abschnitte je Bühnenpunkt, gemerkt je Punkt (die Linie wächst beim Malen nur am Ende) */
-export function cachedFreeLanes(field: FreeField, toWorld: (p: StagePoint, lane: number) => { x: number; y: number }, clearance: number): ((p: StagePoint) => FreeLanes) & { clear(): void } {
+export function cachedFreeLanes(field: Pick<FreeField, 'freeLanes'>, toWorld: (p: StagePoint, lane: number) => { x: number; y: number }, clearance: number): ((p: StagePoint) => FreeLanes) & { clear(): void } {
   const cache = new Map<string, FreeLanes>();
   const fn = ((p: StagePoint) => {
     const key = `${p.X.toFixed(3)}|${p.Y.toFixed(3)}`;
