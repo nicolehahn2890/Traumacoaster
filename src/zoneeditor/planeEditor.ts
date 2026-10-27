@@ -22,6 +22,7 @@ import { buildSliceStack } from '@/zone/slices';
 import { flattenPath } from '@/zone/path';
 import { planesToSvg, slug, svgToPlanes } from '@/zone/svgPlanes';
 import { depthLimits, groupPlanes, normalizeGroups, reorderPlanes, ungroup } from '@/zone/planeGroups';
+import { alignShapes, distributeShapes, rotateShape, type AlignMode } from '@/zone/shapeOps';
 import {
   cloneNodes,
   depthBeside,
@@ -93,6 +94,8 @@ interface Pointer extends Pt {
 type Gesture =
   /** gewählte Formen verschieben: jede rechnet den Weg des Zeigers in ihrer eigenen Ebene */
   | { kind: 'move'; pointerId: number; start: Pt; orig: Map<string, Pt> }
+  /** gewählte Formen einer Ebene um die Mitte ihres Rahmens drehen (Winkel in Ebenen-Koordinaten, vom Anfang aus) */
+  | { kind: 'rotate'; pointerId: number; plane: string; pivot: Pt; a0: number; angle: number; orig: Map<string, ZoneShape> }
   /** gewählte Formen einer Ebene am gemeinsamen Rahmen skalieren */
   | { kind: 'scale'; pointerId: number; plane: string; axis: 'xy' | 'x' | 'y'; anchor: Pt; h0: Pt; orig: Map<string, { x: number; y: number; sx: number; sy: number }> }
   | { kind: 'create'; pointerId: number; plane: string; shape: 'rect' | 'ellipse'; a: Pt; b: Pt }
@@ -509,6 +512,22 @@ export class PlaneEditor {
     return { plane, bounds, locked: planeLocked(this.nodes, plane) || shapes.some((s) => s.locked) };
   }
 
+  /** Drehgriff: ein Stück über der Mitte der Oberkante des Rahmens (Bildpunkte), mit dem Fußpunkt auf der Kante */
+  private rotateHandle(box: { plane: ZonePlane; bounds: { minX: number; minY: number; maxX: number; maxY: number } }): { foot: Pt; knob: Pt } | null {
+    const b = box.bounds;
+    const mx = (b.minX + b.maxX) / 2;
+    const foot = this.screenOf(box.plane, { x: mx, y: b.maxY });
+    const mid = this.screenOf(box.plane, { x: mx, y: (b.minY + b.maxY) / 2 });
+    if (!foot || !mid) return null;
+    let dx = foot.x - mid.x;
+    let dy = foot.y - mid.y;
+    const l = Math.hypot(dx, dy);
+    if (l < 1e-6) [dx, dy] = [0, -1];
+    else [dx, dy] = [dx / l, dy / l];
+    const off = this.overlay.handleSize + 18;
+    return { foot, knob: { x: foot.x + dx * off, y: foot.y + dy * off } };
+  }
+
   /** Rahmen in Ebenen-Koordinaten: vier Ecken, dann vier Kantenmitten */
   private handlePoints(b: { minX: number; minY: number; maxX: number; maxY: number }): Pt[] {
     const mx = (b.minX + b.maxX) / 2;
@@ -545,6 +564,11 @@ export class PlaneEditor {
         if (hp.every((q) => !!q)) {
           st.box = (hp as Pt[]).slice(0, 4);
           st.handles = box.locked ? [] : (hp as Pt[]);
+        }
+        const rh = box.locked ? null : this.rotateHandle(box);
+        if (rh) {
+          st.tangents.push([rh.foot, rh.knob]);
+          st.knobs.push(rh.knob);
         }
       }
       const g = this.gesture;
@@ -670,6 +694,8 @@ export class PlaneEditor {
       orderShape: (dir) => this.orderShape(dir),
       deleteShape: () => this.deleteShape(),
       flip: (axis) => this.flip(axis),
+      align: (mode) => this.alignSelected(mode),
+      distribute: (axis) => this.distributeSelected(axis),
       copy: () => this.copy(),
       paste: () => this.paste(),
       penDone: (closed) => this.paths.finishPen(closed),
@@ -993,6 +1019,18 @@ export class PlaneEditor {
       this.selection = ids;
     });
     if (moved) this.ui.toast(this.hold ? `In ${to.name} eingefügt: gleiche Stelle im Spielblick` : `In ${to.name} eingefügt: gleiche Lage in Metern (Welt halten)`);
+  }
+
+  /** gewählte Formen einer Ebene am gemeinsamen Rahmen ausrichten */
+  private alignSelected(mode: AlignMode): void {
+    if (!this.selectionBox()) return;
+    this.edit(() => alignShapes(this.selectedShapes(), mode));
+  }
+
+  /** gewählte Formen einer Ebene gleichmäßig verteilen (ab drei) */
+  private distributeSelected(axis: 'x' | 'y'): void {
+    if (!this.selectionBox() || this.selection.length < 3) return;
+    this.edit(() => distributeShapes(this.selectedShapes(), axis));
   }
 
   /** alle Formen der gewählten Ebenen wählen (Cmd+A) */
@@ -1333,11 +1371,20 @@ export class PlaneEditor {
       this.gesture = { kind: 'create', pointerId, plane: plane.id, shape: this.tool === 'rect' ? 'rect' : 'ellipse', a, b: a };
       return;
     }
-    // Auswahl: zuerst die Griffe des Rahmens, dann Formen unter dem Strahl, sonst ins Leere (Rechteck)
+    // Auswahl: zuerst Dreh- und Rahmengriffe, dann Formen unter dem Strahl, sonst ins Leere (Rechteck)
     const box = this.selectionBox();
     if (box && !box.locked) {
-      const pts = this.handlePoints(box.bounds);
       const r = this.overlay.handleSize + 6;
+      const rh = this.rotateHandle(box);
+      const at = this.planePoint(box.plane, p);
+      if (rh && at && Math.hypot(rh.knob.x - p.x, rh.knob.y - p.y) <= r) {
+        const b = box.bounds;
+        const pivot = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
+        this.history.begin(this.nodes);
+        this.gesture = { kind: 'rotate', pointerId, plane: box.plane.id, pivot, a0: Math.atan2(at.y - pivot.y, at.x - pivot.x), angle: 0, orig: new Map(this.selectedShapes().map((s) => [s.id, cloneNodes([s])[0] as ZoneShape])) };
+        return;
+      }
+      const pts = this.handlePoints(box.bounds);
       const i = pts.findIndex((q) => {
         const sq = this.screenOf(box.plane, q);
         return !!sq && Math.hypot(sq.x - p.x, sq.y - p.y) <= r;
@@ -1415,7 +1462,20 @@ export class PlaneEditor {
       this.drawOverlay();
       return;
     }
-    if (g.kind === 'move') {
+    if (g.kind === 'rotate') {
+      const plane = findPlane(this.nodes, g.plane);
+      const at = plane ? this.planePoint(plane, p) : null;
+      if (!at) return;
+      let a = Math.atan2(at.y - g.pivot.y, at.x - g.pivot.x) - g.a0;
+      a = Math.atan2(Math.sin(a), Math.cos(a));
+      // mit Umschalt in Schritten von 15°
+      if (this.shiftDown) a = Math.round(a / (Math.PI / 12)) * (Math.PI / 12);
+      g.angle = a;
+      for (const [id, o] of g.orig) {
+        const s = findShape(this.nodes, id);
+        if (s) rotateShape(s, o, g.pivot, a);
+      }
+    } else if (g.kind === 'move') {
       for (const [id, o] of g.orig) {
         const s = findShape(this.nodes, id);
         const plane = s ? findPlane(this.nodes, s.parent) : undefined;
@@ -1493,6 +1553,7 @@ export class PlaneEditor {
       this.drawOverlay();
       return;
     }
+    if (g.kind === 'rotate' && Math.abs(g.angle) > 1e-6) this.ui.toast(`um ${Math.round((g.angle * 180) / Math.PI)}° gedreht (mit Umschalt in 15°-Schritten)`);
     if (this.history.commit(this.nodes)) this.changed();
     else this.uiDirty = true;
     this.drawOverlay();

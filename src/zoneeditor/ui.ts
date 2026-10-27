@@ -57,6 +57,9 @@ export interface UiActions {
   orderShape(dir: 1 | -1): void;
   deleteShape(): void;
   flip(axis: 'x' | 'y'): void;
+  /** gewählte Formen einer Ebene ausrichten und verteilen */
+  align(mode: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom'): void;
+  distribute(axis: 'x' | 'y'): void;
   copy(): void;
   paste(): void;
   /** Zeichenstift: fertig (offen oder geschlossen), abbrechen */
@@ -201,6 +204,16 @@ const UNDO = '<svg viewBox="0 0 24 24"><path d="M9 7L4 12l5 5M4 12h10a6 6 0 0 1 
 const REDO = '<svg viewBox="0 0 24 24"><path d="M15 7l5 5-5 5M20 12H10a6 6 0 0 0 0 12"/></svg>';
 
 const FLIP_X = '<svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M9 7L3 17h6z"/><path d="M15 7l6 10h-6z" fill="currentColor"/></svg>';
+const ALIGN: Array<[mode: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom', title: string, icon: string]> = [
+  ['left', 'Links ausrichten', '<svg viewBox="0 0 24 24"><path d="M4 3v18"/><rect x="6" y="6" width="12" height="4" rx="1"/><rect x="6" y="14" width="7" height="4" rx="1"/></svg>'],
+  ['hcenter', 'Waagrecht mittig', '<svg viewBox="0 0 24 24"><path d="M12 3v18"/><rect x="5" y="6" width="14" height="4" rx="1"/><rect x="8" y="14" width="8" height="4" rx="1"/></svg>'],
+  ['right', 'Rechts ausrichten', '<svg viewBox="0 0 24 24"><path d="M20 3v18"/><rect x="6" y="6" width="12" height="4" rx="1"/><rect x="11" y="14" width="7" height="4" rx="1"/></svg>'],
+  ['top', 'Oben ausrichten', '<svg viewBox="0 0 24 24"><path d="M3 4h18"/><rect x="6" y="6" width="4" height="12" rx="1"/><rect x="14" y="6" width="4" height="7" rx="1"/></svg>'],
+  ['vcenter', 'Senkrecht mittig', '<svg viewBox="0 0 24 24"><path d="M3 12h18"/><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="8" width="4" height="8" rx="1"/></svg>'],
+  ['bottom', 'Unten ausrichten', '<svg viewBox="0 0 24 24"><path d="M3 20h18"/><rect x="6" y="6" width="4" height="12" rx="1"/><rect x="14" y="11" width="4" height="7" rx="1"/></svg>'],
+];
+const DIST_X = '<svg viewBox="0 0 24 24"><rect x="3" y="7" width="4" height="10" rx="1"/><rect x="10" y="5" width="4" height="14" rx="1"/><rect x="17" y="8" width="4" height="8" rx="1"/></svg>';
+const DIST_Y = '<svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="4" rx="1"/><rect x="5" y="10" width="14" height="4" rx="1"/><rect x="8" y="17" width="8" height="4" rx="1"/></svg>';
 const FLIP_Y = '<svg viewBox="0 0 24 24"><path d="M3 12h18"/><path d="M7 9L17 3v6z"/><path d="M7 15l10 6v-6z" fill="currentColor"/></svg>';
 
 const TOOL_TITLES: Record<Tool, string> = {
@@ -305,6 +318,8 @@ export class EditorUi {
   private rowDrag: { ids: string[]; group: string | null; mark: HTMLElement; before: string | null; into: string | null } | null = null;
   /** nach Wischen oder Ziehen kommt noch ein click; den schlucken */
   private swallowClick = false;
+  /** Leiste unten zeigt für mehrere Formen die Knöpfe zum Ausrichten */
+  private aligning = false;
   private thumbs = new Map<string, HTMLCanvasElement>();
 
   constructor(
@@ -876,7 +891,7 @@ export class EditorUi {
     const shape = shapes.at(-1) ?? null;
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
     const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : `l|${path.form}|${path.count}|${path.smooth}`;
-    const key = path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}` : '';
+    const key = path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${this.aligning}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
     this.context.replaceChildren();
@@ -913,8 +928,21 @@ export class EditorUi {
       this.context.append(el('span', 'ze-label', `${path.shape.name} · Fläche`));
       this.swatches(path.fill, (c) => this.a.faceFill(c));
       this.context.append(el('span', 'ze-sep'), button('Loch', 'Fläche zum Loch machen (Entf); eine Farbe füllt sie wieder', () => this.a.faceFill(null), path.fill === null ? 'on' : ''));
+    } else if (shape && this.aligning && shapes.length > 1 && shapes.every((s) => s.parent === shape.parent)) {
+      this.context.append(el('span', 'ze-label', `${shapes.length} Formen ausrichten`));
+      for (const [mode, title, icon] of ALIGN) this.context.append(button(icon, title, () => this.a.align(mode)));
+      if (shapes.length > 2) this.context.append(el('span', 'ze-sep'), button(DIST_X, 'Waagrecht verteilen', () => this.a.distribute('x')), button(DIST_Y, 'Senkrecht verteilen', () => this.a.distribute('y')));
+      this.context.append(
+        el('span', 'ze-sep'),
+        button('Fertig', 'Zurück zur Leiste der Formen', () => {
+          this.aligning = false;
+          this.contextKey = '-';
+          this.setContext(planes, shapes, isolate, path, canPaste, group);
+        }),
+      );
     } else if (shape) {
       const many = shapes.length > 1;
+      this.aligning = false;
       this.context.append(el('span', 'ze-label', many ? `${shapes.length} Formen` : shape.name));
       this.swatches(shapes.every((s) => s.fill === shape.fill) ? shape.fill : null, (c) => this.a.fill(c));
       this.context.append(
@@ -924,6 +952,14 @@ export class EditorUi {
         button(FLIP_X, 'Waagrecht spiegeln (Shift+H)', () => this.a.flip('x')),
         button(FLIP_Y, 'Senkrecht spiegeln (Shift+V)', () => this.a.flip('y')),
       );
+      if (many && shapes.every((s) => s.parent === shape.parent))
+        this.context.append(
+          button('Ausrichten', 'Ausrichten und verteilen', () => {
+            this.aligning = true;
+            this.contextKey = '-';
+            this.setContext(planes, shapes, isolate, path, canPaste, group);
+          }),
+        );
       if (!many) this.context.append(button('Nach vorn', 'In der Ebene nach vorn (])', () => this.a.orderShape(1)), button('Nach hinten', 'In der Ebene nach hinten ([)', () => this.a.orderShape(-1)));
       this.context.append(button('Löschen', 'Löschen (Entf)', () => this.a.deleteShape()));
     } else if (plane) {
