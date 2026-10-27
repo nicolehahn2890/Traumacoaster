@@ -1525,6 +1525,123 @@ if (want('20')) {
   await page.screenshot({ path: 'screenshots/scenario-20-verlauf.png' });
 }
 
+// 21. Zonen-Editor, Stufe 3: Füllstapel als Liste. Farbe dazu, im Farbmenü färben, Mischmodus „Multiplizieren“,
+// Deckkraft durch waagrechtes Ziehen, Verlauf dazu und am Regler (G), ausblenden, entfernen; Ebenenstapel mit
+// Luftperspektive (gemessen gegen evalLayers und den Anteil der Ebene).
+if (want('21')) {
+  await page.goto(`${BASE}?zone=szenario-stapel&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const at = await page.evaluate(async () => {
+    const N = await import('/src/zone/nodes.ts');
+    const ed = window.tcGame.current.planeEditor;
+    let out = null;
+    ed.edit(() => {
+      const p = N.newPlane(ed.nodes, 0);
+      ed.nodes.push(p);
+      const P = (x, y) => ed.planePoint(p, { x, y });
+      const m = (P(460, 400).x - P(400, 400).x) / 60;
+      const a = P(400, 400);
+      const r = N.newShape(ed.nodes, p.id, N.rectPath(200 * m, 140 * m), a.x, a.y, '#808080');
+      ed.nodes.push(r);
+      out = { rect: r.id, plane: p.id };
+    });
+    for (let i = 0; i < 3; i++) window.tcGame.app.ticker.update(performance.now());
+    return out;
+  });
+  const fills = () => page.evaluate((id) => {
+    const s = window.tcGame.current.planeEditor.nodes.find((n) => n.id === id);
+    return { fill: s.fill, opacity: s.opacity ?? 1, fills: (s.fills ?? []).map((f) => ({ type: f.type, color: f.color, blend: f.blend, opacity: f.opacity, hidden: !!f.hidden })) };
+  }, at.rect);
+  const measure = () => page.evaluate(async ({ id }) => {
+    const N = await import('/src/zone/nodes.ts');
+    const P = await import('/src/zone/paint.ts');
+    const g = window.tcGame;
+    if (g.current.view?.paper) g.current.view.paper.visible = false;
+    for (let i = 0; i < 3; i++) g.app.ticker.update(performance.now());
+    const ed = g.current.planeEditor;
+    const s = ed.nodes.find((n) => n.id === id);
+    const plane = ed.nodes.find((n) => n.id === s.parent);
+    const sw = N.swatchMap(ed.nodes);
+    let c = P.evalLayers(P.paintLayers(s, new Map(), { minX: 0, minY: 0, maxX: 1, maxY: 1 }).layers, 0, 0, sw);
+    if (plane.fills) c = P.evalLayers(plane.fills, s.x, s.y, sw, 'day', c);
+    const air = N.airOf(ed.nodes);
+    const k = N.airAmount(air, plane);
+    const ac = P.hexToRgb(air?.color ?? '#ffffff');
+    const want = c.rgb.map((v, i) => Math.round((v + (ac[i] - v) * k) * 255));
+    const q = ed.screenOf(plane, { x: s.x, y: s.y }, s);
+    return { want, x: q.x, y: q.y, k };
+  }, { id: at.rect });
+  const pixel = async (m) => {
+    const png = await page.screenshot();
+    const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+    const i = (Math.round(m.y) * info.width + Math.round(m.x)) * info.channels;
+    return [data[i], data[i + 1], data[i + 2]];
+  };
+  await page.mouse.click(400, 400);
+  await page.click('.ze-context .ze-btn:text-is("Füllungen")');
+  check(await page.locator('.ze-stack.show .ze-srow').count() === 1, 'Füllstapel der Form: nur die Grundfarbe');
+  await page.click('.ze-stack .ze-btn:text-is("+ Farbe")');
+  await page.click('.ze-colorbtn');
+  await page.click('.ze-ctabs .ze-btn:text-is("Werte")');
+  const hex = page.locator('.ze-color .ze-hex input');
+  await hex.fill('#ff6020');
+  await hex.press('Enter');
+  await page.click('.ze-colorbtn');
+  // Mischmodus über den Buchstaben
+  await page.click('.ze-stack .ze-srow.on .ze-btn:text-is("N")');
+  await page.click('.ze-stack .ze-blends .ze-btn:text-is("Multiplizieren")');
+  // Deckkraft: 100 Bildpunkte nach links = 50 %
+  const row = await page.locator('.ze-stack .ze-srow').first().locator('.ze-sname').boundingBox();
+  await page.mouse.move(row.x + row.width / 2, row.y + row.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(row.x + row.width / 2 - 50, row.y + row.height / 2, { steps: 4 });
+  await page.mouse.move(row.x + row.width / 2 - 100, row.y + row.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await sleep(150);
+  let f = await fills();
+  check(f.fills.length === 1 && f.fills[0].color === '#ff6020' && f.fills[0].blend === 'multiply' && Math.abs(f.fills[0].opacity - 0.5) < 0.02, `Farbe dazu, im Farbmenü gefärbt, Multiplizieren, Deckkraft gezogen (${Math.round(f.fills[0]?.opacity * 100)} %)`);
+  let m = await measure();
+  let got = await pixel(m);
+  let d = Math.max(...got.map((v, i) => Math.abs(v - m.want[i])));
+  check(d <= 4, `Bild wie evalLayers: rgb(${got.join(', ')}) statt rgb(${m.want.join(', ')})`);
+  await page.evaluate(() => { if (window.tcGame.current.view?.paper) window.tcGame.current.view.paper.visible = true; });
+  // Verlauf dazu, am Regler bearbeiten
+  await page.click('.ze-stack .ze-btn:text-is("+ Verlauf")');
+  await page.click('.ze-stack .ze-srow.on .ze-btn:text-is("Regler")');
+  const tool = await page.evaluate(() => ({ tool: window.tcGame.current.planeEditor.tool, layer: window.tcGame.current.planeEditor.grad?.layer }));
+  f = await fills();
+  check(f.fills.length === 2 && f.fills[1].type === 'gradient' && tool.tool === 'gradient' && tool.layer === 1, `Verlauf dazu, „Regler“ öffnet ihn im Verlaufswerkzeug (Schicht ${tool.layer})`);
+  await page.keyboard.press('v');
+  await page.mouse.click(400, 400);
+  // ausblenden und entfernen
+  await page.locator('.ze-stack .ze-srow').first().locator('.ze-btn').first().click();
+  f = await fills();
+  const hid = f.fills[1]?.hidden;
+  await page.locator('.ze-stack .ze-srow').first().locator('.ze-sname').click();
+  await page.click('.ze-stack .ze-srow.on .ze-btn:text-is("×")');
+  f = await fills();
+  check(hid === true && f.fills.length === 1, 'Verlauf ausgeblendet, dann entfernt');
+  await page.click('.ze-stack .ze-btn:text-is("Fertig")');
+  // Ebenenstapel mit Luftperspektive
+  await page.mouse.click(700, 680);
+  await page.click('.ze-context .ze-btn:text-is("Ebenenstapel")');
+  const field = (label) => page.locator('.ze-stack .ze-sair .ze-num', { hasText: label }).locator('input');
+  for (const [label, v] of [['ab', '-10'], ['bis', '10'], ['%', '80'], ['Ebene %', '50']]) {
+    await field(label).first().fill(v);
+    await field(label).first().press('Enter');
+    await sleep(80);
+  }
+  m = await measure();
+  got = await pixel(m);
+  d = Math.max(...got.map((v, i) => Math.abs(v - m.want[i])));
+  check(Math.abs(m.k - 0.2) < 1e-6 && d <= 4, `Luftperspektive: Ebene bei 0 m zwischen -10 und 10 m, 80 %, Anteil 50 % → ${m.k.toFixed(2)}; Bild rgb(${got.join(', ')}) statt rgb(${m.want.join(', ')})`);
+  await page.evaluate(() => { if (window.tcGame.current.view?.paper) window.tcGame.current.view.paper.visible = true; });
+  await page.click('.ze-stack .ze-btn:text-is("+ Verlauf")');
+  const pf = await page.evaluate((id) => window.tcGame.current.planeEditor.nodes.find((n) => n.id === id).fills?.length ?? 0, at.plane);
+  check(pf === 1, 'Ebenenstapel: Verlauf über die ganze Ebene');
+  await page.screenshot({ path: 'screenshots/scenario-21-stapel.png' });
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));

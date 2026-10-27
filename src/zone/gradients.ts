@@ -7,17 +7,16 @@
  */
 import type { Face } from './faces';
 import { faceBox } from './faces';
-import { copyPaint, facePaint, setFacePaint, shapeFaces, type ZoneShape } from './nodes';
+import { copyPaint, facePaint, setFacePaint, shapeFaces, type ZonePlane, type ZoneShape } from './nodes';
 import { cloneFills, colorAt, fillsInBox, MAX_LAYERS, MAX_STOPS, type GradientFill, type GradientStop, type Paint, type PaintColor, type SwatchMap, type ZoneFill, type ZoneStyle } from './paint';
 import type { LookName } from '@/world/looks';
 
 export type GradKind = 'gradient' | 'fade';
 
-/** Ziel: eine Form (face null) oder eine ihrer Flächen */
-export interface GradTarget {
-  shape: ZoneShape;
-  face: Face | null;
-}
+/** Ziel: eine Form (face null), eine ihrer Flächen oder eine Ebene (Ebenenstapel, Griffe in Ebenen-Koordinaten) */
+export type GradTarget = { shape: ZoneShape; face: Face | null } | { plane: ZonePlane };
+
+const isPlaneTarget = (t: GradTarget): t is { plane: ZonePlane } => 'plane' in t;
 
 /** Griffe in Ebenen-Koordinaten */
 export interface GradLine {
@@ -35,7 +34,7 @@ export function topGradient(fills: readonly ZoneFill[] | undefined, kind: GradKi
 }
 
 /** Rahmen des Ziels in Pfad-Koordinaten (für Stile mit Griffen am Rahmen) */
-function targetBox(t: GradTarget): { minX: number; minY: number; maxX: number; maxY: number } {
+export function targetBox(t: { shape: ZoneShape; face: Face | null }): { minX: number; minY: number; maxX: number; maxY: number } {
   if (t.face) return faceBox(t.face);
   const b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   for (const f of shapeFaces(t.shape)) {
@@ -53,6 +52,11 @@ function targetBox(t: GradTarget): { minX: number; minY: number; maxX: number; m
  * löst sie vom Stil, wie in Illustrator)
  */
 export function ownPaint(t: GradTarget, styles: ReadonlyMap<string, ZoneStyle>): Paint {
+  if (isPlaneTarget(t)) {
+    const o: Paint = { fill: null };
+    if (t.plane.fills?.length) o.fills = cloneFills(t.plane.fills);
+    return o;
+  }
   const p = t.face ? facePaint(t.shape, t.face) : t.shape;
   const style = p.style ? styles.get(p.style) : undefined;
   if (!style) {
@@ -69,6 +73,11 @@ export function ownPaint(t: GradTarget, styles: ReadonlyMap<string, ZoneStyle>):
 
 /** Anstrich des Ziels schreiben (eine Form trägt ihn selbst, eine Fläche über ihren Füllpunkt) */
 export function writePaint(t: GradTarget, p: Paint): void {
+  if (isPlaneTarget(t)) {
+    if (p.fills?.length) t.plane.fills = p.fills;
+    else delete t.plane.fills;
+    return;
+  }
   if (t.face) {
     setFacePaint(t.shape, t.face, p);
     return;
@@ -82,28 +91,36 @@ export function writePaint(t: GradTarget, p: Paint): void {
   delete s.style;
 }
 
-const toPlane = (s: ZoneShape, x: number, y: number): [number, number] => [s.x + s.sx * x, s.y + s.sy * y];
-const toPath = (s: ZoneShape, x: number, y: number): [number, number] => [(x - s.x) / s.sx, (y - s.y) / s.sy];
+/** Pfad-Koordinaten des Ziels → Ebene (eine Ebene: unverändert) */
+const toPlane = (t: GradTarget, x: number, y: number): [number, number] => (isPlaneTarget(t) ? [x, y] : [t.shape.x + t.shape.sx * x, t.shape.y + t.shape.sy * y]);
+const toPath = (t: GradTarget, x: number, y: number): [number, number] => (isPlaneTarget(t) ? [x, y] : [(x - t.shape.x) / t.shape.sx, (y - t.shape.y) / t.shape.sy]);
+
+/** Index des bearbeiteten Verlaufs: die Schicht layer, wenn sie ein Verlauf ist, sonst der oberste der Art kind */
+export function gradIndex(fills: readonly ZoneFill[] | undefined, kind: GradKind, layer: number | null = null): number {
+  const f = layer !== null ? fills?.[layer] : undefined;
+  if (f && f.type !== 'color') return layer!;
+  return topGradient(fills, kind);
+}
 
 /** der bearbeitete Verlauf des Ziels mit Griffen in Ebenen-Koordinaten, oder null */
-export function readGradient(t: GradTarget, kind: GradKind, styles: ReadonlyMap<string, ZoneStyle>): (GradientFill & { line: GradLine }) | null {
+export function readGradient(t: GradTarget, kind: GradKind, styles: ReadonlyMap<string, ZoneStyle>, layer: number | null = null): (GradientFill & { line: GradLine; index: number }) | null {
   const p = ownPaint(t, styles);
-  const i = topGradient(p.fills, kind);
+  const i = gradIndex(p.fills, kind, layer);
   if (i < 0) return null;
   const g = p.fills![i] as GradientFill;
-  const [x0, y0] = toPlane(t.shape, g.x0, g.y0);
-  const [x1, y1] = toPlane(t.shape, g.x1, g.y1);
-  return { ...g, line: { x0, y0, x1, y1 } };
+  const [x0, y0] = toPlane(t, g.x0, g.y0);
+  const [x1, y1] = toPlane(t, g.x1, g.y1);
+  return { ...g, line: { x0, y0, x1, y1 }, index: i };
 }
 
 /**
  * Verlauf auf das Ziel legen: den obersten der Art kind ändern oder (wenn keiner da ist und Platz ist) neu anlegen.
  * line in Ebenen-Koordinaten; stops und radial nur, wenn angegeben. Gibt false, wenn der Füllstapel voll ist
  */
-export function writeGradient(t: GradTarget, kind: GradKind, styles: ReadonlyMap<string, ZoneStyle>, patch: { line?: GradLine; stops?: GradientStop[]; radial?: boolean }, fresh: () => GradientStop[]): boolean {
+export function writeGradient(t: GradTarget, kind: GradKind, styles: ReadonlyMap<string, ZoneStyle>, patch: { line?: GradLine; stops?: GradientStop[]; radial?: boolean }, fresh: () => GradientStop[], layer: number | null = null): boolean {
   const p = ownPaint(t, styles);
   const fills = p.fills ?? [];
-  let i = topGradient(fills, kind);
+  let i = gradIndex(fills, kind, layer);
   if (i < 0) {
     if (fills.length >= MAX_LAYERS - 1) return false;
     fills.push({ type: kind, stops: fresh(), x0: 0, y0: 0, x1: 1, y1: 0, blend: 'normal', opacity: 1 });
@@ -111,8 +128,8 @@ export function writeGradient(t: GradTarget, kind: GradKind, styles: ReadonlyMap
   }
   const g = fills[i] as GradientFill;
   if (patch.line) {
-    [g.x0, g.y0] = toPath(t.shape, patch.line.x0, patch.line.y0);
-    [g.x1, g.y1] = toPath(t.shape, patch.line.x1, patch.line.y1);
+    [g.x0, g.y0] = toPath(t, patch.line.x0, patch.line.y0);
+    [g.x1, g.y1] = toPath(t, patch.line.x1, patch.line.y1);
   }
   if (patch.stops) g.stops = patch.stops.map((s) => ({ ...s }));
   if (patch.radial !== undefined) {
@@ -124,10 +141,10 @@ export function writeGradient(t: GradTarget, kind: GradKind, styles: ReadonlyMap
   return true;
 }
 
-/** obersten Verlauf der Art kind vom Ziel nehmen */
-export function removeGradient(t: GradTarget, kind: GradKind, styles: ReadonlyMap<string, ZoneStyle>): void {
+/** bearbeiteten Verlauf (Schicht layer oder oberster der Art kind) vom Ziel nehmen */
+export function removeGradient(t: GradTarget, kind: GradKind, styles: ReadonlyMap<string, ZoneStyle>, layer: number | null = null): void {
   const p = ownPaint(t, styles);
-  const i = topGradient(p.fills, kind);
+  const i = gradIndex(p.fills, kind, layer);
   if (i < 0) return;
   p.fills = cloneFills(p.fills)!.filter((_, k) => k !== i);
   writePaint(t, p);

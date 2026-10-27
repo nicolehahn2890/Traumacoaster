@@ -29,6 +29,7 @@ import {
   depthBeside,
   archPath,
   ellipsePath,
+  airOf,
   bakeSwatch,
   facePaint,
   findPlane,
@@ -78,8 +79,9 @@ import { EditorOverlay, emptyOverlay } from './overlay';
 import { SketchLayer } from './sketches';
 import { constrain45, NO_MODS, PathTools, regionRing, regionTest, simplifyShape, type Mods, type PathTool } from './pathTools';
 import { booleanShapes, type BoolOp } from '@/zone/pathfinder';
-import { evalLayers, gradientT, hexToRgb, isHex, paintLayers, resolveColor, rgbToHex, type GradientFill, type GradientStop, type PaintColor } from '@/zone/paint';
-import { addStop, lineT, moveStop, readGradient, removeGradient, removeStop, reverseStops, setMid, topGradient, writeGradient, type GradKind, type GradLine, type GradTarget } from '@/zone/gradients';
+import { evalLayers, gradientT, hexToRgb, isHex, MAX_LAYERS, paintLayers, rampOf, RAMP, resolveColor, rgbToHex, type GradientFill, type GradientStop, type PaintColor, type ZoneFill } from '@/zone/paint';
+import { addStop, lineT, moveStop, ownPaint, readGradient, removeGradient, removeStop, reverseStops, setMid, targetBox, topGradient, writeGradient, writePaint, type GradKind, type GradLine, type GradTarget } from '@/zone/gradients';
+import type { StackRow, StackView } from './stackPanel';
 import { faceAt, faceBox, type Face } from '@/zone/faces';
 import type { ColorMenuHost, PickPhase } from './colorMenu';
 import { EditorUi, type Isolate, type LayerRow, type Tool } from './ui';
@@ -129,6 +131,9 @@ type Gesture =
   | { kind: 'gradStop'; pointerId: number; index: number; off: boolean }
   | { kind: 'gradMid'; pointerId: number; index: number };
 
+/** Ziel des Verlaufswerkzeugs als Verweis: Form (at: Punkt im Pfad einer Fläche) oder Ebene */
+type GradRef = { shape: string; at: Pt | null } | { plane: string };
+
 type Nav = { kind: 'touch'; ids: [number, number]; center: Pt; dist: number; count: number; t: number; moved: boolean } | { kind: 'mouse'; pointerId: number; last: Pt; orbit: boolean };
 
 /** Ecken und Kantenmitten des Auswahlrahmens: Gegenstück und Achse je Griff */
@@ -151,6 +156,8 @@ function loadRecent(): string[] {
 const DEG = Math.PI / 180;
 const TAP_TIME = 260;
 const TAP_DIST = 12;
+/** Luftperspektive, wenn die Zone noch keine hat (Platzhalter: kühles helles Blau, ab 24 m, voll bei 140 m wie der Nebel) */
+const AIR_DEFAULT = { color: '#c8d6e2', near: 24, far: 140, amount: 0.5 };
 const PATH_TOOLS: readonly Tool[] = ['direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife'];
 const isPathTool = (t: Tool): t is PathTool => PATH_TOOLS.includes(t);
 
@@ -230,8 +237,16 @@ export class PlaneEditor {
   /** Pipette mit dem Finger: Zeiger, Zeitgeber, ob sie schon greift; Lupe */
   private fingerHold: { id: number; timer: number; on: boolean } | null = null;
   private loupe: (Pt & { color: string }) | null = null;
-  /** Verlaufswerkzeug: Ziele (Formen; eine Fläche über einen Punkt im Pfad), bearbeitete Art, gewählter Stopp */
-  private grad: { targets: Array<{ shape: string; at: Pt | null }>; kind: GradKind; stop: number | null } | null = null;
+  /**
+   * Verlaufswerkzeug: Ziele (Formen, eine Fläche über einen Punkt im Pfad, oder eine Ebene), bearbeitete Art, gewählter
+   * Stopp, bearbeitete Schicht im Füllstapel (null: der oberste Verlauf der Art)
+   */
+  private grad: { targets: GradRef[]; kind: GradKind; stop: number | null; layer: number | null } | null = null;
+  /** Füllstapel offen: der Auswahl (paint) oder der aktiven Ebene (plane); gewählte Zeile (-1 Grundfarbe, -2 Luftfarbe) */
+  private stackOpen: 'paint' | 'plane' | null = null;
+  private stackSel: number | null = null;
+  /** Ziel, zu dem die gewählte Zeile gehört (wechselt es, gilt sie nicht mehr) */
+  private stackKey = '';
   /** Farbe fiel auf eine Fläche mit Verlauf: Grundfarbe oder Verlaufsstopp? (Plan 4.6) */
   private dropChoice: { color: PaintColor; shape: string; at: Pt | null; t: number } | null = null;
   private width = 800;
@@ -601,6 +616,7 @@ export class PlaneEditor {
       grad: this.building && this.tool === 'gradient' && !this.fillMode ? this.gradInfo() : null,
       dropChoice: this.building && this.dropChoice ? this.resolve(this.dropChoice.color) : null,
     });
+    this.ui.setStack(this.stackView());
     this.syncColorFromSelection();
     this.ui.colorRefresh();
     const st = this.host.world.planes.stats;
@@ -944,6 +960,7 @@ export class PlaneEditor {
         if (this.grad) {
           this.grad.kind = kind;
           this.grad.stop = null;
+          this.grad.layer = null;
         }
         this.gradKind = kind;
         this.uiDirty = true;
@@ -968,15 +985,72 @@ export class PlaneEditor {
       },
       gradRemove: () => {
         const kind = this.grad?.kind ?? 'gradient';
+        const layer = this.grad?.layer ?? null;
         const ts = this.gradTargets();
         if (!ts.length) return;
         this.edit(() => {
           const styles = styleMap(this.nodes);
-          for (const t of ts) removeGradient(t, kind, styles);
+          for (const t of ts) removeGradient(t, kind, styles, layer);
         });
-        if (this.grad) this.grad.stop = null;
+        if (this.grad) {
+          this.grad.stop = null;
+          this.grad.layer = null;
+        }
       },
       dropChoice: (which) => this.resolveDropChoice(which),
+      stackOpen: (which) => {
+        this.stackOpen = this.stackOpen === which ? null : which;
+        this.stackSel = null;
+        this.uiDirty = true;
+      },
+      stackClose: () => {
+        this.stackOpen = null;
+        this.stackSel = null;
+        this.uiDirty = true;
+      },
+      stackSelect: (i) => {
+        this.stackSel = i;
+        this.uiDirty = true;
+      },
+      stackOpacity: (i, v, phase) => this.stackEdit((p) => {
+        if (i < 0) p.opacity = v;
+        else if (p.fills?.[i]) p.fills[i].opacity = v;
+      }, phase),
+      stackBlend: (i, m) => this.stackEdit((p) => {
+        const f = p.fills?.[i];
+        if (f && f.type !== 'fade') f.blend = m;
+      }),
+      stackHide: (i) => this.stackEdit((p) => {
+        const f = p.fills?.[i];
+        if (!f) return;
+        if (f.hidden) delete f.hidden;
+        else f.hidden = true;
+      }),
+      stackRemove: (i) => {
+        this.stackEdit((p) => {
+          p.fills = (p.fills ?? []).filter((_, k) => k !== i);
+        });
+        this.stackSel = null;
+      },
+      stackMove: (i, dir) => {
+        let to = i;
+        this.stackEdit((p) => {
+          const fills = p.fills ?? [];
+          to = i + dir;
+          if (to < 0 || to >= fills.length) return;
+          [fills[i], fills[to]] = [fills[to], fills[i]];
+        });
+        this.stackSel = to;
+      },
+      stackAdd: (kind) => this.stackAdd(kind),
+      stackGradient: (i) => {
+        const t = this.stackTarget();
+        const f = t ? ownPaint(t, styleMap(this.nodes)).fills?.[i] : undefined;
+        if (!t || !f || f.type === 'color') return;
+        this.grad = { targets: [this.gradRefOf(t)], kind: f.type, stop: null, layer: i };
+        this.setTool('gradient');
+      },
+      stackAir: (patch, phase) => this.stackAir(patch, phase),
       duplicate: () => this.duplicate(),
       orderShape: (dir) => this.orderShape(dir),
       deleteShape: () => this.deleteShape(),
@@ -2312,6 +2386,19 @@ export class PlaneEditor {
    */
   private pickColor(c: PaintColor, phase: PickPhase): void {
     this.color = c;
+    // gewählte Zeile des Füllstapels (Grundfarbe, Farb-Füllung, Luft): die Farbe geht an sie
+    const sc = this.stackColor();
+    if (sc) {
+      if (phase === 'start' || phase === 'tap') this.history.begin(this.nodes);
+      sc.set(c);
+      if (phase === 'end' || phase === 'tap') {
+        if (this.history.commit(this.nodes)) this.changed();
+        this.pushRecent(c);
+      } else this.changed();
+      this.colorSel = this.selectionColorKey();
+      this.uiDirty = true;
+      return;
+    }
     // Verlaufswerkzeug mit gewähltem Stopp: die Farbe geht an den Stopp (aller Ziele)
     const gs = this.gradStop();
     if (gs) {
@@ -2374,6 +2461,7 @@ export class PlaneEditor {
 
   /** Schlüssel der Auswahl, deren Farbe der Farbknopf zeigt (gewählter Stopp, gewählte Fläche oder Formen) */
   private selectionColorKey(): string {
+    if (this.stackOpen && this.stackSel !== null) return `k|${this.stackOpen}|${this.stackKey}|${this.stackSel}`;
     if (this.tool === 'gradient' && this.grad?.stop !== null && this.grad?.stop !== undefined) return `g|${JSON.stringify(this.grad.targets)}|${this.grad.stop}`;
     const face = isPathTool(this.tool) ? this.paths.selectedFace() : null;
     return face ? `f|${face.shape.id}|${face.face.inner.join(',')}` : this.selection.join(',');
@@ -2384,6 +2472,12 @@ export class PlaneEditor {
     const key = this.selectionColorKey();
     if (key === this.colorSel) return;
     this.colorSel = key;
+    const sc = this.stackColor();
+    const own = sc?.get();
+    if (own) {
+      this.color = own;
+      return;
+    }
     const gs = this.gradStop();
     if (gs) {
       this.color = gs.stops[gs.index].color;
@@ -2524,6 +2618,172 @@ export class PlaneEditor {
     }
   }
 
+  // ------------------------------------------------------------------ Füllstapel (Stufe 3)
+
+  /** Ziel des Füllstapels: Ebenenstapel der aktiven Ebene, sonst die gewählte Fläche oder die zuletzt gewählte Form */
+  private stackTarget(): GradTarget | null {
+    if (this.stackOpen === 'plane') {
+      const plane = this.plane;
+      return plane ? { plane } : null;
+    }
+    if (this.stackOpen !== 'paint') return null;
+    const face = isPathTool(this.tool) ? this.paths.selectedFace() : null;
+    if (face) return { shape: face.shape, face: shapeFaces(face.shape).length > 1 ? face.face : null };
+    const s = this.shape;
+    return s ? { shape: s, face: null } : null;
+  }
+
+  private gradRefOf(t: GradTarget): GradRef {
+    return 'plane' in t ? { plane: t.plane.id } : { shape: t.shape.id, at: t.face ? { x: t.face.inner[0], y: t.face.inner[1] } : null };
+  }
+
+  /** CSS-Vorschau einer Füllung (Verläufe als linear-gradient, Deckkraft als Weiß) */
+  private fillPreview(f: ZoneFill): string {
+    const sw = swatchMap(this.nodes);
+    const look = this.host.world.currentLook;
+    if (f.type === 'color') return resolveColor(f.color, sw, look);
+    const ramp = rampOf(f.stops, sw, look);
+    const parts: string[] = [];
+    for (let k = 0; k <= 8; k++) {
+      const i = Math.round((k / 8) * (RAMP - 1)) * 4;
+      const [r, g, b, a] = [ramp[i], ramp[i + 1], ramp[i + 2], ramp[i + 3]];
+      parts.push(f.type === 'fade' ? `rgba(255,255,255,${a.toFixed(2)})` : `rgba(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)},${a.toFixed(2)})`);
+    }
+    return `linear-gradient(90deg,${parts.join(',')})`;
+  }
+
+  private stackView(): StackView | null {
+    if (!this.building || !this.stackOpen) return null;
+    const t = this.stackTarget();
+    const key = t ? JSON.stringify(this.gradRefOf(t)) : '';
+    if (key !== this.stackKey) {
+      this.stackKey = key;
+      this.stackSel = null;
+    }
+    if (!t) return null;
+    const p = ownPaint(t, styleMap(this.nodes));
+    const fills = p.fills ?? [];
+    const rows: StackRow[] = [];
+    for (let i = fills.length - 1; i >= 0; i--) {
+      const f = fills[i];
+      rows.push({ index: i, kind: f.type, preview: this.fillPreview(f), blend: f.type === 'fade' ? null : f.blend, opacity: f.opacity, hidden: !!f.hidden });
+    }
+    if (!('plane' in t) && p.fill !== null) rows.push({ index: -1, kind: 'base', preview: this.resolve(p.fill), blend: null, opacity: p.opacity ?? 1, hidden: false });
+    const air = airOf(this.nodes);
+    return {
+      title: 'plane' in t ? `Ebenenstapel · ${t.plane.name}` : t.face ? `Füllungen · Fläche von ${t.shape.name}` : `Füllungen · ${t.shape.name}`,
+      rows,
+      selected: this.stackSel,
+      air: 'plane' in t ? { color: this.resolve(air?.color ?? AIR_DEFAULT.color), amount: air?.amount ?? 0, near: air?.near ?? AIR_DEFAULT.near, far: air?.far ?? AIR_DEFAULT.far, plane: t.plane.air ?? 1 } : null,
+      full: fills.length >= MAX_LAYERS - 1,
+    };
+  }
+
+  /** Anstrich des Ziels ändern; Ziehen (start, move, end) ist ein Schritt im Arbeitsverlauf */
+  private stackEdit(fn: (p: ReturnType<typeof ownPaint>) => void, phase: PickPhase = 'tap'): void {
+    const t = this.stackTarget();
+    if (!t) return;
+    if (phase === 'start' || phase === 'tap') this.history.begin(this.nodes);
+    const p = ownPaint(t, styleMap(this.nodes));
+    fn(p);
+    writePaint(t, p);
+    if (phase === 'end' || phase === 'tap') {
+      if (this.history.commit(this.nodes)) this.changed();
+    } else this.changed();
+    this.uiDirty = true;
+  }
+
+  /** neue Füllung oben auf den Stapel: Farbe (aktuelle), Verlauf oder Deckkraftverlauf quer über den Rahmen */
+  private stackAdd(kind: 'color' | 'gradient' | 'fade'): void {
+    const t = this.stackTarget();
+    if (!t) return;
+    let box: { minX: number; minY: number; maxX: number; maxY: number };
+    if ('plane' in t) {
+      const shapes = shapesOf(this.nodes, t.plane.id);
+      box = shapes.length ? unionBounds(shapes) : { minX: -10, minY: -5, maxX: 10, maxY: 5 };
+    } else box = targetBox(t);
+    const y = (box.minY + box.maxY) / 2;
+    let added = -1;
+    this.stackEdit((p) => {
+      const fills = p.fills ?? [];
+      if (fills.length >= MAX_LAYERS - 1) return;
+      if (kind === 'color') fills.push({ type: 'color', color: this.color ?? '#ffffff', blend: 'normal', opacity: 1 });
+      else fills.push({ type: kind, stops: this.freshStops(t, kind), x0: box.minX, y0: y, x1: box.maxX, y1: y, blend: 'normal', opacity: 1 });
+      p.fills = fills;
+      added = fills.length - 1;
+    });
+    if (added >= 0) this.stackSel = added;
+  }
+
+  /** Luftperspektive der Zone (wird beim ersten Ändern angelegt) und Anteil der aktiven Ebene */
+  private stackAir(patch: { amount?: number; near?: number; far?: number; plane?: number; color?: true }, phase: PickPhase): void {
+    if (patch.color) {
+      this.stackSel = -2;
+      this.uiDirty = true;
+      if (!this.ui.colorOpen) this.ui.toast('Luftfarbe: im Farbmenü wählen');
+      return;
+    }
+    if (phase === 'start' || phase === 'tap') this.history.begin(this.nodes);
+    let air = airOf(this.nodes);
+    if (!air) {
+      air = { id: 'air', kind: 'air', ...AIR_DEFAULT };
+      this.nodes.push(air);
+    }
+    if (patch.amount !== undefined) air.amount = patch.amount;
+    if (patch.near !== undefined) air.near = patch.near;
+    if (patch.far !== undefined) air.far = Math.max(air.near + 0.1, patch.far);
+    const plane = this.plane;
+    if (patch.plane !== undefined && plane) {
+      if (patch.plane >= 1) delete plane.air;
+      else plane.air = patch.plane;
+    }
+    if (phase === 'end' || phase === 'tap') {
+      if (this.history.commit(this.nodes)) this.changed();
+    } else this.changed();
+    this.uiDirty = true;
+  }
+
+  /** Farbe der gewählten Zeile des Füllstapels (Grundfarbe, Farb-Füllung, Luft) lesen und setzen; sonst null */
+  private stackColor(): { get(): PaintColor | null; set(c: PaintColor): void } | null {
+    if (!this.stackOpen || this.stackSel === null) return null;
+    const i = this.stackSel;
+    if (i === -2)
+      return {
+        get: () => airOf(this.nodes)?.color ?? AIR_DEFAULT.color,
+        set: (c) => {
+          let air = airOf(this.nodes);
+          if (!air) {
+            air = { id: 'air', kind: 'air', ...AIR_DEFAULT };
+            this.nodes.push(air);
+          }
+          air.color = c;
+        },
+      };
+    const t = this.stackTarget();
+    if (!t) return null;
+    const p = ownPaint(t, styleMap(this.nodes));
+    if (i === -1 && p.fill !== null)
+      return {
+        get: () => p.fill,
+        set: (c) => {
+          const q = ownPaint(t, styleMap(this.nodes));
+          q.fill = c;
+          writePaint(t, q);
+        },
+      };
+    const f = p.fills?.[i];
+    if (f?.type !== 'color') return null;
+    return {
+      get: () => f.color,
+      set: (c) => {
+        const q = ownPaint(t, styleMap(this.nodes));
+        const g = q.fills?.[i];
+        if (g?.type === 'color') g.color = c;
+        writePaint(t, q);
+      },
+    };
+  }
+
   // ------------------------------------------------------------------ Verlauf (Stufe 3)
 
   /** Art, die das Verlaufswerkzeug ohne Ziel anlegt */
@@ -2533,6 +2793,11 @@ export class PlaneEditor {
   private gradTargets(): GradTarget[] {
     const out: GradTarget[] = [];
     for (const r of this.grad?.targets ?? []) {
+      if ('plane' in r) {
+        const plane = findPlane(this.nodes, r.plane);
+        if (plane) out.push({ plane });
+        continue;
+      }
       const shape = findShape(this.nodes, r.shape);
       if (!shape) continue;
       if (!r.at) {
@@ -2547,12 +2812,12 @@ export class PlaneEditor {
   }
 
   /** bearbeiteter Verlauf (vom ersten Ziel) mit Linie in Ebenen-Koordinaten, dazu Ebene und Form */
-  private gradState(): { g: GradientFill & { line: GradLine }; plane: ZonePlane; shape: ZoneShape; targets: GradTarget[] } | null {
+  private gradState(): { g: GradientFill & { line: GradLine; index: number }; plane: ZonePlane; shape: ZoneShape | undefined; targets: GradTarget[] } | null {
     const targets = this.gradTargets();
     const t = targets[0];
-    const plane = t ? findPlane(this.nodes, t.shape.parent) : undefined;
-    const g = t && this.grad ? readGradient(t, this.grad.kind, styleMap(this.nodes)) : null;
-    return g && plane ? { g, plane, shape: t.shape, targets } : null;
+    const plane = !t ? undefined : 'plane' in t ? t.plane : findPlane(this.nodes, t.shape.parent);
+    const g = t && this.grad ? readGradient(t, this.grad.kind, styleMap(this.nodes), this.grad.layer) : null;
+    return g && plane ? { g, plane, shape: 'plane' in t ? undefined : t.shape, targets } : null;
   }
 
   /**
@@ -2609,6 +2874,14 @@ export class PlaneEditor {
         { t: 0, color: '#000000', a: 1 },
         { t: 1, color: '#000000', a: 0 },
       ];
+    // Ebenenstapel: die aktuelle Farbe läuft über die Ebene aus
+    if ('plane' in t) {
+      const c = this.color ?? '#203040';
+      return [
+        { t: 0, color: c, a: 1 },
+        { t: 1, color: c, a: 0 },
+      ];
+    }
     const base = (t.face ? facePaint(t.shape, t.face) : t.shape).fill ?? '#808080';
     const from = this.color ?? base;
     let to: PaintColor = base;
@@ -2628,20 +2901,20 @@ export class PlaneEditor {
     if (!st || !this.grad) return;
     const patch = fn(st.g);
     if (!Object.keys(patch).length) return;
-    const kind = this.grad.kind;
+    const { kind, layer } = this.grad;
     this.edit(() => {
       const styles = styleMap(this.nodes);
-      for (const t of this.gradTargets()) writeGradient(t, kind, styles, patch, () => this.freshStops(t, kind));
+      for (const t of this.gradTargets()) writeGradient(t, kind, styles, patch, () => this.freshStops(t, kind), layer);
     });
   }
 
   /** Verlauf aller Ziele während einer Geste ändern (ohne eigenen Schritt) */
   private gradApply(patch: { line?: GradLine; stops?: GradientStop[]; radial?: boolean }): boolean {
     if (!this.grad) return false;
-    const kind = this.grad.kind;
+    const { kind, layer } = this.grad;
     const styles = styleMap(this.nodes);
     let ok = true;
-    for (const t of this.gradTargets()) ok = writeGradient(t, kind, styles, patch, () => this.freshStops(t, kind)) && ok;
+    for (const t of this.gradTargets()) ok = writeGradient(t, kind, styles, patch, () => this.freshStops(t, kind), layer) && ok;
     this.meshDirty = true;
     this.uiDirty = true;
     return ok;
@@ -2657,6 +2930,7 @@ export class PlaneEditor {
   /** Regler und Ziele zeichnen */
   private gradOverlay(st: ReturnType<typeof emptyOverlay>): void {
     for (const t of this.gradTargets()) {
+      if ('plane' in t) continue;
       const plane = findPlane(this.nodes, t.shape.parent);
       if (!plane) continue;
       const rings = t.face ? [t.face.outline, ...t.face.holes] : [shapeLocalPolys(t.shape).outline];
@@ -2705,6 +2979,14 @@ export class PlaneEditor {
       this.drawOverlay();
       return;
     }
+    // Ebenenstapel: Ziehen legt die Linie des Ebenen-Verlaufs neu (Esc beendet)
+    const pt = this.grad?.targets.length === 1 && 'plane' in this.grad.targets[0] ? findPlane(this.nodes, this.grad.targets[0].plane) : undefined;
+    const pq = pt ? this.planePoint(pt, p) : null;
+    if (pt && pq) {
+      this.history.begin(this.nodes);
+      this.gesture = { kind: 'gradNew', pointerId, plane: pt.id, a: pq, start: p, moved: false };
+      return;
+    }
     const f = this.faceAtScreen(p);
     if (!f) {
       this.grad = null;
@@ -2716,7 +2998,7 @@ export class PlaneEditor {
     const sel = this.selectedShapes().filter(free);
     const many = sel.some((s) => s.id === f.shape.id) && sel.length > 1;
     const targets = many ? sel.map((s) => ({ shape: s.id, at: null })) : [{ shape: f.shape.id, at: shapeFaces(f.shape).length > 1 ? { ...f.local } : null }];
-    this.grad = { targets, kind: this.grad?.kind ?? this.gradKind, stop: null };
+    this.grad = { targets, kind: this.grad?.kind ?? this.gradKind, stop: null, layer: null };
     this.history.begin(this.nodes);
     this.gesture = { kind: 'gradNew', pointerId, plane: f.plane.id, a: f.q, start: p, moved: false };
     this.uiDirty = true;

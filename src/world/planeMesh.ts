@@ -15,8 +15,8 @@
  * und Tiefe ändern rechnen nur die Lage der Ecken neu, so bleibt das Ziehen im Editor auch mit 30 Ebenen flüssig.
  * Platzhalter: noch keine Earle-Schichten (Stufe 5).
  */
-import { BufferAttribute, BufferGeometry, DataTexture, DoubleSide, FloatType, Group, Mesh, NearestFilter, RGBAFormat, ShaderMaterial, ShapeUtils, UniformsLib, UniformsUtils, Vector2, type IUniform, type Raycaster } from 'three';
-import { facePaint, planeHidden, planesOf, shapeFaces, shapesOf, styleMap, swatchMap, type ZoneNode, type ZonePlane, type ZoneShape } from '@/zone/nodes';
+import { BufferAttribute, BufferGeometry, DataTexture, DoubleSide, FloatType, Group, Mesh, NearestFilter, RGBAFormat, ShaderMaterial, ShapeUtils, UniformsLib, UniformsUtils, Vector2, Vector3, type IUniform, type Raycaster } from 'three';
+import { airAmount, airOf, facePaint, planeHidden, planesOf, shapeFaces, shapesOf, styleMap, swatchMap, type ZoneNode, type ZonePlane, type ZoneShape } from '@/zone/nodes';
 import { BLEND_MODES, MAX_LAYERS, RAMP, hexToRgb, layersClear, paintLayers, rampOf, resolveColor, type Box, type SwatchMap, type ZoneFill } from '@/zone/paint';
 import { faceBox, type Face } from '@/zone/faces';
 import type { LookName } from './looks';
@@ -76,14 +76,16 @@ export interface PlaneBuildOptions {
   showPlane?: (plane: ZonePlane) => boolean;
 }
 
-/** Zeile der Stil-Datentextur: Schichten mit Palettenverweisen (aufgelöst wird beim Füllen der Textur) */
+/** Zeile der Stil-Datentextur: Schichten mit Palettenverweisen (aufgelöst wird beim Füllen der Textur); air: Anteil der Luftfarbe (Zeilen der Ebenen) */
 interface Row {
   layers: readonly ZoneFill[];
   opacity: number;
+  air: number;
 }
 
 const VERTEX = /* glsl */ `
 uniform highp sampler2D uPaint;
+uniform vec3 uAir;
 attribute vec2 aLocal;
 attribute vec2 aPlane;
 attribute vec2 aRows;
@@ -102,7 +104,7 @@ void main() {
   vec4 hf = texelFetch(uPaint, ivec2(0, vRows.x), 0);
   vec4 hp = texelFetch(uPaint, ivec2(0, vRows.y), 0);
   vSolid = vec4(0.0);
-  if (hf.x < 1.5 && hp.x < 0.5 && hf.y > 0.999) vSolid = vec4(texelFetch(uPaint, ivec2(2, vRows.x), 0).rgb, 1.0);
+  if (hf.x < 1.5 && hp.x < 0.5 && hf.y > 0.999) vSolid = vec4(mix(texelFetch(uPaint, ivec2(2, vRows.x), 0).rgb, uAir, hp.z), 1.0);
   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
   gl_Position = projectionMatrix * mvPosition;
   #include <fog_vertex>
@@ -112,6 +114,7 @@ void main() {
 const FRAGMENT = /* glsl */ `
 uniform highp sampler2D uPaint;
 uniform highp sampler2D uRamp;
+uniform vec3 uAir;
 varying vec2 vLocal;
 varying vec2 vPlane;
 flat varying ivec2 vRows;
@@ -185,13 +188,16 @@ vec4 layers(int row, int n, vec2 p, vec4 acc) {
 }
 void main() {
   vec4 acc = vec4(vSolid.rgb, 1.0);
+  vec3 c = vSolid.rgb;
   if (vSolid.a < 0.5) {
     vec4 hf = texelFetch(uPaint, ivec2(0, vRows.x), 0);
+    vec4 hp = texelFetch(uPaint, ivec2(0, vRows.y), 0);
     acc = layers(vRows.x, int(hf.x + 0.5), vLocal, vec4(0.0));
-    acc = layers(vRows.y, int(texelFetch(uPaint, ivec2(0, vRows.y), 0).x + 0.5), vPlane, acc);
+    acc = layers(vRows.y, int(hp.x + 0.5), vPlane, acc);
     acc *= hf.y;
+    // Luftperspektive der Zone (Anteil je Ebene in ihrer Zeile)
+    c = mix(acc.a > 1e-6 ? acc.rgb / acc.a : vec3(0.0), uAir, hp.z);
   }
-  vec3 c = acc.a > 1e-6 ? acc.rgb / acc.a : vec3(0.0);
   gl_FragColor = vec4(toLinear(clamp(c, 0.0, 1.0)), acc.a);
 #ifdef OPAQUE
   gl_FragColor.a = 1.0;
@@ -248,6 +254,7 @@ export class PlaneLayer {
     this.uniforms = UniformsUtils.merge([UniformsLib.fog]);
     this.uniforms.uPaint = { value: this.paintTex };
     this.uniforms.uRamp = { value: this.rampTex };
+    this.uniforms.uAir = { value: new Vector3(1, 1, 1) };
     const common = { uniforms: this.uniforms, vertexShader: VERTEX, fragmentShader: FRAGMENT, side: DoubleSide, fog: true };
     // undurchsichtig: Three setzt dafür selbst OPAQUE (Deckkraft 1 im Shader)
     this.opaqueMat = new ShaderMaterial(common);
@@ -269,11 +276,13 @@ export class PlaneLayer {
     const rows: Row[] = [];
     const keys: string[] = [];
     const rowOf = new Map<string, number>();
-    const addRow = (layers: readonly ZoneFill[], opacity: number): number => {
-      const key = JSON.stringify([opacity, layers]);
+    const air = airOf(nodes);
+    this.airColor = air?.color ?? '#ffffff';
+    const addRow = (layers: readonly ZoneFill[], opacity: number, airT = 0): number => {
+      const key = JSON.stringify([opacity, airT, layers]);
       let i = rowOf.get(key);
       if (i === undefined) {
-        i = rows.push({ layers, opacity }) - 1;
+        i = rows.push({ layers, opacity, air: airT }) - 1;
         rowOf.set(key, i);
         keys.push(key);
       }
@@ -286,7 +295,7 @@ export class PlaneLayer {
       if (!show(plane)) continue;
       planeCount++;
       const planeLayers = (plane.fills ?? []).filter((f) => !f.hidden).slice(0, MAX_LAYERS);
-      const planeRow = addRow(planeLayers, 1);
+      const planeRow = addRow(planeLayers, 1, airAmount(air, plane));
       const planeClear = layersClear(planeLayers);
       shapesOf(nodes, plane.id).forEach((shape, rank) => {
         if (shape.hidden) return;
@@ -308,7 +317,7 @@ export class PlaneLayer {
     const tris = all.reduce((n, p) => n + p.tri.index.length / 3, 0);
     this.rows = rows;
     const key = keys.join('|');
-    if (key !== this.rowsKey || this.swatchesChanged()) {
+    if (key !== this.rowsKey || this.swatchesChanged() || this.airColor !== this.airShown) {
       this.rowsKey = key;
       this.fillTextures();
     }
@@ -326,9 +335,15 @@ export class PlaneLayer {
     return true;
   }
 
+  /** Luftfarbe der Zone (Palettenverweis möglich) und die zuletzt in den Uniform geschriebene */
+  private airColor = '#ffffff';
+  private airShown = '';
+
   /** Stil-Datentextur und Farbbänder aus den Zeilen füllen, Farben im aktuellen Look */
   private fillTextures(): void {
     const rows = this.rows;
+    this.airShown = this.airColor;
+    (this.uniforms.uAir.value as Vector3).set(...hexToRgb(resolveColor(this.airColor, this.swatches, this.look)));
     const h = capacity(rows.length);
     if (this.paintTex.image.height !== h) {
       this.paintTex.dispose();
@@ -344,6 +359,7 @@ export class PlaneLayer {
       const base = r * ROW_W * 4;
       data[base] = row.layers.length;
       data[base + 1] = row.opacity;
+      data[base + 2] = row.air;
       row.layers.forEach((f, i) => {
         const a = base + (1 + 2 * i) * 4;
         const b = a + 4;

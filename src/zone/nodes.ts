@@ -44,6 +44,21 @@ export interface ZonePlane {
    * in Ebenen-Koordinaten
    */
   fills?: ZoneFill[];
+  /** Anteil der Luftperspektive der Zone für diese Ebene (0 bis 1, ohne Angabe 1) */
+  air?: number;
+}
+
+/**
+ * Luftperspektive der Zone (Stufe 3, Plan 4.4): Ebenen nehmen mit der Tiefe die Luftfarbe an, ab near voll bei far
+ * (Meter, weich), höchstens amount; je Ebene abschwächbar. Kommt zum Nebel der Welt dazu. Eine je Zone (Kennung air)
+ */
+export interface ZoneAir {
+  id: string;
+  kind: 'air';
+  color: PaintColor;
+  near: number;
+  far: number;
+  amount: number;
 }
 
 /**
@@ -129,7 +144,7 @@ export interface ZoneShape {
   locked?: boolean;
 }
 
-export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup | ZoneSketch | ZoneSwatch | ZoneStyle;
+export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup | ZoneSketch | ZoneSwatch | ZoneStyle | ZoneAir;
 
 export const isPlane = (n: ZoneNode): n is ZonePlane => n.kind === 'plane';
 export const isShape = (n: ZoneNode): n is ZoneShape => n.kind === 'shape';
@@ -137,6 +152,19 @@ export const isGroup = (n: ZoneNode): n is ZoneGroup => n.kind === 'group';
 export const isSketch = (n: ZoneNode): n is ZoneSketch => n.kind === 'sketch';
 export const isSwatch = (n: ZoneNode): n is ZoneSwatch => n.kind === 'swatch';
 export const isStyle = (n: ZoneNode): n is ZoneStyle => n.kind === 'style';
+export const isAir = (n: ZoneNode): n is ZoneAir => n.kind === 'air';
+
+/** Luftperspektive der Zone, falls gesetzt */
+export function airOf(nodes: readonly ZoneNode[]): ZoneAir | undefined {
+  return nodes.find(isAir);
+}
+
+/** Anteil der Luftfarbe für eine Ebene (weich zwischen near und far, mal Stärke und Anteil der Ebene) */
+export function airAmount(air: ZoneAir | undefined, plane: ZonePlane): number {
+  if (!air || air.amount <= 0) return 0;
+  const t = Math.max(0, Math.min(1, (plane.z - air.near) / Math.max(1e-6, air.far - air.near)));
+  return t * t * (3 - 2 * t) * air.amount * (plane.air ?? 1);
+}
 
 /** Felder der Zonenpalette in ihrer Reihenfolge, nach Kennung */
 export function swatchesOf(nodes: readonly ZoneNode[]): ZoneSwatch[] {
@@ -844,6 +872,7 @@ export function parseNodes(v: unknown): ZoneNode[] {
       if (typeof o.group === 'string' && ID.test(o.group)) p.group = o.group;
       const fills = parseFills(o.fills);
       if (fills) p.fills = fills;
+      if (num(o.air) && o.air >= 0 && o.air < 1) p.air = o.air;
       out.push(p);
       ids.add(p.id);
     } else if (o.kind === 'sketch' && typeof o.parent === 'string' && typeof o.src === 'string' && /^\/zones\/[a-z0-9-]{1,40}\/[\w.-]{1,120}$/.test(o.src) && num(o.w) && num(o.h) && o.w > 0 && o.h > 0) {
@@ -861,6 +890,12 @@ export function parseNodes(v: unknown): ZoneNode[] {
       }
       out.push(c);
       ids.add(c.id);
+    } else if (o.kind === 'air' && !out.some(isAir) && num(o.near) && num(o.far) && num(o.amount)) {
+      const color = parseColor(o.color);
+      if (!color) continue;
+      const a: ZoneAir = { id: o.id, kind: 'air', color, near: o.near, far: Math.max(o.near + 0.1, o.far), amount: Math.max(0, Math.min(1, o.amount)) };
+      out.push(a);
+      ids.add(a.id);
     } else if (o.kind === 'style' && /^y\d{1,6}$/.test(o.id)) {
       const fill = parseColor(o.fill);
       if (!fill) continue;
@@ -931,7 +966,7 @@ export function parseNodes(v: unknown): ZoneNode[] {
   const planeIds = new Set(out.filter(isPlane).map((p) => p.id));
   const groupIds = new Set(out.filter(isGroup).map((g) => g.id));
   for (const p of out) if (isPlane(p) && p.group && !groupIds.has(p.group)) delete p.group;
-  return out.filter((n) => isPlane(n) || isGroup(n) || isSwatch(n) || isStyle(n) || planeIds.has(n.parent));
+  return out.filter((n) => isPlane(n) || isGroup(n) || isSwatch(n) || isStyle(n) || isAir(n) || planeIds.has(n.parent));
 }
 
 const LOOK_KEYS = ['day', 'dusk', 'night', 'neon'];
@@ -978,6 +1013,8 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
     writePaint(o, y);
     out.push(o);
   }
+  const air = airOf(nodes);
+  if (air) out.push({ id: air.id, kind: 'air', color: air.color, near: round(air.near, 2), far: round(air.far, 2), amount: round(air.amount, 3) });
   for (const g of groupsOf(nodes)) {
     const o: Record<string, unknown> = { id: g.id, kind: 'group', name: g.name };
     if (g.collapsed) o.collapsed = true;
@@ -991,6 +1028,7 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
     if (p.locked) o.locked = true;
     if (p.group) o.group = p.group;
     if (p.fills?.length) o.fills = p.fills.map(serializeFill);
+    if (p.air !== undefined && p.air < 1) o.air = round(p.air, 3);
     out.push(o);
   }
   for (const p of planesOf(nodes)) {
@@ -1024,7 +1062,7 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
 /** tiefe Kopie (für den Arbeitsverlauf und das Sichern) */
 export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
   return nodes.map((n): ZoneNode => {
-    if (isGroup(n) || isSketch(n)) return { ...n };
+    if (isGroup(n) || isSketch(n) || isAir(n)) return { ...n };
     if (isPlane(n)) return { ...n, ...(n.fills ? { fills: cloneFills(n.fills) } : {}) };
     if (isSwatch(n)) return { ...n, ...(n.looks ? { looks: { ...n.looks } } : {}) };
     if (isStyle(n)) return { ...n, ...(n.fills ? { fills: cloneFills(n.fills) } : {}) };

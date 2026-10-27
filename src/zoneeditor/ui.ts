@@ -10,13 +10,16 @@ import { PLANE_ROLE_WORDS, PLANE_ROLES, type PlaneRole, type ZoneGroup, type Zon
 import type { PathContext } from './pathTools';
 import { VIEW_WORDS, type ViewMode } from './views';
 import { COLOR_CSS, ColorMenu, type ColorMenuHost } from './colorMenu';
+import { STACK_CSS, StackPanel, type StackActions, type StackView } from './stackPanel';
 
 export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch' | 'gradient' | 'pipette';
 export type Isolate = 'off' | 'front' | 'only';
 export const ISOLATE_WORDS: Record<Isolate, string> = { off: 'alle Ebenen', front: 'davor ausgeblendet', only: 'nur diese' };
 
-export interface UiActions {
+export interface UiActions extends StackActions {
   tool(t: Tool): void;
+  /** Füllstapel der Auswahl (paint) oder Ebenenstapel der aktiven Ebene (plane) zeigen */
+  stackOpen(which: 'paint' | 'plane'): void;
   view(v: ViewMode | 'side'): void;
   undo(): void;
   redo(): void;
@@ -404,14 +407,15 @@ export class EditorUi {
   /** nach Wischen oder Ziehen kommt noch ein click; den schlucken */
   private swallowClick = false;
   /** Leiste unten zeigt für mehrere Formen die Knöpfe zum Ausrichten oder Verbinden, für die Ebene die der Skizze */
-  private sub: 'align' | 'combine' | 'sketch' | 'numbers' | null = null;
+  private sub: 'align' | 'combine' | 'sketch' | 'numbers' | 'roles' | null = null;
   /** Breite und Höhe in den Zahlen gemeinsam ändern */
   private keepRatio = false;
   /** Bildauswahl für Skizzen */
   private readonly sketchFile = el('input');
   private thumbs = new Map<string, HTMLCanvasElement>();
-  /** Farbknopf und Farbmenü (Stufe 3) */
+  /** Farbknopf und Farbmenü, Füllstapel (Stufe 3) */
   private readonly colors: ColorMenu;
+  private readonly stack: StackPanel;
 
   constructor(
     private readonly a: UiActions,
@@ -420,9 +424,10 @@ export class EditorUi {
     colorHost: ColorMenuHost,
   ) {
     const style = el('style');
-    style.textContent = CSS + COLOR_CSS;
+    style.textContent = CSS + COLOR_CSS + STACK_CSS;
     this.root.append(style, overlay);
     this.colors = new ColorMenu(colorHost);
+    this.stack = new StackPanel(a);
     this.colors.onOpen = () => {
       if (this.cam.classList.contains('open')) this.toggleCam();
     };
@@ -494,7 +499,7 @@ export class EditorUi {
     this.layers.append(head, this.list, foot);
 
     this.banner.append(this.bannerText, button('Wiederherstellen', '', () => a.restore()), button('Verwerfen', '', () => a.discardBackup()));
-    this.root.append(this.top, this.views, this.cam, this.colors.panel, this.tools, this.layers, this.context, this.toastEl, this.banner, this.stats);
+    this.root.append(this.top, this.views, this.cam, this.colors.panel, this.tools, this.layers, this.stack.el, this.context, this.toastEl, this.banner, this.stats);
     document.body.append(this.root);
     // Klicks auf die Bedienfelder gehen nicht ins Spiel
     for (const p of [this.top, this.views, this.cam, this.tools, this.layers, this.context, this.banner]) p.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -506,6 +511,19 @@ export class EditorUi {
     this.cam.classList.toggle('open', open);
     this.layers.classList.toggle('camopen', open);
     this.camBtn.classList.toggle('on', open);
+  }
+
+  /** Füllstapel zeigen (null: verbergen) */
+  setStack(view: StackView | null): void {
+    this.stack.set(view);
+    this.placeStack();
+  }
+
+  /** Füllstapel über die Leiste unten legen, auch wenn sie zweizeilig umbricht */
+  private placeStack(): void {
+    if (!this.stack.el.classList.contains('show')) return;
+    const bar = this.context.getBoundingClientRect();
+    this.stack.el.style.bottom = bar.height ? `${Math.round(window.innerHeight - bar.top + 8)}px` : '';
   }
 
   /** Farbknopf und offenes Farbmenü nachführen */
@@ -1097,6 +1115,7 @@ export class EditorUi {
       this.context.append(el('span', 'ze-label', path.shape ? `Band in ${path.shape}: auf eine Kante drücken und nach innen ziehen` : 'Band: erst eine Form wählen, dann auf ihre Kante drücken und nach innen ziehen'));
     } else if (path?.kind === 'face') {
       this.context.append(el('span', 'ze-label', `${path.shape.name} · Fläche`));
+      this.context.append(button('Füllungen', 'Füllstapel der Fläche: Farben und Verläufe mit Mischmodus und Deckkraft', () => this.a.stackOpen('paint')));
       this.context.append(button('Loch', 'Fläche zum Loch machen (Entf); eine Farbe füllt sie wieder', () => this.a.faceFill(null), path.fill === null ? 'on' : ''));
     } else if (shape && this.sub === 'numbers' && nums) {
       // Zahlen nur auf Wunsch (Plan 4.2 Grundsatz 1): Mitte, Breite, Höhe in Metern der Ebene, Drehen um Grad
@@ -1194,6 +1213,7 @@ export class EditorUi {
       }
       this.context.append(button('Vereinfachen', 'Weniger Anker, höchstens 1,5 Bildpunkte daneben', () => this.a.simplify()));
       if (nums) this.context.append(button('Zahlen', 'Lage, Größe und Drehung als Zahlen', open('numbers')));
+      this.context.append(button('Füllungen', many ? 'Füllstapel der zuletzt gewählten Form' : 'Füllstapel der Form: Farben und Verläufe mit Mischmodus und Deckkraft', () => this.a.stackOpen('paint')));
       if (gi.units > 1 && onePlane) this.context.append(button('Gruppieren', 'Zu einer Gruppe (Cmd+G): Tippen wählt sie ganz, doppelt tippen geht hinein', () => this.a.shapeGroup()));
       if (gi.groups) this.context.append(button('Auflösen', 'Gruppe auflösen, die Formen bleiben (Shift+Cmd+G)', () => this.a.shapeUngroup()));
       if (gi.units === 1) this.context.append(button(FORWARD, 'In der Ebene nach vorn (])', () => this.a.orderShape(1)), button(BACKWARD, 'In der Ebene nach hinten ([)', () => this.a.orderShape(-1)));
@@ -1217,15 +1237,35 @@ export class EditorUi {
           this.setContext(planes, shapes, isolate, path, canPaste, { ...extra, sketchEdit: false });
         }),
       );
+    } else if (plane && this.sub === 'roles') {
+      const role = planes.every((p) => p.role === plane.role) ? plane.role : null;
+      this.context.append(el('span', 'ze-label', planes.length > 1 ? `Rolle von ${planes.length} Ebenen` : `Rolle von ${plane.name}`));
+      for (const r of PLANE_ROLES) this.context.append(button(PLANE_ROLE_WORDS[r], `Rolle: ${PLANE_ROLE_WORDS[r]} (wirkt ab Stufe 4 auf Pinsel und Stützen)`, () => this.a.setRole(r), role === r ? 'on' : ''));
+      this.context.append(
+        el('span', 'ze-sep'),
+        button('Fertig', 'Zurück zur Leiste der Ebene', () => {
+          this.sub = null;
+          this.contextKey = '-';
+          this.setContext(planes, shapes, isolate, path, canPaste, extra);
+        }),
+      );
     } else if (plane) {
       const many = planes.length > 1;
       if (this.sub === 'sketch') this.sub = null;
       this.context.append(el('span', 'ze-label', group ? `${group.name} · ${planes.length} ${planes.length === 1 ? 'Ebene' : 'Ebenen'}` : many ? `${planes.length} Ebenen` : plane.name));
       const role = planes.every((p) => p.role === plane.role) ? plane.role : null;
-      for (const r of PLANE_ROLES) this.context.append(button(PLANE_ROLE_WORDS[r], `Rolle: ${PLANE_ROLE_WORDS[r]} (wirkt ab Stufe 4 auf Pinsel und Stützen)`, () => this.a.setRole(r), role === r ? 'on' : ''));
+      // die Rolle ändert sich selten: ein Knopf, der die vier Rollen öffnet (hält die Leiste einzeilig)
+      this.context.append(
+        button(`Rolle: ${role ? PLANE_ROLE_WORDS[role] : 'gemischt'}`, 'Rolle der Ebene wählen (wirkt ab Stufe 4 auf Pinsel und Stützen)', () => {
+          this.sub = 'roles';
+          this.contextKey = '-';
+          this.setContext(planes, shapes, isolate, path, canPaste, extra);
+        }),
+      );
       this.context.append(el('span', 'ze-sep'));
       if (!many) for (const i of ['off', 'front', 'only'] as const) this.context.append(button(i === 'off' ? 'Alle' : i === 'front' ? 'Davor aus' : 'Nur diese', `Isolieren: ${ISOLATE_WORDS[i]}`, () => this.a.setIsolate(i), isolate === i ? 'on' : ''));
       if (!many) this.context.append(el('span', 'ze-sep'));
+      if (!many) this.context.append(button('Ebenenstapel', 'Füllungen über allen Formen der Ebene, Luftperspektive', () => this.a.stackOpen('plane')));
       if (canPaste) this.context.append(button('Einfügen', 'Kopierte Formen in die aktive Ebene, an derselben Stelle im Spielblick (Cmd+V)', () => this.a.paste()));
       this.context.append(group ? button('Auflösen', 'Gruppe auflösen, die Ebenen bleiben (Shift+Cmd+G)', () => this.a.ungroup()) : button('Gruppieren', 'Die gewählten Ebenen zu einer Gruppe (Cmd+G)', () => this.a.groupPlanes()));
       if (!many)
@@ -1249,6 +1289,7 @@ export class EditorUi {
     }
     this.context.classList.toggle('show', !!(dropChoice || filling || grad || path || shape || plane));
     if (this.toastEl.classList.contains('show')) this.placeToast();
+    this.placeStack();
   }
 
   destroy(): void {
