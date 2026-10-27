@@ -642,6 +642,14 @@ deren Weltrenderer und Spielkamera; seine Oberfläche ist HTML über dem Spielbi
   halten“) und Umordnen (`movePlanes`: mittig in die Lücke, bei unter 5 cm je Ebene rücken die dahinter nach; Tiefen
   folgen der Reihenfolge). Gesten: Maus zieht die Zeile, Finger und Pencil das Vorschaubild (`touch-action: none` nur
   dort, sonst rollt die Liste), nach rechts wischen nimmt eine Ebene in die Auswahl. Die Tiefenleiste ist weg.
+- **Ebenen-Gruppen** (`ZoneGroup` in `zone.nodes`, `plane.group`; `src/zone/planeGroups.ts`): Eine Gruppe ist ein Lauf
+  benachbarter Ebenen in der Tiefenreihenfolge, eine Ebene hat höchstens eine Gruppe. `normalizeGroups` (nach jeder
+  Änderung) lässt abgerissene Ebenen die Gruppe verlassen (der längste Lauf bleibt) und entfernt leere Gruppen;
+  `depthLimits` begrenzt geschobene Tiefen so, dass keine Ebene an einer Ebene einer anderen Gruppe vorbeikommt (ohne
+  Gruppe zählt als eine Gruppe); `reorderPlanes` ordnet ein (eine ganze Gruppe behält ihre Abstände, andere verteilen
+  sich in der Lücke, zu schmale Lücken schieben den Rest nach hinten) und setzt die Gruppe; `groupPlanes`, `ungroup`,
+  `listEntries`. `planeHidden`/`planeLocked` (in `nodes.ts`) verbinden Ebene und Gruppe; Weltrenderer (auch im Spiel),
+  SVG, Treffer, Werkzeuge und Bereiche nutzen sie.
 - **Kopieren über Ebenen** (`transferShape`): dieselbe Streckung um den Fußpunkt der Spielkamera wie „Bild halten“;
   Spiegeln (`flipShape`) spiegelt Pfade, Löcher, Linien und Füllpunkte und hält die Mitte der Grenzen.
 - **SVG** (`src/zone/svgPlanes.ts`): `planesToSvg` schreibt je Ebene eine Gruppe `p3-name` (hinten zuerst), 1 m = 10 px in
@@ -655,8 +663,9 @@ deren Weltrenderer und Spielkamera; seine Oberfläche ist HTML über dem Spielbi
   bleibt unverändert, wenn Farben und Ränder (Grenzen bis 2 cm, Fläche bis 1 %) zurückkommen; Ursprung aus den
   Datenattributen, sonst dem Rahmen, sonst unten links der Zeichenfläche.
 - **Prüfungen:** `tests/nodes.test.ts`, `tests/planeMesh.test.ts`, `tests/faces.test.ts`, `tests/pathTools.test.ts`,
-  `tests/faceCurves.test.ts`, `tests/svgPlanes.test.ts`; Szenario 11 (Stufe 1), 12 (Stufe 2) und 13 (Befunde an Tor S2)
-  mit `node scripts/scenario.mjs 11 12 13` und `TC_URL` gegen den eigenen Server. Künstliche Tastenereignisse im Test
+  `tests/faceCurves.test.ts`, `tests/svgPlanes.test.ts`, `tests/planeGroups.test.ts`; Szenario 11 (Stufe 1), 12 (Stufe 2),
+  13 (Befunde an Tor S2) und 14 (Ebenen-Gruppen) mit `node scripts/scenario.mjs 11 12 13 14` und `TC_URL` gegen den
+  eigenen Server. Künstliche Tastenereignisse im Test
   am `document.body` auslösen, nicht am `window`: dort erreichen sie auch die Tasten des Levels (Esc verlässt es).
 
 ## 5. Physik

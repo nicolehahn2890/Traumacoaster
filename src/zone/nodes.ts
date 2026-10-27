@@ -36,6 +36,22 @@ export interface ZonePlane {
   role: PlaneRole;
   hidden?: boolean;
   locked?: boolean;
+  /** Gruppe in der Ebenenliste (wie ein Ordner in Photoshop); ihre Ebenen liegen in der Tiefe beieinander */
+  group?: string;
+}
+
+/**
+ * Gruppe von Ebenen (nach Tor S2, wie ein Ordner in Photoshop): fasst Ebenen zusammen, die in der Tiefe beieinander
+ * liegen; ausblenden und sperren gelten für alle, zugeklappt zeigt die Liste nur ihre Kopfzeile. Eine Ebene hat höchstens
+ * eine Gruppe (noch keine Gruppen in Gruppen)
+ */
+export interface ZoneGroup {
+  id: string;
+  kind: 'group';
+  name: string;
+  collapsed?: boolean;
+  hidden?: boolean;
+  locked?: boolean;
 }
 
 /** Teilungslinie einer Form (Vektornetz, Stufe 2): offen von Kante zu Kante oder geschlossen als Ring in einer Fläche */
@@ -80,10 +96,11 @@ export interface ZoneShape {
   locked?: boolean;
 }
 
-export type ZoneNode = ZonePlane | ZoneShape;
+export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup;
 
 export const isPlane = (n: ZoneNode): n is ZonePlane => n.kind === 'plane';
 export const isShape = (n: ZoneNode): n is ZoneShape => n.kind === 'shape';
+export const isGroup = (n: ZoneNode): n is ZoneGroup => n.kind === 'group';
 
 /** Ebenen von vorn nach hinten */
 export function planesOf(nodes: readonly ZoneNode[]): ZonePlane[] {
@@ -103,8 +120,42 @@ export function findShape(nodes: readonly ZoneNode[], id: string | null | undefi
   return id ? (nodes.find((n) => n.id === id && isShape(n)) as ZoneShape | undefined) : undefined;
 }
 
-/** nächste freie Kennung mit Vorsilbe (p für Ebenen, s für Formen), hochgezählt wie die Kennungen der Zonendatei */
-export function nextNodeId(nodes: readonly ZoneNode[], prefix: 'p' | 's'): string {
+export function findGroup(nodes: readonly ZoneNode[], id: string | null | undefined): ZoneGroup | undefined {
+  return id ? (nodes.find((n) => n.id === id && isGroup(n)) as ZoneGroup | undefined) : undefined;
+}
+
+export function groupsOf(nodes: readonly ZoneNode[]): ZoneGroup[] {
+  return nodes.filter(isGroup);
+}
+
+/** Gruppe einer Ebene */
+export function groupOf(nodes: readonly ZoneNode[], plane: ZonePlane): ZoneGroup | undefined {
+  return findGroup(nodes, plane.group);
+}
+
+/** Ebenen einer Gruppe von vorn nach hinten */
+export function groupMembers(nodes: readonly ZoneNode[], groupId: string): ZonePlane[] {
+  return planesOf(nodes).filter((p) => p.group === groupId);
+}
+
+/** ausgeblendet: die Ebene selbst oder ihre Gruppe */
+export function planeHidden(nodes: readonly ZoneNode[], plane: ZonePlane): boolean {
+  return !!plane.hidden || !!groupOf(nodes, plane)?.hidden;
+}
+
+/** gesperrt: die Ebene selbst oder ihre Gruppe */
+export function planeLocked(nodes: readonly ZoneNode[], plane: ZonePlane): boolean {
+  return !!plane.locked || !!groupOf(nodes, plane)?.locked;
+}
+
+/** neue, leere Gruppe */
+export function newGroup(nodes: readonly ZoneNode[], name?: string): ZoneGroup {
+  const id = nextNodeId(nodes, 'g');
+  return { id, kind: 'group', name: name ?? `Gruppe ${id.slice(1)}` };
+}
+
+/** nächste freie Kennung mit Vorsilbe (p für Ebenen, s für Formen, g für Gruppen), hochgezählt wie die Kennungen der Zonendatei */
+export function nextNodeId(nodes: readonly ZoneNode[], prefix: 'p' | 's' | 'g'): string {
   const ids = new Set(nodes.map((n) => n.id));
   let n = nodes.filter((x) => x.id.startsWith(prefix)).length + 1;
   while (ids.has(`${prefix}${n}`)) n++;
@@ -636,8 +687,16 @@ export function parseNodes(v: unknown): ZoneNode[] {
       };
       if (o.hidden === true) p.hidden = true;
       if (o.locked === true) p.locked = true;
+      if (typeof o.group === 'string' && ID.test(o.group)) p.group = o.group;
       out.push(p);
       ids.add(p.id);
+    } else if (o.kind === 'group') {
+      const g: ZoneGroup = { id: o.id, kind: 'group', name };
+      if (o.collapsed === true) g.collapsed = true;
+      if (o.hidden === true) g.hidden = true;
+      if (o.locked === true) g.locked = true;
+      out.push(g);
+      ids.add(g.id);
     } else if (o.kind === 'shape' && typeof o.parent === 'string') {
       const path = parsePathList(o.path);
       if (!path) continue;
@@ -682,7 +741,9 @@ export function parseNodes(v: unknown): ZoneNode[] {
     }
   }
   const planeIds = new Set(out.filter(isPlane).map((p) => p.id));
-  return out.filter((n) => isPlane(n) || planeIds.has(n.parent));
+  const groupIds = new Set(out.filter(isGroup).map((g) => g.id));
+  for (const p of out) if (isPlane(p) && p.group && !groupIds.has(p.group)) delete p.group;
+  return out.filter((n) => isPlane(n) || isGroup(n) || planeIds.has(n.parent));
 }
 
 const pathOut = (path: ZonePath): Array<Record<string, number>> =>
@@ -702,10 +763,18 @@ const pathOut = (path: ZonePath): Array<Record<string, number>> =>
 /** Knoten für die Zonendatei: Ebenen von vorn nach hinten, dahinter ihre Formen in Zeichenreihenfolge; gerundet */
 export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string, unknown>> {
   const out: Array<Record<string, unknown>> = [];
+  for (const g of groupsOf(nodes)) {
+    const o: Record<string, unknown> = { id: g.id, kind: 'group', name: g.name };
+    if (g.collapsed) o.collapsed = true;
+    if (g.hidden) o.hidden = true;
+    if (g.locked) o.locked = true;
+    out.push(o);
+  }
   for (const p of planesOf(nodes)) {
     const o: Record<string, unknown> = { id: p.id, kind: 'plane', name: p.name, z: round(p.z, 3), x: round(p.x, 3), y: round(p.y, 3), scale: round(p.scale, 5), role: p.role };
     if (p.hidden) o.hidden = true;
     if (p.locked) o.locked = true;
+    if (p.group) o.group = p.group;
     out.push(o);
   }
   for (const p of planesOf(nodes)) {
@@ -725,7 +794,7 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
 /** tiefe Kopie (für den Arbeitsverlauf und das Sichern) */
 export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
   return nodes.map((n) =>
-    isPlane(n)
+    isPlane(n) || isGroup(n)
       ? { ...n }
       : {
           ...n,

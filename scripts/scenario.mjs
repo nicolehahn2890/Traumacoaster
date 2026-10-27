@@ -832,6 +832,72 @@ if (want('13')) {
   await page.screenshot({ path: 'screenshots/scenario-13-tor2.png' });
 }
 
+// 14. Ebenen-Gruppen wie Ordner in Photoshop: gruppieren (Cmd+G), zuklappen, ausblenden, die Gruppe in der Tiefe ziehen
+// (hält vor der nächsten fremden Ebene an), eine Ebene in die Gruppe ziehen, die ganze Gruppe umordnen, auflösen
+if (want('14')) {
+  await page.goto(`${BASE}?zone=editor-gruppen&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const ed = (fn, arg) => page.evaluate(fn, arg);
+  const row = (name) => page.locator('.ze-row', { has: page.locator('.ze-name', { hasText: new RegExp(`^${name}$`) }) });
+  const head = () => page.locator('[data-ghead]').first();
+  const listText = () => page.evaluate(() => [...document.querySelectorAll('.ze-list > .ze-row')].map((x) => (x.dataset.ghead ? `[${x.querySelector('.ze-name').textContent}]` : (x.classList.contains('ze-member') ? '·' : '') + x.querySelector('.ze-name').textContent)).slice(0, 10).join(' '));
+  const z = () => ed(() => Object.fromEntries(window.tcGame.current.planeEditor.nodes.filter((n) => n.kind === 'plane').map((p) => [p.name, p.z])));
+  const drag = async (from, to, steps = 10) => {
+    await page.mouse.move(from[0], from[1]);
+    await page.mouse.down();
+    await page.mouse.move(to[0], to[1], { steps });
+    await page.mouse.up();
+    await sleep(200);
+  };
+  await page.click('text=Probe-Stapel');
+  await sleep(600);
+  await row('Scheibe 3').click();
+  await row('Scheibe 5').click({ modifiers: ['Shift'] });
+  await page.keyboard.press('Meta+g');
+  await sleep(200);
+  const l1 = await listText();
+  check(/\[Gruppe 1\] ·Scheibe 3 ·Scheibe 4 ·Scheibe 5 Scheibe 6/.test(l1), `Cmd+G: Ordnerzeile vor drei eingerückten Ebenen (${l1})`);
+  await head().locator('.ze-disc').click();
+  await sleep(150);
+  const l2 = await listText();
+  await head().locator('.ze-disc').click();
+  await sleep(150);
+  await head().locator('.ze-btn[title="Gruppe ausblenden"]').click();
+  await sleep(150);
+  const hidden = await ed(() => window.tcGame.world.planes.stats.shapes);
+  await head().locator('.ze-btn[title="Gruppe einblenden"]').click();
+  await sleep(150);
+  const shown = await ed(() => window.tcGame.world.planes.stats.shapes);
+  check(/\[Gruppe 1\] Scheibe 6/.test(l2) && shown - hidden === 3, `zugeklappt nur die Ordnerzeile; ausgeblendet fehlen ihre 3 Formen im Bild (${hidden} statt ${shown})`);
+  // Tiefe der Gruppe weit nach hinten ziehen: alle drei wandern gleich, bis 1 cm vor Scheibe 6
+  const z0 = await z();
+  const chip = await head().locator('.ze-z').boundingBox();
+  await drag([chip.x + 6, chip.y + chip.height / 2], [chip.x + 206, chip.y + chip.height / 2]);
+  const z1 = await z();
+  const d3 = z1['Scheibe 3'] - z0['Scheibe 3'];
+  const same = ['Scheibe 4', 'Scheibe 5'].every((n) => Math.abs(z1[n] - z0[n] - d3) < 1e-6);
+  check(same && d3 > 0.5 && Math.abs(z1['Scheibe 6'] - z1['Scheibe 5'] - 0.01) < 1e-6 && z1['Scheibe 6'] === z0['Scheibe 6'], `Tiefe der Gruppe gezogen: alle drei ${d3.toFixed(2)} m nach hinten, halten 1 cm vor Scheibe 6`);
+  // Scheibe 7 in die Gruppe ziehen (unter Scheibe 5, eingerückt)
+  const t7 = await row('Scheibe 7').locator('canvas').boundingBox();
+  const r5 = await row('Scheibe 5').boundingBox();
+  await drag([t7.x + 10, t7.y + 10], [r5.x + 120, r5.y + r5.height - 3]);
+  const l3 = await listText();
+  check(/·Scheibe 5 ·Scheibe 7 Scheibe 6/.test(l3), `Scheibe 7 in die Gruppe gezogen (${l3})`);
+  // die ganze Gruppe hinter Scheibe 8 ziehen: ihre Abstände bleiben
+  const gap0 = (await z())['Scheibe 4'] - (await z())['Scheibe 3'];
+  const fh = await head().locator('.ze-fold').boundingBox();
+  const r9 = await row('Scheibe 9').boundingBox();
+  await drag([fh.x + 10, fh.y + 10], [r9.x + 20, r9.y + 4], 14);
+  const l4 = await listText();
+  const z4 = await z();
+  check(/Scheibe 8 \[Gruppe 1\] ·Scheibe 3 ·Scheibe 4 ·Scheibe 5 ·Scheibe 7 Scheibe 9/.test(l4) && Math.abs(z4['Scheibe 4'] - z4['Scheibe 3'] - gap0) < 1e-6, `ganze Gruppe hinter Scheibe 8 gezogen, Abstände bleiben (${l4})`);
+  await page.screenshot({ path: 'screenshots/scenario-14-gruppen.png' });
+  await page.keyboard.press('Meta+Shift+g');
+  await sleep(200);
+  const l5 = await listText();
+  check(!/\[/.test(l5) && (await ed(() => window.tcGame.current.planeEditor.nodes.some((n) => n.kind === 'group'))) === false, `Shift+Cmd+G löst die Gruppe auf, die Ebenen bleiben (${l5})`);
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));

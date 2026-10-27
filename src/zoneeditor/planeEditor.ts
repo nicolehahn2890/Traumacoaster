@@ -21,9 +21,9 @@ import type { ZoneFile } from '@/zone/types';
 import { buildSliceStack } from '@/zone/slices';
 import { flattenPath } from '@/zone/path';
 import { planesToSvg, slug, svgToPlanes } from '@/zone/svgPlanes';
+import { depthLimits, groupPlanes, normalizeGroups, reorderPlanes, ungroup } from '@/zone/planeGroups';
 import {
   cloneNodes,
-  DEFAULT_GAP,
   depthBeside,
   ellipsePath,
   faceFill,
@@ -39,6 +39,11 @@ import {
   parseNodes,
   placeholderFill,
   planesOf,
+  findGroup,
+  groupMembers,
+  groupOf,
+  planeHidden,
+  planeLocked,
   planeToWorld,
   rectPath,
   serializeNodes,
@@ -113,6 +118,8 @@ export class PlaneEditor {
   private planeSel: string[] = [];
   /** gewählte Formen, die zuletzt gewählte (Leiste, Griffe) am Ende */
   private selection: string[] = [];
+  /** in der Liste gewählte Gruppe (dann sind ihre Ebenen gewählt) */
+  private groupSel: string | null = null;
   private tool: Tool = 'select';
   private isolate: Isolate = 'off';
   private hold = true;
@@ -242,8 +249,12 @@ export class PlaneEditor {
     return this.selection.map((id) => findShape(this.nodes, id)).filter((s): s is ZoneShape => !!s);
   }
 
-  /** gewählte Ebenen in der Reihenfolge der Liste (mindestens die aktive) */
+  /** gewählte Ebenen in der Reihenfolge der Liste (mindestens die aktive; bei einer gewählten Gruppe ihre Ebenen) */
   private selectedPlanes(): ZonePlane[] {
+    if (this.groupSel) {
+      const members = groupMembers(this.nodes, this.groupSel);
+      if (members.length) return members;
+    }
     const ids = new Set(this.planeSel.length ? this.planeSel : this.active ? [this.active] : []);
     if (this.active) ids.add(this.active);
     return planesOf(this.nodes).filter((p) => ids.has(p.id));
@@ -266,6 +277,13 @@ export class PlaneEditor {
 
   /** nach jeder Änderung: neu zeichnen, Liste und Leisten nachführen, Sicherungskopie planen */
   private changed(markDirty = true): void {
+    // Gruppen bleiben Läufe benachbarter Ebenen; leere fallen weg
+    const norm = normalizeGroups(this.nodes);
+    if (norm.length !== this.nodes.length) {
+      this.nodes = norm;
+      this.zone.nodes = norm;
+    }
+    if (this.groupSel && !findGroup(this.nodes, this.groupSel)) this.groupSel = null;
     this.meshDirty = true;
     this.uiDirty = true;
     this.ranks = null;
@@ -314,7 +332,7 @@ export class PlaneEditor {
     return this.host.world.planes.pick(this.views.rayAt(p.x, p.y), (id) => {
       const sh = findShape(this.nodes, id);
       const pl = sh ? findPlane(this.nodes, sh.parent) : undefined;
-      return !!sh && !!pl && !sh.locked && !pl.locked;
+      return !!sh && !!pl && !sh.locked && !planeLocked(this.nodes, pl);
     });
   }
 
@@ -389,7 +407,7 @@ export class PlaneEditor {
     const active = this.plane;
     const show = (p: ZonePlane): boolean => {
       if (this.building && this.isolate === 'only') return p.id === this.active;
-      if (p.hidden) return false;
+      if (planeHidden(this.nodes, p)) return false;
       if (this.building && this.isolate === 'front' && active) return p.z >= active.z - 1e-6;
       return true;
     };
@@ -401,15 +419,16 @@ export class PlaneEditor {
 
   private refreshUi(): void {
     const planes = planesOf(this.nodes);
-    const rows: LayerRow[] = planes.map((plane, i) => ({ plane, shapes: shapesOf(this.nodes, plane.id), gap: planes[i + 1] ? planes[i + 1].z - plane.z : null }));
+    const rows: LayerRow[] = planes.map((plane, i) => ({ plane, shapes: shapesOf(this.nodes, plane.id), gap: planes[i + 1] ? planes[i + 1].z - plane.z : null, group: groupOf(this.nodes, plane) ?? null }));
     this.ui.setLayers(
       rows,
       this.active,
       this.selectedPlanes().map((p) => p.id),
+      this.groupSel,
     );
     this.paths.selectionChanged(this.selection);
     const path = this.building && isPathTool(this.tool) ? this.paths.context() : null;
-    this.ui.setContext(this.building ? this.selectedPlanes() : [], this.building ? this.selectedShapes() : [], this.isolate, path, this.clip.length > 0);
+    this.ui.setContext(this.building ? this.selectedPlanes() : [], this.building ? this.selectedShapes() : [], this.isolate, path, this.clip.length > 0, this.building ? (findGroup(this.nodes, this.groupSel) ?? null) : null);
     const st = this.host.world.planes.stats;
     const tris = st.triangles >= 1000 ? `${(st.triangles / 1000).toFixed(1).replace('.', ',')}k` : String(st.triangles);
     this.ui.setTop(this.dirty, this.history.canUndo, this.history.canRedo, `${planes.length} Ebenen · ${st.shapes} Formen · ${tris} Dreiecke · Welt: ${this.host.world.drawCalls} Draw Call${this.host.world.drawCalls === 1 ? '' : 's'} · ${this.fps.value} fps`);
@@ -487,7 +506,7 @@ export class PlaneEditor {
       bounds.maxX = Math.max(bounds.maxX, b.maxX);
       bounds.maxY = Math.max(bounds.maxY, b.maxY);
     }
-    return { plane, bounds, locked: !!plane.locked || shapes.some((s) => s.locked) };
+    return { plane, bounds, locked: planeLocked(this.nodes, plane) || shapes.some((s) => s.locked) };
   }
 
   /** Rahmen in Ebenen-Koordinaten: vier Ecken, dann vier Kantenmitten */
@@ -557,7 +576,28 @@ export class PlaneEditor {
       toggleBuild: () => this.setBuilding(!this.building),
       addPlane: () => this.addPlane(),
       selectPlane: (id, mode = 'single') => this.selectPlane(id, mode),
-      movePlanes: (ids, before) => this.movePlanes(ids, before),
+      movePlanes: (ids, before, group) => this.movePlanes(ids, before, group),
+      selectGroup: (id) => this.selectGroup(id),
+      toggleGroup: (id, what) => {
+        const g = findGroup(this.nodes, id);
+        if (!g) return;
+        // Auf- und Zuklappen ist kein Arbeitsschritt, Ausblenden und Sperren schon
+        if (what === 'collapsed') {
+          g.collapsed = !g.collapsed || undefined;
+          this.changed();
+        } else
+          this.edit(() => {
+            g[what] = !g[what] || undefined;
+            if (what === 'locked' && g.locked) this.selection = this.selection.filter((sid) => findPlane(this.nodes, findShape(this.nodes, sid)?.parent)?.group !== id);
+          });
+      },
+      renameGroup: (id, name) => this.edit(() => {
+        const g = findGroup(this.nodes, id);
+        if (g) g.name = name;
+      }),
+      groupPlanes: () => this.groupSelected(),
+      ungroup: () => this.ungroupSelected(),
+      deleteGroup: () => this.deleteGroup(),
       lassoForm: (form) => this.paths.setLassoForm(form),
       togglePlaneHidden: (id) => this.edit(() => {
         const p = findPlane(this.nodes, id);
@@ -580,15 +620,21 @@ export class PlaneEditor {
         this.changed();
       },
       gapEnd: () => this.endDrag(),
-      depthStart: (id) => {
-        // eine nicht gewählte Ebene wird allein gewählt; gehört sie zur Auswahl, wandern alle gewählten mit
-        if (!this.selectedPlanes().some((p) => p.id === id)) this.selectPlane(id, 'single');
+      depthStart: (id, group) => {
+        // eine Gruppe wandert ganz; eine nicht gewählte Ebene allein; gehört sie zur Auswahl, wandern alle gewählten mit
+        if (group) this.selectGroup(group);
+        else if (!this.selectedPlanes().some((p) => p.id === id)) this.selectPlane(id, 'single');
         this.beginDrag();
       },
       depthChange: (id, z) => {
         this.restoreDragBase();
         const base = this.dragBase?.get(id);
-        const dz = base ? z - base.z : 0;
+        // nur bis vor die nächste Ebene einer anderen Gruppe (sonst zerrissen Gruppen)
+        const lim = depthLimits(
+          this.nodes,
+          this.selectedPlanes().map((p) => p.id),
+        );
+        const dz = Math.max(lim.min, Math.min(lim.max, base ? z - base.z : 0));
         for (const p of this.selectedPlanes()) {
           const b = this.dragBase?.get(p.id);
           if (b) movePlaneDepth(p, b.z + dz, this.holdView());
@@ -751,6 +797,7 @@ export class PlaneEditor {
       this.planeSel = [id];
       this.active = id;
     }
+    this.groupSel = null;
     this.selection = [];
     this.paths.selectionChanged([]);
     this.meshDirty = this.isolate !== 'off';
@@ -758,41 +805,73 @@ export class PlaneEditor {
     this.drawOverlay();
   }
 
-  /**
-   * Ebenen in der Liste verschieben (Ziehen): sie kommen vor die Ebene before (null: ganz nach hinten), gleichmäßig in
-   * die Lücke dort; ist sie zu schmal, rücken die Ebenen dahinter ein Stück nach hinten. Die Tiefe folgt der Reihenfolge
-   * (Plan 4.4), mit „Bild halten“ bleibt das Bild jeder verschobenen Ebene
-   */
-  private movePlanes(ids: string[], before: string | null): void {
-    const all = planesOf(this.nodes);
-    const moving = all.filter((p) => ids.includes(p.id));
-    const rest = all.filter((p) => !ids.includes(p.id));
-    if (!moving.length) return;
-    const at = before ? rest.findIndex((p) => p.id === before) : rest.length;
-    const prev = (at < 0 ? null : rest[at - 1]) ?? null;
-    const next = at < 0 ? null : (rest[at] ?? null);
-    // nichts zu tun, wenn die Reihenfolge schon so ist
-    const order = [...rest.slice(0, Math.max(0, at)), ...moving, ...rest.slice(Math.max(0, at))].map((p) => p.id);
-    if (at < 0 || order.join() === all.map((p) => p.id).join()) return;
-    const k = moving.length;
-    const MIN = 0.05;
+  /** Gruppe in der Liste wählen: ihre Ebenen sind gewählt, die vorderste ist aktiv */
+  private selectGroup(id: string): void {
+    const members = groupMembers(this.nodes, id);
+    if (!members.length) return;
+    this.groupSel = id;
+    this.planeSel = members.map((p) => p.id);
+    this.active = members[0].id;
+    this.selection = [];
+    this.paths.selectionChanged([]);
+    this.meshDirty = this.isolate !== 'off';
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
+  /** gewählte Ebenen zu einer Gruppe (Cmd+G); nicht benachbarte kommen hinter die vorderste */
+  private groupSelected(): void {
+    const ids = this.selectedPlanes().map((p) => p.id);
+    if (!ids.length) return;
+    let gid: string | null = null;
     this.edit(() => {
-      const hold = this.holdView();
-      let zs: number[];
-      if (prev && next) {
-        if (next.z - prev.z < MIN * (k + 1)) {
-          // Lücke zu schmal: alles ab next rückt nach hinten
-          const push = MIN * (k + 1) - (next.z - prev.z);
-          for (const p of rest.slice(at)) movePlaneDepth(p, p.z + push, hold);
-        }
-        zs = moving.map((_, i) => prev.z + ((next.z - prev.z) * (i + 1)) / (k + 1));
-      } else if (next) zs = moving.map((_, i) => next.z - DEFAULT_GAP * (k - i));
-      else if (prev) zs = moving.map((_, i) => prev.z + DEFAULT_GAP * (i + 1));
-      else return;
-      moving.forEach((p, i) => movePlaneDepth(p, zs[i], hold));
-      this.clampDepths();
+      gid = groupPlanes(this.nodes, ids, this.holdView())?.id ?? null;
     });
-    this.ui.toast(k > 1 ? `${k} Ebenen verschoben` : `${moving[0].name} verschoben: Tiefe ${moving[0].z.toFixed(1).replace('.', ',')} m`);
+    if (gid) {
+      this.selectGroup(gid);
+      this.ui.toast(`${ids.length} ${ids.length === 1 ? 'Ebene' : 'Ebenen'} gruppiert (Cmd+Shift+G löst die Gruppe auf)`);
+    }
+  }
+
+  /** Gruppe auflösen (Cmd+Shift+G): die gewählte oder die der aktiven Ebene; die Ebenen bleiben */
+  private ungroupSelected(): void {
+    const gid = this.groupSel ?? this.plane?.group ?? null;
+    if (!gid) return;
+    const members = groupMembers(this.nodes, gid).map((p) => p.id);
+    this.edit(() => {
+      this.nodes = ungroup(this.nodes, gid);
+      this.zone.nodes = this.nodes;
+    });
+    this.groupSel = null;
+    this.planeSel = members;
+    this.uiDirty = true;
+  }
+
+  /** gewählte Gruppe samt Ebenen und Formen löschen (rückgängig mit Cmd+Z) */
+  private deleteGroup(): void {
+    const g = findGroup(this.nodes, this.groupSel);
+    if (!g) return;
+    this.groupSel = null;
+    this.deletePlane();
+    this.ui.toast(`Gruppe ${g.name} gelöscht (rückgängig mit Cmd+Z oder zwei Fingern)`);
+  }
+
+  /**
+   * Ebenen in der Liste verschieben (Ziehen): vor die Ebene before (null: ganz nach hinten), in die Gruppe group (null:
+   * keine); die Tiefe folgt der Reihenfolge (Plan 4.4, src/zone/planeGroups.ts), mit „Bild halten“ bleibt das Bild jeder
+   * verschobenen Ebene
+   */
+  private movePlanes(ids: string[], before: string | null, group: string | null): void {
+    const moving = planesOf(this.nodes).filter((p) => ids.includes(p.id));
+    let done = false;
+    this.edit(() => {
+      done = reorderPlanes(this.nodes, ids, before, group, this.holdView());
+      if (done) this.clampDepths();
+    });
+    if (!done || !moving.length) return;
+    const g = findGroup(this.nodes, group);
+    const where = g ? ` in ${g.name}` : '';
+    this.ui.toast(moving.length > 1 ? `${moving.length} Ebenen verschoben${where}` : `${moving[0].name} verschoben${where}: Tiefe ${moving[0].z.toFixed(1).replace('.', ',')} m`);
   }
 
   private deletePlane(): void {
@@ -888,7 +967,7 @@ export class PlaneEditor {
       this.ui.toast('Erst eine Ebene wählen');
       return;
     }
-    if (to.locked) {
+    if (planeLocked(this.nodes, to)) {
       this.ui.toast('Die aktive Ebene ist gesperrt');
       return;
     }
@@ -919,7 +998,7 @@ export class PlaneEditor {
   /** alle Formen der gewählten Ebenen wählen (Cmd+A) */
   private selectAll(): void {
     const ids = this.selectedPlanes()
-      .filter((p) => !p.hidden && !p.locked)
+      .filter((p) => !planeHidden(this.nodes, p) && !planeLocked(this.nodes, p))
       .flatMap((p) => shapesOf(this.nodes, p.id).filter((s) => !s.hidden && !s.locked))
       .map((s) => s.id);
     this.setSelection(ids);
@@ -1234,7 +1313,7 @@ export class PlaneEditor {
     if (this.tool !== 'select' && this.views.mode !== 'free') {
       let plane = this.plane;
       this.history.begin(this.nodes);
-      if (!plane || plane.locked) {
+      if (!plane || planeLocked(this.nodes, plane)) {
         if (!plane) {
           plane = newPlane(this.nodes, 0);
           this.nodes.push(plane);
@@ -1279,7 +1358,7 @@ export class PlaneEditor {
       }
       // eine gewählte Form zieht alle gewählten mit, eine andere wird allein gewählt
       this.setSelection(this.selection.includes(shape.id) ? [...this.selection.filter((x) => x !== shape.id), shape.id] : [shape.id]);
-      const movable = this.selectedShapes().filter((s) => !s.locked && !findPlane(this.nodes, s.parent)?.locked);
+      const movable = this.selectedShapes().filter((s) => { const pl = findPlane(this.nodes, s.parent); return !s.locked && !!pl && !planeLocked(this.nodes, pl); });
       this.history.begin(this.nodes);
       this.gesture = { kind: 'move', pointerId, start: p, orig: new Map(movable.map((s) => [s.id, { x: s.x, y: s.y }])) };
       this.drawOverlay();
@@ -1293,7 +1372,7 @@ export class PlaneEditor {
     const inside = regionTest('rect', [a, b]);
     const collect = (planes: readonly ZonePlane[]): string[] =>
       planes
-        .filter((pl) => !pl.hidden && !pl.locked)
+        .filter((pl) => !planeHidden(this.nodes, pl) && !planeLocked(this.nodes, pl))
         .flatMap((pl) =>
           shapesOf(this.nodes, pl.id).filter((s) => {
             if (s.hidden || s.locked) return false;
@@ -1461,6 +1540,7 @@ export class PlaneEditor {
     else if (cmd && k === 'x') this.copy(true);
     else if (cmd && k === 'v') this.paste();
     else if (cmd && k === 'a') this.selectAll();
+    else if (cmd && k === 'g') e.shiftKey ? this.ungroupSelected() : this.groupSelected();
     else if (cmd) handled = false;
     else if (e.shiftKey && k === 'h') this.flip('x');
     else if (e.shiftKey && k === 'v') this.flip('y');

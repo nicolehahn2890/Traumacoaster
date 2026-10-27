@@ -25,6 +25,8 @@ import {
   findPlane,
   getPath,
   insertAnchor,
+  planeHidden,
+  planeLocked,
   planePathToShape,
   planesOf,
   removeAnchor,
@@ -487,7 +489,7 @@ export class PathTools {
     const out: Array<{ shape: ZoneShape; plane: ZonePlane }> = [];
     for (const s of this.host.selectedShapes()) {
       const o = this.shapeOf(s.id);
-      if (o && !o.shape.locked && !o.shape.hidden && !o.plane.locked) out.push(o);
+      if (o && !o.shape.locked && !o.shape.hidden && !planeLocked(this.host.nodes(), o.plane)) out.push(o);
     }
     return out;
   }
@@ -1017,7 +1019,7 @@ export class PathTools {
     const collect = (planes: readonly ZonePlane[]): AnchorSel[] => {
       const found: AnchorSel[] = [];
       for (const plane of planes) {
-        if (plane.hidden || plane.locked) continue;
+        if (planeHidden(this.host.nodes(), plane) || planeLocked(this.host.nodes(), plane)) continue;
         for (const s of shapesOf(this.host.nodes(), plane.id)) {
           if (s.hidden || s.locked) continue;
           for (const { ref, path } of shapePaths(s)) {
@@ -1093,8 +1095,8 @@ export class PathTools {
       const sel = this.host.selectedShapes().at(-1);
       const selPlane = sel ? findPlane(this.host.nodes(), sel.parent) : undefined;
       this.host.begin();
-      const plane = sel && selPlane && !selPlane.locked && !sel.locked ? selPlane : this.host.ensurePlane();
-      if (plane.locked) {
+      const plane = sel && selPlane && !planeLocked(this.host.nodes(), selPlane) && !sel.locked ? selPlane : this.host.ensurePlane();
+      if (planeLocked(this.host.nodes(), plane)) {
         this.host.cancel();
         this.host.toast('Die aktive Ebene ist gesperrt');
         return;
@@ -1257,8 +1259,8 @@ export class PathTools {
     const selPlane = sel ? findPlane(this.host.nodes(), sel.parent) : undefined;
     const brush = this.tool === 'brush';
     this.host.begin();
-    const plane = brush && sel && selPlane && !selPlane.locked && !sel.locked ? selPlane : (this.host.activePlane() ?? (brush ? this.host.ensurePlane() : undefined));
-    if (!plane || plane.locked) {
+    const plane = brush && sel && selPlane && !planeLocked(this.host.nodes(), selPlane) && !sel.locked ? selPlane : (this.host.activePlane() ?? (brush ? this.host.ensurePlane() : undefined));
+    if (!plane || planeLocked(this.host.nodes(), plane)) {
       this.host.cancel();
       this.host.toast(plane ? 'Die aktive Ebene ist gesperrt' : 'Erst eine Ebene anlegen');
       return;

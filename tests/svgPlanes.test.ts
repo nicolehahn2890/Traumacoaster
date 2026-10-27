@@ -123,6 +123,18 @@ describe('SVG-Austausch der Ebenen', () => {
     expect(json(r.nodes.filter((n) => n.id === 'p1' || n.id === 'p2' || n.id === 's1' || n.id === 's2'))).toBe(json(nodes));
   });
 
+  it('Ebenen-Gruppen werden Gruppen um ihre Ebenen und kommen unverändert zurück', async () => {
+    const { groupPlanes } = await import('@/zone/planeGroups');
+    const nodes = scene();
+    const [front, back] = planesOf(nodes);
+    groupPlanes(nodes, [front.id, back.id], null, 'Fels');
+    const svg = planesToSvg(nodes);
+    expect(svg).toMatch(/<g id="g1-fels" data-name="Fels">\s*<g id="p2-hinten"/);
+    const r = svgToPlanes(svg, nodes);
+    expect(r.kept).toBe(2);
+    expect(json(r.nodes)).toBe(json(nodes));
+  });
+
   it('ein Loch der Form, das als eigene Fläche gefärbt ist, bleibt beim Rundlauf erhalten', () => {
     const nodes = scene();
     const s = nodes.find((n): n is ZoneShape => n.kind === 'shape' && n.id === 's2')!;

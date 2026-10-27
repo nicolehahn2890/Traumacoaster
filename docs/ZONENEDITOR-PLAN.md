@@ -878,8 +878,18 @@ Kurvenstift (Shift+P), Band (O), Skizze als Pause-Ebene.
 5. *Ebenen in der Liste ziehen, Gruppen wie in Photoshop (als Info):* Umordnen ist gebaut („Reihenfolge ziehen“ stand
    in Plan 4.4 und in Stufe 1 und fehlte dort): mit der Maus die Zeile, mit Finger oder Pencil das Vorschaubild ziehen
    (sonst rollt die Liste); die Ebene kommt mittig in die Lücke, ist sie zu schmal, rücken die Ebenen dahinter ein Stück
-   nach hinten; „Bild halten“ gilt. **Gruppen** fehlen noch; geplant sind Ebenen-Gruppen (Befund 6) und Baugruppen
-   (Abschnitt 3.4, Stufe 8). Vorschlag: Ebenen-Gruppen wie Ordner in Photoshop als Rest von Stufe 2, mit Florian klären.
+   nach hinten; „Bild halten“ gilt. **Gruppen** fehlten noch (geplant als Ebenen-Gruppen, Befund 6; Baugruppen mit
+   festen Abständen bleiben Stufe 8, Abschnitt 3.4); Florian hat sie am 27.10. als Nächstes gewählt.
+**Ebenen-Gruppen gebaut (27.10.2026, Szenario 14):** wie Ordner in Photoshop. Gewählte Ebenen gruppieren („Gruppieren“
+oder Cmd+G; liegen sie nicht beieinander, kommen sie hinter die vorderste), „Auflösen“ (Shift+Cmd+G, die Ebenen
+bleiben), „Gruppe löschen“ (mit Ebenen und Formen). In der Liste steht die Gruppe als Ordnerzeile vor ihren
+eingerückten Ebenen: Dreieck klappt auf und zu, Auge und Schloss gelten für alle Ebenen der Gruppe (auch im Spiel),
+doppelt tippen benennt um, die Tiefe in der Ordnerzeile schiebt die ganze Gruppe. Ziehen: eine Ebene in die Gruppe (vor
+eine ihrer Ebenen, oder direkt nach ihrer letzten mit dem Zeiger eingerückt) und heraus; die Ordnerzeile (Maus: die
+Zeile, Finger: der Ordner) zieht die ganze Gruppe mit ihren Abständen, nie in eine andere Gruppe. Damit eine Gruppe ein
+zusammenhängender Lauf in der Liste bleibt, hält eine geschobene Tiefe 1 cm vor der nächsten Ebene einer anderen Gruppe
+an; dorthin geht es durch Ziehen in der Liste. Im SVG wird eine Ebenen-Gruppe eine Gruppe um ihre Ebenen (in Illustrator
+ein Ordner). **Noch nicht:** Gruppen in Gruppen.
 
 **Stufe 3: Farbe, Verläufe, Stile (M).** Farbmenü, Ziehen und Fallenlassen, Pipette, Verläufe auf der Fläche und über
 mehrere Flächen, Füllstapel mit Mischmodi und Deckkraft, Ebenenstapel, Luftperspektive, Zonenpalette, Stile (kopieren,

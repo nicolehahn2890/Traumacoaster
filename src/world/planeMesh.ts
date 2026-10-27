@@ -9,7 +9,7 @@
  * und Tiefe ändern rechnen nur die Lage der Ecken neu, so bleibt das Ziehen im Editor auch mit 30 Ebenen flüssig.
  */
 import { BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Mesh, MeshBasicMaterial, ShapeUtils, Vector2, type Raycaster } from 'three';
-import { faceFill, planesOf, shapeFaces, shapesOf, type ZoneNode, type ZonePlane, type ZoneShape } from '@/zone/nodes';
+import { faceFill, planeHidden, planesOf, shapeFaces, shapesOf, type ZoneNode, type ZonePlane, type ZoneShape } from '@/zone/nodes';
 import type { Face } from '@/zone/faces';
 
 /** Abstand zweier Formen derselben Ebene in der Tiefe (Meter, zum Betrachter hin) */
@@ -79,7 +79,7 @@ export class PlaneLayer {
 
   /** alle sichtbaren Formen neu zusammensetzen */
   build(nodes: readonly ZoneNode[], opts: PlaneBuildOptions = {}): void {
-    const show = opts.showPlane ?? ((p: ZonePlane) => !p.hidden);
+    const show = opts.showPlane ?? ((p: ZonePlane) => !planeHidden(nodes, p));
     const parts: Array<{ shape: ZoneShape; plane: ZonePlane; rank: number; tri: Triangulated; fill: string; face: number }> = [];
     let verts = 0;
     let tris = 0;

@@ -6,7 +6,7 @@
  *
  * Diese Datei baut nur Elemente und meldet Bedienungen über `UiActions`; was sie bedeuten, entscheidet der Editor.
  */
-import { PLANE_ROLE_WORDS, PLANE_ROLES, type PlaneRole, type ZonePlane, type ZoneShape } from '@/zone/nodes';
+import { PLANE_ROLE_WORDS, PLANE_ROLES, type PlaneRole, type ZoneGroup, type ZonePlane, type ZoneShape } from '@/zone/nodes';
 import type { PathContext } from './pathTools';
 import { VIEW_WORDS, type ViewMode } from './views';
 
@@ -27,8 +27,16 @@ export interface UiActions {
   addPlane(): void;
   /** Ebene in der Liste wählen: allein, dazu oder heraus (Befehlstaste, nach rechts wischen), bis hierher (Umschalt) */
   selectPlane(id: string, mode?: 'single' | 'toggle' | 'range'): void;
-  /** Ebenen in der Liste verschieben: vor die Ebene before (null: ganz nach hinten); die Tiefe folgt */
-  movePlanes(ids: string[], before: string | null): void;
+  /** Ebenen in der Liste verschieben: vor die Ebene before (null: ganz nach hinten), in die Gruppe group (null: keine) */
+  movePlanes(ids: string[], before: string | null, group: string | null): void;
+  /** Gruppen (wie Ordner in Photoshop): wählen, auf- und zuklappen, aus- und einblenden, sperren, umbenennen */
+  selectGroup(id: string): void;
+  toggleGroup(id: string, what: 'collapsed' | 'hidden' | 'locked'): void;
+  renameGroup(id: string, name: string): void;
+  /** gewählte Ebenen gruppieren, Gruppe auflösen, Gruppe samt Ebenen löschen */
+  groupPlanes(): void;
+  ungroup(): void;
+  deleteGroup(): void;
   togglePlaneHidden(id: string): void;
   togglePlaneLocked(id: string): void;
   renamePlane(id: string, name: string): void;
@@ -37,7 +45,7 @@ export interface UiActions {
   gapChange(frontId: string, gap: number): void;
   gapEnd(): void;
   /** Tiefe einer Ebene (mit den anderen gewählten) allein schieben: Ziehen an der Tiefe in der Zeile */
-  depthStart(id: string): void;
+  depthStart(id: string, group?: string): void;
   depthChange(id: string, z: number): void;
   depthEnd(): void;
   toggleHold(): void;
@@ -74,6 +82,8 @@ export interface LayerRow {
   shapes: ZoneShape[];
   /** Abstand zur nächsten Ebene dahinter (Meter), null bei der hintersten */
   gap: number | null;
+  /** Gruppe der Ebene oder null */
+  group: ZoneGroup | null;
 }
 
 const CSS = `
@@ -135,10 +145,18 @@ const CSS = `
 .ze-z.drag{background:rgba(141,180,255,.25);color:#fff}
 .ze-z input{width:48px;font:inherit;color:inherit;background:transparent;border:0;user-select:text;-webkit-user-select:text}
 .ze-drop{height:2px;margin:-1px 6px;border-radius:1px;background:#8db4ff}
+.ze-drop.in{margin-left:22px}
+.ze-row.ze-member{padding-left:14px}
+.ze-row.dim{opacity:.5}
+.ze-row.ze-ghead .ze-name{font-weight:600}
+.ze-gap.ze-member{padding-left:14px}
+.ze-fold{width:30px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;color:#bdbab3;touch-action:none;cursor:grab}
+.ze-fold svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.5}
+.ze-row .ze-btn.ze-disc{min-width:18px;width:18px;padding:0;opacity:.8;margin-left:-4px}
 .ze-row canvas{width:48px;height:28px;border-radius:4px;background:rgba(255,255,255,.04);flex:none;touch-action:none;cursor:grab}
 .ze-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ze-name input{width:100%;font:inherit;color:inherit;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:3px 5px;user-select:text;-webkit-user-select:text}
-.ze-role{color:#8f8c86;font-size:11px}
+.ze-role{color:#8f8c86;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .ze-row .ze-btn{min-width:30px;height:30px;padding:0;opacity:.55}
 .ze-row .ze-btn.on{background:transparent;opacity:1}
 .ze-gap{display:flex;justify-content:center;height:18px;align-items:center}
@@ -178,6 +196,7 @@ const ICONS: Record<Tool, string> = {
 const EYE = '<svg viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>';
 const EYE_OFF = '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1C11 6 11.5 6 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.2 3.8M6.2 7.6A16.6 16.6 0 0 0 2 12s3.5 6 10 6c1.7 0 3.2-.4 4.4-1"/></svg>';
 const LOCK = '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+const FOLDER = '<svg viewBox="0 0 24 24"><path d="M3 7.5V18a1.5 1.5 0 0 0 1.5 1.5h15A1.5 1.5 0 0 0 21 18V9a1.5 1.5 0 0 0-1.5-1.5H11L9 5H4.5A1.5 1.5 0 0 0 3 6.5z"/></svg>';
 const UNDO = '<svg viewBox="0 0 24 24"><path d="M9 7L4 12l5 5M4 12h10a6 6 0 0 1 0 12"/></svg>';
 const REDO = '<svg viewBox="0 0 24 24"><path d="M15 7l5 5-5 5M20 12H10a6 6 0 0 0 0 12"/></svg>';
 
@@ -282,8 +301,8 @@ export class EditorUi {
   /** Tiefe und Auswahl je Ebene beim letzten Nachführen (für Ziehen und Eingabe) */
   private depths = new Map<string, number>();
   private selectedPlanes = new Set<string>();
-  /** Zeile, die gerade gezogen wird (Umordnen), mit der Einfügemarke */
-  private rowDrag: { ids: string[]; mark: HTMLElement; before: string | null } | null = null;
+  /** Zeile oder Gruppe, die gerade gezogen wird (Umordnen), mit der Einfügemarke und dem Ziel */
+  private rowDrag: { ids: string[]; group: string | null; mark: HTMLElement; before: string | null; into: string | null } | null = null;
   /** nach Wischen oder Ziehen kommt noch ein click; den schlucken */
   private swallowClick = false;
   private thumbs = new Map<string, HTMLCanvasElement>();
@@ -416,24 +435,28 @@ export class EditorUi {
 
   /**
    * Ebenenliste von vorn nach hinten mit Abstandspillen; je Zeile der Name und darunter die Tiefe (ziehen schiebt nur
-   * diese Ebene, mit den anderen gewählten; tippen gibt eine Zahl) und die Rolle. Neu aufgebaut wird nur, wenn sich
-   * Ebenen, Namen, Rollen oder Schalter ändern; Auswahl, Tiefen und Abstände werden an Ort und Stelle nachgeführt (sonst
-   * käme ein Doppeltippen nie an)
+   * diese Ebene, mit den anderen gewählten; tippen gibt eine Zahl) und die Rolle. Gruppen stehen als Ordnerzeile vor
+   * ihren Ebenen (eingerückt, zuklappbar). Neu aufgebaut wird nur, wenn sich Ebenen, Gruppen, Namen, Rollen oder
+   * Schalter ändern; Auswahl, Tiefen und Abstände werden an Ort und Stelle nachgeführt (sonst käme ein Doppeltippen nie an)
    */
-  setLayers(rows: LayerRow[], activeId: string | null, selected: readonly string[] = []): void {
-    const structure = rows.map((r) => `${r.plane.id}|${r.plane.name}|${r.plane.role}|${r.plane.hidden ? 1 : 0}|${r.plane.locked ? 1 : 0}|${r.gap === null ? '-' : '+'}`).join(';');
+  setLayers(rows: LayerRow[], activeId: string | null, selected: readonly string[] = [], groupSel: string | null = null): void {
+    const gkey = (g: ZoneGroup | null) => (g ? `${g.id}:${g.name}:${g.collapsed ? 1 : 0}${g.hidden ? 1 : 0}${g.locked ? 1 : 0}` : '');
+    const structure = rows.map((r) => `${r.plane.id}|${r.plane.name}|${r.plane.role}|${r.plane.hidden ? 1 : 0}|${r.plane.locked ? 1 : 0}|${r.gap === null ? '-' : '+'}|${gkey(r.group)}`).join(';');
     this.depths = new Map(rows.map((r) => [r.plane.id, r.plane.z]));
     this.selectedPlanes = new Set(selected);
-    if (this.dragging || this.editing || structure === this.structure) {
+    const mark = () => {
       for (const r of rows) {
         const pill = this.list.querySelector<HTMLElement>(`[data-gap="${r.plane.id}"]`);
         if (pill && r.gap !== null && !pill.querySelector('input')) pill.textContent = `${fmt(r.gap)} m`;
-        const z = this.list.querySelector<HTMLElement>(`[data-z="${r.plane.id}"]`);
-        if (z && !z.querySelector('input')) z.textContent = `${fmt(r.plane.z)} m`;
+        for (const z of this.list.querySelectorAll<HTMLElement>(`[data-z="${r.plane.id}"]`)) if (!z.querySelector('input')) z.textContent = `${fmt(r.plane.z)} m`;
         const row = this.list.querySelector(`[data-row="${r.plane.id}"]`);
-        row?.classList.toggle('on', r.plane.id === activeId);
-        row?.classList.toggle('sel', r.plane.id !== activeId && this.selectedPlanes.has(r.plane.id));
+        row?.classList.toggle('on', r.plane.id === activeId && !groupSel);
+        row?.classList.toggle('sel', (r.plane.id !== activeId || !!groupSel) && this.selectedPlanes.has(r.plane.id));
       }
+      for (const h of this.list.querySelectorAll<HTMLElement>('[data-ghead]')) h.classList.toggle('on', h.dataset.ghead === groupSel);
+    };
+    if (this.dragging || this.editing || structure === this.structure) {
+      mark();
       if (structure === this.structure || this.dragging) this.gaps = new Map(rows.map((r) => [r.plane.id, r.gap ?? 0]));
       return;
     }
@@ -442,31 +465,31 @@ export class EditorUi {
     const scroll = this.list.scrollTop;
     this.list.replaceChildren();
     const keep = new Map<string, HTMLCanvasElement>();
-    for (const r of rows) {
+    rows.forEach((r, i) => {
       const p = r.plane;
-      const row = el('div', `ze-row${p.id === activeId ? ' on' : this.selectedPlanes.has(p.id) ? ' sel' : ''}`);
+      const g = r.group;
+      const first = !!g && rows[i - 1]?.group?.id !== g.id;
+      const last = !!g && rows[i + 1]?.group?.id !== g.id;
+      if (first && g) this.list.append(this.groupRow(g, rows.filter((x) => x.group?.id === g.id).map((x) => x.plane)));
+      if (g?.collapsed) {
+        // zugeklappt: nur der Abstand nach der letzten Ebene der Gruppe
+        if (last && r.gap !== null) this.list.append(this.gapPill(p.id));
+        return;
+      }
+      const row = el('div', `ze-row${g ? ' ze-member' : ''}${g?.hidden ? ' dim' : ''}`);
       row.dataset.row = p.id;
+      row.dataset.group = g?.id ?? '';
       const thumb = this.thumbs.get(p.id) ?? el('canvas');
       thumb.width = 96;
       thumb.height = 56;
-      thumb.title = 'Ziehen: Ebene in der Liste verschieben (die Tiefe folgt)';
+      thumb.title = 'Ziehen: Ebene in der Liste verschieben (die Tiefe folgt), auch in eine Gruppe hinein oder heraus';
       keep.set(p.id, thumb);
       const name = el('span', 'ze-name');
       name.textContent = p.name;
       name.title = 'Doppelt tippen zum Umbenennen';
-      name.addEventListener('click', (e) => {
-        // eigenes Doppeltippen: Safari auf dem iPad meldet dblclick bei touch-action: none nicht zuverlässig
-        const now = performance.now();
-        if (this.lastNameTap.id === p.id && now - this.lastNameTap.t < 380) {
-          e.stopPropagation();
-          this.lastNameTap = { id: '', t: 0 };
-          this.rename(name, p);
-          return;
-        }
-        this.lastNameTap = { id: p.id, t: now };
-      });
+      this.doubleTap(name, p.id, () => this.rename(name, p.name, (v) => this.a.renamePlane(p.id, v), () => this.a.selectPlane(p.id)));
       const meta = el('div', 'ze-meta');
-      meta.append(this.depthChip(p), el('span', 'ze-role', PLANE_ROLE_WORDS[p.role]));
+      meta.append(this.depthChip(p.id, p.z), el('span', 'ze-role', PLANE_ROLE_WORDS[p.role]));
       const text = el('div', 'ze-text');
       text.append(name, meta);
       const eye = button(p.hidden ? EYE_OFF : EYE, p.hidden ? 'Einblenden' : 'Ausblenden', () => this.a.togglePlaneHidden(p.id), p.hidden ? '' : 'on');
@@ -479,19 +502,71 @@ export class EditorUi {
         }
         this.a.selectPlane(p.id, e.shiftKey ? 'range' : e.metaKey || e.ctrlKey ? 'toggle' : 'single');
       });
-      this.rowGestures(row, thumb, p.id);
+      this.rowGestures(row, thumb, { ids: [p.id], group: null, swipe: p.id });
       this.list.append(row);
-      if (r.gap !== null) this.list.append(this.gapPill(p.id));
-    }
+      if (r.gap !== null) {
+        const pill = this.gapPill(p.id);
+        if (g && !last) pill.classList.add('ze-member');
+        this.list.append(pill);
+      }
+    });
     this.thumbs = keep;
     this.list.scrollTop = scroll;
+    mark();
+  }
+
+  /** Ordnerzeile einer Gruppe: aufklappen, Name (doppelt tippen: umbenennen), Tiefe der vordersten Ebene, Augen, Schloss */
+  private groupRow(g: ZoneGroup, members: ZonePlane[]): HTMLElement {
+    const row = el('div', `ze-row ze-ghead${g.hidden ? ' dim' : ''}`);
+    row.dataset.ghead = g.id;
+    row.dataset.first = members[0]?.id ?? '';
+    row.dataset.collapsed = g.collapsed ? '1' : '';
+    const disc = button(g.collapsed ? '▸' : '▾', g.collapsed ? 'Aufklappen' : 'Zuklappen', () => this.a.toggleGroup(g.id, 'collapsed'), 'ze-disc');
+    const fold = el('span', 'ze-fold', FOLDER);
+    fold.title = 'Ziehen: die ganze Gruppe in der Liste verschieben';
+    const name = el('span', 'ze-name');
+    name.textContent = g.name;
+    name.title = 'Doppelt tippen zum Umbenennen';
+    this.doubleTap(name, g.id, () => this.rename(name, g.name, (v) => this.a.renameGroup(g.id, v), () => this.a.selectGroup(g.id)));
+    const meta = el('div', 'ze-meta');
+    if (members[0]) meta.append(this.depthChip(members[0].id, members[0].z, g.id));
+    meta.append(el('span', 'ze-role', `${members.length} ${members.length === 1 ? 'Ebene' : 'Ebenen'}`));
+    const text = el('div', 'ze-text');
+    text.append(name, meta);
+    const eye = button(g.hidden ? EYE_OFF : EYE, g.hidden ? 'Gruppe einblenden' : 'Gruppe ausblenden', () => this.a.toggleGroup(g.id, 'hidden'), g.hidden ? '' : 'on');
+    const lock = button(LOCK, g.locked ? 'Gruppe entsperren' : 'Gruppe sperren', () => this.a.toggleGroup(g.id, 'locked'), g.locked ? 'on' : '');
+    row.append(disc, fold, text, eye, lock);
+    row.addEventListener('click', () => {
+      if (this.swallowClick) {
+        this.swallowClick = false;
+        return;
+      }
+      this.a.selectGroup(g.id);
+    });
+    this.rowGestures(row, fold, { ids: members.map((m) => m.id), group: g.id, swipe: null });
+    return row;
+  }
+
+  /** eigenes Doppeltippen: Safari auf dem iPad meldet dblclick bei touch-action: none nicht zuverlässig */
+  private doubleTap(elm: HTMLElement, id: string, fn: () => void): void {
+    elm.addEventListener('click', (e) => {
+      const now = performance.now();
+      if (this.lastNameTap.id === id && now - this.lastNameTap.t < 380) {
+        e.stopPropagation();
+        this.lastNameTap = { id: '', t: 0 };
+        fn();
+        return;
+      }
+      this.lastNameTap = { id, t: now };
+    });
   }
 
   /**
    * Gesten auf einer Zeile: nach rechts wischen (Finger, wie in Procreate) nimmt die Ebene in die Auswahl oder heraus;
-   * Ziehen verschiebt sie in der Liste (Maus überall, Finger und Pencil am Vorschaubild, sonst scrollt die Liste)
+   * Ziehen verschiebt sie (oder die ganze Gruppe) in der Liste (Maus überall, Finger und Pencil am Vorschaubild bzw.
+   * Ordner, sonst rollt die Liste)
    */
-  private rowGestures(row: HTMLElement, handle: HTMLElement, id: string): void {
+  private rowGestures(row: HTMLElement, handle: HTMLElement, what: { ids: string[]; group: string | null; swipe: string | null }): void {
     let st: { x: number; y: number; pointerId: number; touch: boolean; grip: boolean; mode: 'none' | 'swipe' | 'drag' } | null = null;
     row.addEventListener('pointerdown', (e) => {
       if ((e.target as HTMLElement).closest('.ze-btn, .ze-z, input')) return;
@@ -504,18 +579,18 @@ export class EditorUi {
       const dx = e.clientX - st.x;
       const dy = e.clientY - st.y;
       if (st.mode === 'none') {
-        if (st.touch && !st.grip && dx > 28 && Math.abs(dy) < 18) {
+        if (what.swipe && st.touch && !st.grip && dx > 28 && Math.abs(dy) < 18) {
           st.mode = 'swipe';
           this.swallowClick = true;
-          this.a.selectPlane(id, 'toggle');
+          this.a.selectPlane(what.swipe, 'toggle');
           return;
         }
         if ((!st.touch || st.grip) && Math.abs(dy) > 6) {
           st.mode = 'drag';
-          this.beginRowDrag(id);
+          this.beginRowDrag(what);
         }
       }
-      if (st.mode === 'drag') this.moveRowDrag(e.clientY);
+      if (st.mode === 'drag') this.moveRowDrag(e.clientX, e.clientY);
     });
     const end = (e: PointerEvent) => {
       if (!st || st.pointerId !== e.pointerId) return;
@@ -531,32 +606,57 @@ export class EditorUi {
     row.addEventListener('pointercancel', end);
   }
 
-  private beginRowDrag(id: string): void {
-    const order = [...this.list.querySelectorAll<HTMLElement>('.ze-row')].map((r) => r.dataset.row!);
-    const ids = this.selectedPlanes.has(id) && this.selectedPlanes.size > 1 ? order.filter((x) => this.selectedPlanes.has(x)) : [id];
+  private beginRowDrag(what: { ids: string[]; group: string | null }): void {
+    let ids = what.ids;
+    // eine gewählte Ebene zieht alle gewählten mit (eine Gruppe immer nur sich)
+    if (!what.group && ids.length === 1 && this.selectedPlanes.has(ids[0]) && this.selectedPlanes.size > 1) {
+      const order = [...this.list.querySelectorAll<HTMLElement>('[data-row]')].map((r) => r.dataset.row!);
+      ids = order.filter((x) => this.selectedPlanes.has(x));
+    }
     for (const x of ids) this.list.querySelector(`[data-row="${x}"]`)?.classList.add('lift');
-    this.rowDrag = { ids, mark: el('div', 'ze-drop'), before: null };
+    if (what.group) this.list.querySelector(`[data-ghead="${what.group}"]`)?.classList.add('lift');
+    this.rowDrag = { ids, group: what.group, mark: el('div', 'ze-drop'), before: null, into: null };
     this.dragging = true;
   }
 
-  /** Einfügemarke vor die erste Zeile, deren Mitte unter dem Zeiger liegt; am Rand der Liste rollt sie mit */
-  private moveRowDrag(clientY: number): void {
+  /**
+   * Einfügemarke vor die erste Zeile, deren Mitte unter dem Zeiger liegt; am Rand der Liste rollt sie mit. Ziel: vor einer
+   * Ebene einer Gruppe heißt in die Gruppe; direkt nach der letzten Ebene einer Gruppe entscheidet die Einrückung
+   * (Zeiger rechts der Ordner-Spalte: noch in die Gruppe); eine Gruppe kommt nie in eine andere
+   */
+  private moveRowDrag(clientX: number, clientY: number): void {
     const d = this.rowDrag;
     if (!d) return;
     const box = this.list.getBoundingClientRect();
     if (clientY < box.top + 24) this.list.scrollTop -= 8;
     if (clientY > box.bottom - 24) this.list.scrollTop += 8;
-    let before: HTMLElement | null = null;
-    for (const r of this.list.querySelectorAll<HTMLElement>('.ze-row')) {
+    const rows = [...this.list.querySelectorAll<HTMLElement>('.ze-row')];
+    let k = rows.findIndex((r) => {
       const b = r.getBoundingClientRect();
-      if (clientY < b.top + b.height / 2) {
-        before = r;
-        break;
-      }
+      return clientY < b.top + b.height / 2;
+    });
+    if (k < 0) k = rows.length;
+    let target: HTMLElement | null = rows[k] ?? null;
+    const prev = rows[k - 1] ?? null;
+    const groupOfRow = (r: HTMLElement | null): string | null => (r ? r.dataset.group || r.dataset.ghead || null : null);
+    const planeOfRow = (r: HTMLElement | null): string | null => (r ? (r.dataset.row ?? r.dataset.first ?? null) : null);
+    let into: string | null = null;
+    if (d.group) {
+      // eine Gruppe: nie in eine andere, also vor deren Ordnerzeile
+      const tg = target?.dataset.group;
+      if (tg && tg !== d.group) target = this.list.querySelector<HTMLElement>(`[data-ghead="${tg}"]`);
+      into = d.group;
+    } else if (target?.dataset.row && target.dataset.group) into = target.dataset.group;
+    else {
+      const pg = prev && !prev.dataset.ghead ? groupOfRow(prev) : prev?.dataset.collapsed ? prev.dataset.ghead! : null;
+      if (pg && clientX > box.left + 40) into = pg;
     }
-    if (before) this.list.insertBefore(d.mark, before.previousElementSibling?.classList.contains('ze-gap') ? before.previousElementSibling : before);
+    const anchor = target?.previousElementSibling?.classList.contains('ze-gap') ? target.previousElementSibling : target;
+    if (anchor) this.list.insertBefore(d.mark, anchor);
     else this.list.append(d.mark);
-    d.before = before?.dataset.row ?? null;
+    d.mark.classList.toggle('in', !!into && !d.group);
+    d.before = planeOfRow(target);
+    d.into = into;
   }
 
   private endRowDrag(drop: boolean): void {
@@ -568,22 +668,22 @@ export class EditorUi {
     for (const r of this.list.querySelectorAll('.ze-row.lift')) r.classList.remove('lift');
     // die Liste wird mit der neuen Reihenfolge neu aufgebaut
     this.structure = '';
-    if (drop) this.a.movePlanes(d.ids, d.before);
+    if (drop && !d.ids.includes(d.before ?? '')) this.a.movePlanes(d.ids, d.before, d.into);
   }
 
   /** Tiefe in der Zeile: waagrecht ziehen schiebt die Ebene (und die anderen gewählten) allein, tippen gibt eine Zahl */
-  private depthChip(p: ZonePlane): HTMLElement {
+  private depthChip(id: string, z0: number, group?: string): HTMLElement {
     const chip = el('span', 'ze-z');
-    chip.dataset.z = p.id;
-    chip.textContent = `${fmt(p.z)} m`;
-    chip.title = 'Tiefe: waagrecht ziehen schiebt nur diese Ebene (und die anderen gewählten), tippen für eine Zahl';
+    chip.dataset.z = id;
+    chip.textContent = `${fmt(z0)} m`;
+    chip.title = group ? 'Tiefe der Gruppe (ihrer vordersten Ebene): waagrecht ziehen schiebt die ganze Gruppe' : 'Tiefe: waagrecht ziehen schiebt nur diese Ebene (und die anderen gewählten), tippen für eine Zahl';
     let start: { x: number; z: number; moved: boolean } | null = null;
     chip.addEventListener('pointerdown', (e) => {
       if (chip.querySelector('input')) return;
       e.stopPropagation();
       e.preventDefault();
       chip.setPointerCapture(e.pointerId);
-      start = { x: e.clientX, z: this.depths.get(p.id) ?? p.z, moved: false };
+      start = { x: e.clientX, z: this.depths.get(id) ?? z0, moved: false };
     });
     chip.addEventListener('pointermove', (e) => {
       if (!start || !chip.hasPointerCapture(e.pointerId)) return;
@@ -593,10 +693,10 @@ export class EditorUi {
         start.moved = true;
         this.dragging = true;
         chip.classList.add('drag');
-        this.a.depthStart(p.id);
+        this.a.depthStart(id, group);
       }
       // 5 cm je Bildpunkt, mit Umschalt 1 cm
-      this.a.depthChange(p.id, start.z + dx * (e.shiftKey ? 0.01 : 0.05));
+      this.a.depthChange(id, start.z + dx * (e.shiftKey ? 0.01 : 0.05));
     });
     const end = (e: PointerEvent) => {
       if (!start) return;
@@ -607,7 +707,7 @@ export class EditorUi {
         this.dragging = false;
         chip.classList.remove('drag');
         this.a.depthEnd();
-      } else if (e.type === 'pointerup') this.editDepth(chip, p.id);
+      } else if (e.type === 'pointerup') this.editDepth(chip, id, group);
     };
     chip.addEventListener('pointerup', end);
     chip.addEventListener('pointercancel', end);
@@ -615,7 +715,7 @@ export class EditorUi {
     return chip;
   }
 
-  private editDepth(chip: HTMLElement, id: string): void {
+  private editDepth(chip: HTMLElement, id: string, group?: string): void {
     this.editing = id;
     const z = this.depths.get(id) ?? 0;
     const input = el('input');
@@ -631,7 +731,7 @@ export class EditorUi {
       chip.textContent = `${fmt(z)} m`;
       const v = Number(input.value.replace(',', '.').replace(/[^\d.-]/g, ''));
       if (ok && Number.isFinite(v) && v !== z) {
-        this.a.depthStart(id);
+        this.a.depthStart(id, group);
         this.a.depthChange(id, v);
         this.a.depthEnd();
       }
@@ -652,21 +752,24 @@ export class EditorUi {
   private gaps = new Map<string, number>();
   private lastNameTap = { id: '', t: 0 };
 
-  private rename(span: HTMLElement, p: ZonePlane): void {
-    this.editing = p.id;
+  /** Name in der Zeile bearbeiten (Ebene oder Gruppe); Eingabe übernimmt, Esc bricht ab */
+  private rename(span: HTMLElement, current: string, commit: (v: string) => void, cancel: () => void): void {
+    const key = `name:${current}:${performance.now()}`;
+    this.editing = key;
     const input = el('input');
-    input.value = p.name;
+    input.value = current;
     span.replaceChildren(input);
     input.focus();
     input.select();
     input.addEventListener('click', (e) => e.stopPropagation());
+    input.addEventListener('pointerdown', (e) => e.stopPropagation());
     const done = (ok: boolean) => {
-      if (this.editing !== p.id) return;
+      if (this.editing !== key) return;
       this.editing = null;
       // die Zeile wird mit dem neuen Namen ohnehin neu aufgebaut; bei Abbruch den alten Namen zurück
       this.structure = '';
-      if (ok && input.value.trim()) this.a.renamePlane(p.id, input.value.trim().slice(0, 60));
-      else this.a.selectPlane(p.id);
+      if (ok && input.value.trim()) commit(input.value.trim().slice(0, 60));
+      else cancel();
     };
     input.addEventListener('keydown', (e) => {
       e.stopPropagation();
@@ -768,12 +871,12 @@ export class EditorUi {
    * Leiste unten: beim Zeichnen Fertig und Abbrechen, für gewählte Anker, das Lasso oder eine Fläche deren Befehle, für
    * gewählte Formen Farbe und Reihenfolge, sonst für die gewählten Ebenen Rolle und Isolieren
    */
-  setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false): void {
+  setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false, group: ZoneGroup | null = null): void {
     const plane = planes.at(-1) ?? null;
     const shape = shapes.at(-1) ?? null;
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
     const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : `l|${path.form}|${path.count}|${path.smooth}`;
-    const key = path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}` : '';
+    const key = path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
     this.context.replaceChildren();
@@ -825,16 +928,19 @@ export class EditorUi {
       this.context.append(button('Löschen', 'Löschen (Entf)', () => this.a.deleteShape()));
     } else if (plane) {
       const many = planes.length > 1;
-      this.context.append(el('span', 'ze-label', many ? `${planes.length} Ebenen` : plane.name));
+      this.context.append(el('span', 'ze-label', group ? `${group.name} · ${planes.length} ${planes.length === 1 ? 'Ebene' : 'Ebenen'}` : many ? `${planes.length} Ebenen` : plane.name));
       const role = planes.every((p) => p.role === plane.role) ? plane.role : null;
       for (const r of PLANE_ROLES) this.context.append(button(PLANE_ROLE_WORDS[r], `Rolle: ${PLANE_ROLE_WORDS[r]} (wirkt ab Stufe 4 auf Pinsel und Stützen)`, () => this.a.setRole(r), role === r ? 'on' : ''));
       this.context.append(el('span', 'ze-sep'));
       if (!many) for (const i of ['off', 'front', 'only'] as const) this.context.append(button(i === 'off' ? 'Alle' : i === 'front' ? 'Davor aus' : 'Nur diese', `Isolieren: ${ISOLATE_WORDS[i]}`, () => this.a.setIsolate(i), isolate === i ? 'on' : ''));
       if (!many) this.context.append(el('span', 'ze-sep'));
       if (canPaste) this.context.append(button('Einfügen', 'Kopierte Formen in die aktive Ebene, an derselben Stelle im Spielblick (Cmd+V)', () => this.a.paste()));
+      this.context.append(group ? button('Auflösen', 'Gruppe auflösen, die Ebenen bleiben (Shift+Cmd+G)', () => this.a.ungroup()) : button('Gruppieren', 'Die gewählten Ebenen zu einer Gruppe (Cmd+G)', () => this.a.groupPlanes()));
       this.context.append(
         button('Als SVG', many ? 'Die gewählten Ebenen als SVG sichern' : 'Nur diese Ebene als SVG sichern', () => this.a.exportSvg('plane')),
-        button(many ? 'Ebenen löschen' : 'Ebene löschen', many ? 'Die gewählten Ebenen mit allen Formen löschen' : 'Ebene mit allen Formen löschen', () => this.a.deletePlane()),
+        group
+          ? button('Gruppe löschen', 'Gruppe mit allen Ebenen und Formen löschen', () => this.a.deleteGroup())
+          : button(many ? 'Ebenen löschen' : 'Ebene löschen', many ? 'Die gewählten Ebenen mit allen Formen löschen' : 'Ebene mit allen Formen löschen', () => this.a.deletePlane()),
       );
     }
     this.context.classList.toggle('show', !!(path || shape || plane));

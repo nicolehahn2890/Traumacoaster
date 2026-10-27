@@ -24,7 +24,8 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Vereinfachen, Einrasten im Bild, Mehrfachauswahl, Gruppen, Drehen, Ausrichten, Kurvenstift, Band, Skizze als
   Pause-Ebene (`ZONENEDITOR-PLAN.md` Abschnitt 6). Florians erste Befunde an Tor S2 sind eingebaut (Zeichenstift mit
   Befehls- und Wahltaste, Schließen mit Ziehen, Lasso und Mehrfachauswahl von Punkten, Formen und Ebenen, Tiefe je
-  Zeile statt Tiefenleiste, Ebenen umordnen); Gruppen wie in Photoshop stehen noch aus.
+  Zeile statt Tiefenleiste, Ebenen umordnen) und danach Ebenen-Gruppen wie Ordner in Photoshop (gruppieren,
+  auflösen, zuklappen, ausblenden, sperren, als Ganzes ziehen; noch keine Gruppen in Gruppen).
 
 - **25.10., Etappe 2 begonnen** (Branch `etappe-2-bahn-und-welt` von `main`; die zwölf Arbeitsschritte mit drei Toren stehen in
   `docs/GROSSER-PLAN.md`, Paket 10, von Florian bestätigt). Technik in `docs/TECH.md` 4h.

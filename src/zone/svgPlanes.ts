@@ -13,7 +13,7 @@
  * Verläufe werden Vollton. Ohne DOM, damit es in Tests gleich läuft.
  */
 import { faceCurves } from './faceCurves';
-import { cloneNodes, DEFAULT_GAP, faceFill, newPlane, nextNodeId, planePathToShape, planesOf, shapeFaces, shapeFromPlanePath, shapesOf, type ZoneNode, type ZonePlane, type ZoneShape } from './nodes';
+import { cloneNodes, DEFAULT_GAP, faceFill, groupOf, newPlane, nextNodeId, planeHidden, planePathToShape, planesOf, shapeFaces, shapeFromPlanePath, shapesOf, type ZoneNode, type ZonePlane, type ZoneShape } from './nodes';
 import { flattenPath, inPolygon, polyArea, type PathPoint, type ZonePath } from './path';
 import { parsePathData, parseTransform, SVG_SCALE, svgPathData } from './svg';
 
@@ -88,7 +88,7 @@ export function shapeItems(s: ZoneShape): { group: boolean; items: Item[] } {
  */
 export function planesToSvg(nodes: readonly ZoneNode[], opts: { planes?: readonly string[]; zoneName?: string } = {}): string {
   const planes = planesOf(nodes)
-    .filter((p) => (opts.planes ? opts.planes.includes(p.id) : !p.hidden))
+    .filter((p) => (opts.planes ? opts.planes.includes(p.id) : !planeHidden(nodes, p)))
     .reverse();
   const groups = planes.map((plane) => ({
     plane,
@@ -131,21 +131,35 @@ export function planesToSvg(nodes: readonly ZoneNode[], opts: { planes?: readonl
   lines.push(`  <!-- Trauma Coaster, Zone ${esc(zone)}: je Ebene eine Gruppe, von hinten nach vorn; 1 m = ${S} px; Ursprung x ${minX} m, oben y ${maxY} m. Kennungen (p…, s…, rahmen-…) behalten, dann ordnet der Editor beim Laden alles wieder zu. Zurück mit Exportieren als › SVG. -->`);
   lines.push(`  <rect id="rahmen-x${encInt(minX)}-y${encInt(maxY)}" x="0" y="0" width="${W}" height="${H}" fill="none" stroke="#c8c8c8" stroke-width="1"/>`);
   const d = (rings: ZonePath[]) => rings.map((r) => svgPathData(r, toSvg)).join(' ');
+  // Ebenen einer Ebenen-Gruppe stehen in einer Gruppe (in Illustrator ein Ordner mit den Ebenen darin)
+  let open: string | null = null;
   for (const g of groups) {
+    const grp = groupOf(nodes, g.plane) ?? null;
+    if (open && open !== grp?.id) {
+      lines.push('  </g>');
+      open = null;
+    }
+    if (grp && open !== grp.id) {
+      const gname = slug(grp.name);
+      lines.push(`  <g id="${grp.id}${gname ? `-${gname}` : ''}" data-name="${esc(grp.name)}">`);
+      open = grp.id;
+    }
+    const pad = open ? '  ' : '';
     const name = slug(g.plane.name);
-    lines.push(`  <g id="${g.plane.id}${name ? `-${name}` : ''}" data-name="${esc(g.plane.name)}" data-z="${f(g.plane.z)}">`);
+    lines.push(`${pad}  <g id="${g.plane.id}${name ? `-${name}` : ''}" data-name="${esc(g.plane.name)}" data-z="${f(g.plane.z)}">`);
     for (const s of g.shapes) {
       if (!s.group) {
         const it = s.items[0];
-        lines.push(`    <path id="${it.id}" d="${d(it.rings)}" fill="${esc(it.fill)}" fill-rule="evenodd"/>`);
+        lines.push(`${pad}    <path id="${it.id}" d="${d(it.rings)}" fill="${esc(it.fill)}" fill-rule="evenodd"/>`);
         continue;
       }
-      lines.push(`    <g id="${s.shape.id}">`);
-      for (const it of s.items) lines.push(`      <path id="${it.id}" d="${d(it.rings)}" fill="${esc(it.fill)}" fill-rule="evenodd"/>`);
-      lines.push('    </g>');
+      lines.push(`${pad}    <g id="${s.shape.id}">`);
+      for (const it of s.items) lines.push(`${pad}      <path id="${it.id}" d="${d(it.rings)}" fill="${esc(it.fill)}" fill-rule="evenodd"/>`);
+      lines.push(`${pad}    </g>`);
     }
-    lines.push('  </g>');
+    lines.push(`${pad}  </g>`);
   }
+  if (open) lines.push('  </g>');
   lines.push('</svg>');
   return lines.join('\n') + '\n';
 }
