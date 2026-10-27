@@ -80,34 +80,47 @@ export function unionBounds(shapes: readonly ZoneShape[]): { minX: number; minY:
   return u;
 }
 
-/** Formen am gemeinsamen Rahmen ausrichten (wie Illustrator „an Auswahl ausrichten“; oben ist y groß) */
-export function alignShapes(shapes: readonly ZoneShape[], mode: AlignMode): void {
-  if (shapes.length < 2) return;
-  const u = unionBounds(shapes);
-  for (const s of shapes) {
-    const b = shapeBounds(s);
-    if (mode === 'left') s.x = r3(s.x + u.minX - b.minX);
-    if (mode === 'right') s.x = r3(s.x + u.maxX - b.maxX);
-    if (mode === 'hcenter') s.x = r3(s.x + (u.minX + u.maxX - b.minX - b.maxX) / 2);
-    if (mode === 'top') s.y = r3(s.y + u.maxY - b.maxY);
-    if (mode === 'bottom') s.y = r3(s.y + u.minY - b.minY);
-    if (mode === 'vcenter') s.y = r3(s.y + (u.minY + u.maxY - b.minY - b.maxY) / 2);
+type Unit = ZoneShape | readonly ZoneShape[];
+const list = (u: Unit): readonly ZoneShape[] => (Array.isArray(u) ? u : [u as ZoneShape]);
+
+/** eine Einheit (Form oder Gruppe) als Ganzes verschieben */
+function shift(u: Unit, dx: number, dy: number): void {
+  for (const s of list(u)) {
+    s.x = r3(s.x + dx);
+    s.y = r3(s.y + dy);
   }
 }
 
-/** Formen gleichmäßig verteilen: die Mitten mit gleichen Abständen zwischen der ersten und der letzten */
-export function distributeShapes(shapes: readonly ZoneShape[], axis: 'x' | 'y'): void {
-  if (shapes.length < 3) return;
-  const mid = (s: ZoneShape): number => {
-    const b = shapeBounds(s);
+/**
+ * Einheiten am gemeinsamen Rahmen ausrichten (wie Illustrator „an Auswahl ausrichten“; oben ist y groß); eine Einheit ist
+ * eine Form oder eine Gruppe, die als Ganzes wandert
+ */
+export function alignShapes(units: readonly Unit[], mode: AlignMode): void {
+  if (units.length < 2) return;
+  const u = unionBounds(units.flatMap(list));
+  for (const unit of units) {
+    const b = unionBounds(list(unit));
+    if (mode === 'left') shift(unit, u.minX - b.minX, 0);
+    if (mode === 'right') shift(unit, u.maxX - b.maxX, 0);
+    if (mode === 'hcenter') shift(unit, (u.minX + u.maxX - b.minX - b.maxX) / 2, 0);
+    if (mode === 'top') shift(unit, 0, u.maxY - b.maxY);
+    if (mode === 'bottom') shift(unit, 0, u.minY - b.minY);
+    if (mode === 'vcenter') shift(unit, 0, (u.minY + u.maxY - b.minY - b.maxY) / 2);
+  }
+}
+
+/** Einheiten gleichmäßig verteilen: die Mitten mit gleichen Abständen zwischen der ersten und der letzten */
+export function distributeShapes(units: readonly Unit[], axis: 'x' | 'y'): void {
+  if (units.length < 3) return;
+  const mid = (unit: Unit): number => {
+    const b = unionBounds(list(unit));
     return axis === 'x' ? (b.minX + b.maxX) / 2 : (b.minY + b.maxY) / 2;
   };
-  const sorted = [...shapes].sort((a, b) => mid(a) - mid(b));
+  const sorted = [...units].sort((a, b) => mid(a) - mid(b));
   const first = mid(sorted[0]);
   const step = (mid(sorted[sorted.length - 1]) - first) / (sorted.length - 1);
-  sorted.forEach((s, i) => {
-    const d = first + step * i - mid(s);
-    if (axis === 'x') s.x = r3(s.x + d);
-    else s.y = r3(s.y + d);
+  sorted.forEach((unit, i) => {
+    const d = first + step * i - mid(unit);
+    shift(unit, axis === 'x' ? d : 0, axis === 'y' ? d : 0);
   });
 }

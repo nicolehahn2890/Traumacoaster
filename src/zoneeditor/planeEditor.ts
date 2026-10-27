@@ -22,7 +22,8 @@ import { buildSliceStack } from '@/zone/slices';
 import { flattenPath } from '@/zone/path';
 import { planesToSvg, slug, svgToPlanes } from '@/zone/svgPlanes';
 import { depthLimits, groupPlanes, normalizeGroups, reorderPlanes, ungroup } from '@/zone/planeGroups';
-import { alignShapes, distributeShapes, rotateShape, type AlignMode } from '@/zone/shapeOps';
+import { alignShapes, distributeShapes, rotateShape, unionBounds, type AlignMode } from '@/zone/shapeOps';
+import { copyGroups, expandToUnits, groupMembersOf, groupShapes, inContext, moveUnit, nextGroupId, normalizeShapeGroups, renumberOrder, ungroupShapes, unitKey, unitShapes, type GroupContext } from '@/zone/shapeGroups';
 import {
   cloneNodes,
   depthBeside,
@@ -99,7 +100,7 @@ interface Pointer extends Pt {
 
 type Gesture =
   /** gewählte Formen verschieben: jede rechnet den Weg des Zeigers in ihrer eigenen Ebene */
-  | { kind: 'move'; pointerId: number; start: Pt; orig: Map<string, Pt> }
+  | { kind: 'move'; pointerId: number; start: Pt; orig: Map<string, Pt>; tap: string | null }
   /** gewählte Formen einer Ebene um die Mitte ihres Rahmens drehen (Winkel in Ebenen-Koordinaten, vom Anfang aus) */
   | { kind: 'rotate'; pointerId: number; plane: string; pivot: Pt; a0: number; angle: number; orig: Map<string, ZoneShape> }
   /** gewählte Formen einer Ebene am gemeinsamen Rahmen skalieren */
@@ -132,6 +133,10 @@ export class PlaneEditor {
   private selection: string[] = [];
   /** in der Liste gewählte Gruppe (dann sind ihre Ebenen gewählt) */
   private groupSel: string | null = null;
+  /** Formgruppen, in die man doppelt tippend hineingegangen ist (von außen nach innen; leer = oberste Stufe) */
+  private inGroup: string[] = [];
+  /** letzter Treffer der Auswahl (doppelt tippen geht in eine Gruppe) */
+  private lastPick: { id: string; t: number; x: number; y: number } | null = null;
   private tool: Tool = 'select';
   private isolate: Isolate = 'off';
   private hold = true;
@@ -155,6 +160,8 @@ export class PlaneEditor {
   private readonly paths: PathTools;
   /** kopierte Formen mit ihren Ebenen beim Kopieren (Einfügen in eine andere Ebene hält das Bild) */
   private clip: Array<{ shape: ZoneShape; from: ZonePlane }> = [];
+  /** Formgruppen, die beim Kopieren ganz dabei waren (die Kopie wird eine eigene Gruppe) */
+  private clipWhole = new Set<string>();
   /** Rang jeder Form in ihrer Ebene (Tiefenversatz der Griffe), nach jeder Änderung neu */
   private ranks: Map<string, number> | null = null;
   /** gedrückte Tasten (Befehl, Wahl, Umschalt) für Zeiger, Zeichenstift und Mauszeiger */
@@ -272,6 +279,33 @@ export class PlaneEditor {
     return this.selection.map((id) => findShape(this.nodes, id)).filter((s): s is ZoneShape => !!s);
   }
 
+  /** Kontext einer Form: die betretene Gruppe, wenn sie darin liegt, sonst die oberste Stufe */
+  private ctxOf(s: ZoneShape): GroupContext {
+    return inContext(s, this.inGroup) ? this.inGroup : [];
+  }
+
+  /** Einheiten der Auswahl (eine Gruppe oder eine Form, je mit ihren gewählten Formen), hinten zuerst */
+  private selectedUnits(): ZoneShape[][] {
+    const units = new Map<string, ZoneShape[]>();
+    for (const s of this.selectedShapes()) {
+      const key = `${s.parent}|${unitKey(s, this.ctxOf(s))}`;
+      const u = units.get(key);
+      if (u) u.push(s);
+      else units.set(key, [s]);
+    }
+    return [...units.values()].map((u) => u.sort((a, b) => a.order - b.order)).sort((a, b) => a[0].order - b[0].order);
+  }
+
+  /** gewählte Formen nach Gruppen: wie viele Einheiten, davon ganze Gruppen, und ob man in einer Gruppe ist */
+  private groupInfo(): { units: number; groups: number; inside: boolean } {
+    const units = this.selectedUnits();
+    const groups = units.filter((u) => {
+      const key = unitKey(u[0], this.ctxOf(u[0]));
+      return key !== u[0].id && groupMembersOf(this.nodes, key).length === u.length;
+    }).length;
+    return { units: units.length, groups, inside: this.inGroup.length > 0 };
+  }
+
   /** gewählte Ebenen in der Reihenfolge der Liste (mindestens die aktive; bei einer gewählten Gruppe ihre Ebenen) */
   private selectedPlanes(): ZonePlane[] {
     if (this.groupSel) {
@@ -307,6 +341,9 @@ export class PlaneEditor {
       this.zone.nodes = norm;
     }
     if (this.groupSel && !findGroup(this.nodes, this.groupSel)) this.groupSel = null;
+    normalizeShapeGroups(this.nodes);
+    const alive = this.inGroup.findIndex((g) => groupMembersOf(this.nodes, g).length < 2);
+    if (alive >= 0) this.inGroup = this.inGroup.slice(0, alive);
     this.meshDirty = true;
     this.uiDirty = true;
     this.ranks = null;
@@ -496,7 +533,7 @@ export class PlaneEditor {
     );
     this.paths.selectionChanged(this.selection);
     const path = this.building && isPathTool(this.tool) ? this.paths.context() : null;
-    this.ui.setContext(this.building ? this.selectedPlanes() : [], this.building ? this.selectedShapes() : [], this.isolate, path, this.clip.length > 0, this.building ? (findGroup(this.nodes, this.groupSel) ?? null) : null, this.activeSketch(), !!this.adjusting());
+    this.ui.setContext(this.building ? this.selectedPlanes() : [], this.building ? this.selectedShapes() : [], this.isolate, path, this.clip.length > 0, this.building ? (findGroup(this.nodes, this.groupSel) ?? null) : null, this.activeSketch(), !!this.adjusting(), this.building ? this.groupInfo() : null);
     const st = this.host.world.planes.stats;
     const tris = st.triangles >= 1000 ? `${(st.triangles / 1000).toFixed(1).replace('.', ',')}k` : String(st.triangles);
     this.ui.setTop(this.dirty, this.history.canUndo, this.history.canRedo, `${planes.length} Ebenen · ${st.shapes} Formen · ${tris} Dreiecke · Welt: ${this.host.world.drawCalls} Draw Call${this.host.world.drawCalls === 1 ? '' : 's'} · ${this.fps.value} fps`);
@@ -627,6 +664,20 @@ export class PlaneEditor {
       this.paths.selectionChanged(this.selection);
       this.paths.overlay(st);
     } else if (this.building) {
+      const inner = this.inGroup.at(-1);
+      const members = inner ? groupMembersOf(this.nodes, inner) : [];
+      const gp = members.length ? findPlane(this.nodes, members[0].parent) : undefined;
+      if (gp) {
+        const b = unionBounds(members);
+        const pad = 0.4;
+        const corners = [
+          { x: b.minX - pad, y: b.minY - pad },
+          { x: b.maxX + pad, y: b.minY - pad },
+          { x: b.maxX + pad, y: b.maxY + pad },
+          { x: b.minX - pad, y: b.maxY + pad },
+        ].map((q) => this.screenOf(gp, q));
+        if (corners.every(Boolean)) st.group = corners as Pt[];
+      }
       for (const s of this.selectedShapes()) {
         const p = findPlane(this.nodes, s.parent);
         if (!p) continue;
@@ -698,6 +749,13 @@ export class PlaneEditor {
         if (g) g.name = name;
       }),
       groupPlanes: () => this.groupSelected(),
+      shapeGroup: () => this.groupShapesSelected(),
+      shapeUngroup: () => this.ungroupSelected(),
+      leaveGroup: () => {
+        const outer = this.inGroup[0];
+        this.inGroup = [];
+        if (outer) this.setSelection(groupMembersOf(this.nodes, outer).map((s) => s.id));
+      },
       ungroup: () => this.ungroupSelected(),
       deleteGroup: () => this.deleteGroup(),
       lassoForm: (form) => this.paths.setLassoForm(form),
@@ -968,6 +1026,10 @@ export class PlaneEditor {
 
   /** gewählte Ebenen zu einer Gruppe (Cmd+G); nicht benachbarte kommen hinter die vorderste */
   private groupSelected(): void {
+    if (this.selection.length) {
+      this.groupShapesSelected();
+      return;
+    }
     const ids = this.selectedPlanes().map((p) => p.id);
     if (!ids.length) return;
     let gid: string | null = null;
@@ -980,8 +1042,41 @@ export class PlaneEditor {
     }
   }
 
-  /** Gruppe auflösen (Cmd+Shift+G): die gewählte oder die der aktiven Ebene; die Ebenen bleiben */
+  /** gewählte Formen einer Ebene zu einer Formgruppe (Cmd+G, wie in Illustrator) */
+  private groupShapesSelected(): void {
+    const shapes = this.selectedShapes();
+    if (new Set(shapes.map((s) => s.parent)).size > 1) {
+      this.ui.toast('Formen verschiedener Ebenen lassen sich nicht gruppieren (Ebenen gruppierst du in der Liste)');
+      return;
+    }
+    if (this.selectedUnits().length < 2) {
+      this.ui.toast('Zum Gruppieren mindestens zwei Formen oder Gruppen wählen');
+      return;
+    }
+    let id: string | null = null;
+    this.edit(() => {
+      id = groupShapes(this.nodes, shapes.map((s) => s.id));
+    });
+    if (!id) return;
+    const members = groupMembersOf(this.nodes, id).map((s) => s.id);
+    this.setSelection(members);
+    this.ui.toast(`${members.length} Formen gruppiert: Tippen wählt die Gruppe, doppelt tippen geht hinein (Shift+Cmd+G löst sie auf)`);
+  }
+
+  /** Gruppe auflösen (Cmd+Shift+G): gewählte Formgruppen, sonst die gewählte Ebenen-Gruppe oder die der aktiven Ebene */
   private ungroupSelected(): void {
+    const shapes = this.selectedShapes();
+    if (shapes.length) {
+      const ctx = shapes.every((s) => inContext(s, this.inGroup)) ? this.inGroup : [];
+      let n = 0;
+      this.edit(() => {
+        n = ungroupShapes(this.nodes, shapes.map((s) => s.id), ctx);
+      });
+      this.ui.toast(n ? (n === 1 ? 'Gruppe aufgelöst, die Formen bleiben gewählt' : `${n} Gruppen aufgelöst`) : 'Keine Gruppe gewählt');
+      this.uiDirty = true;
+      this.drawOverlay();
+      return;
+    }
     const gid = this.groupSel ?? this.plane?.group ?? null;
     if (!gid) return;
     const members = groupMembers(this.nodes, gid).map((p) => p.id);
@@ -1038,35 +1133,45 @@ export class PlaneEditor {
     this.ui.toast(`${sel.length > 1 ? `${sel.length} Ebenen` : sel[0].name} gelöscht (rückgängig mit Cmd+Z oder zwei Fingern)`);
   }
 
+  /**
+   * Duplizieren (Cmd+D): jede Kopie liegt gleich vor ihrem Original, 1 m versetzt; eine ganz gewählte Gruppe wird eine
+   * eigene Gruppe vor der alten, eine Form aus einer Gruppe bleibt mit ihrer Kopie in der Gruppe
+   */
   private duplicate(): void {
     const shapes = this.selectedShapes();
     if (!shapes.length) return;
+    // vor dem Einfügen der Kopien prüfen, welche Gruppen ganz gewählt sind (danach gehörten die Kopien dazu)
+    const chosen = new Set(shapes.map((s) => s.id));
+    const wholeIds = new Set(shapes.flatMap((s) => s.groups ?? []).filter((g) => groupMembersOf(this.nodes, g).every((m) => chosen.has(m.id))));
+    const whole = (g: string): boolean => wholeIds.has(g);
     this.edit(() => {
-      const copies: string[] = [];
+      const copies: ZoneShape[] = [];
       for (const s of shapes) {
         const copy: ZoneShape = { ...cloneNodes([s])[0], id: nextNodeId(this.nodes, 's') } as ZoneShape;
         copy.name = `${s.name} Kopie`;
         copy.x += 1;
         copy.y -= 1;
-        copy.order = shapesOf(this.nodes, s.parent).reduce((m, x) => Math.max(m, x.order), 0) + 1;
+        const next = shapesOf(this.nodes, s.parent).find((x) => x.order > s.order);
+        copy.order = next ? (s.order + next.order) / 2 : s.order + 1;
         this.nodes.push(copy);
-        copies.push(copy.id);
+        copies.push(copy);
       }
-      this.selection = copies;
+      copyGroups(this.nodes, shapes, copies, true, whole);
+      for (const plane of new Set(copies.map((c) => c.parent))) renumberOrder(this.nodes, plane);
+      this.selection = copies.map((c) => c.id);
     });
   }
 
+  /**
+   * nach vorn (1) oder hinten (−1) in der Ebene: die gewählte Einheit (Form oder Gruppe) an der nächsten vorbei; eine
+   * einzelne Form aus einer Gruppe (Direktauswahl) innerhalb ihrer Gruppe
+   */
   private orderShape(dir: 1 | -1): void {
-    const s = this.shape;
-    if (!s) return;
-    const list = shapesOf(this.nodes, s.parent);
-    const i = list.indexOf(s);
-    const other = list[i + dir];
-    if (!other) return;
+    const first = findShape(this.nodes, this.selection[0]);
+    if (!first) return;
+    const tries: GroupContext[] = [this.ctxOf(first), first.groups ?? []];
     this.edit(() => {
-      const o = s.order;
-      s.order = other.order;
-      other.order = o;
+      for (const ctx of tries) if (moveUnit(this.nodes, this.selection, ctx, dir)) break;
     });
   }
 
@@ -1101,6 +1206,8 @@ export class PlaneEditor {
     const shapes = this.selectedShapes();
     if (!shapes.length) return;
     this.clip = shapes.map((s) => ({ shape: cloneNodes([s])[0] as ZoneShape, from: { ...findPlane(this.nodes, s.parent)! } }));
+    const chosen = new Set(shapes.map((s) => s.id));
+    this.clipWhole = new Set(shapes.flatMap((s) => s.groups ?? []).filter((g) => groupMembersOf(this.nodes, g).every((m) => chosen.has(m.id))));
     if (cut) this.deleteShape();
     else this.ui.toast(`${shapes.length > 1 ? `${shapes.length} Formen kopiert` : 'Kopiert'}: Einfügen in einer anderen Ebene setzt sie an dieselbe Stelle im Spielblick`);
     this.uiDirty = true;
@@ -1119,8 +1226,15 @@ export class PlaneEditor {
       return;
     }
     let moved = false;
+    // in eine betretene Gruppe dieser Ebene hinein (wie im Isolationsmodus von Illustrator)
+    const inner = this.inGroup.at(-1);
+    const into = inner && groupMembersOf(this.nodes, inner)[0]?.parent === to.id ? [...this.inGroup] : [];
     this.edit(() => {
       const ids: string[] = [];
+      const copies: ZoneShape[] = [];
+      // in die Gruppe: zwischen ihre vorderste Form und die nächste dahinter
+      const front = into.length ? groupMembersOf(this.nodes, into[into.length - 1]).reduce((m, x) => Math.max(m, x.order), -Infinity) : null;
+      const after = front !== null ? (shapesOf(this.nodes, to.id).find((x) => x.order > front)?.order ?? front + 1) : 0;
       for (const c of this.clip) {
         // die Ebene der Vorlage, wie sie jetzt liegt (sie kann seit dem Kopieren in der Tiefe gewandert sein)
         const from = findPlane(this.nodes, c.from.id) ?? c.from;
@@ -1129,14 +1243,19 @@ export class PlaneEditor {
         const copy = same ? (cloneNodes([c.shape])[0] as ZoneShape) : transferShape(c.shape, from, to, this.holdView());
         copy.id = nextNodeId(this.nodes, 's');
         copy.parent = to.id;
-        copy.order = shapesOf(this.nodes, to.id).reduce((m, x) => Math.max(m, x.order), 0) + 1;
+        copy.order = front !== null ? front + ((after - front) * (copies.length + 1)) / (this.clip.length + 1) : shapesOf(this.nodes, to.id).reduce((m, x) => Math.max(m, x.order), 0) + 1;
         if (same && findShape(this.nodes, c.shape.id)) {
           copy.x += 1;
           copy.y -= 1;
         }
         this.nodes.push(copy);
+        copies.push(copy);
         ids.push(copy.id);
       }
+      // ganz kopierte Gruppen werden eigene Gruppen; in eine betretene Gruppe hinein
+      copyGroups(this.nodes, this.clip.map((c) => c.shape), copies, false, (g) => this.clipWhole.has(g));
+      for (const c of copies) if (into.length) c.groups = [...into, ...(c.groups ?? [])];
+      renumberOrder(this.nodes, to.id);
       this.selection = ids;
     });
     if (moved) this.ui.toast(this.hold ? `In ${to.name} eingefügt: gleiche Stelle im Spielblick` : `In ${to.name} eingefügt: gleiche Lage in Metern (Welt halten)`);
@@ -1213,13 +1332,14 @@ export class PlaneEditor {
   /** gewählte Formen einer Ebene am gemeinsamen Rahmen ausrichten */
   private alignSelected(mode: AlignMode): void {
     if (!this.selectionBox()) return;
-    this.edit(() => alignShapes(this.selectedShapes(), mode));
+    this.edit(() => alignShapes(this.selectedUnits(), mode));
   }
 
   /** gewählte Formen einer Ebene gleichmäßig verteilen (ab drei) */
   private distributeSelected(axis: 'x' | 'y'): void {
-    if (!this.selectionBox() || this.selection.length < 3) return;
-    this.edit(() => distributeShapes(this.selectedShapes(), axis));
+    const units = this.selectedUnits();
+    if (!this.selectionBox() || units.length < 3) return;
+    this.edit(() => distributeShapes(units, axis));
   }
 
   /**
@@ -1228,14 +1348,20 @@ export class PlaneEditor {
    */
   private booleanSelected(op: BoolOp): void {
     const box = this.selectionBox();
-    const shapes = [...this.selectedShapes()].sort((a, b) => a.order - b.order);
-    if (!box || shapes.length < 2) return;
-    const res = booleanShapes(shapes, op);
+    // je Einheit ein Operand: eine Gruppe zählt als ihre Vereinigung
+    const sel = this.selectedUnits();
+    const units = sel.length === 1 ? sel[0].map((s) => [s]) : sel;
+    const shapes = units.flat();
+    if (!box || units.length < 2) return;
+    const res = booleanShapes(units, op);
     if (!res.length) {
       this.ui.toast(op === 'intersect' ? 'Keine Schnittmenge: die Formen überlappen nicht' : 'Davon bleibt nichts übrig');
       return;
     }
-    const base = op === 'minus' ? shapes[0] : shapes[shapes.length - 1];
+    const base = op === 'minus' ? units[0][0] : units[units.length - 1][units[units.length - 1].length - 1];
+    // in einer betretenen Gruppe bleibt das Ergebnis darin; mehrere Teile bleiben als eine Gruppe beisammen
+    const keep = shapes.every((s) => inContext(s, this.inGroup)) ? [...this.inGroup] : [];
+    if (res.length > 1) keep.push(nextGroupId(this.nodes));
     this.edit(() => {
       const drop = new Set(shapes.map((s) => s.id));
       this.nodes = this.nodes.filter((n) => !drop.has(n.id));
@@ -1246,13 +1372,14 @@ export class PlaneEditor {
         if (r.holes.length) s.holes = r.holes.map((h) => planePathToShape(s, h));
         s.name = res.length > 1 ? `${base.name} ${i + 1}` : base.name;
         s.order = base.order + i * 0.001;
+        if (keep.length) s.groups = [...keep];
         this.nodes.push(s);
         ids.push(s.id);
       });
       this.selection = ids;
     });
     const word = { unite: 'Vereint', minus: 'Abgezogen', intersect: 'Schnittmenge', exclude: 'Überlappung ausgeschlossen' }[op];
-    this.ui.toast(`${word}: ${res.length} ${res.length === 1 ? 'Form' : 'Formen'} (Teilungslinien und Flächenfarben fallen dabei weg)`);
+    this.ui.toast(`${word}: ${res.length === 1 ? '1 Form' : `${res.length} Formen als Gruppe`} (Teilungslinien und Flächenfarben fallen dabei weg)`);
   }
 
   /** gewählte Formen vereinfachen: höchstens 1,5 Bildpunkte daneben, so wie sie gerade zu sehen sind */
@@ -1275,7 +1402,24 @@ export class PlaneEditor {
   }
 
   /** alle Formen der gewählten Ebenen wählen (Cmd+A) */
+  /** Esc: aus der betretenen Gruppe eine Stufe hinaus (sie bleibt gewählt), sonst die Auswahl aufheben */
+  private escape(): void {
+    const left = this.inGroup.at(-1);
+    if (!left) {
+      this.setSelection([]);
+      return;
+    }
+    this.inGroup = this.inGroup.slice(0, -1);
+    this.setSelection(groupMembersOf(this.nodes, left).map((s) => s.id));
+    this.ui.toast(this.inGroup.length ? 'Eine Gruppe höher' : 'Aus der Gruppe heraus');
+  }
+
   private selectAll(): void {
+    const inner = this.inGroup.at(-1);
+    if (inner) {
+      this.setSelection(groupMembersOf(this.nodes, inner).map((s) => s.id));
+      return;
+    }
     const ids = this.selectedPlanes()
       .filter((p) => !planeHidden(this.nodes, p) && !planeLocked(this.nodes, p))
       .flatMap((p) => shapesOf(this.nodes, p.id).filter((s) => !s.hidden && !s.locked))
@@ -1640,16 +1784,26 @@ export class PlaneEditor {
     const hit = this.pickShape(p);
     const shape = hit ? findShape(this.nodes, hit.id) : undefined;
     if (shape) {
+      // außerhalb der betretenen Gruppe getippt: hinaus. Zweites Tippen auf eine Gruppe (ohne Ziehen) geht beim
+      // Abheben hinein (Isolationsmodus; ein Klick mit gleich folgendem Ziehen bleibt ein Verschieben)
+      if (!inContext(shape, this.inGroup)) this.inGroup = [];
+      const last = this.lastPick;
+      const second = !this.mods.shift && last?.id === shape.id && performance.now() - last.t < 450 && Math.hypot(last.x - p.x, last.y - p.y) < 14 && (shape.groups ?? []).length > this.inGroup.length;
+      // gewählt wird die Einheit: im Kontext eine ganze Gruppe der nächsten Stufe oder die Form
+      const unit = [...unitShapes(this.nodes, shape, this.inGroup).map((s) => s.id).filter((id) => id !== shape.id), shape.id];
       if (this.mods.shift) {
         // Umschalt: dazu oder heraus, ohne zu ziehen
-        this.setSelection(this.selection.includes(shape.id) ? this.selection.filter((x) => x !== shape.id) : [...this.selection, shape.id]);
+        const all = unit.every((id) => this.selection.includes(id));
+        const rest = this.selection.filter((x) => !unit.includes(x));
+        this.setSelection(all ? rest : [...rest, ...unit]);
         return;
       }
-      // eine gewählte Form zieht alle gewählten mit, eine andere wird allein gewählt
-      this.setSelection(this.selection.includes(shape.id) ? [...this.selection.filter((x) => x !== shape.id), shape.id] : [shape.id]);
+      // eine gewählte Einheit zieht alle gewählten mit, eine andere wird allein gewählt
+      const kept = unit.every((id) => this.selection.includes(id));
+      this.setSelection(kept ? [...this.selection.filter((x) => !unit.includes(x)), ...unit] : unit);
       const movable = this.selectedShapes().filter((s) => { const pl = findPlane(this.nodes, s.parent); return !s.locked && !!pl && !planeLocked(this.nodes, pl); });
       this.history.begin(this.nodes);
-      this.gesture = { kind: 'move', pointerId, start: p, orig: new Map(movable.map((s) => [s.id, { x: s.x, y: s.y }])) };
+      this.gesture = { kind: 'move', pointerId, start: p, orig: new Map(movable.map((s) => [s.id, { x: s.x, y: s.y }])), tap: second ? shape.id : null };
       this.drawOverlay();
       return;
     }
@@ -1704,7 +1858,7 @@ export class PlaneEditor {
         )
         .map((s) => s.id);
     const planes = this.regionPlanes();
-    const found = collect(planes);
+    const found = expandToUnits(this.nodes, collect(planes).filter((id) => { const s = findShape(this.nodes, id); return !!s && inContext(s, this.inGroup); }), this.inGroup);
     if (!found.length) {
       const elsewhere = collect(planesOf(this.nodes).filter((pl) => !planes.includes(pl))).length;
       if (elsewhere) this.ui.toast(`Keine Form in der gewählten Ebene, ${elsewhere} in anderen: in der Liste dazuwählen (Umschalt oder nach rechts wischen)`);
@@ -1813,7 +1967,10 @@ export class PlaneEditor {
     if (g.kind === 'empty') {
       // Rechteck: Formen wählen; Tippen ins Leere hebt die Auswahl auf (die aktive Ebene bleibt); Kreisen nicht
       if (g.moved && !g.orbit) this.regionSelect(g.start, g.last, g.add);
-      else if (!g.moved && this.selection.length && !g.add) this.setSelection([]);
+      else if (!g.moved && !g.add) {
+        this.inGroup = [];
+        if (this.selection.length) this.setSelection([]);
+      }
       this.drawOverlay();
       return;
     }
@@ -1843,6 +2000,19 @@ export class PlaneEditor {
       this.drawOverlay();
       return;
     }
+    if (g.kind === 'move' && Math.hypot(p.x - g.start.x, p.y - g.start.y) < TAP_DIST) {
+      const id = this.pickShape(g.start)?.id ?? null;
+      const shape = id ? findShape(this.nodes, id) : undefined;
+      if (g.tap && shape && g.tap === shape.id) {
+        this.history.cancel();
+        this.inGroup = (shape.groups ?? []).slice(0, this.inGroup.length + 1);
+        this.lastPick = null;
+        this.setSelection([...unitShapes(this.nodes, shape, this.inGroup).map((s) => s.id).filter((x) => x !== shape.id), shape.id]);
+        this.ui.toast('In der Gruppe: Formen einzeln wählen; Esc oder ins Leere tippen verlässt sie');
+        return;
+      }
+      this.lastPick = shape ? { id: shape.id, t: performance.now(), x: p.x, y: p.y } : null;
+    } else if (g.kind === 'move') this.lastPick = null;
     if (g.kind === 'rotate' && Math.abs(g.angle) > 1e-6) this.ui.toast(`um ${Math.round((g.angle * 180) / Math.PI)}° gedreht (mit Umschalt in 15°-Schritten)`);
     if (this.history.commit(this.nodes)) this.changed();
     else this.uiDirty = true;
@@ -1911,7 +2081,7 @@ export class PlaneEditor {
     else if (k === '4') this.setView('side');
     else if (k === 'tab') this.setBuilding(false);
     else if (k === ' ') this.spaceDown = true;
-    else if (k === 'escape') this.setSelection([]);
+    else if (k === 'escape') this.escape();
     else if (k === 'delete' || k === 'backspace') this.deleteShape();
     else if (k === ']') this.orderShape(1);
     else if (k === '[') this.orderShape(-1);

@@ -37,6 +37,21 @@ describe('Boolesche Operationen (Pathfinder)', () => {
     expect(x.reduce((s, r) => s + areaOf(r.outline), 0)).toBeCloseTo(24, 2);
   });
 
+  it('eine Gruppe zählt als ein Operand (ihre Vereinigung)', () => {
+    // zwei getrennte Quadrate als Gruppe, ein breites Rechteck quer über beide
+    const group = [shape(rectPath(2, 2), -3, 0), shape(rectPath(2, 2), 3, 0)];
+    const bar = shape(rectPath(10, 1), 0, 0);
+    const i = booleanShapes([group, bar], 'intersect');
+    expect(i.length).toBe(2);
+    expect(i.reduce((s, r) => s + areaOf(r.outline), 0)).toBeCloseTo(4, 2);
+    // einzeln gezählt läge nichts in allen dreien
+    expect(booleanShapes([...group, bar], 'intersect').length).toBe(0);
+    // die Gruppe hinten, das Rechteck davor abgezogen: oben und unten bleibt je ein Streifen pro Quadrat
+    const m = booleanShapes([group, bar], 'minus');
+    expect(m.length).toBe(4);
+    expect(m.reduce((s, r) => s + areaOf(r.outline), 0)).toBeCloseTo(4, 2);
+  });
+
   it('ein Kreis aus einem Quadrat gestanzt gibt ein Loch mit echten Kurven', () => {
     const sq = shape(rectPath(10, 10), 0, 0);
     const c = shape(ellipsePath(2, 2), 0, 0);

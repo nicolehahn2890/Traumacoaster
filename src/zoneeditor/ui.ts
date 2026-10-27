@@ -37,6 +37,10 @@ export interface UiActions {
   groupPlanes(): void;
   ungroup(): void;
   deleteGroup(): void;
+  /** Formgruppen in einer Ebene (wie Illustrator): gruppieren, auflösen, aus der betretenen Gruppe heraus */
+  shapeGroup(): void;
+  shapeUngroup(): void;
+  leaveGroup(): void;
   togglePlaneHidden(id: string): void;
   togglePlaneLocked(id: string): void;
   renamePlane(id: string, name: string): void;
@@ -120,6 +124,7 @@ const CSS = `
 .ze-grid{fill:none;stroke:rgba(255,255,255,.16);stroke-width:1}
 .ze-snap{fill:none;stroke:#ffd27a;stroke-width:2}
 .ze-region{fill:rgba(141,180,255,.08);stroke:#8db4ff;stroke-width:1;stroke-dasharray:4 3}
+.ze-groupbox{fill:none;stroke:rgba(255,255,255,.7);stroke-width:1;stroke-dasharray:2 4}
 .ze-panel{position:absolute;pointer-events:auto;background:rgba(22,24,28,.82);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.07);border-radius:12px;touch-action:none;user-select:none;-webkit-user-select:none}
 .ze-btn{appearance:none;border:0;background:transparent;color:inherit;font:inherit;min-width:36px;height:36px;padding:0 10px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
 .ze-btn:hover{background:rgba(255,255,255,.06)}
@@ -239,6 +244,8 @@ const COMBINE: Array<[op: 'unite' | 'minus' | 'intersect' | 'exclude', title: st
 ];
 const DIST_X = '<svg viewBox="0 0 24 24"><rect x="3" y="7" width="4" height="10" rx="1"/><rect x="10" y="5" width="4" height="14" rx="1"/><rect x="17" y="8" width="4" height="8" rx="1"/></svg>';
 const DIST_Y = '<svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="4" rx="1"/><rect x="5" y="10" width="14" height="4" rx="1"/><rect x="8" y="17" width="8" height="4" rx="1"/></svg>';
+const FORWARD = '<svg viewBox="0 0 24 24"><rect x="4" y="9" width="11" height="11" rx="1"/><rect x="9" y="4" width="11" height="11" rx="1" fill="currentColor"/></svg>';
+const BACKWARD = '<svg viewBox="0 0 24 24"><rect x="9" y="4" width="11" height="11" rx="1" fill="currentColor"/><rect x="4" y="9" width="11" height="11" rx="1" fill="#2c2f33"/></svg>';
 const FLIP_Y = '<svg viewBox="0 0 24 24"><path d="M3 12h18"/><path d="M7 9L17 3v6z"/><path d="M7 15l10 6v-6z" fill="currentColor"/></svg>';
 
 const TOOL_TITLES: Record<Tool, string> = {
@@ -486,10 +493,17 @@ export class EditorUi {
 
   toast(msg: string): void {
     this.toastEl.textContent = msg;
+    this.placeToast();
     this.toastEl.classList.add('show');
     window.clearTimeout(this.toastTimer);
     // lange Meldungen (etwa nach dem Laden einer SVG) bleiben länger stehen
     this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), Math.max(2600, msg.length * 55));
+  }
+
+  /** Meldung über die Leiste unten, auch wenn sie zweizeilig umbricht */
+  private placeToast(): void {
+    const bar = this.context.getBoundingClientRect();
+    this.toastEl.style.bottom = bar.height ? `${Math.round(window.innerHeight - bar.top + 8)}px` : '';
   }
 
   showBanner(text: string | null): void {
@@ -940,12 +954,13 @@ export class EditorUi {
    * Leiste unten: beim Zeichnen Fertig und Abbrechen, für gewählte Anker, das Lasso oder eine Fläche deren Befehle, für
    * gewählte Formen Farbe und Reihenfolge, sonst für die gewählten Ebenen Rolle und Isolieren
    */
-  setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false, group: ZoneGroup | null = null, sketch: ZoneSketch | null = null, sketchEdit = false): void {
+  setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false, group: ZoneGroup | null = null, sketch: ZoneSketch | null = null, sketchEdit = false, units: { units: number; groups: number; inside: boolean } | null = null): void {
     const plane = planes.at(-1) ?? null;
     const shape = shapes.at(-1) ?? null;
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
     const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : path.kind === 'band' ? `b|${path.shape}` : `l|${path.form}|${path.count}|${path.smooth}`;
-    const key = path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${this.sub}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
+    const gi = units ?? { units: shapes.length, groups: 0, inside: false };
+    const key = path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
     this.context.replaceChildren();
@@ -985,12 +1000,13 @@ export class EditorUi {
       this.swatches(path.fill, (c) => this.a.faceFill(c));
       this.context.append(el('span', 'ze-sep'), button('Loch', 'Fläche zum Loch machen (Entf); eine Farbe füllt sie wieder', () => this.a.faceFill(null), path.fill === null ? 'on' : ''));
     } else if (shape && this.sub && shapes.length > 1 && shapes.every((s) => s.parent === shape.parent)) {
+      const what = gi.groups ? `${gi.units} Teile` : `${shapes.length} Formen`;
       if (this.sub === 'align') {
-        this.context.append(el('span', 'ze-label', `${shapes.length} Formen ausrichten`));
+        this.context.append(el('span', 'ze-label', `${what} ausrichten`));
         for (const [mode, title, icon] of ALIGN) this.context.append(button(icon, title, () => this.a.align(mode)));
-        if (shapes.length > 2) this.context.append(el('span', 'ze-sep'), button(DIST_X, 'Waagrecht verteilen', () => this.a.distribute('x')), button(DIST_Y, 'Senkrecht verteilen', () => this.a.distribute('y')));
+        if (gi.units > 2) this.context.append(el('span', 'ze-sep'), button(DIST_X, 'Waagrecht verteilen', () => this.a.distribute('x')), button(DIST_Y, 'Senkrecht verteilen', () => this.a.distribute('y')));
       } else {
-        this.context.append(el('span', 'ze-label', `${shapes.length} Formen verbinden`));
+        this.context.append(el('span', 'ze-label', `${gi.units === 1 ? `${shapes.length} Formen der Gruppe` : what} verbinden`));
         for (const [op, title, icon] of COMBINE) this.context.append(button(icon, title, () => this.a.combine(op)));
       }
       this.context.append(
@@ -998,13 +1014,15 @@ export class EditorUi {
         button('Fertig', 'Zurück zur Leiste der Formen', () => {
           this.sub = null;
           this.contextKey = '-';
-          this.setContext(planes, shapes, isolate, path, canPaste, group);
+          this.setContext(planes, shapes, isolate, path, canPaste, group, null, false, units);
         }),
       );
     } else if (shape) {
       const many = shapes.length > 1;
       this.sub = null;
-      this.context.append(el('span', 'ze-label', many ? `${shapes.length} Formen` : shape.name));
+      if (gi.inside) this.context.append(button('Gruppe verlassen', 'Aus der Gruppe heraus (Esc oder ins Leere tippen)', () => this.a.leaveGroup()), el('span', 'ze-sep'));
+      const label = gi.groups === 1 && gi.units === 1 ? `Gruppe · ${shapes.length} Formen` : gi.groups ? `${gi.units} Teile · ${shapes.length} Formen` : many ? `${shapes.length} Formen` : shape.name;
+      this.context.append(el('span', 'ze-label', label));
       this.swatches(shapes.every((s) => s.fill === shape.fill) ? shape.fill : null, (c) => this.a.fill(c));
       this.context.append(
         el('span', 'ze-sep'),
@@ -1016,11 +1034,17 @@ export class EditorUi {
       const open = (sub: 'align' | 'combine') => () => {
         this.sub = sub;
         this.contextKey = '-';
-        this.setContext(planes, shapes, isolate, path, canPaste, group);
+        this.setContext(planes, shapes, isolate, path, canPaste, group, null, false, units);
       };
-      if (many && shapes.every((s) => s.parent === shape.parent)) this.context.append(button('Ausrichten', 'Ausrichten und verteilen', open('align')), button('Verbinden', 'Vereinen, abziehen, Schnittmenge, Überlappung ausschließen', open('combine')));
+      const onePlane = shapes.every((s) => s.parent === shape.parent);
+      if (many && onePlane) {
+        if (gi.units > 1) this.context.append(button('Ausrichten', 'Ausrichten und verteilen (eine Gruppe als Ganzes)', open('align')));
+        this.context.append(button('Verbinden', 'Vereinen, abziehen, Schnittmenge, Überlappung ausschließen (eine Gruppe zählt als eine Form)', open('combine')));
+      }
       this.context.append(button('Vereinfachen', 'Weniger Anker, höchstens 1,5 Bildpunkte daneben', () => this.a.simplify()));
-      if (!many) this.context.append(button('Nach vorn', 'In der Ebene nach vorn (])', () => this.a.orderShape(1)), button('Nach hinten', 'In der Ebene nach hinten ([)', () => this.a.orderShape(-1)));
+      if (gi.units > 1 && onePlane) this.context.append(button('Gruppieren', 'Zu einer Gruppe (Cmd+G): Tippen wählt sie ganz, doppelt tippen geht hinein', () => this.a.shapeGroup()));
+      if (gi.groups) this.context.append(button('Auflösen', 'Gruppe auflösen, die Formen bleiben (Shift+Cmd+G)', () => this.a.shapeUngroup()));
+      if (gi.units === 1) this.context.append(button(FORWARD, 'In der Ebene nach vorn (])', () => this.a.orderShape(1)), button(BACKWARD, 'In der Ebene nach hinten ([)', () => this.a.orderShape(-1)));
       this.context.append(button('Löschen', 'Löschen (Entf)', () => this.a.deleteShape()));
     } else if (plane && sketch && (this.sub === 'sketch' || sketchEdit)) {
       // die Leiste bleibt auch nach dem Anpassen (frisch geladen), bis „Fertig“
@@ -1072,6 +1096,7 @@ export class EditorUi {
       );
     }
     this.context.classList.toggle('show', !!(path || shape || plane));
+    if (this.toastEl.classList.contains('show')) this.placeToast();
   }
 
   destroy(): void {

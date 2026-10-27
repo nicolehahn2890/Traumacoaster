@@ -112,6 +112,8 @@ export interface ZoneShape {
   regions?: ZoneRegion[];
   /** Platzhalter-Füllung (Vollton) aller Flächen ohne eigene; der Füllstapel kommt mit Stufe 3 */
   fill: string;
+  /** Formgruppen, in denen sie liegt, von außen nach innen (src/zone/shapeGroups.ts) */
+  groups?: string[];
   hidden?: boolean;
   locked?: boolean;
 }
@@ -766,6 +768,10 @@ export function parseNodes(v: unknown): ZoneNode[] {
         }
         if (regions.length) s.regions = regions;
       }
+      if (Array.isArray(o.groups)) {
+        const groups = o.groups.filter((g): g is string => typeof g === 'string' && /^fg\d{1,6}$/.test(g)).slice(0, 16);
+        if (groups.length) s.groups = groups;
+      }
       if (o.hidden === true) s.hidden = true;
       if (o.locked === true) s.locked = true;
       out.push(s);
@@ -815,6 +821,7 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
       if (s.holes?.length) o.holes = s.holes.map(pathOut);
       if (s.cuts?.length) o.cuts = s.cuts.map((c) => ({ closed: c.closed, path: pathOut(c.path) }));
       if (s.regions?.length) o.regions = s.regions.map((r) => ({ x: round(r.x, 3), y: round(r.y, 3), fill: r.fill }));
+      if (s.groups?.length) o.groups = [...s.groups];
       if (s.hidden) o.hidden = true;
       if (s.locked) o.locked = true;
       out.push(o);
@@ -841,6 +848,7 @@ export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
           ...(n.holes ? { holes: n.holes.map((h) => h.map((p) => ({ ...p }))) } : {}),
           ...(n.cuts ? { cuts: n.cuts.map((c) => ({ closed: c.closed, path: c.path.map((p) => ({ ...p })) })) } : {}),
           ...(n.regions ? { regions: n.regions.map((r) => ({ ...r })) } : {}),
+          ...(n.groups ? { groups: [...n.groups] } : {}),
         },
   );
 }

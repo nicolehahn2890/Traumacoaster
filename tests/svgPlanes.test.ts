@@ -135,6 +135,45 @@ describe('SVG-Austausch der Ebenen', () => {
     expect(json(r.nodes)).toBe(json(nodes));
   });
 
+  it('Formgruppen werden verschachtelte Gruppen und kommen unverändert zurück; in Illustrator umgruppiert gilt das neue', async () => {
+    const { groupShapes } = await import('@/zone/shapeGroups');
+    const nodes = scene();
+    const front = planesOf(nodes)[0];
+    const b1 = newShape(nodes, front.id, rectPath(2, 2), 60, 0, '#8aa58c');
+    nodes.push(b1);
+    const b2 = newShape(nodes, front.id, ellipsePath(1, 1), 64, 0, '#8aa58c');
+    nodes.push(b2);
+    const inner = groupShapes(nodes, [b1.id, b2.id])!;
+    const outer = groupShapes(nodes, [b1.id, b2.id, 's2'])!;
+    const svg = planesToSvg(nodes);
+    expect(svg).toMatch(new RegExp(`<g id="${outer}">\\s*<g id="s2">[\\s\\S]*<g id="${inner}">\\s*<path id="${b1.id}"`));
+    const r = svgToPlanes(svg, nodes);
+    expect(r.kept).toBe(4);
+    expect(json(r.nodes)).toBe(json(nodes));
+    // in Illustrator die Ellipse aus der inneren Gruppe gezogen (sie steht jetzt nach ihr in der äußeren)
+    const moved = svg.replace(new RegExp(`(<path id="${b2.id}"[^>]*/>)(\\s*</g>)`), '$2\n$1');
+    const r2 = svgToPlanes(moved, nodes);
+    const e2 = r2.nodes.find((n) => n.id === b2.id) as ZoneShape;
+    const e1 = r2.nodes.find((n) => n.id === b1.id) as ZoneShape;
+    expect(e2.groups).toEqual([outer]);
+    expect(e1.groups).toEqual([outer, inner]);
+  });
+
+  it('Gruppen aus Illustrator ohne Kennung werden Formgruppen, eine Hülle um alles nicht', () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">
+<g><g id="Wald">
+  <g><path fill="#335533" d="M10,10h20v20h-20z"/><path fill="#335533" d="M40,10h20v20h-20z"/></g>
+  <path fill="#557755" d="M80,10h20v20h-20z"/>
+</g></g></svg>`;
+    const r = svgToPlanes(svg, []);
+    const wald = planesOf(r.nodes).find((p) => p.name === 'Wald')!;
+    const shapes = shapesOf(r.nodes, wald.id);
+    expect(shapes.length).toBe(3);
+    expect(shapes[0].groups).toEqual(shapes[1].groups);
+    expect(shapes[0].groups?.length).toBe(1);
+    expect(shapes[2].groups).toBeUndefined();
+  });
+
   it('ein Loch der Form, das als eigene Fläche gefärbt ist, bleibt beim Rundlauf erhalten', () => {
     const nodes = scene();
     const s = nodes.find((n): n is ZoneShape => n.kind === 'shape' && n.id === 's2')!;

@@ -984,6 +984,95 @@ if (want('15')) {
   if (a.k.src.startsWith('/zones/szenario-skizze/')) rmSync('public/zones/szenario-skizze', { recursive: true, force: true });
 }
 
+// 16. Formgruppen wie in Illustrator: zwei Rechtecke gruppieren (Cmd+G), Tippen wählt die Gruppe, Ziehen bewegt sie
+// ganz, doppelt tippen geht hinein (eine Form allein), Esc heraus, mit einer dritten Form verschachtelt gruppieren
+// (Knopf), duplizieren (eigene Gruppe), auflösen, SVG mit verschachtelten Gruppen
+if (want('16')) {
+  await page.goto(`${BASE}?zone=editor-formgruppen&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const ed = (fn, arg) => page.evaluate(fn, arg);
+  const drag = async (from, to) => {
+    await page.mouse.move(from[0], from[1]);
+    await page.mouse.down();
+    await page.mouse.move(to[0], to[1], { steps: 8 });
+    await page.mouse.up();
+    await sleep(200);
+  };
+  const state = () =>
+    ed(() => {
+      const e = window.tcGame.current.planeEditor;
+      return {
+        shapes: e.nodes.filter((n) => n.kind === 'shape').sort((a, b) => a.order - b.order).map((s) => ({ id: s.id, x: s.x, y: s.y, groups: (s.groups ?? []).join('/') })),
+        sel: [...e.selection].sort(),
+        inGroup: e.inGroup.join('/'),
+        label: document.querySelector('.ze-context .ze-label')?.textContent ?? '',
+        box: !!document.querySelector('.ze-groupbox')?.getAttribute('d'),
+      };
+    });
+  await page.click('.ze-layers .ze-btn[title^="Neue Ebene"]');
+  await page.keyboard.press('m');
+  const A = [305, 385];
+  const B = [485, 385];
+  const C = [705, 385];
+  for (const [x, y] of [A, B, C]) await drag([x - 65, y - 65], [x + 65, y + 65]);
+  await page.keyboard.press('v');
+  await page.mouse.click(A[0], A[1]);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(B[0], B[1]);
+  await page.keyboard.up('Shift');
+  await page.keyboard.press('Meta+g');
+  await sleep(200);
+  const s1 = await state();
+  const [a, b, c] = s1.shapes;
+  check(a.groups === 'fg1' && b.groups === 'fg1' && c.groups === '' && /Gruppe · 2 Formen/.test(s1.label), `Cmd+G gruppiert zwei Rechtecke (${s1.shapes.map((s) => `${s.id}:${s.groups || '–'}`).join(' ')}, Leiste „${s1.label}“)`);
+  // daneben tippen, dann eine Form der Gruppe: die ganze Gruppe ist gewählt und zieht mit
+  await page.mouse.click(640, 640);
+  await page.mouse.click(B[0], B[1]);
+  await sleep(150);
+  const s2 = await state();
+  await drag(B, [B[0] + 40, B[1] - 30]);
+  const s3 = await state();
+  const d = (k, s, t) => t.shapes.find((x) => x.id === k)[s] - s1.shapes.find((x) => x.id === k)[s];
+  check(s2.sel.join(' ') === [a.id, b.id].sort().join(' ') && Math.abs(d(a.id, 'x', s3) - d(b.id, 'x', s3)) < 1e-6 && d(a.id, 'x', s3) > 1 && d(c.id, 'x', s3) === 0, `Tippen wählt die Gruppe, Ziehen bewegt beide gleich (${d(a.id, 'x', s3).toFixed(2)} m)`);
+  // doppelt tippen: in die Gruppe, nur die getippte Form; Ziehen bewegt nur sie
+  const A2 = [A[0] + 40, A[1] - 30];
+  await page.mouse.dblclick(A2[0], A2[1]);
+  await sleep(150);
+  const s4 = await state();
+  await drag(A2, [A2[0], A2[1] + 50]);
+  const s5 = await state();
+  check(s4.inGroup === 'fg1' && s4.sel.join(' ') === a.id && s4.box && d(a.id, 'y', s5) < d(a.id, 'y', s4) - 1 && d(b.id, 'y', s5) === d(b.id, 'y', s4), `doppelt tippen geht in die Gruppe (Rahmen gestrichelt), Ziehen bewegt nur ${a.id}`);
+  await page.keyboard.press('Escape');
+  await sleep(150);
+  const s6 = await state();
+  check(s6.inGroup === '' && s6.sel.join(' ') === [a.id, b.id].sort().join(' '), 'Esc verlässt die Gruppe, sie bleibt gewählt');
+  // mit dem dritten Rechteck verschachtelt gruppieren (Knopf in der Leiste)
+  await page.keyboard.down('Shift');
+  await page.mouse.click(C[0], C[1]);
+  await page.keyboard.up('Shift');
+  await sleep(150);
+  const s7 = await state();
+  await page.click('.ze-context .ze-btn:text-is("Gruppieren")');
+  await sleep(150);
+  const s8 = await state();
+  const g8 = Object.fromEntries(s8.shapes.map((s) => [s.id, s.groups]));
+  check(/2 Teile · 3 Formen/.test(s7.label) && g8[a.id] === 'fg2/fg1' && g8[b.id] === 'fg2/fg1' && g8[c.id] === 'fg2' && /Gruppe · 3 Formen/.test(s8.label), `Gruppe und Rechteck verschachtelt gruppiert (${Object.values(g8).join(', ')})`);
+  // duplizieren: die Kopie ist eine eigene Gruppe mit eigener Untergruppe, vor der alten
+  await page.keyboard.press('Meta+d');
+  await sleep(150);
+  const s9 = await state();
+  const copies = s9.shapes.slice(3);
+  check(s9.shapes.length === 6 && copies.every((s) => s.groups.startsWith('fg3')) && copies.filter((s) => s.groups === 'fg3/fg4').length === 2 && s9.sel.join(' ') === copies.map((s) => s.id).sort().join(' '), `Cmd+D: die Kopie ist eine eigene Gruppe vor der alten (${copies.map((s) => `${s.id}:${s.groups}`).join(' ')})`);
+  await page.keyboard.press('Meta+Shift+g');
+  await sleep(150);
+  const s10 = await state();
+  const after = s10.shapes.slice(3).map((s) => s.groups);
+  check(after.filter((g) => g === 'fg4').length === 2 && after.includes('') && s10.shapes.slice(0, 3).every((s) => s.groups.startsWith('fg2')), `Shift+Cmd+G löst die äußere Gruppe der Kopie auf, die innere bleibt (${after.join(', ')})`);
+  const svg = await ed(async () => (await import('/src/zone/svgPlanes.ts')).planesToSvg(window.tcGame.current.planeEditor.nodes));
+  check(/<g id="fg2">\s*<g id="fg1">\s*<path id="s\d+"/.test(svg) && /<g id="fg4">/.test(svg), 'SVG: Formgruppen als verschachtelte Gruppen in der Ebene');
+  await page.screenshot({ path: 'screenshots/scenario-16-formgruppen.png' });
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));

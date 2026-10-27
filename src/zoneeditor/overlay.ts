@@ -32,13 +32,15 @@ export interface OverlayState {
   stroke: Pt[] | null;
   /** Auswahlbereich (Rechteck oder Lasso), gestrichelt */
   region: Pt[] | null;
+  /** Rahmen der Formgruppe, in die man hineingegangen ist (fein gestrichelt) */
+  group: Pt[] | null;
   /** wo gerade eingerastet wird (Ring) */
   snap: Pt | null;
   /** Rasterlinien der aktiven Ebene */
   grid: Array<[Pt, Pt]>;
 }
 
-export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, snap: null, grid: [] });
+export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [] });
 
 const ring = (pts: Pt[]): string => (pts.length ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z` : '');
 const open = (pts: Pt[]): string => (pts.length > 1 ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}` : '');
@@ -52,6 +54,7 @@ export class EditorOverlay {
   private readonly previewPath = document.createElementNS(NS, 'path');
   private readonly strokePath = document.createElementNS(NS, 'path');
   private readonly regionPath = document.createElementNS(NS, 'path');
+  private readonly groupPath = document.createElementNS(NS, 'path');
   private readonly gridPath = document.createElementNS(NS, 'path');
   private readonly snapRing = document.createElementNS(NS, 'circle');
   private readonly tangentPath = document.createElementNS(NS, 'path');
@@ -71,11 +74,12 @@ export class EditorOverlay {
     this.previewPath.setAttribute('class', 'ze-preview');
     this.strokePath.setAttribute('class', 'ze-stroke');
     this.regionPath.setAttribute('class', 'ze-region');
+    this.groupPath.setAttribute('class', 'ze-groupbox');
     this.gridPath.setAttribute('class', 'ze-grid');
     this.snapRing.setAttribute('class', 'ze-snap');
     this.snapRing.setAttribute('r', '7');
     this.tangentPath.setAttribute('class', 'ze-tangent');
-    this.el.append(this.gridPath, this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.regionPath, this.tangentPath, this.anchorGroup, this.knobGroup, this.handleGroup, this.snapRing);
+    this.el.append(this.gridPath, this.groupPath, this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.regionPath, this.tangentPath, this.anchorGroup, this.knobGroup, this.handleGroup, this.snapRing);
   }
 
   set visible(on: boolean) {
@@ -100,6 +104,7 @@ export class EditorOverlay {
     this.previewPath.setAttribute('d', s.preview ? ring(s.preview) : '');
     this.strokePath.setAttribute('d', s.stroke ? open(s.stroke) : '');
     this.regionPath.setAttribute('d', s.region && s.region.length > 1 ? ring(s.region) : '');
+    this.groupPath.setAttribute('d', s.group ? ring(s.group) : '');
     this.gridPath.setAttribute('d', s.grid.map(([a, b]) => `M${a.x.toFixed(1)} ${a.y.toFixed(1)}L${b.x.toFixed(1)} ${b.y.toFixed(1)}`).join(''));
     this.snapRing.style.display = s.snap ? '' : 'none';
     if (s.snap) {

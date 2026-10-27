@@ -53,4 +53,17 @@ describe('Formen umformen', () => {
     const mids = [a, b, c].map((s) => (shapeBounds(s).minX + shapeBounds(s).maxX) / 2);
     expect(mids[1] - mids[0]).toBeCloseTo(mids[2] - mids[1], 6);
   });
+
+  it('eine Gruppe wird als Ganzes ausgerichtet, ihre Formen behalten ihre Lage zueinander', () => {
+    const g1 = shape(2, 2, 0, 0);
+    const g2 = shape(2, 2, 5, 3);
+    const c = shape(2, 2, 10, 8);
+    alignShapes([[g1, g2], c], 'left');
+    expect(g2.x - g1.x).toBe(5);
+    expect(shapeBounds(c).minX).toBe(-1);
+    expect(shapeBounds(g1).minX).toBe(-1);
+    alignShapes([[g1, g2], c], 'bottom');
+    expect(g2.y - g1.y).toBe(3);
+    expect(shapeBounds(c).minY).toBe(-1);
+  });
 });

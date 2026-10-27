@@ -55,12 +55,15 @@ function area(r: Poly): number {
 }
 
 /**
- * Boolesche Operation: unite (alles, was in einer Form liegt), minus (die hinterste ohne die anderen), intersect (was in
- * allen liegt), exclude (was in einer ungeraden Zahl liegt). shapes: Formen einer Ebene in Zeichenreihenfolge (die
- * hinterste zuerst). Leer, wenn nichts übrig bleibt
+ * Boolesche Operation: unite (alles, was in einem Operanden liegt), minus (der hinterste ohne die anderen), intersect
+ * (was in allen liegt), exclude (was in einer ungeraden Zahl liegt). operands: Formen einer Ebene in Zeichenreihenfolge
+ * (die hinterste zuerst); ein Operand ist eine Form oder eine Gruppe (Liste von Formen, zählt als ihre Vereinigung).
+ * Leer, wenn nichts übrig bleibt
  */
-export function booleanShapes(shapes: readonly ZoneShape[], op: BoolOp): BoolRegion[] {
-  if (shapes.length < 2) return [];
+export function booleanShapes(operands: ReadonlyArray<ZoneShape | readonly ZoneShape[]>, op: BoolOp): BoolRegion[] {
+  const ops = operands.map((o): readonly ZoneShape[] => (Array.isArray(o) ? o : [o as ZoneShape]));
+  if (ops.length < 2) return [];
+  const shapes = ops.flat();
   // alle Pfade in Ebenen-Koordinaten: Linien des Netzes und Quellen der Kurven
   const sources: Array<{ path: ZonePath; closed: boolean }> = [];
   for (const s of shapes) for (const { path, closed } of shapePaths(s)) sources.push({ path: toPlane(s, path), closed });
@@ -85,10 +88,10 @@ export function booleanShapes(shapes: readonly ZoneShape[], op: BoolOp): BoolReg
   const faces = computeFaces(frame, [], lines);
   const keep = faces.filter((f) => {
     const [x, y] = f.inner;
-    const ins = shapes.map((s) => inside(s, x, y));
+    const ins = ops.map((o) => o.some((s) => inside(s, x, y)));
     const n = ins.filter(Boolean).length;
     if (op === 'unite') return n > 0;
-    if (op === 'intersect') return n === shapes.length;
+    if (op === 'intersect') return n === ops.length;
     if (op === 'exclude') return n % 2 === 1;
     return ins[0] && n === 1;
   });

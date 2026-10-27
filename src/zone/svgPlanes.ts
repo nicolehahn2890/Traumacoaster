@@ -15,6 +15,7 @@
 import { faceCurves } from './faceCurves';
 import { cloneNodes, DEFAULT_GAP, faceFill, groupOf, newPlane, nextNodeId, planeHidden, planePathToShape, planesOf, shapeFaces, shapeFromPlanePath, shapesOf, type ZoneNode, type ZonePlane, type ZoneShape } from './nodes';
 import { flattenPath, inPolygon, polyArea, type PathPoint, type ZonePath } from './path';
+import { GROUP_ID, nextGroupId } from './shapeGroups';
 import { parsePathData, parseTransform, SVG_SCALE, svgPathData } from './svg';
 
 type Matrix = ReturnType<typeof parseTransform>;
@@ -147,15 +148,33 @@ export function planesToSvg(nodes: readonly ZoneNode[], opts: { planes?: readonl
     const pad = open ? '  ' : '';
     const name = slug(g.plane.name);
     lines.push(`${pad}  <g id="${g.plane.id}${name ? `-${name}` : ''}" data-name="${esc(g.plane.name)}" data-z="${f(g.plane.z)}">`);
+    // Formgruppen als verschachtelte Gruppen fg… (sie hängen in der Zeichenreihenfolge zusammen)
+    const stack: string[] = [];
+    const ind = () => `${pad}    ${'  '.repeat(stack.length)}`;
     for (const s of g.shapes) {
+      const path = s.shape.groups ?? [];
+      let common = 0;
+      while (common < stack.length && stack[common] === path[common]) common++;
+      while (stack.length > common) {
+        stack.pop();
+        lines.push(`${ind()}</g>`);
+      }
+      while (stack.length < path.length) {
+        lines.push(`${ind()}<g id="${path[stack.length]}">`);
+        stack.push(path[stack.length]);
+      }
       if (!s.group) {
         const it = s.items[0];
-        lines.push(`${pad}    <path id="${it.id}" d="${d(it.rings)}" fill="${esc(it.fill)}" fill-rule="evenodd"/>`);
+        lines.push(`${ind()}<path id="${it.id}" d="${d(it.rings)}" fill="${esc(it.fill)}" fill-rule="evenodd"/>`);
         continue;
       }
-      lines.push(`${pad}    <g id="${s.shape.id}">`);
-      for (const it of s.items) lines.push(`${pad}      <path id="${it.id}" d="${d(it.rings)}" fill="${esc(it.fill)}" fill-rule="evenodd"/>`);
-      lines.push(`${pad}    </g>`);
+      lines.push(`${ind()}<g id="${s.shape.id}">`);
+      for (const it of s.items) lines.push(`${ind()}  <path id="${it.id}" d="${d(it.rings)}" fill="${esc(it.fill)}" fill-rule="evenodd"/>`);
+      lines.push(`${ind()}</g>`);
+    }
+    while (stack.length) {
+      stack.pop();
+      lines.push(`${ind()}</g>`);
     }
     lines.push(`${pad}  </g>`);
   }
@@ -510,6 +529,27 @@ export function svgToPlanes(svg: string, nodes: readonly ZoneNode[]): SvgImport 
   // Formen nach Ebene: die äußerste Gruppe mit Ebenen-Kennung, sonst die oberste benannte Gruppe (Illustrator legt
   // namenlose Hüllen um alles), sonst ohne Gruppe
   const byPlane = new Map<string, { group: RawGroup | null; pid: string | null; shapes: RawShape[] }>();
+  // Formgruppen: Gruppen unter der Ebenen-Gruppe (ohne die Hülle einer geteilten Form s…); fg-Kennungen bleiben, wenn
+  // keine andere Ebene sie trägt, andere Gruppen (etwa aus Illustrator) bekommen neue
+  const gmap = new Map<RawGroup, string>();
+  let gnext = Number(nextGroupId(out).slice(2));
+  const chainOf = (raw: RawShape, owner: RawGroup | null, planeId: string, all: readonly RawShape[]): string[] => {
+    const from = owner ? raw.groups.indexOf(owner) + 1 : 0;
+    return raw.groups
+      .slice(from)
+      // ohne Hüllen geteilter Formen und ohne fremde Hüllen um alles (Illustrator legt sie gern an)
+      .filter((g) => !(g.id && /^s\d+$/.test(g.id)) && ((g.id && GROUP_ID.test(g.id)) || all.some((x) => !x.groups.includes(g))))
+      .map((g) => {
+        let id = gmap.get(g);
+        if (!id) {
+          const own = g.id && GROUP_ID.test(g.id) && ![...gmap.values()].includes(g.id) && !out.some((n) => n.kind === 'shape' && n.parent !== planeId && n.groups?.includes(g.id!));
+          id = own ? g.id! : `fg${gnext++}`;
+          if (own) gnext = Math.max(gnext, Number(id.slice(2)) + 1);
+          gmap.set(g, id);
+        }
+        return id;
+      });
+  };
   for (const s of w.shapes) {
     const pg = s.groups.find((g) => g.id && /^p\d+(?:[-_]|$)/.test(g.id));
     const top = s.groups.find((g) => g.id || g.name);
@@ -548,6 +588,11 @@ export function svgToPlanes(svg: string, nodes: readonly ZoneNode[]): SvgImport 
       if (key && seen.has(key)) continue;
       const parts = key ? entry.shapes.filter((x) => keyOf(x) === key) : [raw];
       if (key) seen.add(key);
+      const chain = chainOf(raw, entry.group, target.id, entry.shapes);
+      const setChain = (s: ZoneShape) => {
+        if (chain.length) s.groups = [...chain];
+        else delete s.groups;
+      };
       const old = key ? before.find((s) => s.id === key) : undefined;
       const imported = parts.map((p) => ({ id: p.id, fill: p.fill, rings: p.subs.map((sub) => sub.map(toPlanePt)) }));
       if (old) {
@@ -559,6 +604,7 @@ export function svgToPlanes(svg: string, nodes: readonly ZoneNode[]): SvgImport 
         });
         if (same) {
           keepIds.add(old.id);
+          setChain(old);
           fresh.push(old);
           kept++;
           continue;
@@ -577,6 +623,7 @@ export function svgToPlanes(svg: string, nodes: readonly ZoneNode[]): SvgImport 
             const nm = im.id && !/^s\d+(?:-f\d+)?$/.test(im.id) ? (raw.name ?? im.id.replace(/_x20_/g, ' ').replace(/_/g, ' ')) : null;
             if (nm) s.name = nm;
           }
+          setChain(s);
           out.push(s);
           fresh.push(s);
         });
