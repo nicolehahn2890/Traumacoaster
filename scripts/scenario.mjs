@@ -1355,7 +1355,8 @@ if (want('19')) {
   const r3 = await shapeOf(at.rect);
   const lower = () => r3.regions.find((r) => r.y < 0);
   check(s4.swatches.length === 1 && s4.swatches[0].color === '#a3665a' && lower()?.fill === `@${s4.swatches[0].id}`, `Feld ${s4.swatches[0]?.id} in der Zonenpalette, die untere Fläche verweist darauf (${lower()?.fill})`);
-  await field.dblclick();
+  await page.click('.ze-color .ze-csub .ze-btn:text-is("Bearbeiten")');
+  await field.click();
   await sleep(150);
   await page.click('.ze-ctabs .ze-btn:text-is("Werte")');
   await hex.fill('#123456');
@@ -1640,6 +1641,129 @@ if (want('21')) {
   const pf = await page.evaluate((id) => window.tcGame.current.planeEditor.nodes.find((n) => n.id === id).fills?.length ?? 0, at.plane);
   check(pf === 1, 'Ebenenstapel: Verlauf über die ganze Ebene');
   await page.screenshot({ path: 'screenshots/scenario-21-stapel.png' });
+}
+
+// 22. Zonen-Editor, Stufe 3: Stile. Anstrich als Stil sichern, im Farbmenü auf eine andere Form legen, auf eine
+// dritte ziehen (verknüpft, gemessen), Stil neu festlegen (alle ändern sich), lösen, kopieren und einfügen, Pipette mit
+// Wahltaste, Stil löschen (die Formen behalten ihr Aussehen).
+if (want('22')) {
+  await page.goto(`${BASE}?zone=szenario-stile&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const at = await page.evaluate(async () => {
+    const N = await import('/src/zone/nodes.ts');
+    const ed = window.tcGame.current.planeEditor;
+    let out = null;
+    ed.edit(() => {
+      const p = N.newPlane(ed.nodes, 0);
+      ed.nodes.push(p);
+      const P = (x, y) => ed.planePoint(p, { x, y });
+      const m = (P(460, 400).x - P(400, 400).x) / 60;
+      const mk = (x, w, fill) => {
+        const c = P(x, 400);
+        const s = N.newShape(ed.nodes, p.id, N.rectPath(w * m, 120 * m), c.x, c.y, fill);
+        ed.nodes.push(s);
+        return s;
+      };
+      const a = mk(300, 140, '#204060');
+      a.fills = [{ type: 'gradient', stops: [{ t: 0, color: '#ffffff', a: 1 }, { t: 1, color: '#000000', a: 1 }], x0: -70 * m, y0: 0, x1: 70 * m, y1: 0, blend: 'multiply', opacity: 0.8 }];
+      const b = mk(500, 160, '#888888');
+      const c = mk(700, 120, '#c08040');
+      out = { a: a.id, b: b.id, c: c.id, ax: 300, bx: 500, cx: 700 };
+    });
+    for (let i = 0; i < 3; i++) window.tcGame.app.ticker.update(performance.now());
+    return out;
+  });
+  const shape = (id) => page.evaluate((id) => {
+    const s = window.tcGame.current.planeEditor.nodes.find((n) => n.id === id);
+    return { style: s.style ?? null, fill: s.fill, fills: (s.fills ?? []).length };
+  }, id);
+  const styles = () => page.evaluate(() => window.tcGame.current.planeEditor.nodes.filter((n) => n.kind === 'style').map((y) => ({ id: y.id, fill: y.fill, fills: (y.fills ?? []).length })));
+  // A als Stil sichern
+  await page.mouse.click(at.ax, 400);
+  await page.click('.ze-context .ze-btn:text-is("Füllungen")');
+  await page.click('.ze-stack .ze-btn:text-is("Als Stil")');
+  const y1 = (await styles())[0];
+  check(!!y1 && (await shape(at.a)).style === y1.id && y1.fills === 1, `Anstrich von A als Stil ${y1?.id} gesichert und verknüpft`);
+  // B wählen, im Farbmenü › Stile antippen
+  await page.mouse.click(at.bx, 400);
+  await page.click('.ze-colorbtn');
+  await page.click('.ze-ctabs .ze-btn:text-is("Stile")');
+  await page.click('.ze-color .ze-schip:not(.add)');
+  check((await shape(at.b)).style === y1.id, 'Stil im Farbmenü auf B gelegt (verknüpft)');
+  // auf C ziehen
+  const chip = await page.locator('.ze-color .ze-schip:not(.add)').first().boundingBox();
+  await page.mouse.move(chip.x + chip.width / 2, chip.y + chip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(chip.x - 40, chip.y + 40, { steps: 4 });
+  await page.mouse.move(at.cx, 400, { steps: 10 });
+  await page.mouse.up();
+  await sleep(150);
+  check((await shape(at.c)).style === y1.id, 'Stil auf C gezogen (verknüpft)');
+  // gemessen: C zeigt den Verlauf auf seinem Rahmen (links hell, rechts dunkel)
+  const meas = await page.evaluate(async ({ id }) => {
+    const N = await import('/src/zone/nodes.ts');
+    const P = await import('/src/zone/paint.ts');
+    const g = window.tcGame;
+    if (g.current.view?.paper) g.current.view.paper.visible = false;
+    for (let i = 0; i < 3; i++) g.app.ticker.update(performance.now());
+    const ed = g.current.planeEditor;
+    const s = ed.nodes.find((n) => n.id === id);
+    const plane = ed.nodes.find((n) => n.id === s.parent);
+    const faces = N.shapeFaces(s);
+    const box = { minX: Math.min(...s.path.map((q) => q.x)), minY: Math.min(...s.path.map((q) => q.y)), maxX: Math.max(...s.path.map((q) => q.x)), maxY: Math.max(...s.path.map((q) => q.y)) };
+    const pl = P.paintLayers(N.facePaint(s, faces[0]), N.styleMap(ed.nodes), box);
+    return [-0.35, 0.35].map((u) => {
+      const lx = u * (box.maxX - box.minX);
+      const c = P.evalLayers(pl.layers, lx, 0, N.swatchMap(ed.nodes));
+      const q = ed.screenOf(plane, { x: s.x + lx, y: s.y }, s);
+      return { x: q.x, y: q.y, want: c.rgb.map((v) => Math.round(v * 255)) };
+    });
+  }, { id: at.c });
+  const png = await page.screenshot();
+  const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+  const dev = Math.max(...meas.map((m) => {
+    const i = (Math.round(m.y) * info.width + Math.round(m.x)) * info.channels;
+    return Math.max(...[0, 1, 2].map((k) => Math.abs(data[i + k] - m.want[k])));
+  }));
+  check(dev <= 4 && meas[0].want[0] > meas[1].want[0], `C zeigt den Stil auf seinem Rahmen (links ${meas[0].want.join('/')} → rechts ${meas[1].want.join('/')}, Abweichung ${dev})`);
+  await page.evaluate(() => { if (window.tcGame.current.view?.paper) window.tcGame.current.view.paper.visible = true; });
+  // A ändern (löst ihn), dann den Stil aus A neu festlegen: B und C ändern sich mit
+  await page.click('.ze-colorbtn');
+  await page.mouse.click(at.ax, 400);
+  await page.click('.ze-stack .ze-btn:text-is("+ Farbe")');
+  const aUnlinked = (await shape(at.a)).style === null;
+  await page.click('.ze-colorbtn');
+  await page.click('.ze-color .ze-csub .ze-btn:text-is("Bearbeiten")');
+  await page.locator('.ze-color .ze-schip:not(.add)').first().click();
+  await page.click('.ze-color .ze-cedit .ze-btn:text-is("Neu festlegen")');
+  const y2 = (await styles())[0];
+  check(aUnlinked && y2.fills === 2 && (await shape(at.b)).style === y1.id && (await shape(at.a)).style === y1.id, `A bearbeitet (gelöst), Stil aus A neu festgelegt: jetzt ${y2.fills} Füllungen für alle verknüpften`);
+  await page.click('.ze-color .ze-cedit .ze-btn:text-is("Fertig")');
+  await page.click('.ze-colorbtn');
+  // B lösen, B kopieren, auf C einfügen (eine Kopie ohne Stil)
+  await page.mouse.click(at.bx, 400);
+  await page.click('.ze-stack .ze-btn:text-is("Lösen")');
+  await page.keyboard.press('Meta+Alt+c');
+  await page.mouse.click(at.cx, 400);
+  await page.keyboard.press('Meta+Alt+v');
+  const c2 = await shape(at.c);
+  check((await shape(at.b)).style === null && c2.style === null && c2.fills === 2, 'B gelöst, kopiert und auf C eingefügt (eine eigene Kopie)');
+  // Pipette mit Wahltaste: A nimmt den Anstrich von C
+  await page.mouse.click(at.ax, 400);
+  await page.keyboard.press('i');
+  await page.keyboard.down('Alt');
+  await page.mouse.click(at.cx, 400);
+  await page.keyboard.up('Alt');
+  await page.keyboard.press('v');
+  const a3 = await shape(at.a);
+  check(a3.style === null && a3.fills === 2 && a3.fill === c2.fill, 'Pipette mit Wahltaste: A bekommt den ganzen Anstrich von C');
+  // Stil löschen: niemand verknüpft mehr, Aussehen bleibt
+  await page.click('.ze-colorbtn');
+  await page.click('.ze-color .ze-csub .ze-btn:text-is("Bearbeiten")');
+  await page.locator('.ze-color .ze-schip:not(.add)').first().click();
+  await page.click('.ze-color .ze-cedit .ze-btn:text-is("Löschen")');
+  check((await styles()).length === 0, 'Stil gelöscht');
+  await page.screenshot({ path: 'screenshots/scenario-22-stile.png' });
 }
 
 await browser.close();

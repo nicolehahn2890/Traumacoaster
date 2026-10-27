@@ -26,7 +26,19 @@ export interface ColorMenuHost {
   editSwatch(id: string, patch: { name?: string; color?: string }, phase: PickPhase): void;
   deleteSwatch(id: string): void;
   recent(): readonly PaintColor[];
-  /** ColorDrop: Zeiger über dem Bild (Bildschirm-Koordinaten), fallen lassen, abgebrochen */
+  /** Stile der Zone mit Vorschau (CSS-Hintergrund) und ob die Auswahl mit ihm verknüpft ist */
+  styleList(): Array<{ id: string; name: string; preview: string; on: boolean }>;
+  /** Stil verknüpft auf die Auswahl legen */
+  applyStyle(id: string): void;
+  /** Anstrich der Auswahl als neuen Stil sichern (und verknüpfen); null ohne Auswahl */
+  saveStyle(): string | null;
+  /** Stil aus der Auswahl neu festlegen: alle verknüpften Flächen ändern sich mit */
+  redefineStyle(id: string): void;
+  renameStyle(id: string, name: string): void;
+  deleteStyle(id: string): void;
+  /** gibt es eine Form oder Fläche, die einen Stil bekommen kann? */
+  hasSelection(): boolean;
+  /** ColorDrop: Zeiger über dem Bild (Bildschirm-Koordinaten), fallen lassen, abgebrochen; ein Stil kommt als `style:y3` */
   dropHover(x: number, y: number): void;
   drop(c: PaintColor, x: number, y: number): void;
   dropEnd(): void;
@@ -35,9 +47,9 @@ export interface ColorMenuHost {
 /** Platzhalter-Palette (ruhig, eher Earle als Bonbon), bis Florian Paletten festlegt */
 export const PLACEHOLDER_PALETTE = ['#3d5a63', '#5b7f7a', '#8aa58c', '#c9c09a', '#d9a07a', '#a3665a', '#6b5a8a', '#c6d4dc'];
 
-type Mode = 'disc' | 'classic' | 'harmony' | 'values' | 'palettes';
-const MODES: readonly Mode[] = ['disc', 'classic', 'harmony', 'values', 'palettes'];
-const MODE_WORDS: Record<Mode, string> = { disc: 'Scheibe', classic: 'Klassisch', harmony: 'Harmonie', values: 'Werte', palettes: 'Paletten' };
+type Mode = 'disc' | 'classic' | 'harmony' | 'values' | 'palettes' | 'styles';
+const MODES: readonly Mode[] = ['disc', 'classic', 'harmony', 'values', 'palettes', 'styles'];
+const MODE_WORDS: Record<Mode, string> = { disc: 'Scheibe', classic: 'Klassisch', harmony: 'Harmonie', values: 'Werte', palettes: 'Paletten', styles: 'Stile' };
 type Harmony = 'complement' | 'split' | 'analog' | 'triad' | 'tetrad';
 const HARMONIES: Record<Harmony, { name: string; hues: number[] }> = {
   complement: { name: 'Komplementär', hues: [0, 180] },
@@ -88,8 +100,8 @@ export const COLOR_CSS = `
 .ze-colorbtn{width:30px;height:30px;min-width:30px;padding:0;margin:0 3px 0 6px;border-radius:50%;border:2px solid rgba(231,229,224,.85);box-shadow:inset 0 0 0 1px rgba(0,0,0,.35);cursor:pointer;touch-action:none;flex:none}
 .ze-colorbtn.on{border-color:#8db4ff}
 @media (pointer:coarse){.ze-colorbtn{width:36px;height:36px}}
-.ze-color{right:calc(env(safe-area-inset-right,0px) + 12px);top:calc(env(safe-area-inset-top,0px) + 64px);width:292px;padding:8px;display:none;z-index:3}
-@media (pointer:coarse){.ze-color{top:calc(env(safe-area-inset-top,0px) + 72px);width:304px}}
+.ze-color{right:calc(env(safe-area-inset-right,0px) + 12px);top:calc(env(safe-area-inset-top,0px) + 64px);width:316px;padding:8px;display:none;z-index:3}
+@media (pointer:coarse){.ze-color{top:calc(env(safe-area-inset-top,0px) + 72px);width:334px}}
 @media (max-width:820px){.ze-color{top:calc(env(safe-area-inset-top,0px) + 116px)}}
 .ze-color.open{display:block}
 .ze-ctabs{display:flex;gap:2px;margin-bottom:8px}
@@ -111,6 +123,10 @@ export const COLOR_CSS = `
 .ze-hex{display:flex;align-items:center;gap:8px;margin-top:6px;color:#8f8c86}
 .ze-hex input,.ze-cedit input{flex:1;min-width:0;font:inherit;color:#e7e5e0;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:5px 7px;user-select:text;-webkit-user-select:text}
 .ze-cedit{display:flex;align-items:center;gap:4px;margin-bottom:8px}
+.ze-schip{width:44px;height:28px;border-radius:6px;border:2px solid transparent;box-shadow:inset 0 0 0 1px rgba(0,0,0,.3);cursor:pointer;touch-action:none;flex:none}
+@media (pointer:coarse){.ze-schip{width:50px;height:34px}}
+.ze-schip.on{border-color:#e7e5e0}
+.ze-schip.add{display:flex;align-items:center;justify-content:center;color:#bdbab3;background:rgba(255,255,255,.06);box-shadow:none;font-size:17px}
 .ze-ghost{position:fixed;width:38px;height:38px;margin:-19px 0 0 -19px;border-radius:50%;border:2px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.45);pointer-events:none;z-index:60;display:none}
 `;
 
@@ -156,8 +172,10 @@ export class ColorMenu {
   private hsv: [number, number, number] = [210, 0.4, 0.6];
   /** Feld der Zonenpalette, das gerade bearbeitet wird */
   private editing: string | null = null;
-  /** zuletzt angetipptes Feld (doppelt tippen) */
-  private lastTap: { id: string; t: number } | null = null;
+  /** Stil, der gerade bearbeitet wird (Name, neu festlegen, löschen) */
+  private editingStyle: string | null = null;
+  /** Bearbeiten-Modus der Zonenpalette und der Stile: Antippen öffnet ein Feld oder einen Stil, statt ihn aufzulegen */
+  private editMode = false;
   private shownKey = '';
   /** wird gerufen, wenn das Menü aufgeht (andere Bedienfelder an derselben Stelle schließen) */
   onOpen: (() => void) | null = null;
@@ -189,11 +207,17 @@ export class ColorMenu {
       this.onOpen?.();
       this.syncFromHost(true);
       this.render();
-    } else this.editing = null;
+    } else {
+      this.editing = null;
+      this.editingStyle = null;
+      this.editMode = false;
+    }
   }
 
   private setMode(m: Mode): void {
     this.mode = m;
+    this.editMode = false;
+    this.editingStyle = null;
     try {
       localStorage.setItem(MODE_KEY, m);
     } catch {
@@ -208,7 +232,7 @@ export class ColorMenu {
     const hex = this.host.resolve(cur);
     this.button.style.background = hex;
     if (!this.open) return;
-    const key = `${this.editing}|${cur}|${hex}|${JSON.stringify(this.host.swatches())}|${this.host.recent().join(',')}`;
+    const key = `${this.editMode}|${this.editing}|${this.editingStyle}|${cur}|${hex}|${JSON.stringify(this.host.swatches())}|${this.host.recent().join(',')}|${this.mode === 'styles' ? JSON.stringify(this.host.styleList()) + this.host.hasSelection() : ''}`;
     if (key === this.shownKey) return;
     this.syncFromHost(false);
     this.render();
@@ -245,7 +269,7 @@ export class ColorMenu {
 
   private render(): void {
     const cur = this.host.current();
-    this.shownKey = `${this.editing}|${cur}|${this.host.resolve(cur)}|${JSON.stringify(this.host.swatches())}|${this.host.recent().join(',')}`;
+    this.shownKey = `${this.editMode}|${this.editing}|${this.editingStyle}|${cur}|${this.host.resolve(cur)}|${JSON.stringify(this.host.swatches())}|${this.host.recent().join(',')}|${this.mode === 'styles' ? JSON.stringify(this.host.styleList()) + this.host.hasSelection() : ''}`;
     [...this.tabs.children].forEach((b, i) => b.classList.toggle('on', MODES[i] === this.mode));
     this.body.replaceChildren();
     this.painters = [];
@@ -253,6 +277,7 @@ export class ColorMenu {
     if (this.mode === 'disc' || this.mode === 'harmony') this.body.append(this.disc(this.mode === 'harmony'));
     else if (this.mode === 'classic') this.body.append(this.classic());
     else if (this.mode === 'values') this.body.append(this.values());
+    else if (this.mode === 'styles') this.body.append(this.styles());
     else this.body.append(this.palettes());
     this.recentRow.replaceChildren(...this.host.recent().map((c) => this.chip(c, this.host.resolve(c))));
     this.paint();
@@ -288,6 +313,7 @@ export class ColorMenu {
       }),
       textButton('Fertig', 'Feld fertig bearbeitet', () => {
         this.editing = null;
+        this.editMode = false;
         this.syncFromHost(true);
         this.render();
       }),
@@ -492,18 +518,15 @@ export class ColorMenu {
     const cur = this.host.current();
     for (const sw of this.host.swatches()) {
       const chip = this.chip(`@${sw.id}`, sw.color, () => {
-        const now = performance.now();
-        if (this.lastTap?.id === sw.id && now - this.lastTap.t < 450) {
-          this.lastTap = null;
+        if (this.editMode) {
           this.editing = sw.id;
           this.syncFromHost(true);
           this.render();
           return;
         }
-        this.lastTap = { id: sw.id, t: now };
         this.host.pick(`@${sw.id}`, 'tap');
       });
-      chip.title = `${sw.name} (doppelt tippen: bearbeiten)`;
+      chip.title = this.editMode ? `${sw.name}: antippen bearbeitet` : sw.name;
       chip.classList.toggle('on', cur === `@${sw.id}` || this.editing === sw.id);
       zone.append(chip);
     }
@@ -519,10 +542,98 @@ export class ColorMenu {
     zone.append(add);
     const head = el('div', 'ze-csub', 'Zonenpalette');
     head.title = 'Felder der Zone: Flächen merken sich das Feld, ändert es sich, ändern sie sich mit';
+    if (this.host.swatches().length) head.append(this.editToggle());
     const ph = el('div', 'ze-chips');
     ph.append(...PLACEHOLDER_PALETTE.map((c) => this.chip(c, c)));
     wrap.append(head, zone, el('div', 'ze-csub', 'Platzhalter'), ph);
     return wrap;
+  }
+
+  /**
+   * Stile der Zone: antippen legt den Stil verknüpft auf die Auswahl, ziehen auf eine Fläche ebenso, doppelt tippen
+   * bearbeitet ihn (Name, neu aus der Auswahl, löschen); + sichert den Anstrich der Auswahl als neuen Stil
+   */
+  private styles(): HTMLElement {
+    const wrap = el('div');
+    const list = this.host.styleList();
+    if (this.editingStyle && !list.some((y) => y.id === this.editingStyle)) this.editingStyle = null;
+    const edit = list.find((y) => y.id === this.editingStyle);
+    if (edit) {
+      const row = el('div', 'ze-cedit');
+      const input = el('input');
+      input.value = edit.name;
+      input.addEventListener('pointerdown', (e) => e.stopPropagation());
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') input.blur();
+      });
+      input.addEventListener('change', () => {
+        const name = input.value.trim().slice(0, 40);
+        if (name && name !== edit.name) this.host.renameStyle(edit.id, name);
+      });
+      row.append(input);
+      if (this.host.hasSelection()) row.append(textButton('Neu festlegen', 'Den Stil aus dem Anstrich der Auswahl neu festlegen; alle verknüpften Flächen ändern sich mit', () => this.host.redefineStyle(edit.id)));
+      row.append(
+        textButton('Löschen', 'Stil löschen; verknüpfte Flächen behalten sein Aussehen', () => {
+          this.host.deleteStyle(edit.id);
+          this.editingStyle = null;
+          this.render();
+        }),
+        textButton('Fertig', 'Stil fertig bearbeitet', () => {
+          this.editingStyle = null;
+          this.editMode = false;
+          this.render();
+        }),
+      );
+      wrap.append(row);
+    }
+    const chips = el('div', 'ze-chips');
+    for (const y of list) {
+      const c = el('div', `ze-schip${y.on || y.id === this.editingStyle ? ' on' : ''}`);
+      c.style.background = y.preview;
+      c.title = this.editMode ? `${y.name}: antippen bearbeitet` : `${y.name} (antippen: auf die Auswahl, ziehen: auf eine Fläche)`;
+      this.source(c, () => `style:${y.id}`, () => {
+        if (this.editMode) {
+          this.editingStyle = y.id;
+          this.render();
+          return;
+        }
+        this.host.applyStyle(y.id);
+      }, y.preview);
+      chips.append(c);
+    }
+    const add = el('div', 'ze-schip add', '+');
+    add.title = 'Anstrich der Auswahl als Stil sichern (Cmd+Wahl+C kopiert, Cmd+Wahl+V fügt ein)';
+    add.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = this.host.saveStyle();
+      if (id) this.editingStyle = id;
+      this.render();
+    });
+    chips.append(add);
+    const head = el('div', 'ze-csub', 'Stile der Zone');
+    head.title = 'Verknüpfte Stile: ändert sich der Stil, ändern sich alle Flächen mit ihm';
+    if (list.length) head.append(this.editToggle());
+    wrap.append(head, chips);
+    if (!list.length) wrap.append(el('div', 'ze-csub', this.host.hasSelection() ? '+ sichert den Anstrich der Auswahl als ersten Stil' : 'Erst eine Form oder Fläche wählen, dann + sichert ihren Anstrich als Stil'));
+    return wrap;
+  }
+
+  /** Schalter „Bearbeiten“: Antippen eines Felds oder Stils öffnet ihn (Name, Farbe, neu festlegen, löschen) */
+  private editToggle(): HTMLElement {
+    const b = textButton(this.editMode ? 'Fertig' : 'Bearbeiten', this.editMode ? 'Bearbeiten beenden' : 'Felder und Stile bearbeiten: dann öffnet Antippen statt aufzulegen', () => {
+      this.editMode = !this.editMode;
+      if (!this.editMode) {
+        this.editing = null;
+        this.editingStyle = null;
+        this.syncFromHost(true);
+      }
+      this.render();
+    }, this.editMode ? 'on' : '');
+    b.style.marginLeft = 'auto';
+    b.style.height = '24px';
+    b.style.fontSize = '11px';
+    return b;
   }
 
   /** Farbfeld: antippen wählt (oder onTap), ziehen lässt die Farbe auf das Bild fallen */
@@ -595,7 +706,7 @@ export class ColorMenu {
   }
 
   /** Quelle für Ziehen und Fallenlassen (ColorDrop): kurz antippen ruft onTap, ziehen trägt die Farbe auf das Bild */
-  private source(elm: HTMLElement, value: () => PaintColor, onTap: () => void): void {
+  private source(elm: HTMLElement, value: () => PaintColor, onTap: () => void, ghost?: string): void {
     elm.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       e.preventDefault();
@@ -610,7 +721,7 @@ export class ColorMenu {
       const move = (ev: PointerEvent) => {
         if (!dragging && Math.hypot(ev.clientX - sx, ev.clientY - sy) > 7) {
           dragging = true;
-          this.ghost.style.background = this.host.resolve(value());
+          this.ghost.style.background = ghost ?? this.host.resolve(value());
           this.ghost.style.display = 'block';
         }
         if (!dragging) return;

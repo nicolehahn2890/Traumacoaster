@@ -65,6 +65,7 @@ import {
   setFaceFill,
   slicesToNodes,
   styleMap,
+  stylesOf,
   swatchesOf,
   swatchMap,
   transferShape,
@@ -82,6 +83,7 @@ import { booleanShapes, type BoolOp } from '@/zone/pathfinder';
 import { evalLayers, gradientT, hexToRgb, isHex, MAX_LAYERS, paintLayers, rampOf, RAMP, resolveColor, rgbToHex, type GradientFill, type GradientStop, type PaintColor, type ZoneFill } from '@/zone/paint';
 import { addStop, lineT, moveStop, ownPaint, readGradient, removeGradient, removeStop, reverseStops, setMid, targetBox, topGradient, writeGradient, writePaint, type GradKind, type GradLine, type GradTarget } from '@/zone/gradients';
 import type { StackRow, StackView } from './stackPanel';
+import { bakeStyle, linkedStyle, linkStyle, paintToStyle, pasteStyle, styleFromClip, unlinkStyle, type StyleClip } from '@/zone/styles';
 import { faceAt, faceBox, type Face } from '@/zone/faces';
 import type { ColorMenuHost, PickPhase } from './colorMenu';
 import { EditorUi, type Isolate, type LayerRow, type Tool } from './ui';
@@ -247,6 +249,10 @@ export class PlaneEditor {
   private stackSel: number | null = null;
   /** Ziel, zu dem die gewählte Zeile gehört (wechselt es, gilt sie nicht mehr) */
   private stackKey = '';
+  /** kopierter Anstrich (Cmd+Wahl+C, Pipette mit Wahltaste); mit Kennung, wenn er von einem Stil kam */
+  private styleClip: StyleClip | null = null;
+  /** Vorschaubilder der Stile (Daten-URL je Inhalt) */
+  private readonly stylePreviews = new Map<string, string>();
   /** Farbe fiel auf eine Fläche mit Verlauf: Grundfarbe oder Verlaufsstopp? (Plan 4.6) */
   private dropChoice: { color: PaintColor; shape: string; at: Pt | null; t: number } | null = null;
   private width = 800;
@@ -1051,6 +1057,7 @@ export class PlaneEditor {
         this.setTool('gradient');
       },
       stackAir: (patch, phase) => this.stackAir(patch, phase),
+      stackStyle: (what) => this.styleCommand(what),
       duplicate: () => this.duplicate(),
       orderShape: (dir) => this.orderShape(dir),
       deleteShape: () => this.deleteShape(),
@@ -1983,6 +1990,21 @@ export class PlaneEditor {
       this.gradDown(pointerId, p);
       return;
     }
+    if (this.tool === 'pipette' && this.mods.alt) {
+      // Pipette mit Wahltaste: den ganzen Anstrich aufnehmen (und auf die Auswahl legen, wie in Illustrator)
+      const f = this.faceAtScreen(p, true);
+      const clip = f ? paintToStyle({ shape: f.shape, face: shapeFaces(f.shape).length > 1 ? f.face : null }, styleMap(this.nodes)) : null;
+      if (!clip) return;
+      this.styleClip = clip;
+      const ts = this.styleTargets().filter((t) => t.shape.id !== f?.shape.id || t.face !== null);
+      if (ts.length) {
+        this.edit(() => {
+          for (const t of ts) pasteStyle(t, clip, styleMap(this.nodes));
+        });
+        this.ui.toast('Anstrich aufgenommen und auf die Auswahl gelegt');
+      } else this.ui.toast('Anstrich aufgenommen (Cmd+Wahl+V fügt ihn ein)');
+      return;
+    }
     if (this.tool === 'pipette') {
       const c = this.sampleColor(p);
       if (c) {
@@ -2358,7 +2380,113 @@ export class PlaneEditor {
         this.dropAt = null;
         this.drawOverlay();
       },
+      styleList: () => {
+        const styles = styleMap(this.nodes);
+        const ts = this.styleTargets();
+        return stylesOf(this.nodes).map((y) => ({ id: y.id, name: y.name, preview: this.stylePreview(y), on: ts.length > 0 && ts.every((t) => linkedStyle(t, styles) === y.id) }));
+      },
+      applyStyle: (id) => {
+        const style = styleMap(this.nodes).get(id);
+        const ts = this.styleTargets();
+        if (!style) return;
+        if (!ts.length) {
+          this.ui.toast('Erst eine Form oder Fläche wählen (oder den Stil auf eine Fläche ziehen)');
+          return;
+        }
+        this.edit(() => {
+          for (const t of this.styleTargets()) linkStyle(t, style);
+        });
+      },
+      saveStyle: () => this.saveStyle(),
+      redefineStyle: (id) => {
+        const t = this.styleTargets()[0];
+        const clip = t ? paintToStyle(t, styleMap(this.nodes)) : null;
+        if (!clip) return;
+        this.edit(() => {
+          const y = stylesOf(this.nodes).find((x) => x.id === id);
+          if (!y) return;
+          const next = styleFromClip(id, y.name, { ...clip, style: undefined });
+          Object.assign(y, { fill: next.fill });
+          if (next.fills) y.fills = next.fills;
+          else delete y.fills;
+          if (next.opacity !== undefined) y.opacity = next.opacity;
+          else delete y.opacity;
+          for (const tt of this.styleTargets()) linkStyle(tt, y);
+        });
+        this.ui.toast('Stil neu festgelegt: alle verknüpften Flächen zeigen ihn jetzt');
+      },
+      renameStyle: (id, name) => this.edit(() => {
+        const y = stylesOf(this.nodes).find((x) => x.id === id);
+        if (y) y.name = name;
+      }),
+      deleteStyle: (id) => {
+        this.edit(() => {
+          bakeStyle(this.nodes, id);
+          this.nodes = this.nodes.filter((n) => n.id !== id);
+          this.zone.nodes = this.nodes;
+        });
+        this.ui.toast('Stil gelöscht; verknüpfte Flächen behalten sein Aussehen');
+      },
+      hasSelection: () => this.styleTargets().length > 0,
     };
+  }
+
+  /** Ziele für Stile: die gewählte Fläche (Direktauswahl) oder die gewählten, nicht gesperrten Formen */
+  private styleTargets(): Array<{ shape: ZoneShape; face: Face | null }> {
+    const free = (s: ZoneShape) => {
+      const pl = findPlane(this.nodes, s.parent);
+      return !s.locked && !!pl && !planeLocked(this.nodes, pl);
+    };
+    const face = isPathTool(this.tool) ? this.paths.selectedFace() : null;
+    if (face) return free(face.shape) ? [{ shape: face.shape, face: shapeFaces(face.shape).length > 1 ? face.face : null }] : [];
+    return this.selectedShapes().filter(free).map((s) => ({ shape: s, face: null }));
+  }
+
+  /** Anstrich der Auswahl (erstes Ziel) als neuen Stil sichern und alle Ziele damit verknüpfen */
+  private saveStyle(): string | null {
+    const t = this.styleTargets()[0];
+    const clip = t ? paintToStyle(t, styleMap(this.nodes)) : null;
+    if (!clip) {
+      this.ui.toast('Erst eine Form oder Fläche wählen, deren Anstrich der Stil werden soll');
+      return null;
+    }
+    let id: string | null = null;
+    this.edit(() => {
+      id = nextNodeId(this.nodes, 'y');
+      const y = styleFromClip(id, `Stil ${id.slice(1)}`, clip);
+      this.nodes.push(y);
+      for (const tt of this.styleTargets()) linkStyle(tt, y);
+    });
+    this.ui.toast('Als Stil gesichert und verknüpft (Farbmenü › Stile)');
+    return id;
+  }
+
+  /** kleines Vorschaubild eines Stils (Füllstapel auf dem Rahmen 0 … 1 ausgewertet), zwischengespeichert */
+  private stylePreview(y: import('@/zone/paint').ZoneStyle): string {
+    const key = JSON.stringify([y.fill, y.fills, y.opacity, this.host.world.currentLook, swatchesOf(this.nodes)]);
+    const hit = this.stylePreviews.get(key);
+    if (hit) return hit;
+    const pl = paintLayers({ fill: y.fill, fills: y.fills, opacity: y.opacity }, new Map(), { minX: 0, minY: 0, maxX: 1, maxY: 1 });
+    const W = 24;
+    const H = 16;
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const g = c.getContext('2d');
+    if (!g || !pl) return y.fill;
+    const img = g.createImageData(W, H);
+    const sw = swatchMap(this.nodes);
+    const look = this.host.world.currentLook;
+    for (let j = 0; j < H; j++)
+      for (let i = 0; i < W; i++) {
+        const col = evalLayers(pl.layers, (i + 0.5) / W, 1 - (j + 0.5) / H, sw, look);
+        img.data.set([col.rgb[0] * 255, col.rgb[1] * 255, col.rgb[2] * 255, col.a * pl.opacity * 255], (j * W + i) * 4);
+      }
+    g.putImageData(img, 0, 0);
+    const url = `center/cover no-repeat url(${c.toDataURL()})`;
+    if (this.stylePreviews.size > 200) this.stylePreviews.clear();
+    this.stylePreviews.set(key, url);
+    return url;
   }
 
   /** Farbe als zuletzt benutzt merken (als Wert) */
@@ -2523,6 +2651,15 @@ export class PlaneEditor {
     const r = this.host.surface.getBoundingClientRect();
     const at = { x: x - r.left, y: y - r.top };
     this.dropAt = null;
+    // ein Stil aus dem Farbmenü: verknüpft auf die Fläche darunter
+    if (c.startsWith('style:')) {
+      const style = styleMap(this.nodes).get(c.slice(6));
+      const f = this.faceAtScreen(at);
+      if (style && f) this.edit(() => linkStyle({ shape: f.shape, face: shapeFaces(f.shape).length > 1 ? f.face : null }, style));
+      else this.ui.toast('Dort liegt keine Fläche');
+      this.drawOverlay();
+      return;
+    }
     const hit = this.tool === 'gradient' ? this.gradHit(at) : null;
     const st = hit ? this.gradState() : null;
     if (hit && st && (hit.kind === 'stop' || hit.kind === 'line')) {
@@ -2620,6 +2757,37 @@ export class PlaneEditor {
 
   // ------------------------------------------------------------------ Füllstapel (Stufe 3)
 
+  /** Stil der Auswahl kopieren, einfügen, als Stil sichern, lösen (Leiste des Füllstapels, Cmd+Wahl+C/V) */
+  private styleCommand(what: 'copy' | 'paste' | 'save' | 'unlink'): void {
+    const styles = styleMap(this.nodes);
+    const ts = this.styleTargets();
+    if (what === 'save') {
+      this.saveStyle();
+      return;
+    }
+    if (!ts.length) {
+      this.ui.toast('Erst eine Form oder Fläche wählen');
+      return;
+    }
+    if (what === 'copy') {
+      this.styleClip = paintToStyle(ts[0], styles);
+      this.uiDirty = true;
+      this.ui.toast('Anstrich kopiert');
+    } else if (what === 'paste') {
+      const clip = this.styleClip;
+      if (!clip) {
+        this.ui.toast('Erst einen Anstrich kopieren (Cmd+Wahl+C oder Pipette mit Wahltaste)');
+        return;
+      }
+      this.edit(() => {
+        for (const t of this.styleTargets()) pasteStyle(t, clip, styleMap(this.nodes));
+      });
+    } else
+      this.edit(() => {
+        for (const t of this.styleTargets()) unlinkStyle(t, styleMap(this.nodes));
+      });
+  }
+
   /** Ziel des Füllstapels: Ebenenstapel der aktiven Ebene, sonst die gewählte Fläche oder die zuletzt gewählte Form */
   private stackTarget(): GradTarget | null {
     if (this.stackOpen === 'plane') {
@@ -2676,6 +2844,7 @@ export class PlaneEditor {
       selected: this.stackSel,
       air: 'plane' in t ? { color: this.resolve(air?.color ?? AIR_DEFAULT.color), amount: air?.amount ?? 0, near: air?.near ?? AIR_DEFAULT.near, far: air?.far ?? AIR_DEFAULT.far, plane: t.plane.air ?? 1 } : null,
       full: fills.length >= MAX_LAYERS - 1,
+      styles: 'plane' in t ? null : { linked: (() => { const id = linkedStyle(t, styleMap(this.nodes)); return id ? (styleMap(this.nodes).get(id)?.name ?? null) : null; })(), canPaste: !!this.styleClip },
     };
   }
 
@@ -3108,6 +3277,9 @@ export class PlaneEditor {
     this.setMods(e);
     let handled = true;
     if (!cmd && isPathTool(this.tool) && this.paths.key(k)) handled = true;
+    // Anstrich kopieren und einfügen wie Figma (Cmd+Wahl+C/V; mit Wahltaste liefert e.key Sonderzeichen, darum e.code)
+    else if (cmd && e.altKey && e.code === 'KeyC') this.styleCommand('copy');
+    else if (cmd && e.altKey && e.code === 'KeyV') this.styleCommand('paste');
     else if (cmd && k === 'z') e.shiftKey ? this.redo() : this.undo();
     else if (cmd && k === 'y') this.redo();
     else if (cmd && k === 's') void this.save();

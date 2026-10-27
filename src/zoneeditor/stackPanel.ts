@@ -30,6 +30,8 @@ export interface StackView {
   air?: { color: string; amount: number; near: number; far: number; plane: number } | null;
   /** Füllstapel voll (höchstens 7 Füllungen über der Grundfarbe) */
   full: boolean;
+  /** Stile (nicht im Ebenenstapel): Name des verknüpften Stils, ob ein kopierter Stil bereitliegt */
+  styles?: { linked: string | null; canPaste: boolean } | null;
 }
 
 export interface StackActions {
@@ -44,6 +46,8 @@ export interface StackActions {
   /** Luftperspektive: Stärke, ab, voll bei (Zone), Anteil der Ebene; Farbe: die Luft wird Ziel des Farbmenüs */
   stackAir(patch: { amount?: number; near?: number; far?: number; plane?: number; color?: true }, phase: PickPhase): void;
   stackClose(): void;
+  /** Stil des Ziels kopieren, einfügen, als neuen Stil sichern, vom verknüpften Stil lösen */
+  stackStyle(what: 'copy' | 'paste' | 'save' | 'unlink'): void;
 }
 
 const KIND_WORDS: Record<StackRow['kind'], string> = { base: 'Grundfarbe', color: 'Farbe', gradient: 'Verlauf', fade: 'Deckkraftverlauf' };
@@ -119,6 +123,19 @@ export class StackPanel {
     const head = el('div', 'ze-shead');
     head.append(el('span', 'ze-title', view.title), btn('Fertig', 'Liste schließen', () => this.a.stackClose()));
     this.el.append(head);
+    if (view.styles) {
+      const bar = el('div', 'ze-sfoot');
+      bar.style.borderTop = '0';
+      bar.style.marginTop = '0';
+      bar.style.paddingTop = '0';
+      if (view.styles.linked) bar.append(el('span', 'ze-label', `Stil „${view.styles.linked}“`), btn('Lösen', 'Vom Stil lösen: die Fläche behält ihr Aussehen, der Stil ändert sie nicht mehr', () => this.a.stackStyle('unlink')));
+      bar.append(
+        btn('Stil kopieren', 'Anstrich kopieren (Cmd+Wahl+C)', () => this.a.stackStyle('copy')),
+        Object.assign(btn('Einfügen', 'Kopierten Anstrich einfügen (Cmd+Wahl+V)', () => this.a.stackStyle('paste')), { disabled: !view.styles.canPaste }),
+        btn('Als Stil', 'Als neuen Stil der Zone sichern und verknüpfen (Farbmenü › Stile)', () => this.a.stackStyle('save')),
+      );
+      this.el.append(bar);
+    }
     for (const r of view.rows) {
       this.el.append(this.row(r, view.selected === r.index, view.rows));
       if (this.blendOpen === r.index && r.blend) {
