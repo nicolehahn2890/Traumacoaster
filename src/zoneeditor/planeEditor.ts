@@ -125,6 +125,8 @@ const TAP_DIST = 12;
 const PATH_TOOLS: readonly Tool[] = ['direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife'];
 const isPathTool = (t: Tool): t is PathTool => PATH_TOOLS.includes(t);
 
+const fmtDeg = (v: number): string => String(Math.round(v * 10) / 10).replace('.', ',');
+
 /** Pfad einer Grundform im Rahmen w × h um den Ursprung */
 function primitivePath(kind: 'rect' | 'ellipse' | 'arch', w: number, h: number): ZonePath {
   if (kind === 'rect') return rectPath(w, h);
@@ -541,7 +543,15 @@ export class PlaneEditor {
     );
     this.paths.selectionChanged(this.selection);
     const path = this.building && isPathTool(this.tool) ? this.paths.context() : null;
-    this.ui.setContext(this.building ? this.selectedPlanes() : [], this.building ? this.selectedShapes() : [], this.isolate, path, this.clip.length > 0, this.building ? (findGroup(this.nodes, this.groupSel) ?? null) : null, this.activeSketch(), !!this.adjusting(), this.building ? this.groupInfo() : null);
+    const box = this.building ? this.selectionBox() : null;
+    const b = box?.bounds;
+    this.ui.setContext(this.building ? this.selectedPlanes() : [], this.building ? this.selectedShapes() : [], this.isolate, path, this.clip.length > 0, {
+      group: this.building ? (findGroup(this.nodes, this.groupSel) ?? null) : null,
+      sketch: this.activeSketch(),
+      sketchEdit: !!this.adjusting(),
+      units: this.building ? this.groupInfo() : null,
+      nums: b && !box.locked ? { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2, w: b.maxX - b.minX, h: b.maxY - b.minY } : null,
+    });
     const st = this.host.world.planes.stats;
     const tris = st.triangles >= 1000 ? `${(st.triangles / 1000).toFixed(1).replace('.', ',')}k` : String(st.triangles);
     this.ui.setTop(this.dirty, this.history.canUndo, this.history.canRedo, `${planes.length} Ebenen · ${st.shapes} Formen · ${tris} Dreiecke · Welt: ${this.host.world.drawCalls} Draw Call${this.host.world.drawCalls === 1 ? '' : 's'} · ${this.fps.value} fps`);
@@ -757,6 +767,7 @@ export class PlaneEditor {
         if (g) g.name = name;
       }),
       groupPlanes: () => this.groupSelected(),
+      numbers: (field, value, keepRatio) => this.applyNumbers(field, value, keepRatio),
       shapeGroup: () => this.groupShapesSelected(),
       shapeUngroup: () => this.ungroupSelected(),
       leaveGroup: () => {
@@ -1335,6 +1346,48 @@ export class PlaneEditor {
     });
     this.sketchEdit = id;
     this.ui.toast(url ? 'Skizze liegt auf der Ebene: Ecken ziehen skaliert, innen ziehen verschiebt, dann „Fertig“' : 'Skizze nur bis zum Neuladen (ohne Dev-Server lässt sie sich nicht sichern)');
+  }
+
+  /**
+   * Zahlen der Leiste anwenden (ein Schritt im Verlauf): Mitte verschieben, Breite oder Höhe um die Mitte strecken (mit
+   * festem Seitenverhältnis beide), um Grad um die Mitte drehen
+   */
+  private applyNumbers(field: 'x' | 'y' | 'w' | 'h' | 'angle', value: number, keepRatio: boolean): void {
+    const box = this.selectionBox();
+    if (!box || box.locked) return;
+    const b = box.bounds;
+    const cx = (b.minX + b.maxX) / 2;
+    const cy = (b.minY + b.maxY) / 2;
+    const w = b.maxX - b.minX;
+    const h = b.maxY - b.minY;
+    const shapes = this.selectedShapes();
+    this.edit(() => {
+      if (field === 'x' || field === 'y') {
+        for (const s of shapes) {
+          if (field === 'x') s.x += value - cx;
+          else s.y += value - cy;
+        }
+        return;
+      }
+      if (field === 'angle') {
+        for (const s of shapes) rotateShape(s, cloneNodes([s])[0] as ZoneShape, { x: cx, y: cy }, (value * Math.PI) / 180);
+        return;
+      }
+      if (value < 0.01) return;
+      let kx = field === 'w' && w > 1e-6 ? value / w : 1;
+      let ky = field === 'h' && h > 1e-6 ? value / h : 1;
+      if (keepRatio) {
+        if (field === 'w') ky = kx;
+        else kx = ky;
+      }
+      for (const s of shapes) {
+        s.x = cx + (s.x - cx) * kx;
+        s.y = cy + (s.y - cy) * ky;
+        s.sx *= kx;
+        s.sy *= ky;
+      }
+    });
+    if (field === 'angle' && value) this.ui.toast(`um ${fmtDeg(value)}° gedreht`);
   }
 
   /** gewählte Formen einer Ebene am gemeinsamen Rahmen ausrichten */

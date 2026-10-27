@@ -1073,6 +1073,78 @@ if (want('16')) {
   await page.screenshot({ path: 'screenshots/scenario-16-formgruppen.png' });
 }
 
+// 17. Bogen als Grundform (U wechselt durch), Zahlen für Breite und Mitte, Umschalt beim Verschieben (nur waagrecht) und
+// beim Zeichenstift (die zweite Kante läuft waagrecht)
+if (want('17')) {
+  await page.goto(`${BASE}?zone=editor-zahlen&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const ed = (fn, arg) => page.evaluate(fn, arg);
+  const last = () =>
+    ed(() => {
+      const e = window.tcGame.current.planeEditor;
+      const s = e.nodes.filter((n) => n.kind === 'shape').at(-1);
+      if (!s) return null;
+      const xs = s.path.map((p) => s.x + s.sx * p.x);
+      const ys = s.path.map((p) => s.y + s.sy * p.y);
+      return { id: s.id, name: s.name, n: s.path.length, x: s.x, y: s.y, w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), pts: xs.map((x, i) => [x, ys[i]]) };
+    });
+  await page.click('.ze-layers .ze-btn[title^="Neue Ebene"]');
+  await page.keyboard.press('m');
+  await page.keyboard.press('u');
+  await page.keyboard.press('u');
+  const tool = await ed(() => window.tcGame.current.planeEditor.tool);
+  await page.mouse.move(420, 250);
+  await page.mouse.down();
+  await page.mouse.move(540, 480, { steps: 8 });
+  await page.mouse.up();
+  await sleep(200);
+  const a = await last();
+  check(tool === 'arch' && /^Bogen/.test(a?.name ?? '') && a.n === 5, `U wechselt zum Bogen, aufgezogen mit 5 Ankern (${a?.name})`);
+  await page.keyboard.press('v');
+  await page.click('.ze-context .ze-btn:text-is("Zahlen")');
+  const fill = async (i, v) => {
+    const input = page.locator('.ze-context .ze-num input').nth(i);
+    await input.click();
+    await input.fill(v);
+    await input.press('Enter');
+    await sleep(150);
+  };
+  await fill(2, '12');
+  await fill(0, '5');
+  const b = await last();
+  check(Math.abs(b.w - 12) < 0.01 && Math.abs(b.x - 5) < 0.01 && Math.abs(b.h - a.h) < 1e-6, `Zahlen: Breite 12 m, Mitte x 5 m, Höhe bleibt (${b.w.toFixed(3)} × ${b.h.toFixed(2)} m)`);
+  await page.click('.ze-context .ze-btn:text-is("Fertig")');
+  // Umschalt beim Verschieben: schräg gezogen, die Form bleibt auf ihrer Höhe
+  const c0 = await ed(() => {
+    const e = window.tcGame.current.planeEditor;
+    const s = e.nodes.filter((n) => n.kind === 'shape').at(-1);
+    return e.screenOf(e.nodes.find((n) => n.id === s.parent), { x: s.x, y: s.y }, s);
+  });
+  await page.mouse.move(c0.x, c0.y);
+  await page.mouse.down();
+  await page.mouse.move(c0.x + 20, c0.y + 3, { steps: 3 });
+  await page.keyboard.down('Shift');
+  await page.mouse.move(c0.x + 90, c0.y + 12, { steps: 6 });
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  await sleep(150);
+  const c = await last();
+  check(Math.abs(c.y - b.y) < 1e-9 && c.x - b.x > 1, `Umschalt beim Verschieben: nur waagrecht (${(c.x - b.x).toFixed(2)} m, Höhe gleich)`);
+  // Zeichenstift mit Umschalt: die zweite Kante läuft waagrecht, obwohl der Zeiger 25 px tiefer liegt
+  await page.mouse.click(700, 650);
+  await page.keyboard.press('p');
+  await page.mouse.click(300, 600);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(420, 625);
+  await page.keyboard.up('Shift');
+  await page.mouse.click(400, 700);
+  await page.keyboard.press('Enter');
+  await sleep(200);
+  const d = await last();
+  check(d && d.n === 3 && Math.abs(d.pts[1][1] - d.pts[0][1]) < 1e-6, `Zeichenstift mit Umschalt: zweiter Anker auf der Höhe des ersten (${d ? (d.pts[1][1] - d.pts[0][1]).toFixed(4) : '–'} m)`);
+  await page.screenshot({ path: 'screenshots/scenario-17-bogen-zahlen.png' });
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));

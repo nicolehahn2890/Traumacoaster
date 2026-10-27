@@ -37,6 +37,8 @@ export interface UiActions {
   groupPlanes(): void;
   ungroup(): void;
   deleteGroup(): void;
+  /** Zahlen der Auswahl (Plan 4.2 Grundsatz 1, „Zahlen nur auf Wunsch“): Mitte, Breite, Höhe in Metern, Drehen um Grad */
+  numbers(field: 'x' | 'y' | 'w' | 'h' | 'angle', value: number, keepRatio: boolean): void;
   /** Formgruppen in einer Ebene (wie Illustrator): gruppieren, auflösen, aus der betretenen Gruppe heraus */
   shapeGroup(): void;
   shapeUngroup(): void;
@@ -95,6 +97,19 @@ export interface UiActions {
   addProbe(): void;
   restore(): void;
   discardBackup(): void;
+}
+
+/** was die Leiste unten außer Auswahl und Werkzeug noch braucht */
+export interface ContextExtra {
+  /** in der Liste gewählte Ebenen-Gruppe */
+  group?: ZoneGroup | null;
+  /** Skizze der aktiven Ebene; wird sie gerade angepasst */
+  sketch?: ZoneSketch | null;
+  sketchEdit?: boolean;
+  /** gewählte Formen nach Einheiten (Formgruppen) */
+  units?: { units: number; groups: number; inside: boolean } | null;
+  /** gemeinsamer Rahmen der gewählten Formen einer Ebene (Mitte, Breite, Höhe in Metern) */
+  nums?: { x: number; y: number; w: number; h: number } | null;
 }
 
 export interface LayerRow {
@@ -186,6 +201,9 @@ const CSS = `
 .ze-pill{font-size:11px;color:#bdbab3;padding:1px 9px;border-radius:9px;background:rgba(255,255,255,.06);cursor:ns-resize;touch-action:none;font-variant-numeric:tabular-nums}
 @media (pointer:coarse){.ze-gap{height:24px}.ze-pill{padding:3px 12px}}
 .ze-pill.drag{background:rgba(141,180,255,.25);color:#fff}
+.ze-num{display:flex;align-items:center;gap:5px;margin:0 3px;color:rgba(231,229,224,.6)}
+.ze-num input{width:62px;font:inherit;color:#e7e5e0;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:5px 6px;text-align:right;user-select:text;-webkit-user-select:text}
+@media (pointer:coarse){.ze-num input{width:70px;padding:9px 6px}}
 .ze-pill input{width:56px;font:inherit;color:inherit;background:transparent;border:0;text-align:center;user-select:text;-webkit-user-select:text}
 .ze-foot{display:flex;gap:2px;padding-top:4px;border-top:1px solid rgba(255,255,255,.06);margin-top:4px}
 .ze-foot .ze-btn{font-size:11px;color:#8f8c86;height:30px;padding:0 7px}
@@ -247,6 +265,7 @@ const DIST_X = '<svg viewBox="0 0 24 24"><rect x="3" y="7" width="4" height="10"
 const DIST_Y = '<svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="4" rx="1"/><rect x="5" y="10" width="14" height="4" rx="1"/><rect x="8" y="17" width="8" height="4" rx="1"/></svg>';
 const FORWARD = '<svg viewBox="0 0 24 24"><rect x="4" y="9" width="11" height="11" rx="1"/><rect x="9" y="4" width="11" height="11" rx="1" fill="currentColor"/></svg>';
 const BACKWARD = '<svg viewBox="0 0 24 24"><rect x="9" y="4" width="11" height="11" rx="1" fill="currentColor"/><rect x="4" y="9" width="11" height="11" rx="1" fill="#2c2f33"/></svg>';
+const CHAIN = '<svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>';
 const FLIP_Y = '<svg viewBox="0 0 24 24"><path d="M3 12h18"/><path d="M7 9L17 3v6z"/><path d="M7 15l10 6v-6z" fill="currentColor"/></svg>';
 
 const TOOL_TITLES: Record<Tool, string> = {
@@ -357,7 +376,9 @@ export class EditorUi {
   /** nach Wischen oder Ziehen kommt noch ein click; den schlucken */
   private swallowClick = false;
   /** Leiste unten zeigt für mehrere Formen die Knöpfe zum Ausrichten oder Verbinden, für die Ebene die der Skizze */
-  private sub: 'align' | 'combine' | 'sketch' | null = null;
+  private sub: 'align' | 'combine' | 'sketch' | 'numbers' | null = null;
+  /** Breite und Höhe in den Zahlen gemeinsam ändern */
+  private keepRatio = false;
   /** Bildauswahl für Skizzen */
   private readonly sketchFile = el('input');
   private thumbs = new Map<string, HTMLCanvasElement>();
@@ -956,13 +977,15 @@ export class EditorUi {
    * Leiste unten: beim Zeichnen Fertig und Abbrechen, für gewählte Anker, das Lasso oder eine Fläche deren Befehle, für
    * gewählte Formen Farbe und Reihenfolge, sonst für die gewählten Ebenen Rolle und Isolieren
    */
-  setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false, group: ZoneGroup | null = null, sketch: ZoneSketch | null = null, sketchEdit = false, units: { units: number; groups: number; inside: boolean } | null = null): void {
+  setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false, extra: ContextExtra = {}): void {
+    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null } = extra;
     const plane = planes.at(-1) ?? null;
     const shape = shapes.at(-1) ?? null;
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
     const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : path.kind === 'band' ? `b|${path.shape}` : `l|${path.form}|${path.count}|${path.smooth}`;
     const gi = units ?? { units: shapes.length, groups: 0, inside: false };
-    const key = path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
+    const numKey = this.sub === 'numbers' && nums ? `${[nums.x, nums.y, nums.w, nums.h].map((v) => v.toFixed(2)).join(',')}|${this.keepRatio}` : `${!!nums}`;
+    const key = path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
     this.context.replaceChildren();
@@ -1001,7 +1024,61 @@ export class EditorUi {
       this.context.append(el('span', 'ze-label', `${path.shape.name} · Fläche`));
       this.swatches(path.fill, (c) => this.a.faceFill(c));
       this.context.append(el('span', 'ze-sep'), button('Loch', 'Fläche zum Loch machen (Entf); eine Farbe füllt sie wieder', () => this.a.faceFill(null), path.fill === null ? 'on' : ''));
-    } else if (shape && this.sub && shapes.length > 1 && shapes.every((s) => s.parent === shape.parent)) {
+    } else if (shape && this.sub === 'numbers' && nums) {
+      // Zahlen nur auf Wunsch (Plan 4.2 Grundsatz 1): Mitte, Breite, Höhe in Metern der Ebene, Drehen um Grad
+      this.context.append(el('span', 'ze-label', gi.groups || shapes.length > 1 ? 'Rahmen' : shape.name));
+      const field = (label: string, title: string, value: number, digits: number, apply: (v: number) => void) => {
+        const box = el('label', 'ze-num');
+        box.title = title;
+        const input = el('input');
+        input.inputMode = 'decimal';
+        input.value = fmt(value, digits);
+        input.addEventListener('pointerdown', (e) => e.stopPropagation());
+        let done = false;
+        const commit = (ok: boolean) => {
+          if (done) return;
+          done = true;
+          const v = Number(input.value.replace(',', '.').replace(/[^\d.-]/g, ''));
+          if (ok && input.value.trim() && Number.isFinite(v) && fmt(v, digits) !== fmt(value, digits)) apply(v);
+          else input.value = fmt(value, digits);
+          done = false;
+        };
+        input.addEventListener('keydown', (e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') {
+            commit(true);
+            input.blur();
+          }
+          if (e.key === 'Escape') {
+            input.value = fmt(value, digits);
+            input.blur();
+          }
+        });
+        input.addEventListener('change', () => commit(true));
+        box.append(el('span', '', label), input);
+        this.context.append(box);
+      };
+      field('X', 'Mitte waagrecht (Meter in der Ebene)', nums.x, 2, (v) => this.a.numbers('x', v, this.keepRatio));
+      field('Y', 'Mitte senkrecht (Meter in der Ebene, oben ist größer)', nums.y, 2, (v) => this.a.numbers('y', v, this.keepRatio));
+      field('B', 'Breite (Meter)', nums.w, 2, (v) => this.a.numbers('w', v, this.keepRatio));
+      field('H', 'Höhe (Meter)', nums.h, 2, (v) => this.a.numbers('h', v, this.keepRatio));
+      this.context.append(
+        button(CHAIN, 'Breite und Höhe gemeinsam ändern (Seitenverhältnis halten)', () => {
+          this.keepRatio = !this.keepRatio;
+          this.contextKey = '-';
+          this.setContext(planes, shapes, isolate, path, canPaste, extra);
+        }, this.keepRatio ? 'on' : ''),
+      );
+      field('↻', 'Drehen um so viele Grad um die Mitte (gegen den Uhrzeigersinn)', 0, 0, (v) => this.a.numbers('angle', v, this.keepRatio));
+      this.context.append(
+        el('span', 'ze-sep'),
+        button('Fertig', 'Zurück zur Leiste der Formen', () => {
+          this.sub = null;
+          this.contextKey = '-';
+          this.setContext(planes, shapes, isolate, path, canPaste, extra);
+        }),
+      );
+    } else if (shape && this.sub && this.sub !== 'numbers' && shapes.length > 1 && shapes.every((s) => s.parent === shape.parent)) {
       const what = gi.groups ? `${gi.units} Teile` : `${shapes.length} Formen`;
       if (this.sub === 'align') {
         this.context.append(el('span', 'ze-label', `${what} ausrichten`));
@@ -1016,7 +1093,7 @@ export class EditorUi {
         button('Fertig', 'Zurück zur Leiste der Formen', () => {
           this.sub = null;
           this.contextKey = '-';
-          this.setContext(planes, shapes, isolate, path, canPaste, group, null, false, units);
+          this.setContext(planes, shapes, isolate, path, canPaste, extra);
         }),
       );
     } else if (shape) {
@@ -1033,10 +1110,10 @@ export class EditorUi {
         button(FLIP_X, 'Waagrecht spiegeln (Shift+H)', () => this.a.flip('x')),
         button(FLIP_Y, 'Senkrecht spiegeln (Shift+V)', () => this.a.flip('y')),
       );
-      const open = (sub: 'align' | 'combine') => () => {
+      const open = (sub: 'align' | 'combine' | 'numbers') => () => {
         this.sub = sub;
         this.contextKey = '-';
-        this.setContext(planes, shapes, isolate, path, canPaste, group, null, false, units);
+        this.setContext(planes, shapes, isolate, path, canPaste, extra);
       };
       const onePlane = shapes.every((s) => s.parent === shape.parent);
       if (many && onePlane) {
@@ -1044,6 +1121,7 @@ export class EditorUi {
         this.context.append(button('Verbinden', 'Vereinen, abziehen, Schnittmenge, Überlappung ausschließen (eine Gruppe zählt als eine Form)', open('combine')));
       }
       this.context.append(button('Vereinfachen', 'Weniger Anker, höchstens 1,5 Bildpunkte daneben', () => this.a.simplify()));
+      if (nums) this.context.append(button('Zahlen', 'Lage, Größe und Drehung als Zahlen', open('numbers')));
       if (gi.units > 1 && onePlane) this.context.append(button('Gruppieren', 'Zu einer Gruppe (Cmd+G): Tippen wählt sie ganz, doppelt tippen geht hinein', () => this.a.shapeGroup()));
       if (gi.groups) this.context.append(button('Auflösen', 'Gruppe auflösen, die Formen bleiben (Shift+Cmd+G)', () => this.a.shapeUngroup()));
       if (gi.units === 1) this.context.append(button(FORWARD, 'In der Ebene nach vorn (])', () => this.a.orderShape(1)), button(BACKWARD, 'In der Ebene nach hinten ([)', () => this.a.orderShape(-1)));
@@ -1064,7 +1142,7 @@ export class EditorUi {
           this.sub = null;
           if (sketchEdit) this.a.sketchAdjust();
           this.contextKey = '-';
-          this.setContext(planes, shapes, isolate, path, canPaste, group, sketch, false);
+          this.setContext(planes, shapes, isolate, path, canPaste, { ...extra, sketchEdit: false });
         }),
       );
     } else if (plane) {
@@ -1087,7 +1165,7 @@ export class EditorUi {
             }
             this.sub = 'sketch';
             this.contextKey = '-';
-            this.setContext(planes, shapes, isolate, path, canPaste, group, sketch, sketchEdit);
+            this.setContext(planes, shapes, isolate, path, canPaste, extra);
           }),
         );
       this.context.append(
