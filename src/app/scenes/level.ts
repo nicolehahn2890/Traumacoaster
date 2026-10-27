@@ -48,6 +48,7 @@ import { groundHoles, openRooms, roomAt, type Room } from '@/zone/underground';
 import type { LookName } from '@/world/looks';
 import { applyZoneExtras, stationPath, zoneCoins } from '@/zone/build';
 import { ZoneEditor } from '@/app/zoneEditor';
+import { PlaneEditor } from '@/zoneeditor/planeEditor';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
 import { hexNum, shade } from '@/render/paint';
 import { StartScene } from './start';
@@ -169,6 +170,8 @@ const PERSP_OFF = typeof location !== 'undefined' && new URLSearchParams(locatio
 const FOV_URL = urlNum('fov', 18);
 /** ?editor=1: Klötzchen-Editor der Zone (nur mit ?zone=, am Mac) */
 const EDITOR_URL = typeof location !== 'undefined' && new URLSearchParams(location.search).get('editor') === '1';
+/** ?editor=2: Zonen-Editor mit Ebenen und Formen (docs/ZONENEDITOR-PLAN.md, Stufe 1; nur mit ?zone=) */
+const EDITOR2_URL = typeof location !== 'undefined' && new URLSearchParams(location.search).get('editor') === '2';
 /** ?scroll=0: kein Autoscroll beim Zeichnen (automatische Tests zeichnen in festen Bildschirmkoordinaten) */
 const AUTOSCROLL = typeof location === 'undefined' || new URLSearchParams(location.search).get('scroll') !== '0';
 /** Zeichen-Zoom auf dem Handy: mindestens so viele Pixel pro Bühnen-Meter (eine Spur rund 5 mm); der Rest des Levels
@@ -385,6 +388,8 @@ export class LevelScene implements Scene {
   private uiButtons: Button[] = [];
   /** Klötzchen-Editor der Zone (?zone=…&editor=1) */
   private zoneEditor: ZoneEditor | null = null;
+  /** Zonen-Editor mit Ebenen und Formen (?zone=…&editor=2) */
+  private planeEditor: PlaneEditor | null = null;
   /** Kamerawinkel-Test: Regler für Neigung und Bildwinkel (nur Weltrenderer) */
   private cameraPanel: CameraTiltPanel | null = null;
   /** Tiefe (Meter), die der Pinsel „Spur halten“ im laufenden Strich hält (NaN: Spur unter dem Anfang) */
@@ -483,6 +488,11 @@ export class LevelScene implements Scene {
           game.world.setLevelGroundVisible(false);
           preferSliceBrush();
         }
+        // Ebenen und Formen des Zonen-Editors (Stufe 1): ein Mesh; wo es Ebenen gibt, gibt es keinen flachen Boden mehr
+        if (zone.nodes?.length) {
+          game.world.planes.build(zone.nodes);
+          game.world.setLevelGroundVisible(false);
+        }
         this.level.coins = zoneCoins(zone);
         this.refreshRock();
         if (EDITOR_URL) {
@@ -504,7 +514,7 @@ export class LevelScene implements Scene {
             zone,
           );
           this.ui.addChild(this.zoneEditor.hud);
-        } else {
+        } else if (!EDITOR2_URL) {
           // ohne Editor (Handy): ?field=<Kennung> wählt ein Feld der Zone, sonst das erste
           const want = new URLSearchParams(location.search).get('field');
           this.setActiveField(zone.fields.find((f) => f.id === want) ?? zone.fields[0] ?? null);
@@ -519,6 +529,27 @@ export class LevelScene implements Scene {
     this.laneHud.addChild(this.laneHudG);
     this.hud.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.chainLabel, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn);
     this.ui.addChild(this.hud, this.laneHud, this.toast);
+    const zone = this.sandbox?.zone;
+    if (game.world && EDITOR2_URL && zone) {
+      this.planeEditor = new PlaneEditor(
+        {
+          world: game.world,
+          view: this.view,
+          cameraPanel: this.cameraPanel,
+          surface: document.getElementById('app') ?? game.app.canvas,
+          setGameUi: (on) => {
+            this.hud.visible = on;
+            this.laneHud.visible = on;
+            this.lengthPill.visible = on;
+            if (!on) this.lengthSlider.visible = false;
+            this.view.overlay.visible = on;
+            this.cameraPanel?.setVisible(on);
+          },
+        },
+        zone,
+      );
+      this.planeEditor.resize(game.width, game.height);
+    }
     this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, ...this.laneBtns.map((l) => l.btn), ...(this.zoneEditor?.buttons ?? [])];
     this.speedBtn.visible = false;
     this.buildLanePanel();
@@ -560,6 +591,9 @@ export class LevelScene implements Scene {
     setPerspective(false);
     this.cameraPanel?.destroy();
     this.cameraPanel = null;
+    this.planeEditor?.destroy();
+    this.planeEditor = null;
+    this.game.world?.planes.clear();
     this.slices = null;
     this.game.world?.setLevelGroundVisible(true);
     setCameraTilt(DEFAULT_CAMERA_TILT);
@@ -825,7 +859,8 @@ export class LevelScene implements Scene {
 
   /** Kamera im Level halten: im aktiven Feld weich, sonst die harten Grenzen des Levels */
   private clampCamera(): void {
-    if (this.activeField) return;
+    // im Zonen-Editor (Bauen) frei schwenken, auch zu fernen Ebenen
+    if (this.activeField || this.planeEditor?.building) return;
     this.view.camera.clampTo({ minX: -40, maxX: this.level.width + 40, minY: -30, maxY: 160 });
   }
 
@@ -1492,7 +1527,8 @@ export class LevelScene implements Scene {
 
   /** Länge der Bahn (beim Zeichnen die der Vorschau) und Budget; neu gezeichnet nur, wenn sich etwas ändert */
   private refreshLengthUI(force = false): void {
-    const show = this.mode === 'draw';
+    // beim Bauen im Zonen-Editor gibt es keine Bahn, also keine Länge
+    const show = this.mode === 'draw' && !this.planeEditor?.building;
     this.lengthPill.visible = show;
     if (!show) this.lengthSlider.visible = false;
     if (!this.stroke) this.liveLength = this.samples?.length ?? 0;
@@ -3754,6 +3790,7 @@ export class LevelScene implements Scene {
     this.shelf.position.set(w - R - 10, h - B - 120);
     this.placeHint();
     this.zoneEditor?.resize(w, h);
+    this.planeEditor?.resize(w, h);
     this.speedText.position.set(w / 2, h - B - (portrait ? 120 : 108));
     this.toast.position.set(w / 2, h * 0.42);
     this.resultPanel?.position.set(w / 2, h / 2);
@@ -3823,6 +3860,7 @@ export class LevelScene implements Scene {
     this.view.update(dt);
     this.game.world?.setCamera(this.view.cameraView());
     this.zoneEditor?.update();
+    this.planeEditor?.update();
     if (this.view.viewMoved) this.drawFieldTape();
     // Perspektive: Griffe, Ende-Marker, Spur-Schein und Schwachstellen liegen in der Ansicht und wandern mit der Kamera
     if (this.view.viewMoved && this.mode === 'draw') {

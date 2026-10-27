@@ -33,6 +33,8 @@ import type { TrackType } from './trackTypes';
 import { WorldTrain, type RailFrame } from './train';
 import { TerrainFoundation, type Foundation } from './foundations';
 import { buildWorldSupports, disposeSupports, planWorldSupports, type SupportStats } from './supports';
+import { PlaneLayer } from './planeMesh';
+import type { Camera } from 'three';
 
 export interface WorldRendererOptions {
   /** Kantenglättung des Kontexts (gilt für Three und Pixi); ?aa=0 schaltet sie zum Messen ab */
@@ -91,11 +93,18 @@ export class WorldRenderer {
   private fieldFoundation: Foundation | null = null;
   /** Zählung der letzten Stützenplanung (Dev-Anzeige, Replay) */
   supportStats: SupportStats | null = null;
+  /** Ebenen und Formen des Zonen-Editors (docs/ZONENEDITOR-PLAN.md, Stufe 1) */
+  readonly planes = new PlaneLayer();
+  /**
+   * Ansicht des Zonen-Editors (Frontal, Frei): statt der Spielkamera zeichnet diese Kamera; null ist der Spielblick.
+   * Spielkamera, Bühne und Pinsel bleiben davon unberührt.
+   */
+  viewCamera: Camera | null = null;
 
   constructor(opts: WorldRendererOptions = {}) {
     this.canvas = document.createElement('canvas');
     this.zoneGroup.name = 'zone';
-    this.scene.add(this.train.group, this.zoneGroup);
+    this.scene.add(this.train.group, this.zoneGroup, this.planes.group);
     this.three = new WebGLRenderer({ canvas: this.canvas, antialias: opts.antialias ?? true, stencil: true, alpha: false, powerPreference: 'high-performance' });
     this.three.outputColorSpace = SRGBColorSpace;
     // Pixi hat den Himmel schon gemalt: Three löscht nur Tiefe und Stencil. Die Löschfarbe bleibt transparent schwarz,
@@ -163,7 +172,7 @@ export class WorldRenderer {
   render(): void {
     this.tickEffects();
     this.three.resetState();
-    this.three.render(this.scene, this.camera.active);
+    this.three.render(this.scene, this.viewCamera ?? this.camera.active);
   }
 
   /** Splitter weiterbewegen (Schwerkraft, 1,2 s), dann entfernen */

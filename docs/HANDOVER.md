@@ -13,7 +13,11 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   beantwortet; die Oberfläche so minimalistisch und ruhig wie möglich). Branch `zoneneditor` (Worktree
   `.claude/worktrees/zoneneditor`) aus Etappe 2 (`b30bb71`, Ebenen-Probe gesichert) plus `test-kamerawinkel`; Stufe 0
   gebaut: 300 Tests grün, Replay wie die Kamerasession, HTTPS im WLAN für das iPad (`scripts/https-cert.sh`,
-  `npm run dev:https`, `TECH.md` 12). Beide Branches sind nur lokal. Nächster Schritt: Stufe 1 (Gerüst, Ebenen, Kamera).
+  `npm run dev:https`, `TECH.md` 12). Beide Branches sind nur lokal.
+  **Stufe 1 gebaut (27.10.):** `?zone=<name>&editor=2` öffnet den Zonen-Editor mit Ebenen, Abständen („Bild halten“),
+  Ansichten, Grundformen, Isolieren, Rückgängig, Sichern und Stift- und Fingereingabe (`TECH.md` 4i); 316 Tests, Build,
+  Replay und Szenario 11 grün. Nächster Schritt: Tor S1 (Florian am Mac und am iPad, Handy-Messung mit 30 Ebenen), dann
+  Stufe 2 (Formen).
 
 - **25.10., Etappe 2 begonnen** (Branch `etappe-2-bahn-und-welt` von `main`; die zwölf Arbeitsschritte mit drei Toren stehen in
   `docs/GROSSER-PLAN.md`, Paket 10, von Florian bestätigt). Technik in `docs/TECH.md` 4h.
@@ -268,11 +272,11 @@ Eigene automatische Tests im Dev-Server mit `TC_NO_RECORD=1`, damit sie die echt
 
 ## 3. Nächster Schritt: Stufe 1 des Zonen-Editors
 
-**Seit 27.10.2026 gilt:** Etappe 2 ruht; der nächste Schritt ist Stufe 1 des Zonen-Editors nach
-`docs/ZONENEDITOR-PLAN.md`, Abschnitt 6 (Editor-Seite mit dem Spielrenderer, Ebenen mit Abstandspillen und „Bild
-halten“, Kamera-Panel und Ansichten, Grundformen, Rückgängig, Sichern; Tor S1 am Mac und am iPad). Vorher prüft Florian
-den HTTPS-Zugang auf dem iPad (Profil aus `/__tc-ca.pem` installieren und voll vertrauen). Der Text unten beschreibt den
-Stand vor der Pause und gilt wieder, wenn der große Plan weiterläuft.
+**Seit 27.10.2026 gilt:** Etappe 2 ruht; gebaut wird der Zonen-Editor nach `docs/ZONENEDITOR-PLAN.md`, Abschnitt 6, auf
+dem Branch `zoneneditor`. Stufe 1 ist gebaut und wartet auf Tor S1 (Florian baut am Mac und am iPad acht Ebenen mit
+Grundformen, stellt Abstände ein, navigiert, sichert; das Handy zeigt die Zone; Messung mit der Probe aus 30 Ebenen).
+Für das iPad den HTTPS-Zugang nutzen (Profil aus `/__tc-ca.pem` installieren und voll vertrauen, `TECH.md` 12). Danach
+Stufe 2 (Formen). Der Text unten beschreibt den Stand vor der Pause und gilt wieder, wenn der große Plan weiterläuft.
 
 ### Vor der Pause: Etappe 2 des großen Plans
 

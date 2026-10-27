@@ -560,6 +560,64 @@ if (want('10')) {
   await page.screenshot({ path: 'screenshots/scenario-10-zone.png' });
 }
 
+// 11. Zonen-Editor, Stufe 1 (docs/ZONENEDITOR-PLAN.md): Probe-Stapel als Ebenen, ein Mesh, Abstand mit „Bild halten“,
+// Rechteck aufziehen, rückgängig, Ansichten; ohne Sichern (die Vorschau hat keinen Dev-Server)
+if (want('11')) {
+  await page.goto(`${BASE}?zone=editor-szenario&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const count = () => page.evaluate(() => {
+    const z = window.tcGame.current.sandbox.zone;
+    return { planes: (z.nodes ?? []).filter((n) => n.kind === 'plane').length, shapes: (z.nodes ?? []).filter((n) => n.kind === 'shape').length };
+  });
+  check(await page.locator('.ze-root').count() === 1 && (await count()).planes === 0, 'Editor-Oberfläche steht, die neue Zone hat keine Ebenen');
+  await page.click('text=Probe: Scheiben-Stapel');
+  await sleep(1200);
+  const probe = await page.evaluate(() => ({ stats: window.tcGame.world.planes.stats, ground: window.tcGame.world.groundHidden, draw: window.tcGame.dev?.drawCalls ?? 0 }));
+  const c1 = await count();
+  check(c1.planes >= 30 && probe.stats.planes === c1.planes && probe.stats.shapes === c1.shapes, `Scheiben-Stapel als ${c1.planes} Ebenen mit ${c1.shapes} Formen in einem Mesh (${probe.stats.triangles} Dreiecke)`);
+  check(probe.ground && probe.draw > 0 && probe.draw < 150, `kein flacher Boden mehr, Zeichenaufrufe im Budget (${probe.draw})`);
+  // Abstandspille der vordersten Ebene nach unten ziehen: alles dahinter rückt nach hinten, das Bild bleibt
+  const probePoints = () => page.evaluate(() => {
+    const ed = window.tcGame.current.planeEditor;
+    const planes = ed.nodes.filter((n) => n.kind === 'plane').sort((a, b) => a.z - b.z);
+    return planes.slice(1).map((p) => ({ z: p.z, s: ed.views.toScreen(p.x + p.scale * 150, p.y + p.scale * 8, -p.z) }));
+  });
+  const before = await probePoints();
+  const pill = await page.locator('.ze-pill').first().boundingBox();
+  await page.mouse.move(pill.x + pill.width / 2, pill.y + pill.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(pill.x + pill.width / 2, pill.y + pill.height / 2 + 30, { steps: 4 });
+  await page.mouse.move(pill.x + pill.width / 2, pill.y + pill.height / 2 + 60, { steps: 4 });
+  await page.mouse.up();
+  await sleep(200);
+  const after = await probePoints();
+  const shift = after[0].z - before[0].z;
+  const dev = Math.max(...after.map((a, i) => Math.hypot(a.s.x - before[i].s.x, a.s.y - before[i].s.y)));
+  check(shift > 0.5 && Math.abs(after.at(-1).z - before.at(-1).z - shift) < 1e-6, `Abstand gezogen: alle Ebenen dahinter ${shift.toFixed(2)} m nach hinten, gleiche Abstände`);
+  check(dev < 0.01, `„Bild halten“: kein Punkt wandert im Spielblick (größte Abweichung ${dev.toFixed(4)} px)`);
+  // Rechteck aufziehen, dann rückgängig
+  await page.keyboard.press('m');
+  await page.mouse.move(300, 200);
+  await page.mouse.down();
+  await page.mouse.move(380, 260, { steps: 5 });
+  await page.mouse.up();
+  await sleep(150);
+  const c2 = await count();
+  await page.keyboard.press('Meta+z');
+  await sleep(150);
+  const c3 = await count();
+  check(c2.shapes === c1.shapes + 1 && c3.shapes === c1.shapes, `Rechteck aufgezogen (${c2.shapes} Formen) und rückgängig (${c3.shapes})`);
+  await page.keyboard.press('v');
+  await page.screenshot({ path: 'screenshots/scenario-11-zoneneditor.png' });
+  await page.click('text=Seite');
+  await sleep(300);
+  await page.screenshot({ path: 'screenshots/scenario-11-zoneneditor-seite.png' });
+  const view = await page.evaluate(() => window.tcGame.world.viewCamera?.type ?? null);
+  await page.click('text=Spielblick');
+  await sleep(200);
+  check(view === 'PerspectiveCamera' && (await page.evaluate(() => window.tcGame.world.viewCamera)) === null, `Seitenansicht mit eigener Kamera (${view}), zurück im Spielblick`);
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));

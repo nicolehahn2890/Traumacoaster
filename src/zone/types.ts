@@ -13,6 +13,7 @@ import { COIN_SHAPES, type ZoneCoinGroup } from './groups';
 import { ZONE_ABILITIES, type FieldAbilityOverrides, type ZoneAbility, type ZoneUpgrade } from './abilities';
 import { LOOK_NAMES, type LookName } from '@/world/looks';
 import { cleanPath, pathBounds, presetPath, type ZonePath } from './path';
+import { parseNodes, serializeNodes, type ZoneNode } from './nodes';
 export type { PathPoint, ZonePath } from './path';
 export type { FieldAbilityOverrides, ZoneAbility, ZoneUpgrade } from './abilities';
 
@@ -182,6 +183,8 @@ export interface ZoneFile {
   queues: ZoneQueue[];
   sites: ZoneSite[];
   coinGroups: ZoneCoinGroup[];
+  /** Ebenen und Formen des Zonen-Editors (docs/ZONENEDITOR-PLAN.md, Stufe 1; src/zone/nodes.ts); ohne Angabe keine */
+  nodes?: ZoneNode[];
 }
 
 export interface KindDefaults {
@@ -447,7 +450,8 @@ export function parseZone(json: unknown): ZoneFile | null {
     return site;
   });
   const coinGroups = list<ZoneCoinGroup>('coinGroups', (r) => (num(r.x) && num(r.y) && num(r.z) ? { id: r.id as string, shape: (COIN_SHAPES as readonly string[]).includes(String(r.shape)) ? (r.shape as ZoneCoinGroup['shape']) : 'row', x: r.x, y: r.y, z: r.z, count: num(r.count) ? Math.max(1, Math.min(40, Math.round(r.count))) : 5, spacing: num(r.spacing) ? Math.max(0.5, r.spacing) : 2 } : null));
-  return { version: 1, name: o.name, width, trackType, ...(upgrades ? { upgrades } : {}), ...(looks.length ? { looks } : {}), elements, fields, stations, queues, sites, coinGroups };
+  const nodes = parseNodes(o.nodes);
+  return { version: 1, name: o.name, width, trackType, ...(upgrades ? { upgrades } : {}), ...(looks.length ? { looks } : {}), elements, fields, stations, queues, sites, coinGroups, ...(nodes.length ? { nodes } : {}) };
 }
 
 /** Datei deterministisch schreiben: feste Feldreihenfolge, Elemente nach Kennung sortiert, zwei Nachkommastellen */
@@ -528,5 +532,5 @@ export function serializeZone(zone: ZoneFile): string {
     return out;
   });
   const coinGroups = byId(zone.coinGroups).map((c) => ({ id: c.id, shape: c.shape, x: round(c.x), y: round(c.y), z: round(c.z), count: c.count, spacing: round(c.spacing) }));
-  return JSON.stringify({ version: 1, name: zone.name, width: round(zone.width), trackType: zone.trackType, ...(upgrades ? { upgrades } : {}), ...(zone.looks?.length ? { looks: [...zone.looks] } : {}), elements, fields, stations, queues, sites, coinGroups }, null, 2) + '\n';
+  return JSON.stringify({ version: 1, name: zone.name, width: round(zone.width), trackType: zone.trackType, ...(upgrades ? { upgrades } : {}), ...(zone.looks?.length ? { looks: [...zone.looks] } : {}), elements, fields, stations, queues, sites, coinGroups, ...(zone.nodes?.length ? { nodes: serializeNodes(zone.nodes) } : {}) }, null, 2) + '\n';
 }

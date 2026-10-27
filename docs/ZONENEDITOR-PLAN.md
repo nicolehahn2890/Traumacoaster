@@ -1,8 +1,8 @@
 # Trauma Coaster – Plan für den Zonen-Editor
 
 Stand 27.10.2026. **Startfragen A1 bis A7 von Florian am 27.10.2026 beantwortet (alle wie empfohlen, Abschnitt 9);
-Stufe 0 gebaut (Abschnitt 6), als Nächstes Stufe 1.** Gebaut wird Stufe für Stufe mit Tor, auf dem Branch
-`zoneneditor`. Der große Plan (`docs/GROSSER-PLAN.md`)
+Stufe 0 und Stufe 1 gebaut (Abschnitt 6), Tor S1 wartet auf Florians Test am Mac und am iPad.** Gebaut wird Stufe für
+Stufe mit Tor, auf dem Branch `zoneneditor`. Der große Plan (`docs/GROSSER-PLAN.md`)
 ruht seit heute auf Florians Wunsch; Etappe 2 steht nach Schritt 7, dem Freiraumfeld und der Freigabe der Ebenen-Probe,
 Tor 2b ist offen. Die Session von Etappe 2 hat die Pause per Nachricht bekommen (27.10.2026).
 
@@ -795,6 +795,23 @@ halten“; Kamera-Panel und Ansichten; Isolieren; Grundformen mit Auswahlwerkzeu
 Rückgängig, Wiederholen, Sichern über den Dev-Server, Autosicherung; Pencil zeichnet, Finger bewegen. Platzhalter:
 Aussehen der Oberfläche, Farben der Grundformen. **Tor S1:** Florian legt am Mac und am iPad acht Ebenen mit
 Grundformen an, stellt Abstände ein, navigiert und speichert; das Handy zeigt die Zone; 60 fps am Handy mit 30 Ebenen.
+**Stand 27.10.2026: gebaut, wartet auf Tor S1** (Technik in `docs/TECH.md` 4i). Aufruf `?zone=<name>&editor=2`; der
+Editor hängt sich wie der Klötzchen-Editor in die Level-Szene (statt einer eigenen Seite `editor.html`), so nutzt er
+Weltrenderer, Spielkamera und später Pinsel und Fahrt ohne zweite Kopie. Gebaut: Ebenen in `zone.nodes` der
+Zonendatei; Ebenenliste mit Vorschau, Umbenennen per Doppeltippen, Ein- und Ausblenden, Sperren, Rolle, Löschen;
+Abstandspillen (ziehen oder Zahl tippen, alles dahinter rückt mit), Tiefenleiste (eine Ebene allein schieben), „Bild
+halten“ und „Welt halten“; Ansichten Spielblick, Frontal, Frei, Seite; Neigung und Bildwinkel als Regler im Feld
+„Kamera“ (dieselben Werte wie das Kamera-Panel der Kamerasession); Isolieren (alle, davor aus, nur diese); Rechteck und
+Ellipse aufziehen oder antippen, Auswahl mit Rahmen und acht Griffen (verschieben, breiter, höher, mit Umschalt
+gleichmäßig), Duplizieren, Reihenfolge, Löschen, Platzhalter-Farben; Rückgängig und Wiederholen (Cmd+Z, zwei und drei
+Finger), Sichern (Cmd+S), Sicherungskopie im Browser mit Wiederherstellen, Neuladen bei Änderungen von außen; Stift und
+Finger wie geplant; Messzeile (Ebenen, Formen, Dreiecke, Draw Calls der Welt, fps); im Spiel ohne Editor dieselben
+Ebenen und kein flacher Boden. Geprüft: 316 Tests grün (16 neue), Build grün, Replay unverändert (174 von 475, 13.525
+Stützen, 2,1 px), Szenario 11 mit 7 Prüfungen grün (32 Ebenen mit 36 Formen und 4.632 Dreiecken in einem Mesh, 28
+Draw Calls gesamt, „Bild halten“ mit 0,0000 px Abweichung), im Browser Verschieben, Ecke ziehen (Gegenecke bleibt auf
+0 px), Rückgängig, Sichern und Spielansicht. **Platzhalter:** Aussehen der Oberfläche, Füllfarben, die Probe-Formen.
+**Noch nicht:** Zeichenstift und Punktbearbeitung (Stufe 2), die Bahn kennt die Ebenen nicht (Stufe 4, im Modus
+„Spielen“ zeichnet sie wie bisher), keine Messung auf echtem iPad und Handy.
 
 **Stufe 2: Formen (L).** Zeichenstift, Direktauswahl, Formpinsel, Messer, Vektornetz mit Flächen, Löcher, Boolesche
 Operationen, Vereinfachen, Einrasten (auch im Bild), Gruppen, Kopieren und Einfügen über Ebenen hinweg, Drehen,

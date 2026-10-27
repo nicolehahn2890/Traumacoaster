@@ -236,14 +236,16 @@ export class CameraTiltPanel {
     writeStored({ tilt: this.tiltDeg, fov: this.fov, brush: brushMode, v: 2 });
   }
 
-  private setTilt(deg: number): void {
+  /** Neigung in Grad setzen (auch vom Zonen-Editor, der eigene Regler zeigt) */
+  setTilt(deg: number): void {
     this.tiltDeg = clamp(deg, TILT_MIN, TILT_MAX);
     setCameraTilt(this.tiltDeg * DEG);
     this.store();
     this.refresh();
   }
 
-  private setFov(fov: number): void {
+  /** Bildwinkel in Grad setzen (nur mit Perspektive wirksam) */
+  setFov(fov: number): void {
     this.fov = clamp(fov, FOV_MIN, FOV_MAX);
     if (this.persp) setPerspective(true, this.fov);
     this.store();
@@ -287,6 +289,11 @@ export class CameraTiltPanel {
       `Boden vorne→hinten im Bild ${fmt(span, 0)} px (Neigung ${fmt(fromTilt, 0)} px, Rest Perspektive)` +
       (this.persp ? ` · hinterste Spur ${fmt(back, 0)} % kleiner` : ' · Bühne ohne Perspektive') +
       `<br>Boden am unteren Rand unter ${fmt(edge, 0)}° gesehen · Höhen +${fmt(stretch, 0)} % gestreckt`;
+  }
+
+  /** zeigen oder verbergen (der Zonen-Editor zeigt beim Bauen eigene Regler) */
+  setVisible(on: boolean): void {
+    this.root.style.display = on ? '' : 'none';
   }
 
   destroy(): void {

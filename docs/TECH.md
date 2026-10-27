@@ -576,6 +576,40 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   0,06 Spuren je Meter. Tests in
   `tests/field.test.ts`, `tests/rock.test.ts` (Pinsel im Freiraumfeld), `tests/underground.test.ts`.
 
+## 4i. Zonen-Editor, Stufe 1 (`?zone=<name>&editor=2`, Branch `zoneneditor`)
+
+Plan: `docs/ZONENEDITOR-PLAN.md`. Der Editor hängt sich wie der Klötzchen-Editor in die Level-Szene einer Zone und nutzt
+deren Weltrenderer und Spielkamera; seine Oberfläche ist HTML über dem Spielbild (`src/zoneeditor/ui.ts`).
+
+- **Daten** (`src/zone/nodes.ts`): Knoten in `zone.nodes` der Zonendatei (Version bleibt 1, das Feld ist optional).
+  Ebene: Tiefe `z` in Metern (hinten positiv, Welt-Z = −z), Lage `x`, `y` und Maßstab `scale` ihres Inhalts, Rolle,
+  ausgeblendet, gesperrt. Form: Elternebene, Zeichenreihenfolge `order`, Lage `x`, `y`, Maßstab `sx`, `sy`, Pfad aus Ankern
+  mit Griffen (wie `path.ts`), Löcher, Vollton `fill` (Platzhalter bis Stufe 3). Welt = Ebene.(x, y) + Ebene.scale ·
+  (Form.(x, y) + Form.(sx, sy) · Pfad).
+- **Abstände** (`setGapBehind`, `movePlaneDepth`, `holdPicture`): Der Griff zwischen zwei Ebenen schiebt alles dahinter
+  mit. „Bild halten“ streckt jede verschobene Ebene um den Fußpunkt der Spielkamera (cx, cy + D·sin Neigung) mit
+  t = (D·cos + z1) / (D·cos + z0); ohne Perspektive nur die Anhebung Δz·tan Neigung. Test: kein Punkt wandert im
+  Spielblick (`tests/nodes.test.ts`, Szenario 11).
+- **Zeichnen** (`src/world/planeMesh.ts`, `WorldRenderer.planes`): alle sichtbaren Formen aller Ebenen als ein Mesh mit
+  Eckfarben, unbeleuchtet, mit dem Nebel der Welt; Formen einer Ebene je 3 mm vor der Ebene in Zeichenreihenfolge. Die
+  Triangulierung (earcut über Three) wird je Pfad-Objekt und Feinheit zwischengespeichert; Verschieben und Tiefe ändern
+  rechnen nur die Ecken neu. Treffer über den Raycaster mit Dreieck → Form. Wo eine Zone Ebenen hat, ist der flache Boden
+  aus (`setLevelGroundVisible(false)`), auch im Spiel ohne Editor.
+- **Ansichten** (`src/zoneeditor/views.ts`): Spielblick ist die Spielkamera; Frontal (Ortho, gerade auf die Ebenen,
+  übernimmt Lage und Größe der aktiven Ebene), Frei (Umkreisen) und Seite (Frei schräg von der Seite) zeichnen über
+  `WorldRenderer.viewCamera` und lassen Spielkamera, Bühne und Pinsel unberührt.
+- **Eingabe** (`src/zoneeditor/planeEditor.ts`): Beim Bauen fängt der Editor die Zeiger von `#app` in der Capture-Phase
+  ab (das Spiel sieht sie nicht) und alle Tasten am Fenster. Stift und Maus führen die Werkzeuge; zwei Finger schwenken
+  und zoomen; ein einzelner Finger wird ignoriert, sobald ein Stift im Spiel war; zwei Finger tippen = rückgängig, drei =
+  wiederholen. Tab oder „Spielen“ gibt alles an das Level zurück (die Bahn kennt die Ebenen erst ab Stufe 4).
+- **Verlauf und Sichern** (`src/zoneeditor/history.ts`): Schnappschüsse je Geste; Sichern über den Dev-Server
+  (`saveZone`), Sicherungskopie im `localStorage` (`tc.zoneeditor.<zone>`), beim Start als „Wiederherstellen“ angeboten;
+  ändert sich die Datei außen und gibt es nichts Ungesichertes, lädt der Editor neu.
+- **Probe:** „Probe: Scheiben-Stapel“ fügt die 32 Scheiben der Kamerasession als Ebenen ein (`slicesToNodes`), Last für
+  die Handy-Messung: 32 Ebenen, 36 Formen, rund 4.600 Dreiecke, ein Draw Call für die Ebenen.
+- **Prüfungen:** `tests/nodes.test.ts`, `tests/planeMesh.test.ts`, Szenario 11 (`node scripts/scenario.mjs 11`, mit
+  `TC_URL` gegen den eigenen Server).
+
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).
 - g-Kräfte: f = v²·κ⃗ (Mindestradius 2,5 m; κ⃗ aus `sampleTrack` über ±1,2 m gemittelt, ein Wagen spürt keine kürzeren Spitzen) + a_tan·T + g·ŷ, wobei a_tan die echte Tangentialbeschleunigung des Zugs ist (Hangabtrieb minus Reibung, Kettenzug hält das Tempo, Launch, Booster, Bremse); zerlegt im Wagen-Rahmen (T, U, S) mit Schräglage. So drückt die Kette die Fahrgäste in die Lehne, der Launch in den Sitz, die Bremse nach vorn. Entgleisen bei seitlichem g über dem Limit des Schienentyps (`SKIN_PHYSICS`: Holz 2,0, Hybrid 2,4, Mine 2,2, Stahl 3,0, Gold 3,0, Neon 3,2, Eis 2,6, Geister 2,3, Lava 3,0, Space 3,5), Herausfallen bei kopfüber mit g_v < −0,15 über 0,12 s, Blackout über 7 g (nur ein Merker, kostet den dritten Stern). Entgleisen und Herausfallen übergeben den Zug in den Freiflug (unten), Rückroller und Wasser lassen ihn auf der Schiene ausrollen.
