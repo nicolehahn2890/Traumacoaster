@@ -278,7 +278,15 @@ export class WorldRenderer {
     const groundTex = groundBandsTexture(world.palette.ground[0], 'rgba(255,245,170,0.55)', world.id);
     const earth = strataTexture(mix('#7a5540', world.palette.ground[1], 0.3), world.id + 100);
     this.level = buildGround(terrain, groundTex, earth, this.holes);
+    this.level.group.visible = !this.groundHidden;
     this.scene.add(this.level.group);
+  }
+
+  /** Ebenen-Test (Kamerawinkel-Branch): Boden und Erdschnitt ausblenden, die Zone „scheiben“ bringt ihre eigenen Flächen */
+  groundHidden = false;
+  setLevelGroundVisible(on: boolean): void {
+    this.groundHidden = !on;
+    if (this.level) this.level.group.visible = on;
   }
 
   /** Löcher im Boden und Fenster im Erdschnitt der offenen Räume setzen (Schritt 7); baut den Boden neu, wenn sie sich ändern */

@@ -37,7 +37,7 @@ import { MeasureOverlay } from '@/render/measureOverlay';
 import { safeArea } from '@/platform/safeArea';
 import { applyOverdraw, nearestOnTrack } from '@/track/overdraw';
 import { cutIndexNear, retractIndex } from '@/track/strokeBuffer';
-import { laneRise, laneScale, nearestLane, rayToWorld, setPerspective, tagRay, toStage, toView, viewState, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
+import { DEFAULT_CAMERA_TILT, laneRise, laneScale, nearestLane, rayToWorld, setCameraTilt, setPerspective, tagRay, toStage, toView, viewState, type StagePoint, LANE_MIN, LANE_MAX, LANE_DEPTH, LANE_RISE } from '@/track/stage';
 import { WorldView } from '@/render/worldView';
 import { HANG_DROP, trackTypeForSkin, type TrackType } from '@/world/trackTypes';
 import type { ZoneElement, ZoneField, ZoneFile, ZoneSite, ZoneStation } from '@/zone/types';
@@ -54,6 +54,11 @@ import { StartScene } from './start';
 import { MyTracksScene } from './myTracks';
 import { captureLevel, type LevelLayers } from '../mapTransition';
 import type { SkyState } from '@/render/sky';
+import { brushHoldsLane, brushUsesSliceGround, brushUsesSlices, CameraTiltPanel, initialFov, initialTiltDeg, preferSliceBrush } from '@/ui/cameraTiltPanel';
+import { buildSliceStack, deepestDock, groundDepth, landingAt, type SliceStack } from '@/zone/slices';
+import { buildSliceElement } from '@/world/sliceMesh';
+/** Ebenen-Test: Bezugskamera der Fahrphysik (m), etwa die Kamera bei 10 px/m und 30° Bildwinkel im Querformat */
+const SLICE_PHYSICS_D = 70;
 
 export interface SandboxConfig {
   world: number;
@@ -380,6 +385,12 @@ export class LevelScene implements Scene {
   private uiButtons: Button[] = [];
   /** Klötzchen-Editor der Zone (?zone=…&editor=1) */
   private zoneEditor: ZoneEditor | null = null;
+  /** Kamerawinkel-Test: Regler für Neigung und Bildwinkel (nur Weltrenderer) */
+  private cameraPanel: CameraTiltPanel | null = null;
+  /** Tiefe (Meter), die der Pinsel „Spur halten“ im laufenden Strich hält (NaN: Spur unter dem Anfang) */
+  private brushHoldZ = NaN;
+  /** Ebenen-Test: Scheibenstapel der Zone „scheiben“ */
+  private slices: SliceStack | null = null;
   /** aktives Feld der Zone: Kamera bleibt darin (weich), Zoom höchstens „Feld passt ins Bild“, Absperrband an den Rändern */
   private activeField: ZoneField | null = null;
   /** Schalter, Gurt, Kettenzugstärke und Grenzen des aktiven Felds (Etappe 2, Schritt 1; ohne Feld: alles) */
@@ -450,6 +461,8 @@ export class LevelScene implements Scene {
 
   async enter(game: Game): Promise<void> {
     this.game = game;
+    // Kamerawinkel-Test: Neigung vor allem anderen setzen (Bühne, Kamera und Pinsel lesen sie)
+    if (game.world) setCameraTilt(initialTiltDeg() * (Math.PI / 180));
     await initPhysics();
     const night = this.world.id === 6 || this.world.id === 8 || this.world.id === 10 || (this.unlocked.has('nightMode') && this.level.id === 25);
     this.view = new WorldView(this.world, this.terrain, this.skin, night);
@@ -463,6 +476,13 @@ export class LevelScene implements Scene {
         game.world.trackOverride = game.world.trackOverride ?? zone.trackType;
         game.world.setZone(zone.elements);
         applyZoneExtras(game.world, zone);
+        // Ebenen-Test (Kamerawinkel-Branch): Zone „scheiben“ aus vielen Vektorscheiben, der Pinsel liest seine Tiefe daraus
+        if (zone.name === 'scheiben') {
+          this.slices = buildSliceStack(zone.width);
+          game.world.addZoneBuilt('scheiben', buildSliceElement(this.slices), { x: 0, y: 0, z: 0 });
+          game.world.setLevelGroundVisible(false);
+          preferSliceBrush();
+        }
         this.level.coins = zoneCoins(zone);
         this.refreshRock();
         if (EDITOR_URL) {
@@ -492,7 +512,8 @@ export class LevelScene implements Scene {
       }
     }
     this.view.overlay.addChild(this.fieldTape, this.chainLine, this.fxLayer);
-    setPerspective(game.world ? !PERSP_OFF : PERSP_URL, FOV_URL);
+    setPerspective(game.world ? !PERSP_OFF : PERSP_URL, game.world ? initialFov(FOV_URL) : FOV_URL);
+    if (game.world) this.cameraPanel = new CameraTiltPanel(() => this.view.camera.zoom, viewState().persp, (x, z) => this.groundAt(x, z));
     this.view.overlay.addChild(this.laneGlow, this.spotLayer, this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
     this.laneHud.addChild(this.laneHudG);
@@ -537,6 +558,11 @@ export class LevelScene implements Scene {
     this.stopRide();
     if (this.path && !this.sandbox) storage.saveDraft(this.level.id, this.path);
     setPerspective(false);
+    this.cameraPanel?.destroy();
+    this.cameraPanel = null;
+    this.slices = null;
+    this.game.world?.setLevelGroundVisible(true);
+    setCameraTilt(DEFAULT_CAMERA_TILT);
     this.game.world?.clearLevel();
     this.view.destroy();
   }
@@ -2053,7 +2079,13 @@ export class LevelScene implements Scene {
       // beim Nachbessern gibt die Linie höchstens 8 Bildschirm-Pixel nach
       tolerance: Math.max(0.4, 8 / this.view.camera.zoom),
       // Freiraumfeld der Zone (Tor 2b): freie Tiefen-Abschnitte je Linienpunkt am Strahl der Kamera, fester Weltpunkt
-      field: field && free ? { free, solid: (x: number, y: number, lane: number) => field.solid(x, y, lane), floor: (x: number, y: number, lane: number) => field.floorBelow(x, y, lane, 40)?.y ?? null } : undefined,
+      // Ebenen-Test: Die Scheiben ersetzen das Freiraumfeld (das nur die fünf Spuren kennt)
+      field: field && free && !this.slices ? { free, solid: (x: number, y: number, lane: number) => field.solid(x, y, lane), floor: (x: number, y: number, lane: number) => field.floorBelow(x, y, lane, 40)?.y ?? null } : undefined,
+      holdLane: brushHoldsLane(),
+      holdDepth: this.brushHoldZ,
+      depthAt: brushUsesSlices() && this.slices ? (p: StagePoint) => landingAt(this.slices!, p) : undefined,
+      zMax: brushUsesSlices() && this.slices ? deepestDock(this.slices) : undefined,
+      groundAt: brushUsesSliceGround() && this.slices ? (p: StagePoint) => groundDepth(this.slices!, p) : undefined,
     };
   }
 
@@ -2085,8 +2117,36 @@ export class LevelScene implements Scene {
     };
     const { i: cut, p: cutPt } = at(this.brushShown);
     const from = this.brushPreview ? at(Math.min(this.brushPreviewedLen, this.brushShown)) : { i: 1, p: pts[0] };
+    // Kamerawinkel-Test: Fährt die Kamera beim Zeichnen mit (Autoscroll), verschiebt sich die Bahn in der Tiefe
+    // parallaktisch, die Tinte (Bühnen-Koordinaten der Aufnahme) nicht, und Spitze und Schiene liefen auseinander. Die
+    // Tinte beginnt deshalb dort, wo das Bahnende jetzt im Bild liegt, und läuft weich zum Finger (Versatz zum Finger hin 0)
+    const endNode = this.brushPreview?.path.nodes[this.brushPreview.path.nodes.length - 1];
+    let shift = { X: 0, Y: 0 };
+    if (endNode && viewState().persp) {
+      const v = toView(endNode.x, endNode.y, endNode.z);
+      shift = { X: v.X - from.p.X, Y: v.Y - from.p.Y };
+    }
+    const fingerNow = this.brushFinger();
+    const glue = (line: StagePoint[], s0: number, total: number): StagePoint[] => {
+      if (!shift.X && !shift.Y) return line;
+      let s = s0;
+      return line.map((q, k) => {
+        if (k > 0) s += Math.hypot(q.X - line[k - 1].X, q.Y - line[k - 1].Y);
+        const w = (1 - Math.min(1, s / Math.max(1e-6, total))) ** 2;
+        return { X: q.X + shift.X * w, Y: q.Y + shift.Y * w };
+      });
+    };
+    const glueLen = (() => {
+      let l = 0;
+      const all = [from.p, ...pts.slice(from.i), fingerNow];
+      for (let k = 1; k < all.length; k++) l += Math.hypot(all[k].X - all[k - 1].X, all[k].Y - all[k - 1].Y);
+      return l;
+    })();
     // zum Zeichnen reicht ein Punkt je 1,5 px (die Linie liegt alle 5 cm)
-    const solid = resamplePolyline([from.p, ...pts.slice(from.i, cut), cutPt], 1.5 / zoom);
+    const solidRaw = resamplePolyline([from.p, ...pts.slice(from.i, cut), cutPt], 1.5 / zoom);
+    let solidLen = 0;
+    for (let k = 1; k < solidRaw.length; k++) solidLen += Math.hypot(solidRaw[k].X - solidRaw[k - 1].X, solidRaw[k].Y - solidRaw[k - 1].Y);
+    const solid = glue(solidRaw, 0, glueLen);
     if (solid.length >= 2) {
       const flat = solid.flatMap((p) => [p.X, p.Y]);
       g.poly(flat, false).stroke({ width: w + 4 / zoom, color: 0xffffff, alpha: 0.6, cap: 'round', join: 'round' });
@@ -2094,9 +2154,9 @@ export class LevelScene implements Scene {
     }
     // Schleppe: vom Ende der Bahn über den Weg der Gummiband-Spitze und das Band bis zum Tropfen unter dem Finger,
     // geglättet und zum Finger hin breiter (dünn wie die Linie an der Bahn, am Tropfen fast so breit wie er)
-    const f = this.brushFinger();
+    const f = fingerNow;
     const raw = [cutPt, ...pts.slice(cut), ...b.band(10, f).slice(1)];
-    const tail = chaikin(resamplePolyline(raw, 3 / zoom));
+    const tail = glue(chaikin(resamplePolyline(raw, 3 / zoom)), solidLen, glueLen);
     let total = 0;
     for (let i = 1; i < tail.length; i++) total += Math.hypot(tail[i].X - tail[i - 1].X, tail[i].Y - tail[i - 1].Y);
     if (tail.length >= 2 && total > 1e-6) {
@@ -2131,6 +2191,8 @@ export class LevelScene implements Scene {
     this.brushPreview = null;
     this.brushPreviewedLen = 0;
     this.brushBase = this.strokeKind === 'extend' && this.samples ? trackLineWithDepth(this.samples) : null;
+    // Pinsel „Spur halten“ (Kamerawinkel-Test): hält die Tiefe am Ende der alten Bahn, ein neuer Strich die Spur unter dem Anfang
+    this.brushHoldZ = this.brushBase?.z.length ? this.brushBase.z[this.brushBase.z.length - 1] : NaN;
     this.previewTimer = 0;
     this.setDrawCursor(true);
   }
@@ -2330,7 +2392,7 @@ export class LevelScene implements Scene {
     this.brushPlanStamp = this.pathStamp(plan.path);
     const limit = (SKIN_PHYSICS[this.skin] ?? SKIN_PHYSICS.skinWood).lateralLimit;
     const probe = (path: TrackPath, samples: TrackSamples) =>
-      new TrainSim(samples, path, { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), lateralLimit: Infinity, checkCrossings: false });
+      new TrainSim(samples, path, { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), lateralLimit: Infinity, checkCrossings: false, ...(this.slices ? { depthPerspective: SLICE_PHYSICS_D } : {}) });
     this.refiner = new BrushRefiner(plan, this.brushOptions(), probe, limit);
     this.refining = plan.path;
   }
@@ -2722,7 +2784,7 @@ export class LevelScene implements Scene {
     const field = this.field;
     const zone = this.sandbox?.zone;
     // Tunnel-Meter (Plan 5.1): unter einer Decke des Freiraumfelds (Innenraum eines Dreiteilers, Höhle)
-    return { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), ...(chain ? { chainHeight: chain } : {}), ...(field && !field.empty ? { insideRock: (x: number, y: number, z: number) => field.ceilingAbove(x, y, z) } : {}), ...(zone ? { walls: siteWalls(zone.sites, this.openedSites) } : {}) };
+    return { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), ...(chain ? { chainHeight: chain } : {}), ...(field && !field.empty ? { insideRock: (x: number, y: number, z: number) => field.ceilingAbove(x, y, z) } : {}), ...(zone ? { walls: siteWalls(zone.sites, this.openedSites) } : {}), ...(this.slices ? { depthPerspective: SLICE_PHYSICS_D } : {}) };
   }
 
   /** Startart im Feld (Etappe 2, Schritt 1): erlaubt die Stufe die gewählte nicht, nimmt die Bahn die erste erlaubte */

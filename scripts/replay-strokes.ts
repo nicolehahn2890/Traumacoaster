@@ -14,6 +14,8 @@
  *   npm run strokes:replay -- --zone probe    # Striche aus einer Zone (Etappe 2): Fels und offene Räume der Zonendatei gelten für den
  *                                              #   Pinsel (Aufnahmen mit Zone nehmen ihre, ältere aus Level 0 die genannte); zählt je
  *                                              #   Strich Tiefensprünge, größte Tiefenänderung, Kreuzungen und Fels-Abschnitte
+ *   npm run strokes:replay -- --tilt 3 --hold  # Kamerawinkel-Test: Neigung in Grad (Bühne, Strahlen, Pinsel) und Pinsel
+ *                                              #   „Spur halten“; zählt je Pinsel-Strich die Tiefenspanne des neuen Teils
  */
 import { readFileSync } from 'node:fs';
 import { getLevel } from '../src/levels/levels';
@@ -26,7 +28,7 @@ import { extendTrack, lanesTrack, strokeToTrack } from '../src/track/strokeToTra
 import { applyOverdraw } from '../src/track/overdraw';
 import { RubberBrush } from '../src/track/brush';
 import { BrushRefiner, brushDebug, joinLines, planBrushTrack, previewBrushTrack, spliceLine, trackLine, trackLineWithDepth, type BrushField, type BrushPreview } from '../src/track/brushTrack';
-import { LANE_DEPTH, rayToWorld, setPerspective, setView, viewDistance, type StagePoint } from '../src/track/stage';
+import { LANE_DEPTH, rayToWorld, setCameraTilt, setPerspective, setView, viewDistance, type StagePoint } from '../src/track/stage';
 import { parseZone, type ZoneFile } from '../src/zone/types';
 import { FreeField, cachedFreeLanes, type FreeLanes } from '../src/zone/field';
 import { railBanksFor } from '../src/track/model';
@@ -69,7 +71,12 @@ const NO_ROCK = args.includes('--no-rock');
 const stageIdx = args.indexOf('--stage');
 /** Fortschrittsstufe statt der des Felds (Räume „offen ab Stufe“, Wachstum) */
 const STAGE = stageIdx >= 0 ? Number(args[stageIdx + 1]) : null;
-const file = args.find((a, i) => !a.startsWith('--') && (lastIdx < 0 || i !== lastIdx + 1) && (zoneIdx < 0 || i !== zoneIdx + 1) && (stageIdx < 0 || i !== stageIdx + 1)) ?? 'recordings/strokes.jsonl';
+/** Kamerawinkel-Test: --tilt <Grad> dreht die Kamera, --hold nimmt den Pinsel „Spur halten“ */
+const tiltIdx = args.indexOf('--tilt');
+const TILT = tiltIdx >= 0 ? Number(args[tiltIdx + 1]) : null;
+if (TILT !== null) setCameraTilt((TILT * Math.PI) / 180);
+const HOLD = args.includes('--hold');
+const file = args.find((a, i) => !a.startsWith('--') && (lastIdx < 0 || i !== lastIdx + 1) && (zoneIdx < 0 || i !== zoneIdx + 1) && (stageIdx < 0 || i !== stageIdx + 1) && (tiltIdx < 0 || i !== tiltIdx + 1)) ?? 'recordings/strokes.jsonl';
 const zoneFile: ZoneFile | null = ZONE ? parseZone(JSON.parse(readFileSync(`public/zones/${ZONE}/zone.json`, 'utf8'))) : null;
 if (ZONE && !zoneFile) throw new Error(`Zone ${ZONE} nicht gefunden`);
 const NAME: Record<Reading, string> = { brush: 'Pinsel', stage: 'Bühne', single: 'Ein Strich', lanes: 'Ebenen' };
@@ -135,7 +142,7 @@ function build(rec: Rec, reading: Reading, level: LevelDef, terrain: Terrain, sk
       line = joinLines(base.line, line);
       keep = base.z;
     } else if (before && rec.kind === 'overdraw') line = spliceLine(trackLine(sampleTrack(before, 0.25)), line, Math.max(2, 30 / rec.zoom));
-    const opts = { ground, clearance: 0.8, closeSnap, tolerance: Math.max(0.4, 8 / rec.zoom), ...zoneOpts };
+    const opts = { ground, clearance: 0.8, closeSnap, tolerance: Math.max(0.4, 8 / rec.zoom), ...zoneOpts, holdLane: HOLD, holdDepth: keep?.length ? keep[keep.length - 1] : undefined };
     // Zone: die Live-Vorschau alle acht Punkte nachspielen wie beim Malen; Tiefenänderungen über 0,5 Spuren an schon
     // gezeigten Punkten sind Vorschau-Sprünge (das Springen der Bahn unter dem Finger), dazu der Sprung beim Loslassen
     let pv: BrushPreview | null = null;
@@ -163,6 +170,7 @@ function build(rec: Rec, reading: Reading, level: LevelDef, terrain: Terrain, sk
     }
     const plan = planBrushTrack(line, opts, keep, pv ?? undefined);
     if (!plan) return { path: null, note: 'zu kurz' };
+    depthTally.planSpans.push(spanOf(plan.z, keep));
     if (process.env.TC_DEBUG_ROCK && freeOf) {
       brushDebug.onCut = ({ line, z, rock }) => {
         const [a, b] = rock[0];
@@ -181,6 +189,8 @@ function build(rec: Rec, reading: Reading, level: LevelDef, terrain: Terrain, sk
     while (!ref.run(1000));
     debugRock('nach Probefahrten');
     const spots = ref.accepted.map((a) => `${Math.round(a.s)} m ${FAIL[a.reason] ?? a.reason}`);
+    // Tiefenspanne des neuen Teils nach den Probefahrten (Nachbessern verschiebt die Tiefe)
+    depthTally.spans.push(spanOf(ref.plan.z, keep));
     let smooth = '';
     if (zoneFile) {
       // Glättungs-Maße (Tor 2b): Tiefenänderung je Meter im neuen Teil der Linie, Sprünge über 0,4 Spuren in 2 m
@@ -247,6 +257,18 @@ const segDist = (q: { x: number; y: number }, a: { x: number; y: number }, b: { 
   return Math.hypot(q.x - (a.x + dx * t), q.y - (a.y + dy * t));
 };
 
+const depthTally = { spans: [] as number[], planSpans: [] as number[] };
+/** Tiefenspanne (Spuren) des neuen Teils einer Linie: wie weit die Bahn im Strich durch die Tiefe wandert */
+function spanOf(z: Float64Array, keep?: ArrayLike<number>): number {
+  const from = keep ? Math.min(z.length, keep.length) : 0;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = from; i < z.length; i++) {
+    lo = Math.min(lo, z[i]);
+    hi = Math.max(hi, z[i]);
+  }
+  return hi >= lo ? (hi - lo) / LANE_DEPTH : 0;
+}
 const worldTally = { built: 0, invalid: 0, medians: [] as number[], max: 0, supports: 0, floating: 0 };
 const bucketOf = () => ({ n: 0, jumps: 0, previewJumps: 0, release: [] as number[] });
 const zoneTally = { strokes: 0, jumps: 0, maxStep: 0, steps: [] as number[], crossings: 0, blocked: 0, cut: 0, previewJumps: 0, previewMax: 0, releaseMax: 0, releases: [] as number[], zoneStrokes: bucketOf(), freeStrokes: bucketOf() };
@@ -354,6 +376,13 @@ recs.forEach((rec, k) => {
     console.log(`  ${NAME[reading].padEnd(10)}: ${line}`);
   }
 });
+for (const [name, list] of [['vor den Probefahrten', depthTally.planSpans], ['nach den Probefahrten', depthTally.spans]] as const) {
+  if (!list.length) continue;
+  const sp = [...list].sort((a, b) => a - b);
+  const q = (f: number) => sp[Math.min(sp.length - 1, Math.floor(sp.length * f))].toFixed(2);
+  const over = (v: number) => sp.filter((x) => x > v).length;
+  console.log(`\nTiefenspanne je Pinsel-Strich ${name} (neuer Teil, Spuren)${TILT !== null ? ` bei ${TILT}°` : ''}${HOLD ? ', Spur halten' : ''}: Median ${q(0.5)}, 90 % ${q(0.9)}, über 1 Spur ${over(1)} von ${sp.length}, über 2 Spuren ${over(2)}`);
+}
 console.log('\nFahrt geschafft (offenes Ende zählt als geschafft):');
 for (const r of ['brush', 'stage', 'single', 'lanes'] as Reading[]) console.log(`  ${NAME[r].padEnd(10)}: ${tally[r].ok} von ${tally[r].n}`);
 if (zoneFile) {

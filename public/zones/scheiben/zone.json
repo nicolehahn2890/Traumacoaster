@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "name": "scheiben",
+  "width": 200,
+  "trackType": "steel",
+  "upgrades": [
+    {
+      "name": "Anfang",
+      "abilities": [
+        "chainlift"
+      ],
+      "belt": 0,
+      "chain": 14
+    },
+    {
+      "name": "Mittel",
+      "abilities": [
+        "chainlift",
+        "booster",
+        "brake",
+        "launch"
+      ],
+      "belt": 1,
+      "chain": 24
+    },
+    {
+      "name": "Alles",
+      "abilities": [
+        "chainlift",
+        "launch",
+        "hydro",
+        "swing",
+        "verticalLift",
+        "booster",
+        "brake",
+        "splash",
+        "launchBlock",
+        "roll",
+        "tunnel"
+      ],
+      "belt": 2,
+      "car": "rot",
+      "lift": 15
+    }
+  ],
+  "looks": [
+    "day",
+    "dusk",
+    "night"
+  ],
+  "elements": [],
+  "fields": [
+    {
+      "id": "f1",
+      "name": "Scheibenfeld",
+      "x0": 8,
+      "x1": 192,
+      "y0": -6,
+      "y1": 42,
+      "goals": [
+        {
+          "type": "finish"
+        }
+      ],
+      "stage": 1,
+      "upgrade": 2,
+      "chain": 20,
+      "budget": 600,
+      "maxHeight": 40
+    }
+  ],
+  "stations": [
+    {
+      "id": "s1",
+      "x": 24,
+      "y": 1,
+      "z": 0,
+      "dir": 1,
+      "length": 14
+    }
+  ],
+  "queues": [
+    {
+      "id": "q1",
+      "x0": 6,
+      "x1": 18,
+      "y": 0,
+      "z": -1,
+      "dir": 1
+    }
+  ],
+  "sites": [],
+  "coinGroups": []
+}

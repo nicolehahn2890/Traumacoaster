@@ -12,7 +12,7 @@ import { FieldFoundation } from '@/world/foundations';
 import type { CarState } from '@/physics/trainSim';
 import type { PassengerView } from '@/physics/passengers';
 import type { CharacterDef } from '@/editor/characters';
-import { LANE_DEPTH, LANE_MAX, LANE_MIN, setView, viewDistance, viewScale, viewState } from '@/track/stage';
+import { CAMERA_TILT, LANE_DEPTH, LANE_MAX, LANE_MIN, setView, viewDistance, viewScale, viewState } from '@/track/stage';
 import type { CameraView } from '@/world/camera';
 import type { WorldRenderer } from '@/world/renderer';
 import { HANG_DROP, trackTypeForSkin } from '@/world/trackTypes';
@@ -45,7 +45,7 @@ export class WorldView {
   private fxOn = false;
   private time = 0;
   /** letzte Kameralage, für die die Bahn in Perspektive projiziert wurde */
-  private lastView = { x: NaN, y: NaN, zoom: NaN, persp: false };
+  private lastView = { x: NaN, y: NaN, zoom: NaN, persp: false, tilt: NaN, fov: NaN };
   /** Perspektive: die Kamera hat sich in diesem Bild bewegt, Ansichts-Overlays (Griffe) müssen neu gezeichnet werden */
   viewMoved = false;
   private worldDef: WorldDef;
@@ -266,8 +266,10 @@ export class WorldView {
       lane.position.set(vx * (1 - s), vy * (1 - s));
     }
     const lv = this.lastView;
-    const moved = persp && (lv.x !== vx || lv.y !== vy || lv.zoom !== c.zoom || !lv.persp);
-    this.lastView = { x: vx, y: vy, zoom: c.zoom, persp };
+    const fov = viewState().fov;
+    // Kamerawinkel-Test: Neigung und Bildwinkel per Regler zählen als Kamerabewegung
+    const moved = persp && (lv.x !== vx || lv.y !== vy || lv.zoom !== c.zoom || !lv.persp || lv.tilt !== CAMERA_TILT || lv.fov !== fov);
+    this.lastView = { x: vx, y: vy, zoom: c.zoom, persp, tilt: CAMERA_TILT, fov };
     this.viewMoved = moved;
     if (moved) this.trackR.reproject();
     this.sky.update(dt, c);
