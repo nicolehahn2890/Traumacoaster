@@ -684,7 +684,11 @@ if (want('12')) {
   // Direktauswahl: obere Fläche färben, untere zum Loch
   await page.keyboard.press('a');
   await click(530, 300);
-  await page.click('.ze-context .ze-swatch[title="#d9a07a"]');
+  // Farbe aus dem Farbmenü (Stufe 3; vorher Farbtupfer in der Leiste)
+  await page.click('.ze-colorbtn');
+  await page.click('.ze-ctabs .ze-btn:text-is("Paletten")');
+  await page.click('.ze-color .ze-chip[title="#d9a07a"]');
+  await page.click('.ze-colorbtn');
   await click(530, 500);
   await page.click('.ze-context >> text=Loch');
   await sleep(150);
@@ -1262,6 +1266,124 @@ if (want('18')) {
   check(night.worst.d <= 4 && Math.max(...nightRgb.map((v, i) => Math.abs(v - [0x11, 0x22, 0x44][i]))) <= 4, `Nacht: Palettenfarbe getauscht (rgb(${nightRgb.join(', ')})), alle ${night.n} Punkte wie evalLayers (Abweichung ${night.worst.d})`);
   await page.evaluate(() => {
     window.tcGame.world.setLook('day');
+    if (window.tcGame.current.view?.paper) window.tcGame.current.view.paper.visible = true;
+  });
+}
+
+// 19. Zonen-Editor, Stufe 3: Farbmenü. Auswahl färben (Hex in „Werte“), Farbe aus der Palette auf eine Fläche ziehen,
+// „Weiter füllen“, Pipette, Feld der Zonenpalette anlegen, auf eine Fläche ziehen, bearbeiten (die Fläche ändert sich mit)
+// und löschen (die Fläche behält den Wert), rückgängig. Braucht den Dev-Server (lädt src/zone/nodes.ts im Browser).
+if (want('19')) {
+  await page.goto(`${BASE}?zone=szenario-farbmenue&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const at = await page.evaluate(async () => {
+    const N = await import('/src/zone/nodes.ts');
+    const ed = window.tcGame.current.planeEditor;
+    let out = null;
+    ed.edit(() => {
+      const p = N.newPlane(ed.nodes, 0);
+      ed.nodes.push(p);
+      const P = (x, y) => ed.planePoint(p, { x, y });
+      const m = (P(460, 400).x - P(400, 400).x) / 60;
+      const a = P(400, 420);
+      const b = P(640, 420);
+      const r = N.newShape(ed.nodes, p.id, N.rectPath(180 * m, 130 * m), a.x, a.y, '#3d5a63');
+      r.cuts = [{ path: [{ x: -90 * m, y: 0 }, { x: 90 * m, y: 0 }], closed: false }];
+      ed.nodes.push(r);
+      const e = N.newShape(ed.nodes, p.id, N.ellipsePath(80 * m, 60 * m), b.x, b.y, '#c9c09a');
+      ed.nodes.push(e);
+      out = { rect: r.id, ellipse: e.id, up: { x: 400, y: 380 }, down: { x: 400, y: 460 }, mid: { x: 400, y: 420 }, ell: { x: 640, y: 420 } };
+    });
+    for (let i = 0; i < 3; i++) window.tcGame.app.ticker.update(performance.now());
+    return out;
+  });
+  const shapeOf = (id) => page.evaluate((id) => {
+    const s = window.tcGame.current.planeEditor.nodes.find((n) => n.id === id);
+    return { fill: s.fill, regions: (s.regions ?? []).map((r) => ({ y: r.y, fill: r.fill })) };
+  }, id);
+  const editor = () => page.evaluate(() => {
+    const ed = window.tcGame.current.planeEditor;
+    return { color: ed.color, fillMode: ed.fillMode, swatches: ed.nodes.filter((n) => n.kind === 'swatch').map((s) => ({ id: s.id, color: s.color })), context: document.querySelector('.ze-context')?.textContent ?? '' };
+  });
+  // Form wählen, Farbmenü öffnen, in „Werte“ einen Hex-Wert eingeben: die ganze Form bekommt ihn
+  await page.mouse.click(at.mid.x, at.mid.y);
+  await page.click('.ze-colorbtn');
+  await page.click('.ze-ctabs .ze-btn:text-is("Werte")');
+  const hex = page.locator('.ze-color .ze-hex input');
+  await hex.fill('#a3665a');
+  await hex.press('Enter');
+  await sleep(150);
+  const r1 = await shapeOf(at.rect);
+  check(r1.fill === '#a3665a' && r1.regions.length === 0, `Farbmenü färbt die gewählte Form (${r1.fill}); die eine Leiste unten hat keine Farbtupfer mehr`);
+  // ins Leere tippen hebt die Auswahl auf (das Menü bleibt offen)
+  await page.mouse.click(300, 640);
+  // aus der Platzhalter-Palette auf die Ellipse ziehen: gefüllt, danach „Weiter füllen“ (Esc schlösse hier das Menü)
+  await page.click('.ze-ctabs .ze-btn:text-is("Paletten")');
+  const chip = await page.locator('.ze-color .ze-chips').nth(1).locator('.ze-chip').nth(2).boundingBox();
+  const drag = async (box, to) => {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x - 40, box.y + 30, { steps: 4 });
+    await page.mouse.move(to.x, to.y, { steps: 10 });
+    await page.mouse.up();
+    await sleep(150);
+  };
+  await drag(chip, at.ell);
+  const e1 = await shapeOf(at.ellipse);
+  const s1 = await editor();
+  check(e1.fill === '#8aa58c' && s1.fillMode === '#8aa58c' && /Weiter füllen/.test(s1.context), `Farbe auf die Ellipse gezogen (${e1.fill}), „Weiter füllen“ läuft`);
+  await page.mouse.click(at.up.x, at.up.y);
+  await sleep(100);
+  await page.keyboard.press('Escape');
+  const r2 = await shapeOf(at.rect);
+  const s2 = await editor();
+  check(r2.regions.length === 1 && r2.regions[0].fill === '#8aa58c' && r2.regions[0].y > 0 && s2.fillMode === null, `„Weiter füllen“: obere Fläche der Form angetippt und gefüllt, Esc beendet`);
+  // Pipette: die Farbe der unteren Fläche aufnehmen
+  await page.keyboard.press('i');
+  await page.mouse.click(at.down.x, at.down.y);
+  await sleep(100);
+  const s3 = await editor();
+  check(s3.color === '#a3665a', `Pipette nimmt die Farbe der unteren Fläche auf (${s3.color})`);
+  await page.keyboard.press('v');
+  // Feld der Zonenpalette anlegen, auf die untere Fläche ziehen, bearbeiten, löschen
+  await page.click('.ze-color .ze-chip.add');
+  await sleep(100);
+  const s4 = await editor();
+  const field = page.locator('.ze-color .ze-chips').first().locator('.ze-chip').first();
+  await drag(await field.boundingBox(), at.down);
+  await page.keyboard.press('Escape');
+  const r3 = await shapeOf(at.rect);
+  const lower = () => r3.regions.find((r) => r.y < 0);
+  check(s4.swatches.length === 1 && s4.swatches[0].color === '#a3665a' && lower()?.fill === `@${s4.swatches[0].id}`, `Feld ${s4.swatches[0]?.id} in der Zonenpalette, die untere Fläche verweist darauf (${lower()?.fill})`);
+  await field.dblclick();
+  await sleep(150);
+  await page.click('.ze-ctabs .ze-btn:text-is("Werte")');
+  await hex.fill('#123456');
+  await hex.press('Enter');
+  await sleep(150);
+  const s5 = await editor();
+  const spot = await page.evaluate((p) => {
+    const g = window.tcGame;
+    if (g.current.view?.paper) g.current.view.paper.visible = false;
+    for (let i = 0; i < 3; i++) g.app.ticker.update(performance.now());
+    return p;
+  }, at.down);
+  const png = await page.screenshot({ path: 'screenshots/scenario-19-farbmenue.png' });
+  const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+  const px = (Math.round(spot.y) * info.width + Math.round(spot.x)) * info.channels;
+  const got = [data[px], data[px + 1], data[px + 2]];
+  const d = Math.max(...got.map((v, i) => Math.abs(v - [0x12, 0x34, 0x56][i])));
+  check(s5.swatches[0].color === '#123456' && d <= 4, `Feld bearbeitet: die Fläche zeigt die neue Farbe (rgb(${got.join(', ')}))`);
+  await page.click('.ze-cedit .ze-btn:text-is("Löschen")');
+  await sleep(100);
+  const r4 = await shapeOf(at.rect);
+  const s6 = await editor();
+  check(s6.swatches.length === 0 && r4.regions.find((r) => r.y < 0)?.fill === '#123456', 'Feld gelöscht: die Fläche behält seinen Wert');
+  await page.keyboard.press('Meta+z');
+  await sleep(100);
+  const s7 = await editor();
+  check(s7.swatches.length === 1, 'rückgängig: das Feld ist wieder da');
+  await page.evaluate(() => {
     if (window.tcGame.current.view?.paper) window.tcGame.current.view.paper.visible = true;
   });
 }

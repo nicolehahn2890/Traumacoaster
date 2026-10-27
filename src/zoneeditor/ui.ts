@@ -9,13 +9,11 @@
 import { PLANE_ROLE_WORDS, PLANE_ROLES, type PlaneRole, type ZoneGroup, type ZonePlane, type ZoneShape, type ZoneSketch } from '@/zone/nodes';
 import type { PathContext } from './pathTools';
 import { VIEW_WORDS, type ViewMode } from './views';
+import { COLOR_CSS, ColorMenu, type ColorMenuHost } from './colorMenu';
 
-export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch';
+export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch' | 'pipette';
 export type Isolate = 'off' | 'front' | 'only';
 export const ISOLATE_WORDS: Record<Isolate, string> = { off: 'alle Ebenen', front: 'davor ausgeblendet', only: 'nur diese' };
-
-/** Platzhalter-Farben bis zur Palette der Stufe 3 (ruhig, eher Earle als Bonbon) */
-export const SWATCHES = ['#3d5a63', '#5b7f7a', '#8aa58c', '#c9c09a', '#d9a07a', '#a3665a', '#6b5a8a', '#c6d4dc'];
 
 export interface UiActions {
   tool(t: Tool): void;
@@ -68,7 +66,8 @@ export interface UiActions {
   setRole(role: PlaneRole): void;
   setIsolate(i: Isolate): void;
   deletePlane(): void;
-  fill(color: string): void;
+  /** „Weiter füllen“ nach dem Fallenlassen einer Farbe beenden */
+  fillDone(): void;
   duplicate(): void;
   orderShape(dir: 1 | -1): void;
   deleteShape(): void;
@@ -110,6 +109,8 @@ export interface ContextExtra {
   units?: { units: number; groups: number; inside: boolean } | null;
   /** gemeinsamer Rahmen der gewählten Formen einer Ebene (Mitte, Breite, Höhe in Metern) */
   nums?: { x: number; y: number; w: number; h: number } | null;
+  /** „Weiter füllen“ läuft (Farbe aufgelöst) */
+  filling?: string | null;
 }
 
 export interface LayerRow {
@@ -140,6 +141,8 @@ const CSS = `
 .ze-snap{fill:none;stroke:#ffd27a;stroke-width:2}
 .ze-region{fill:rgba(141,180,255,.08);stroke:#8db4ff;stroke-width:1;stroke-dasharray:4 3}
 .ze-groupbox{fill:none;stroke:rgba(255,255,255,.7);stroke-width:1;stroke-dasharray:2 4}
+.ze-target{fill:rgba(255,255,255,.14);stroke:#ffffff;stroke-width:2;stroke-dasharray:5 4}
+.ze-loupe{stroke:#ffffff;stroke-width:4;filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))}
 .ze-panel{position:absolute;pointer-events:auto;background:rgba(22,24,28,.82);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.07);border-radius:12px;touch-action:none;user-select:none;-webkit-user-select:none}
 .ze-btn{appearance:none;border:0;background:transparent;color:inherit;font:inherit;min-width:36px;height:36px;padding:0 10px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
 .ze-btn:hover{background:rgba(255,255,255,.06)}
@@ -236,6 +239,7 @@ const ICONS: Record<Tool, string> = {
   rect: '<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>',
   ellipse: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6"/></svg>',
   arch: '<svg viewBox="0 0 24 24"><path d="M5.5 20v-8.5a6.5 6.5 0 0 1 13 0V20z"/></svg>',
+  pipette: '<svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5M13 6l5 5-9 9H4v-5z"/><path d="M16.5 2.5a2.1 2.1 0 0 1 3 0l2 2a2.1 2.1 0 0 1 0 3L19 10"/></svg>',
 };
 const EYE = '<svg viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>';
 const EYE_OFF = '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1C11 6 11.5 6 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.2 3.8M6.2 7.6A16.6 16.6 0 0 0 2 12s3.5 6 10 6c1.7 0 3.2-.4 4.4-1"/></svg>';
@@ -280,8 +284,9 @@ const TOOL_TITLES: Record<Tool, string> = {
   rect: 'Rechteck (M)',
   ellipse: 'Ellipse (L)',
   arch: 'Bogen (U wechselt Rechteck, Ellipse, Bogen): Portalform, unten gerade, oben rund',
+  pipette: 'Pipette (I): Farbe aus dem Bild aufnehmen; am iPad auch mit dem Finger lange halten',
 };
-const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse', 'arch'];
+const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse', 'arch', 'pipette'];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -382,15 +387,22 @@ export class EditorUi {
   /** Bildauswahl für Skizzen */
   private readonly sketchFile = el('input');
   private thumbs = new Map<string, HTMLCanvasElement>();
+  /** Farbknopf und Farbmenü (Stufe 3) */
+  private readonly colors: ColorMenu;
 
   constructor(
     private readonly a: UiActions,
     zoneName: string,
     overlay: SVGSVGElement,
+    colorHost: ColorMenuHost,
   ) {
     const style = el('style');
-    style.textContent = CSS;
+    style.textContent = CSS + COLOR_CSS;
     this.root.append(style, overlay);
+    this.colors = new ColorMenu(colorHost);
+    this.colors.onOpen = () => {
+      if (this.cam.classList.contains('open')) this.toggleCam();
+    };
 
     // oben links: Zone, Sicherungsstand, Rückgängig, Sichern, Messwerte
     this.undoBtn = button(UNDO, 'Rückgängig (Cmd+Z, zwei Finger tippen)', () => a.undo());
@@ -409,7 +421,7 @@ export class EditorUi {
     }
     this.camBtn = button('Kamera', 'Neigung und Bildwinkel des Spielblicks', () => this.toggleCam(), 'ze-viewbtn');
     this.modeBtn = button('Spielen', 'Bauen oder Spielen (Tab)', () => a.toggleBuild());
-    this.views.append(el('span', 'ze-sep ze-viewbtn'), this.camBtn, this.modeBtn);
+    this.views.append(el('span', 'ze-sep ze-viewbtn'), this.camBtn, this.modeBtn, this.colors.button);
     this.tiltSlider = new Slider('Neigung', 1, 45, (v) => a.tilt(v));
     this.fovSlider = new Slider('Bildwinkel', 5, 50, (v) => a.fov(v));
     this.cam.append(this.tiltSlider.el, this.fovSlider.el);
@@ -459,7 +471,7 @@ export class EditorUi {
     this.layers.append(head, this.list, foot);
 
     this.banner.append(this.bannerText, button('Wiederherstellen', '', () => a.restore()), button('Verwerfen', '', () => a.discardBackup()));
-    this.root.append(this.top, this.views, this.cam, this.tools, this.layers, this.context, this.toastEl, this.banner, this.stats);
+    this.root.append(this.top, this.views, this.cam, this.colors.panel, this.tools, this.layers, this.context, this.toastEl, this.banner, this.stats);
     document.body.append(this.root);
     // Klicks auf die Bedienfelder gehen nicht ins Spiel
     for (const p of [this.top, this.views, this.cam, this.tools, this.layers, this.context, this.banner]) p.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -467,13 +479,28 @@ export class EditorUi {
 
   private toggleCam(): void {
     const open = !this.cam.classList.contains('open');
+    if (open && this.colors.open) this.colors.toggle(false);
     this.cam.classList.toggle('open', open);
     this.layers.classList.toggle('camopen', open);
     this.camBtn.classList.toggle('on', open);
   }
 
+  /** Farbknopf und offenes Farbmenü nachführen */
+  colorRefresh(): void {
+    this.colors.refresh();
+  }
+
+  get colorOpen(): boolean {
+    return this.colors.open;
+  }
+
+  closeColor(): void {
+    this.colors.toggle(false);
+  }
+
   setBuilding(on: boolean): void {
     this.root.classList.toggle('play', !on);
+    if (!on && this.colors.open) this.colors.toggle(false);
     this.modeBtn.textContent = on ? 'Spielen' : 'Bauen';
   }
 
@@ -959,33 +986,19 @@ export class EditorUi {
     input.addEventListener('blur', () => done(true));
   }
 
-  /** Farbknöpfe; on: die gewählte Farbe */
-  private swatches(on: string | null | undefined, pick: (c: string) => void): void {
-    for (const c of SWATCHES) {
-      const s = el('span', `ze-swatch${on === c ? ' on' : ''}`);
-      s.style.background = c;
-      s.title = c;
-      s.addEventListener('click', (e) => {
-        e.stopPropagation();
-        pick(c);
-      });
-      this.context.append(s);
-    }
-  }
-
   /**
    * Leiste unten: beim Zeichnen Fertig und Abbrechen, für gewählte Anker, das Lasso oder eine Fläche deren Befehle, für
    * gewählte Formen Farbe und Reihenfolge, sonst für die gewählten Ebenen Rolle und Isolieren
    */
   setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false, extra: ContextExtra = {}): void {
-    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null } = extra;
+    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null, filling = null } = extra;
     const plane = planes.at(-1) ?? null;
     const shape = shapes.at(-1) ?? null;
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
     const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : path.kind === 'band' ? `b|${path.shape}` : `l|${path.form}|${path.count}|${path.smooth}`;
     const gi = units ?? { units: shapes.length, groups: 0, inside: false };
     const numKey = this.sub === 'numbers' && nums ? `${[nums.x, nums.y, nums.w, nums.h].map((v) => v.toFixed(2)).join(',')}|${this.keepRatio}` : `${!!nums}`;
-    const key = path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
+    const key = filling ? `fill|${filling}` : path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
     this.context.replaceChildren();
@@ -997,7 +1010,15 @@ export class EditorUi {
         button(count > 1 ? 'Punkte löschen' : 'Punkt löschen', 'Löschen (Entf)', () => this.a.anchorDelete()),
       );
     };
-    if (path?.kind === 'pen') {
+    if (filling) {
+      const dot = el('span', 'ze-swatch');
+      dot.style.background = filling;
+      this.context.append(
+        dot,
+        el('span', 'ze-label', 'Weiter füllen: weitere Flächen antippen oder überstreichen'),
+        button('Fertig', 'Weiter füllen beenden (Esc)', () => this.a.fillDone()),
+      );
+    } else if (path?.kind === 'pen') {
       this.context.append(el('span', 'ze-label', `Zeichenstift · ${path.count} ${path.count === 1 ? 'Punkt' : 'Punkte'}${path.into ? ` in ${path.into}` : ''}`));
       if (path.into && path.count >= 3) this.context.append(button('Schließen', 'Als geschlossenen Ring in die Form (oder auf den ersten Punkt tippen)', () => this.a.penDone(true)));
       this.context.append(
@@ -1022,8 +1043,7 @@ export class EditorUi {
       this.context.append(el('span', 'ze-label', path.shape ? `Band in ${path.shape}: auf eine Kante drücken und nach innen ziehen` : 'Band: erst eine Form wählen, dann auf ihre Kante drücken und nach innen ziehen'));
     } else if (path?.kind === 'face') {
       this.context.append(el('span', 'ze-label', `${path.shape.name} · Fläche`));
-      this.swatches(path.fill, (c) => this.a.faceFill(c));
-      this.context.append(el('span', 'ze-sep'), button('Loch', 'Fläche zum Loch machen (Entf); eine Farbe füllt sie wieder', () => this.a.faceFill(null), path.fill === null ? 'on' : ''));
+      this.context.append(button('Loch', 'Fläche zum Loch machen (Entf); eine Farbe füllt sie wieder', () => this.a.faceFill(null), path.fill === null ? 'on' : ''));
     } else if (shape && this.sub === 'numbers' && nums) {
       // Zahlen nur auf Wunsch (Plan 4.2 Grundsatz 1): Mitte, Breite, Höhe in Metern der Ebene, Drehen um Grad
       this.context.append(el('span', 'ze-label', gi.groups || shapes.length > 1 ? 'Rahmen' : shape.name));
@@ -1102,9 +1122,7 @@ export class EditorUi {
       if (gi.inside) this.context.append(button('Gruppe verlassen', 'Aus der Gruppe heraus (Esc oder ins Leere tippen)', () => this.a.leaveGroup()), el('span', 'ze-sep'));
       const label = gi.groups === 1 && gi.units === 1 ? `Gruppe · ${shapes.length} Formen` : gi.groups ? `${gi.units} Teile · ${shapes.length} Formen` : many ? `${shapes.length} Formen` : shape.name;
       this.context.append(el('span', 'ze-label', label));
-      this.swatches(shapes.every((s) => s.fill === shape.fill) ? shape.fill : null, (c) => this.a.fill(c));
       this.context.append(
-        el('span', 'ze-sep'),
         button('Duplizieren', 'Duplizieren (Cmd+D)', () => this.a.duplicate()),
         button('Kopieren', 'Kopieren (Cmd+C); in einer anderen Ebene einfügen hält das Bild', () => this.a.copy()),
         button(FLIP_X, 'Waagrecht spiegeln (Shift+H)', () => this.a.flip('x')),
@@ -1175,11 +1193,12 @@ export class EditorUi {
           : button(many ? 'Ebenen löschen' : 'Ebene löschen', many ? 'Die gewählten Ebenen mit allen Formen löschen' : 'Ebene mit allen Formen löschen', () => this.a.deletePlane()),
       );
     }
-    this.context.classList.toggle('show', !!(path || shape || plane));
+    this.context.classList.toggle('show', !!(filling || path || shape || plane));
     if (this.toastEl.classList.contains('show')) this.placeToast();
   }
 
   destroy(): void {
+    this.colors.destroy();
     window.clearTimeout(this.toastTimer);
     this.root.remove();
   }

@@ -29,6 +29,7 @@ import {
   depthBeside,
   archPath,
   ellipsePath,
+  bakeSwatch,
   facePaint,
   findPlane,
   findShape,
@@ -60,8 +61,10 @@ import {
   shapeLocalPolys,
   shapesOf,
   shapeToPlane,
+  setFaceFill,
   slicesToNodes,
   styleMap,
+  swatchesOf,
   swatchMap,
   transferShape,
   worldToPlane,
@@ -75,8 +78,9 @@ import { EditorOverlay, emptyOverlay } from './overlay';
 import { SketchLayer } from './sketches';
 import { constrain45, NO_MODS, PathTools, regionRing, regionTest, simplifyShape, type Mods, type PathTool } from './pathTools';
 import { booleanShapes, type BoolOp } from '@/zone/pathfinder';
-import { evalLayers, paintLayers, rgbToHex } from '@/zone/paint';
-import { faceBox } from '@/zone/faces';
+import { evalLayers, isHex, paintLayers, resolveColor, rgbToHex, type PaintColor } from '@/zone/paint';
+import { faceAt, faceBox, type Face } from '@/zone/faces';
+import type { ColorMenuHost, PickPhase } from './colorMenu';
 import { EditorUi, type Isolate, type LayerRow, type Tool } from './ui';
 import { EditorViews, type ViewMode } from './views';
 
@@ -115,7 +119,9 @@ type Gesture =
   | { kind: 'sketchMove'; pointerId: number; id: string; start: Pt; orig: Pt }
   | { kind: 'sketchScale'; pointerId: number; id: string; anchor: Pt; h0: Pt; orig: { x: number; y: number; w: number; h: number } }
   /** ins Leere: ziehen wählt im Rechteck (in der freien Ansicht: umkreisen), tippen hebt die Auswahl auf */
-  | { kind: 'empty'; pointerId: number; start: Pt; last: Pt; orbit: boolean; moved: boolean; add: boolean };
+  | { kind: 'empty'; pointerId: number; start: Pt; last: Pt; orbit: boolean; moved: boolean; add: boolean }
+  /** „Weiter füllen“: jede Fläche unter dem Zeiger bekommt die Farbe (Figma: über mehrere Flächen ziehen) */
+  | { kind: 'fill'; pointerId: number; done: Set<string> };
 
 type Nav = { kind: 'touch'; ids: [number, number]; center: Pt; dist: number; count: number; t: number; moved: boolean } | { kind: 'mouse'; pointerId: number; last: Pt; orbit: boolean };
 
@@ -123,6 +129,19 @@ type Nav = { kind: 'touch'; ids: [number, number]; center: Pt; dist: number; cou
 const OPPOSITE = [2, 3, 0, 1, 6, 7, 4, 5];
 const AXIS: Array<'xy' | 'x' | 'y'> = ['xy', 'xy', 'xy', 'xy', 'y', 'x', 'y', 'x'];
 const BACKUP_KEY = (zone: string) => `tc.zoneeditor.${zone}`;
+/** zuletzt benutzte Farben (Farbmenü), für alle Zonen */
+const RECENT_KEY = 'tc.zoneeditor.recent';
+/** so lange hält ein Finger still, bis die Pipette greift (Plan 4.2 Grundsatz 3) */
+const HOLD_TIME = 450;
+
+function loadRecent(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') as unknown;
+    return Array.isArray(v) ? v.filter(isHex).slice(0, 10) : [];
+  } catch {
+    return [];
+  }
+}
 const DEG = Math.PI / 180;
 const TAP_TIME = 260;
 const TAP_DIST = 12;
@@ -192,6 +211,19 @@ export class PlaneEditor {
   private dragBase: Map<string, { z: number; x: number; y: number; scale: number }> | null = null;
   private lastCam = '';
   private fps = { frames: 0, t: 0, value: 0 };
+  /** aktuelle Farbe (Farbknopf); null: neue Formen bekommen die Platzhalter-Farbe nach Tiefe */
+  private color: PaintColor | null = null;
+  /** Auswahl, von der die aktuelle Farbe zuletzt geholt wurde */
+  private colorSel = '';
+  /** zuletzt benutzte Farben, neueste zuerst (Werte) */
+  private recentColors: string[] = loadRecent();
+  /** „Weiter füllen“ nach dem Fallenlassen einer Farbe */
+  private fillMode: PaintColor | null = null;
+  /** Fläche, auf die eine gezogene Farbe fiele (Bildpunkt) */
+  private dropAt: Pt | null = null;
+  /** Pipette mit dem Finger: Zeiger, Zeitgeber, ob sie schon greift; Lupe */
+  private fingerHold: { id: number; timer: number; on: boolean } | null = null;
+  private loupe: (Pt & { color: string }) | null = null;
   private width = 800;
   private height = 600;
 
@@ -239,13 +271,13 @@ export class PlaneEditor {
         s.order = shapesOf(this.nodes, s.parent).reduce((m, x) => Math.max(m, x.order), 0) + 1;
         this.nodes.push(s);
       },
-      fillFor: (plane) => placeholderFill(plane.z),
+      fillFor: (plane) => this.color ?? placeholderFill(plane.z),
       hitRadius: () => this.overlay.handleSize + 6,
       snapping: () => this.snapOn,
       gridStep: (plane) => (this.gridOn ? this.gridStep(plane) : null),
       visible: (plane) => this.planeShown(plane),
     });
-    this.ui = new EditorUi(this.actions(), zone.name, this.overlay.el);
+    this.ui = new EditorUi(this.actions(), zone.name, this.overlay.el, this.colorHost());
     this.ui.setTool(this.tool);
     this.ui.setView(this.viewChoice);
     this.ui.setHold(this.hold);
@@ -555,7 +587,10 @@ export class PlaneEditor {
       sketchEdit: !!this.adjusting(),
       units: this.building ? this.groupInfo() : null,
       nums: b && !box.locked ? { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2, w: b.maxX - b.minX, h: b.maxY - b.minY } : null,
+      filling: this.building && this.fillMode ? this.resolve(this.fillMode) : null,
     });
+    this.syncColorFromSelection();
+    this.ui.colorRefresh();
     const st = this.host.world.planes.stats;
     const tris = st.triangles >= 1000 ? `${(st.triangles / 1000).toFixed(1).replace('.', ',')}k` : String(st.triangles);
     this.ui.setTop(this.dirty, this.history.canUndo, this.history.canRedo, `${planes.length} Ebenen · ${st.shapes} Formen · ${tris} Dreiecke · Welt: ${this.host.world.drawCalls} Draw Call${this.host.world.drawCalls === 1 ? '' : 's'} · ${this.fps.value} fps`);
@@ -678,6 +713,9 @@ export class PlaneEditor {
   private drawOverlay(): void {
     const st = emptyOverlay();
     if (this.building) st.grid = this.gridLines();
+    st.loupe = this.loupe;
+    const tf = this.dropAt ? this.faceAtScreen(this.dropAt) : null;
+    if (tf) st.target = [tf.face.outline, ...tf.face.holes].map((r) => r.map(([x, y]) => this.screenOf(tf.plane, shapeToPlane(tf.shape, x, y), tf.shape)).filter((q): q is Pt => !!q));
     const sk = this.adjusting();
     const skp = sk ? findPlane(this.nodes, sk.parent) : undefined;
     if (sk && skp) {
@@ -887,15 +925,7 @@ export class PlaneEditor {
         this.uiDirty = true;
       },
       deletePlane: () => this.deletePlane(),
-      fill: (color) => this.edit(() => {
-        // die ganzen Formen in einer Farbe; Löcher bleiben Löcher
-        for (const s of this.selectedShapes()) {
-          s.fill = color;
-          const holes = s.regions?.filter((r) => r.fill === null);
-          if (holes?.length) s.regions = holes;
-          else delete s.regions;
-        }
-      }),
+      fillDone: () => this.endFill(),
       duplicate: () => this.duplicate(),
       orderShape: (dir) => this.orderShape(dir),
       deleteShape: () => this.deleteShape(),
@@ -944,6 +974,7 @@ export class PlaneEditor {
   private setTool(t: Tool): void {
     this.tool = t;
     this.sketchEdit = null;
+    if (this.fillMode) this.endFill();
     this.paths.setTool(isPathTool(t) ? t : null);
     this.ui.setTool(t);
     this.updateCursor();
@@ -954,7 +985,7 @@ export class PlaneEditor {
   /** Mauszeiger: Zeichenstift mit Befehlstaste wie die Direktauswahl, mit Wahltaste das Ankerpunkt-Werkzeug */
   private updateCursor(): void {
     const t = this.tool;
-    this.host.surface.style.cursor = t === 'select' || t === 'direct' || (t === 'pen' && this.mods.cmd) ? '' : t === 'pen' && this.mods.alt ? 'pointer' : 'crosshair';
+    this.host.surface.style.cursor = this.fillMode ? 'cell' : t === 'select' || t === 'direct' || (t === 'pen' && this.mods.cmd) ? '' : t === 'pen' && this.mods.alt ? 'pointer' : 'crosshair';
   }
 
   /** gedrückte Tasten aus einem Zeiger- oder Tastenereignis übernehmen */
@@ -1664,12 +1695,17 @@ export class PlaneEditor {
       const t = this.touches();
       if (t.length >= 2) {
         // zweiter Finger: was der erste begonnen hat, war Navigation
+        this.endHold(false);
         this.cancelGesture();
         const [a, b] = [t[0][1], t[1][1]];
         this.nav = { kind: 'touch', ids: [t[0][0], t[1][0]], center: mid(a, b), dist: dist(a, b), count: t.length, t: Math.min(a.t, b.t), moved: false };
         return;
       }
-      if (this.penSeen) return;
+      // ein einzelner Finger zeichnet nicht, sobald ein Stift im Spiel war; lange halten ist die Pipette
+      if (this.penSeen) {
+        this.startHold(e.pointerId);
+        return;
+      }
     }
     if (e.pointerType === 'mouse' && (e.button === 1 || e.button === 2 || this.spaceDown)) {
       this.nav = { kind: 'mouse', pointerId: e.pointerId, last: p, orbit: e.button === 2 && this.views.mode === 'free' };
@@ -1693,6 +1729,11 @@ export class PlaneEditor {
     ptr.y = p.y;
     this.setMods(e);
     if (Math.hypot(p.x - ptr.sx, p.y - ptr.sy) > TAP_DIST) ptr.moved = true;
+    if (this.fingerHold?.id === e.pointerId) {
+      if (this.fingerHold.on) this.holdSample(p);
+      else if (ptr.moved) this.endHold(false);
+      return;
+    }
     const nav = this.nav;
     if (nav?.kind === 'touch') {
       const a = this.pointers.get(nav.ids[0]);
@@ -1723,6 +1764,10 @@ export class PlaneEditor {
     e.stopPropagation();
     e.preventDefault();
     this.pointers.delete(e.pointerId);
+    if (this.fingerHold?.id === e.pointerId) {
+      this.endHold(e.type === 'pointerup');
+      return;
+    }
     const nav = this.nav;
     if (nav?.kind === 'touch') {
       // Tippen mit zwei oder drei Fingern: rückgängig, wiederholen
@@ -1802,6 +1847,20 @@ export class PlaneEditor {
 
   private toolDown(pointerId: number, p: Pt): void {
     if (this.adjusting() && this.sketchDown(pointerId, p)) return;
+    if (this.fillMode) {
+      this.history.begin(this.nodes);
+      this.gesture = { kind: 'fill', pointerId, done: new Set() };
+      this.fillAt(this.gesture, p);
+      return;
+    }
+    if (this.tool === 'pipette') {
+      const c = this.sampleColor(p);
+      if (c) {
+        this.takeColor(c);
+        this.ui.toast(`Farbe aufgenommen: ${c}`);
+      }
+      return;
+    }
     if (isPathTool(this.tool) && this.views.mode !== 'free') {
       this.paths.down(pointerId, p, this.mods);
       return;
@@ -1944,6 +2003,10 @@ export class PlaneEditor {
       this.paths.move(pointerId, p, this.mods);
       return;
     }
+    if (g.kind === 'fill') {
+      this.fillAt(g, p);
+      return;
+    }
     if (g.kind === 'empty') {
       if (g.orbit) this.views.orbit(p.x - g.last.x, p.y - g.last.y);
       if (Math.hypot(p.x - g.start.x, p.y - g.start.y) > TAP_DIST) g.moved = true;
@@ -2038,6 +2101,10 @@ export class PlaneEditor {
       return;
     }
     this.gesture = null;
+    if (g.kind === 'fill') {
+      if (this.history.commit(this.nodes)) this.changed();
+      return;
+    }
     if (g.kind === 'empty') {
       // Rechteck: Formen wählen; Tippen ins Leere hebt die Auswahl auf (die aktive Ebene bleibt); Kreisen nicht
       if (g.moved && !g.orbit) this.regionSelect(g.start, g.last, g.add);
@@ -2064,7 +2131,7 @@ export class PlaneEditor {
           cy = g.a.y;
         }
         const path = primitivePath(g.shape, Math.max(0.1, w), Math.max(0.1, h));
-        const s = newShape(this.nodes, plane.id, path, cx, cy, placeholderFill(plane.z));
+        const s = newShape(this.nodes, plane.id, path, cx, cy, this.color ?? placeholderFill(plane.z));
         s.name = `${{ rect: 'Rechteck', ellipse: 'Ellipse', arch: 'Bogen' }[g.shape]} ${s.id.slice(1)}`;
         this.nodes.push(s);
         this.selected = s.id;
@@ -2105,6 +2172,231 @@ export class PlaneEditor {
     const x2 = g.a.x + dx;
     const y2 = g.a.y + dy;
     return { a: { x: Math.min(g.a.x, x2), y: Math.min(g.a.y, y2) }, b: { x: Math.max(g.a.x, x2), y: Math.max(g.a.y, y2) } };
+  }
+
+  // ------------------------------------------------------------------ Farbe (Stufe 3)
+
+  /** Wert einer Farbe im aktuellen Look */
+  private resolve(c: PaintColor): string {
+    return resolveColor(c, swatchMap(this.nodes), this.host.world.currentLook);
+  }
+
+  private colorHost(): ColorMenuHost {
+    return {
+      current: () => this.color ?? placeholderFill(this.plane?.z ?? 0),
+      resolve: (c) => this.resolve(c),
+      pick: (c, phase) => this.pickColor(c, phase),
+      setCurrent: (c) => {
+        this.color = c;
+        this.uiDirty = true;
+      },
+      swatches: () => swatchesOf(this.nodes),
+      addSwatch: (hex) => {
+        let id: string | null = null;
+        this.edit(() => {
+          id = nextNodeId(this.nodes, 'c');
+          this.nodes.push({ id, kind: 'swatch', name: `Farbe ${id.slice(1)}`, color: hex });
+        });
+        return id;
+      },
+      editSwatch: (id, patch, phase) => this.editSwatch(id, patch, phase),
+      deleteSwatch: (id) => {
+        this.edit(() => {
+          bakeSwatch(this.nodes, id);
+          this.nodes = this.nodes.filter((n) => n.id !== id);
+          this.zone.nodes = this.nodes;
+        });
+        if (this.color === `@${id}`) this.color = null;
+        this.ui.toast('Feld gelöscht; Flächen behalten seine Farbe als Wert');
+      },
+      recent: () => this.recentColors,
+      dropHover: (x, y) => {
+        const r = this.host.surface.getBoundingClientRect();
+        this.dropAt = { x: x - r.left, y: y - r.top };
+        this.drawOverlay();
+      },
+      drop: (c, x, y) => this.dropColor(c, x, y),
+      dropEnd: () => {
+        this.dropAt = null;
+        this.drawOverlay();
+      },
+    };
+  }
+
+  /** Farbe als zuletzt benutzt merken (als Wert) */
+  private pushRecent(c: PaintColor): void {
+    const hex = this.resolve(c);
+    this.recentColors = [hex, ...this.recentColors.filter((x) => x !== hex)].slice(0, 10);
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(this.recentColors));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /** Farbe aufnehmen (Pipette): wird die aktuelle, ohne die Auswahl zu ändern */
+  private takeColor(hex: string): void {
+    this.color = hex;
+    this.pushRecent(hex);
+    this.uiDirty = true;
+  }
+
+  /**
+   * Farbe im Menü gewählt: wird die aktuelle und geht an die Auswahl (die gewählte Fläche der Direktauswahl oder die
+   * gewählten Formen, deren Flächen dann alle diese Grundfarbe tragen; Löcher bleiben Löcher). Ziehen im Wähler ist
+   * ein Schritt im Arbeitsverlauf
+   */
+  private pickColor(c: PaintColor, phase: PickPhase): void {
+    this.color = c;
+    const face = isPathTool(this.tool) ? this.paths.selectedFace() : null;
+    const free = (s: ZoneShape) => {
+      const pl = findPlane(this.nodes, s.parent);
+      return !s.locked && !!pl && !planeLocked(this.nodes, pl);
+    };
+    const shapes = face ? (free(face.shape) ? [face.shape] : []) : this.selectedShapes().filter(free);
+    if (shapes.length) {
+      if (phase === 'start' || phase === 'tap') this.history.begin(this.nodes);
+      if (face) setFaceFill(face.shape, face.face, c);
+      else
+        for (const s of shapes) {
+          s.fill = c;
+          const holes = s.regions?.filter((r) => r.fill === null);
+          if (holes?.length) s.regions = holes;
+          else delete s.regions;
+        }
+      if (phase === 'end' || phase === 'tap') {
+        if (this.history.commit(this.nodes)) this.changed();
+      } else this.changed();
+      // die Auswahl hat jetzt diese Farbe; nicht gleich zurückholen
+      this.colorSel = this.selectionColorKey();
+    }
+    if (phase === 'end' || phase === 'tap') this.pushRecent(c);
+    this.uiDirty = true;
+  }
+
+  /** Feld der Zonenpalette ändern (Name, Farbe); Ziehen im Wähler ist ein Schritt */
+  private editSwatch(id: string, patch: { name?: string; color?: string }, phase: PickPhase): void {
+    const sw = swatchesOf(this.nodes).find((x) => x.id === id);
+    if (!sw) return;
+    if (phase === 'start' || phase === 'tap') this.history.begin(this.nodes);
+    if (patch.name) sw.name = patch.name;
+    if (patch.color) sw.color = patch.color;
+    if (phase === 'end' || phase === 'tap') {
+      if (this.history.commit(this.nodes)) this.changed();
+    } else this.changed();
+  }
+
+  /** Schlüssel der Auswahl, deren Farbe der Farbknopf zeigt (gewählte Fläche oder Formen) */
+  private selectionColorKey(): string {
+    const face = isPathTool(this.tool) ? this.paths.selectedFace() : null;
+    return face ? `f|${face.shape.id}|${face.face.inner.join(',')}` : this.selection.join(',');
+  }
+
+  /** neue Auswahl: ihre Grundfarbe wird die aktuelle Farbe (wie in Illustrator) */
+  private syncColorFromSelection(): void {
+    const key = this.selectionColorKey();
+    if (key === this.colorSel) return;
+    this.colorSel = key;
+    const face = isPathTool(this.tool) ? this.paths.selectedFace() : null;
+    const c = face ? facePaint(face.shape, face.face).fill : this.shape?.fill;
+    if (c) this.color = c;
+  }
+
+  /** Fläche unter dem Bildpunkt: Form, Ebene, Fläche, Punkt der Ebene und Punkt im Pfad; any: auch gesperrte */
+  private faceAtScreen(p: Pt, any = false): { shape: ZoneShape; plane: ZonePlane; face: Face; q: Pt; local: Pt } | null {
+    const hit = any ? this.host.world.planes.pick(this.views.rayAt(p.x, p.y)) : this.pickShape(p);
+    const shape = hit ? findShape(this.nodes, hit.id) : undefined;
+    const plane = shape ? findPlane(this.nodes, shape.parent) : undefined;
+    const q = plane ? this.planePoint(plane, p) : null;
+    if (!shape || !plane || !q) return null;
+    const local = { x: (q.x - shape.x) / shape.sx, y: (q.y - shape.y) / shape.sy };
+    const faces = shapeFaces(shape);
+    const i = faceAt(faces, local.x, local.y);
+    return i >= 0 ? { shape, plane, face: faces[i], q, local } : null;
+  }
+
+  /** sichtbare Farbe unter dem Bildpunkt (Füllstapel und Ebenenstapel, ohne Nebel), als Wert */
+  private sampleColor(p: Pt): string | null {
+    const f = this.faceAtScreen(p, true);
+    if (!f) return null;
+    const look = this.host.world.currentLook;
+    const sw = swatchMap(this.nodes);
+    const pl = paintLayers(facePaint(f.shape, f.face), styleMap(this.nodes), faceBox(f.face));
+    if (!pl) return null;
+    let c = evalLayers(pl.layers, f.local.x, f.local.y, sw, look);
+    if (f.plane.fills?.length) c = evalLayers(f.plane.fills, f.q.x, f.q.y, sw, look, c);
+    return rgbToHex(...c.rgb);
+  }
+
+  /** Farbe fallen lassen (ColorDrop): füllt die Fläche darunter, danach „Weiter füllen“ */
+  private dropColor(c: PaintColor, x: number, y: number): void {
+    const r = this.host.surface.getBoundingClientRect();
+    const f = this.faceAtScreen({ x: x - r.left, y: y - r.top });
+    this.dropAt = null;
+    if (!f) {
+      this.ui.toast('Dort liegt keine Fläche (gesperrte Ebenen und Formen nehmen keine Farbe)');
+      this.drawOverlay();
+      return;
+    }
+    this.edit(() => setFaceFill(f.shape, f.face, c));
+    this.color = c;
+    this.pushRecent(c);
+    this.fillMode = c;
+    this.updateCursor();
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
+  /** „Weiter füllen“: die Fläche unter dem Zeiger füllen, jede höchstens einmal je Geste */
+  private fillAt(g: Extract<Gesture, { kind: 'fill' }>, p: Pt): void {
+    const f = this.fillMode ? this.faceAtScreen(p) : null;
+    if (!f || !this.fillMode) return;
+    const key = `${f.shape.id}|${f.face.inner.join(',')}`;
+    if (g.done.has(key)) return;
+    g.done.add(key);
+    setFaceFill(f.shape, f.face, this.fillMode);
+    this.meshDirty = true;
+    this.uiDirty = true;
+  }
+
+  private endFill(): void {
+    this.fillMode = null;
+    this.updateCursor();
+    this.uiDirty = true;
+  }
+
+  /** Finger aufgesetzt (Stift war im Spiel): nach HOLD_TIME ohne Bewegung greift die Pipette */
+  private startHold(id: number): void {
+    this.endHold(false);
+    const timer = window.setTimeout(() => {
+      const ptr = this.pointers.get(id);
+      if (!this.fingerHold || this.fingerHold.id !== id || !ptr || ptr.moved) return;
+      this.fingerHold.on = true;
+      this.holdSample(ptr);
+    }, HOLD_TIME);
+    this.fingerHold = { id, timer, on: false };
+  }
+
+  private holdSample(p: Pt): void {
+    const c = this.sampleColor(p);
+    this.loupe = c ? { x: p.x, y: p.y, color: c } : null;
+    this.drawOverlay();
+  }
+
+  /** Finger ab: hat die Pipette gegriffen, wird ihre Farbe die aktuelle */
+  private endHold(take: boolean): void {
+    const h = this.fingerHold;
+    if (!h) return;
+    window.clearTimeout(h.timer);
+    this.fingerHold = null;
+    if (take && h.on && this.loupe) {
+      this.takeColor(this.loupe.color);
+      this.ui.toast(`Farbe aufgenommen: ${this.loupe.color}`);
+    }
+    if (this.loupe) {
+      this.loupe = null;
+      this.drawOverlay();
+    }
   }
 
   // ------------------------------------------------------------------ Tasten
@@ -2149,13 +2441,18 @@ export class PlaneEditor {
     else if (k === 'm') this.setTool('rect');
     else if (k === 'l') this.setTool('ellipse');
     else if (k === 'u') this.setTool(this.tool === 'rect' ? 'ellipse' : this.tool === 'ellipse' ? 'arch' : 'rect');
+    else if (k === 'i') this.setTool('pipette');
     else if (k === '1') this.setView('game');
     else if (k === '2') this.setView('front');
     else if (k === '3') this.setView('free');
     else if (k === '4') this.setView('side');
     else if (k === 'tab') this.setBuilding(false);
     else if (k === ' ') this.spaceDown = true;
-    else if (k === 'escape') this.escape();
+    else if (k === 'escape') {
+      if (this.fillMode) this.endFill();
+      else if (this.ui.colorOpen) this.ui.closeColor();
+      else this.escape();
+    }
     else if (k === 'delete' || k === 'backspace') this.deleteShape();
     else if (k === ']') this.orderShape(1);
     else if (k === '[') this.orderShape(-1);

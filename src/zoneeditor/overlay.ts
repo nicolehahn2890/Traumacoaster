@@ -38,9 +38,13 @@ export interface OverlayState {
   snap: Pt | null;
   /** Rasterlinien der aktiven Ebene */
   grid: Array<[Pt, Pt]>;
+  /** Fläche, auf die eine gezogene Farbe fiele (ColorDrop), mit Löchern */
+  target: Pt[][] | null;
+  /** Lupe der Pipette: Stelle und aufgenommene Farbe */
+  loupe: (Pt & { color: string }) | null;
 }
 
-export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [] });
+export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [], target: null, loupe: null });
 
 const ring = (pts: Pt[]): string => (pts.length ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z` : '');
 const open = (pts: Pt[]): string => (pts.length > 1 ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}` : '');
@@ -61,6 +65,8 @@ export class EditorOverlay {
   private readonly anchorGroup = document.createElementNS(NS, 'g');
   private readonly knobGroup = document.createElementNS(NS, 'g');
   private readonly handleGroup = document.createElementNS(NS, 'g');
+  private readonly targetPath = document.createElementNS(NS, 'path');
+  private readonly loupeRing = document.createElementNS(NS, 'circle');
   /** Kantenlänge der Rahmen-Griffe (Pixel); auf Touch-Geräten größer */
   handleSize = 9;
 
@@ -79,7 +85,11 @@ export class EditorOverlay {
     this.snapRing.setAttribute('class', 'ze-snap');
     this.snapRing.setAttribute('r', '7');
     this.tangentPath.setAttribute('class', 'ze-tangent');
-    this.el.append(this.gridPath, this.groupPath, this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.regionPath, this.tangentPath, this.anchorGroup, this.knobGroup, this.handleGroup, this.snapRing);
+    this.targetPath.setAttribute('class', 'ze-target');
+    this.targetPath.setAttribute('fill-rule', 'evenodd');
+    this.loupeRing.setAttribute('class', 'ze-loupe');
+    this.loupeRing.setAttribute('r', '26');
+    this.el.append(this.targetPath, this.loupeRing, this.gridPath, this.groupPath, this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.regionPath, this.tangentPath, this.anchorGroup, this.knobGroup, this.handleGroup, this.snapRing);
   }
 
   set visible(on: boolean) {
@@ -98,6 +108,14 @@ export class EditorOverlay {
 
   draw(s: OverlayState): void {
     this.facePath.setAttribute('d', s.face ? s.face.map(ring).join('') : '');
+    this.targetPath.setAttribute('d', s.target ? s.target.map(ring).join('') : '');
+    this.loupeRing.style.display = s.loupe ? '' : 'none';
+    if (s.loupe) {
+      // über dem Finger, damit er die Farbe nicht verdeckt
+      this.loupeRing.setAttribute('cx', s.loupe.x.toFixed(1));
+      this.loupeRing.setAttribute('cy', (s.loupe.y - 70).toFixed(1));
+      this.loupeRing.style.fill = s.loupe.color;
+    }
     this.outlinePath.setAttribute('d', s.outlines.map(ring).join(''));
     this.linePath.setAttribute('d', s.lines.map(open).join(''));
     this.boxPath.setAttribute('d', s.box ? ring(s.box) : '');

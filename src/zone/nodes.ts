@@ -468,12 +468,55 @@ export function copyPaint(p: Paint): Paint {
  */
 export function setFacePaint(shape: ZoneShape, face: Face, paint: Paint): void {
   const faces = shapeFaces(shape);
+  // eine Form aus einer einzigen Fläche trägt ihren Anstrich selbst (dann zeigen Leiste und Farbknopf ihn auch)
+  if (faces.length === 1 && paint.fill !== null) {
+    const own = copyPaint(paint);
+    shape.fill = own.fill as PaintColor;
+    for (const k of ['fills', 'style', 'opacity'] as const) {
+      if (own[k] === undefined) delete shape[k];
+    }
+    if (own.fills) shape.fills = own.fills;
+    if (own.style) shape.style = own.style;
+    if (own.opacity !== undefined) shape.opacity = own.opacity;
+    delete shape.regions;
+    return;
+  }
   const live = (r: ZoneRegion) => faces.some((f) => insideWithHoles(f.outline, f.holes, r.x, r.y));
   const rest = (shape.regions ?? []).filter((r) => !insideWithHoles(face.outline, face.holes, r.x, r.y) && live(r));
   const own = paint.fill === null ? { fill: null } : copyPaint(paint);
   const regions = samePaint(own, shape) ? rest : [...rest, { x: round(face.inner[0], 3), y: round(face.inner[1], 3), ...own }];
   if (regions.length) shape.regions = regions;
   else delete shape.regions;
+}
+
+/**
+ * Feld der Zonenpalette auflösen (vor dem Löschen): jede Farbe, die darauf verweist, bekommt seinen Wert (Look Tag)
+ */
+export function bakeSwatch(nodes: readonly ZoneNode[], id: string): void {
+  const sw = nodes.find((n): n is ZoneSwatch => isSwatch(n) && n.id === id);
+  if (!sw) return;
+  const ref = `@${id}`;
+  const fix = (c: PaintColor): PaintColor => (c === ref ? sw.color : c);
+  const fixFills = (fills: ZoneFill[] | undefined) => {
+    for (const f of fills ?? []) {
+      if (f.type === 'color') f.color = fix(f.color);
+      else for (const st of f.stops) st.color = fix(st.color);
+    }
+  };
+  for (const n of nodes) {
+    if (isShape(n)) {
+      n.fill = fix(n.fill);
+      fixFills(n.fills);
+      for (const r of n.regions ?? []) {
+        if (r.fill !== null) r.fill = fix(r.fill);
+        fixFills(r.fills);
+      }
+    } else if (isPlane(n)) fixFills(n.fills);
+    else if (isStyle(n)) {
+      n.fill = fix(n.fill);
+      fixFills(n.fills);
+    }
+  }
 }
 
 /** Grundfarbe einer Fläche setzen; ihr Füllstapel und ihre Deckkraft bleiben (null macht ein Loch) */

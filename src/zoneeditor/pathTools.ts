@@ -1324,6 +1324,11 @@ export class PathTools {
     return best;
   }
 
+  /** gewählte Fläche, solange keine Anker gewählt sind (Farbmenü: Farbe geht an sie) */
+  selectedFace(): { shape: ZoneShape; face: Face } | null {
+    return this.anchors.length ? null : this.currentFace();
+  }
+
   /** gewählte Fläche (nach Änderungen an ihrem Punkt neu gesucht) */
   private currentFace(): { shape: ZoneShape; face: Face } | null {
     if (!this.face) return null;
