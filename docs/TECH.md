@@ -597,7 +597,9 @@ deren Weltrenderer und Spielkamera; seine Oberfläche ist HTML über dem Spielbi
   aus (`setLevelGroundVisible(false)`), auch im Spiel ohne Editor.
 - **Ansichten** (`src/zoneeditor/views.ts`): Spielblick ist die Spielkamera; Frontal (Ortho, gerade auf die Ebenen,
   übernimmt Lage und Größe der aktiven Ebene), Frei (Umkreisen) und Seite (Frei schräg von der Seite) zeichnen über
-  `WorldRenderer.viewCamera` und lassen Spielkamera, Bühne und Pinsel unberührt.
+  `WorldRenderer.viewCamera` und lassen Spielkamera, Bühne und Pinsel unberührt. Der Nebel rechnet mit dem Abstand zur
+  zeichnenden Kamera: `WorldRenderer.viewFog` gibt Frontal denselben Nebel je Tiefe wie dem Spielblick (sonst läge in
+  3000 m Abstand alles im Nebel und wäre weiß, Befund an Tor S1), Frei und Seite zeigen die reinen Farben.
 - **Eingabe** (`src/zoneeditor/planeEditor.ts`): Beim Bauen fängt der Editor die Zeiger von `#app` in der Capture-Phase
   ab (das Spiel sieht sie nicht) und alle Tasten am Fenster. Stift und Maus führen die Werkzeuge; zwei Finger schwenken
   und zoomen; ein einzelner Finger wird ignoriert, sobald ein Stift im Spiel war; zwei Finger tippen = rückgängig, drei =

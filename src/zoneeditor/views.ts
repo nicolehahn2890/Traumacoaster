@@ -13,6 +13,8 @@ export type ViewMode = 'game' | 'front' | 'free';
 export const VIEW_WORDS: Record<ViewMode | 'side', string> = { game: 'Spielblick', front: 'Frontal', free: 'Frei', side: 'Seite' };
 
 const DEG = Math.PI / 180;
+/** Frontal: Abstand der Kamera vor der Bühne (Meter); weit genug, dass jede Ebene davor liegt */
+const FRONT_DISTANCE = 3000;
 
 export class EditorViews {
   mode: ViewMode = 'game';
@@ -47,7 +49,7 @@ export class EditorViews {
       c.right = this.width / 2 / f.zoom;
       c.top = this.height / 2 / f.zoom;
       c.bottom = -this.height / 2 / f.zoom;
-      c.position.set(f.x, f.y, 3000);
+      c.position.set(f.x, f.y, FRONT_DISTANCE);
       c.up.set(0, 1, 0);
       c.lookAt(f.x, f.y, 0);
       c.updateProjectionMatrix();
@@ -66,6 +68,8 @@ export class EditorViews {
       c.updateMatrixWorld(true);
     }
     this.world.viewCamera = this.mode === 'game' ? null : this.camera;
+    // Frontal zeigt die Farben wie der Spielblick (Nebel je Tiefe), Frei und Seite die reinen Farben
+    this.world.viewFog = this.mode === 'front' ? FRONT_DISTANCE : this.mode === 'free' ? Infinity : null;
   }
 
   /** Strahl durch einen Bildpunkt (CSS-Pixel) in der Kamera dieses Bildes */

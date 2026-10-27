@@ -403,6 +403,8 @@ export class EditorUi {
 
   /** Bauplan der Liste beim letzten Aufbau */
   private structure = '';
+  /** Inhalt der Leiste unten beim letzten Aufbau */
+  private contextKey = '-';
   /** aktuelle Abstände je vorderer Ebene (die Pillen lesen sie beim Aufsetzen) */
   private gaps = new Map<string, number>();
   private lastNameTap = { id: '', t: 0 };
@@ -561,6 +563,10 @@ export class EditorUi {
 
   /** Leiste unten: für eine gewählte Form Farbe und Reihenfolge, sonst für die aktive Ebene Rolle und Isolieren */
   setContext(plane: ZonePlane | null, shape: ZoneShape | null, isolate: Isolate): void {
+    // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
+    const key = shape ? `s|${shape.id}|${shape.name}|${shape.fill}` : plane ? `p|${plane.id}|${plane.name}|${plane.role}|${isolate}` : '';
+    if (key === this.contextKey) return;
+    this.contextKey = key;
     this.context.replaceChildren();
     if (shape) {
       this.context.append(el('span', 'ze-label', shape.name));

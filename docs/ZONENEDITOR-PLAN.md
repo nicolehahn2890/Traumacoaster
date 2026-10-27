@@ -1,7 +1,7 @@
 # Trauma Coaster – Plan für den Zonen-Editor
 
 Stand 27.10.2026. **Startfragen A1 bis A7 von Florian am 27.10.2026 beantwortet (alle wie empfohlen, Abschnitt 9);
-Stufe 0 und Stufe 1 gebaut (Abschnitt 6), Tor S1 wartet auf Florians Test am Mac und am iPad.** Gebaut wird Stufe für
+Stufe 0 und Stufe 1 gebaut, Tor S1 bestanden (Florian, 27.10.2026); als Nächstes Stufe 2.** Gebaut wird Stufe für
 Stufe mit Tor, auf dem Branch `zoneneditor`. Der große Plan (`docs/GROSSER-PLAN.md`)
 ruht seit heute auf Florians Wunsch; Etappe 2 steht nach Schritt 7, dem Freiraumfeld und der Freigabe der Ebenen-Probe,
 Tor 2b ist offen. Die Session von Etappe 2 hat die Pause per Nachricht bekommen (27.10.2026).
@@ -811,7 +811,12 @@ Stützen, 2,1 px), Szenario 11 mit 7 Prüfungen grün (32 Ebenen mit 36 Formen u
 Draw Calls gesamt, „Bild halten“ mit 0,0000 px Abweichung), im Browser Verschieben, Ecke ziehen (Gegenecke bleibt auf
 0 px), Rückgängig, Sichern und Spielansicht. **Platzhalter:** Aussehen der Oberfläche, Füllfarben, die Probe-Formen.
 **Noch nicht:** Zeichenstift und Punktbearbeitung (Stufe 2), die Bahn kennt die Ebenen nicht (Stufe 4, im Modus
-„Spielen“ zeichnet sie wie bisher), keine Messung auf echtem iPad und Handy.
+„Spielen“ zeichnet sie wie bisher).
+**Tor S1 bestanden (Florian, 27.10.2026)** mit einem Befund: In Frontal hatten die Formen keine Farbe und waren weiß.
+Ursache: Der Nebel der Welt rechnet mit dem Abstand zur zeichnenden Kamera, und Frontal steht 3000 m vor der Bühne.
+Behoben am selben Tag: Frontal bekommt den Nebel je Tiefe wie der Spielblick, Frei und Seite zeigen die reinen Farben
+(`WorldRenderer.viewFog`); Szenario 11 misst die Farbe einer Form in Frontal (Abweichung 6 von 255, das Papierkorn).
+Dabei gefunden und behoben: Die Leiste unten wurde jede halbe Sekunde neu aufgebaut, ein Tipp konnte ins Leere gehen.
 
 **Stufe 2: Formen (L).** Zeichenstift, Direktauswahl, Formpinsel, Messer, Vektornetz mit Flächen, Löcher, Boolesche
 Operationen, Vereinfachen, Einrasten (auch im Bild), Gruppen, Kopieren und Einfügen über Ebenen hinweg, Drehen,

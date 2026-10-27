@@ -16,8 +16,8 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   `npm run dev:https`, `TECH.md` 12). Beide Branches sind nur lokal.
   **Stufe 1 gebaut (27.10.):** `?zone=<name>&editor=2` öffnet den Zonen-Editor mit Ebenen, Abständen („Bild halten“),
   Ansichten, Grundformen, Isolieren, Rückgängig, Sichern und Stift- und Fingereingabe (`TECH.md` 4i); 316 Tests, Build,
-  Replay und Szenario 11 grün. Nächster Schritt: Tor S1 (Florian am Mac und am iPad, Handy-Messung mit 30 Ebenen), dann
-  Stufe 2 (Formen).
+  Replay und Szenario 11 grün. **Tor S1 bestanden (Florian, 27.10.)**; sein Befund (Frontal ohne Farbe, Nebel) ist
+  behoben. Nächster Schritt: Stufe 2 (Formen).
 
 - **25.10., Etappe 2 begonnen** (Branch `etappe-2-bahn-und-welt` von `main`; die zwölf Arbeitsschritte mit drei Toren stehen in
   `docs/GROSSER-PLAN.md`, Paket 10, von Florian bestätigt). Technik in `docs/TECH.md` 4h.
@@ -273,8 +273,8 @@ Eigene automatische Tests im Dev-Server mit `TC_NO_RECORD=1`, damit sie die echt
 ## 3. Nächster Schritt: Stufe 1 des Zonen-Editors
 
 **Seit 27.10.2026 gilt:** Etappe 2 ruht; gebaut wird der Zonen-Editor nach `docs/ZONENEDITOR-PLAN.md`, Abschnitt 6, auf
-dem Branch `zoneneditor`. Stufe 1 ist gebaut und wartet auf Tor S1 (Florian baut am Mac und am iPad acht Ebenen mit
-Grundformen, stellt Abstände ein, navigiert, sichert; das Handy zeigt die Zone; Messung mit der Probe aus 30 Ebenen).
+dem Branch `zoneneditor`. Stufe 1 ist gebaut, Tor S1 bestanden (27.10.); als Nächstes Stufe 2 (Formen: Zeichenstift,
+Kurvenstift, Formpinsel, Vektornetz mit Flächen, Messer, Boolesche Operationen, SVG-Austausch mit Illustrator).
 Für das iPad den HTTPS-Zugang nutzen (Profil aus `/__tc-ca.pem` installieren und voll vertrauen, `TECH.md` 12). Danach
 Stufe 2 (Formen). Der Text unten beschreibt den Stand vor der Pause und gilt wieder, wenn der große Plan weiterläuft.
 

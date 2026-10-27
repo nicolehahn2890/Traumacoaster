@@ -1076,6 +1076,7 @@ export class PlaneEditor {
     document.removeEventListener('gesturestart', this.onGesture);
     s.style.cursor = '';
     this.host.world.viewCamera = null;
+    this.host.world.viewFog = null;
     this.ui.destroy();
   }
 }

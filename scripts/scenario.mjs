@@ -15,6 +15,7 @@ import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
+import sharp from 'sharp';
 
 const BASE = process.env.TC_URL ?? 'http://localhost:4173/';
 /** Nur einzelne Schritte: node scripts/scenario.mjs 3 5 */
@@ -607,6 +608,35 @@ if (want('11')) {
   await sleep(150);
   const c3 = await count();
   check(c2.shapes === c1.shapes + 1 && c3.shapes === c1.shapes, `Rechteck aufgezogen (${c2.shapes} Formen) und rückgängig (${c3.shapes})`);
+  // Frontal: Formen in ihrer Farbe (Befund an Tor S1: vorher lag in Frontal alles im Nebel und war weiß)
+  await page.click('text=Frontal');
+  await sleep(300);
+  await page.mouse.move(560, 330);
+  await page.mouse.down();
+  await page.mouse.move(700, 430, { steps: 4 });
+  await page.mouse.up();
+  await sleep(200);
+  await page.keyboard.press('Escape');
+  await sleep(150);
+  await page.click('text=Nur diese');
+  await sleep(300);
+  const spot = await page.evaluate(() => {
+    const ed = window.tcGame.current.planeEditor;
+    const s = ed.nodes.filter((n) => n.kind === 'shape').reduce((a, b) => (b.id.localeCompare(a.id, 'en', { numeric: true }) > 0 ? b : a));
+    const plane = ed.nodes.find((n) => n.id === s.parent);
+    const p = ed.screenOf(plane, { x: s.x, y: s.y }, s);
+    return { fill: s.fill, x: p.x, y: p.y };
+  });
+  const png = await page.screenshot({ path: 'screenshots/scenario-11-zoneneditor-frontal.png' });
+  const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+  const at = (Math.round(spot.y) * info.width + Math.round(spot.x)) * info.channels;
+  const got = [data[at], data[at + 1], data[at + 2]];
+  const wantRgb = [1, 3, 5].map((i) => parseInt(spot.fill.slice(i, i + 2), 16));
+  const diff = Math.max(...got.map((v, i) => Math.abs(v - wantRgb[i])));
+  check(diff <= 12, `Frontal zeigt die Form in ihrer Farbe (${spot.fill}, gemessen rgb(${got.join(', ')}), Abweichung ${diff})`);
+  await page.click('text=Alle');
+  await page.click('text=Spielblick');
+  await sleep(200);
   await page.keyboard.press('v');
   await page.screenshot({ path: 'screenshots/scenario-11-zoneneditor.png' });
   await page.click('text=Seite');

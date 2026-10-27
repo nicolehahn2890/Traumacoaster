@@ -45,6 +45,10 @@ export interface WorldRendererOptions {
   look?: LookName | null;
 }
 
+/** Luftperspektive: Der Nebel beginnt so weit hinter der Bühne (Spur-0-Ebene) und ist dort ganz dicht (Meter) */
+const FOG_NEAR = 24;
+const FOG_FAR = 140;
+
 /** Material der Splitter eines Durchbruchs */
 const SPLINTER = paintedMaterial({ color: new Color('#7a2a2a') });
 
@@ -100,6 +104,12 @@ export class WorldRenderer {
    * Spielkamera, Bühne und Pinsel bleiben davon unberührt.
    */
   viewCamera: Camera | null = null;
+  /**
+   * Nebel für diese Ansicht: Abstand der Bühne entlang ihrer Blickrichtung (Frontal: derselbe Nebel je Tiefe wie im
+   * Spielblick), Infinity ohne Nebel (Frei, Seite), null wie die Spielkamera. Der Nebel rechnet mit dem Abstand zur
+   * zeichnenden Kamera; ohne das läge in Frontal (3000 m entfernt) alles im Nebel und wäre weiß.
+   */
+  viewFog: number | null = null;
 
   constructor(opts: WorldRendererOptions = {}) {
     this.canvas = document.createElement('canvas');
@@ -164,15 +174,23 @@ export class WorldRenderer {
     this.lights.follow(view.cx);
     // Nebelweiten relativ zum Kameraabstand: Luftperspektive beginnt hinter der Bühne (Labor)
     const D = Number.isFinite(this.camera.distance) ? this.camera.distance : 300;
-    this.fog.near = D + 24;
-    this.fog.far = D + 140;
+    this.fog.near = D + FOG_NEAR;
+    this.fog.far = D + FOG_FAR;
   }
 
   /** Welt zeichnen (zwischen Pixi-Himmel und Pixi-HUD) */
   render(): void {
     this.tickEffects();
     this.three.resetState();
+    const { near, far } = this.fog;
+    if (this.viewCamera && this.viewFog !== null) {
+      const finite = Number.isFinite(this.viewFog);
+      this.fog.near = finite ? this.viewFog + FOG_NEAR : 1e9;
+      this.fog.far = finite ? this.viewFog + FOG_FAR : 2e9;
+    }
     this.three.render(this.scene, this.viewCamera ?? this.camera.active);
+    this.fog.near = near;
+    this.fog.far = far;
   }
 
   /** Splitter weiterbewegen (Schwerkraft, 1,2 s), dann entfernen */
