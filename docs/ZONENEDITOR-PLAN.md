@@ -1,7 +1,7 @@
 # Trauma Coaster – Plan für den Zonen-Editor
 
 Stand 27.10.2026. **Startfragen A1 bis A7 von Florian am 27.10.2026 beantwortet (alle wie empfohlen, Abschnitt 9);
-Stufe 0 und Stufe 1 gebaut, Tor S1 bestanden (Florian, 27.10.2026); als Nächstes Stufe 2.** Gebaut wird Stufe für
+Stufe 0 und Stufe 1 gebaut, Tor S1 bestanden (Florian, 27.10.2026); Stufe 2 im Kern gebaut, wartet auf Tor S2.** Gebaut wird Stufe für
 Stufe mit Tor, auf dem Branch `zoneneditor`. Der große Plan (`docs/GROSSER-PLAN.md`)
 ruht seit heute auf Florians Wunsch; Etappe 2 steht nach Schritt 7, dem Freiraumfeld und der Freigabe der Ebenen-Probe,
 Tor 2b ist offen. Die Session von Etappe 2 hat die Pause per Nachricht bekommen (27.10.2026).
@@ -823,6 +823,40 @@ Operationen, Vereinfachen, Einrasten (auch im Bild), Gruppen, Kopieren und Einf�
 Spiegeln, Ausrichten; Skizze als Pause-Ebene; SVG-Export je Ebene und Stapel, SVG-Import aus Illustrator als Brücke.
 Platzhalter: Füllfarben (graue Stufen). **Tor S2:** Florian zeichnet Bild 1 und 2 (Kontur, Unterteilung,
 Höhlenöffnung) am iPad mit dem Pencil und am Mac; der SVG-Export öffnet sauber in Illustrator und kommt zurück.
+**Stand 27.10.2026: Kern gebaut, wartet auf Tor S2** (Technik in `docs/TECH.md` 4i). Gebaut: das **Vektornetz**
+(`src/zone/faces.ts`): Umriss, Löcher und Teilungslinien einer Form zerfallen in Flächen; jede Fläche hat ihre eigene
+Füllung oder ist ein Loch (wie Illustrators Interaktiv malen: die Farbe hängt an einem Punkt in der Fläche, nicht am
+Pfad); die Welt zeichnet je Fläche, ein Treffer kennt seine Fläche. **Zeichenstift (P):** tippen gibt eine Ecke, ziehen
+eine Kurve (mit Wahltaste nur der Griff nach vorn), Gummiband beim Schweben von Maus und Pencil; auf den ersten Punkt
+tippen schließt, auf den letzten tippen, Eingabe oder „Fertig“ beendet; Entf, Cmd+Z oder zwei Finger nehmen den letzten
+Punkt zurück, „Abbrechen“ verwirft. Ist eine Form gewählt und berührt der Pfad sie, wird er eine Teilungslinie oder ein
+Ring in ihr, seine Punkte rasten an ihren Ankern und Kanten ein; sonst wird er eine neue Form. **Direktauswahl (A):**
+Anker und Griffe ziehen (ein runder Anker spiegelt den Griff gegenüber, mit Wahltaste nicht), Doppeltippen auf eine
+Linie setzt einen Anker, „Ecke“ und „Rund“, „Punkt löschen“ (Entf), „Linie löschen“ oder „Loch löschen“; eine Fläche
+antippen, dann eine Farbe oder „Loch“ (Entf). Enden von Teilungslinien kleben an ihrer Kante, wenn man den Umriss zieht,
+und rasten beim Loslassen an Kanten ein. **Formpinsel (B):** freihand, wird eine glatte Kurve mit wenigen Ankern
+(Kurvenanpassung nach Schneider; ein gezogener Kreis hat 3 bis 8 Anker, scharfe Knicke bleiben Ecken); geschlossen eine
+neue Form oder ein Ring in der gewählten Form, offen quer durch die gewählte Form eine Teilungslinie (auf die Kanten
+gekürzt). **Messer (K):** ein Strich quer durch eine Form der aktiven Ebene teilt sie. **Kopieren, Ausschneiden,
+Einfügen** (Cmd+C, X, V; „Kopieren“ in der Leiste der Form, „Einfügen“ in der Leiste der Ebene): in eine andere Ebene mit
+„Bild halten“ an dieselbe Stelle im Spielblick (gemessen 0,0014 px), mit „Welt halten“ an dieselbe Lage in Metern.
+**Spiegeln** waagrecht und senkrecht (Shift+H, Shift+V, zwei Knöpfe). **SVG** („SVG sichern“ und „SVG laden“ unten in
+der Ebenenliste, „Als SVG“ in der Leiste einer Ebene): je Ebene eine Gruppe `p3-name` von hinten nach vorn, 1 m = 10 px;
+eine Form ist ein Pfad mit ihren Kurven und Löchern, eine geteilte Form eine Gruppe ihrer gefüllten Flächen `s12-f0`
+mit echten Kurven (`src/zone/faceCurves.ts`, kein Vieleck); der Rahmen `rahmen-x…-y…` trägt den Ursprung, falls
+Illustrator die Datenattribute verliert. Laden: Gruppen mit Ebenen-Kennung ersetzen ihre Ebene; Formen, die unverändert
+zurückkommen, bleiben samt Teilungslinien; geänderte Flächen kommen als eigene Formen (Illustrator kennt keine
+Teilungslinien); andere oberste Gruppen werden neue Ebenen hinter dem Stapel; gelesen werden Klassen, Stile, alle
+Pfadbefehle samt Bögen, Transformationen, Kreise, Ellipsen, abgerundete Rechtecke, Polygone; Verläufe werden Vollton,
+Illustrator-Bearbeitungsdaten (`i:pgf`) werden übergangen und gemeldet; ein Schritt im Verlauf. Die Vorschaubilder der
+Ebenen zeigen die Flächenfarben. Geprüft: 356 Tests grün (40 neue: Flächen, Pfad-Werkzeuge mit einem Bild ohne Kamera,
+Kurvenanpassung, Flächen als Kurven, SVG-Rundlauf auch über eine Illustrator-artige Datei), Build grün, Szenario 12 mit
+8 Prüfungen grün (Zeichenstift, Teilungslinie, Fläche färben und Loch, Formpinsel, Messer, Kopie in die Ebene dahinter
+mit 0,0014 px, SVG sichern und laden ohne Änderung), am Mac im Browser mit Maus und nachgestelltem Pencil und zwei
+Fingern durchgespielt. Spielcode ist nicht berührt. **Platzhalter:** die acht Füllfarben, das Aussehen von Werkzeugzeichen
+und Leisten. **Noch offen aus Stufe 2** (für das Tor nicht nötig; danach oder auf Zuruf): Boolesche Operationen (Vereinen,
+Abziehen, Schnittmenge), Vereinfachen, Einrasten im Bild und am Raster, Mehrfachauswahl und Gruppen, Drehen, Ausrichten,
+Kurvenstift (Shift+P), Band (O), Skizze als Pause-Ebene.
 
 **Stufe 3: Farbe, Verläufe, Stile (M).** Farbmenü, Ziehen und Fallenlassen, Pipette, Verläufe auf der Fläche und über
 mehrere Flächen, Füllstapel mit Mischmodi und Deckkraft, Ebenenstapel, Luftperspektive, Zonenpalette, Stile (kopieren,

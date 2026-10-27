@@ -1,8 +1,9 @@
 /**
- * Zonen-Editor, Stufe 1 (docs/ZONENEDITOR-PLAN.md, Abschnitt 6): Gerüst, Ebenen, Kamera. Hängt sich wie der
- * Klötzchen-Editor in die Level-Szene einer Zone (`?zone=<name>&editor=2`) und nutzt deren Weltrenderer und Spielkamera,
- * so zeigt er genau das Bild des Spiels. Bauen: Der Editor nimmt Zeiger und Tasten (Werkzeuge, Ebenen, Ansichten);
- * Spielen: Das Level bekommt alles wie sonst (Tab oder der Knopf oben rechts).
+ * Zonen-Editor, Stufe 1 und 2 (docs/ZONENEDITOR-PLAN.md, Abschnitt 6): Gerüst, Ebenen, Kamera; Formen mit Zeichenstift,
+ * Direktauswahl, Formpinsel und Messer (src/zoneeditor/pathTools.ts), Kopieren über Ebenen, Spiegeln, SVG-Austausch.
+ * Hängt sich wie der Klötzchen-Editor in die Level-Szene einer Zone (`?zone=<name>&editor=2`) und nutzt deren
+ * Weltrenderer und Spielkamera, so zeigt er genau das Bild des Spiels. Bauen: Der Editor nimmt Zeiger und Tasten
+ * (Werkzeuge, Ebenen, Ansichten); Spielen: Das Level bekommt alles wie sonst (Tab oder der Knopf oben rechts).
  *
  * Eingabe nach Plan 3.3 und 4.2: Stift und Maus führen die Werkzeuge; zwei Finger schwenken und zoomen; ein einzelner
  * Finger wird ignoriert, sobald ein Stift im Spiel war (ohne Stift zeichnet der Finger); zwei Finger tippen =
@@ -18,12 +19,16 @@ import { CAMERA_TILT, viewState } from '@/track/stage';
 import { loadZone, onZoneChange, saveZone } from '@/zone/io';
 import type { ZoneFile } from '@/zone/types';
 import { buildSliceStack } from '@/zone/slices';
+import { flattenPath } from '@/zone/path';
+import { planesToSvg, slug, svgToPlanes } from '@/zone/svgPlanes';
 import {
   cloneNodes,
   depthBeside,
   ellipsePath,
+  faceFill,
   findPlane,
   findShape,
+  flipShape,
   isPlane,
   movePlaneDepth,
   nearestDepth,
@@ -38,10 +43,12 @@ import {
   serializeNodes,
   setGapBehind,
   shapeBounds,
+  shapeFaces,
   shapeLocalPolys,
   shapesOf,
   shapeToPlane,
   slicesToNodes,
+  transferShape,
   worldToPlane,
   type HoldView,
   type ZoneNode,
@@ -49,7 +56,8 @@ import {
   type ZoneShape,
 } from '@/zone/nodes';
 import { History } from './history';
-import { EditorOverlay, type OverlayState } from './overlay';
+import { EditorOverlay, emptyOverlay } from './overlay';
+import { PathTools, type PathTool } from './pathTools';
 import { EditorUi, type Isolate, type LayerRow, type Tool } from './ui';
 import { EditorViews, type ViewMode } from './views';
 
@@ -91,6 +99,8 @@ const BACKUP_KEY = (zone: string) => `tc.zoneeditor.${zone}`;
 const DEG = Math.PI / 180;
 const TAP_TIME = 260;
 const TAP_DIST = 12;
+const PATH_TOOLS: readonly Tool[] = ['direct', 'pen', 'brush', 'knife'];
+const isPathTool = (t: Tool): t is PathTool => PATH_TOOLS.includes(t);
 
 export class PlaneEditor {
   private nodes: ZoneNode[];
@@ -110,6 +120,12 @@ export class PlaneEditor {
   private readonly overlay = new EditorOverlay();
   private readonly ui: EditorUi;
   private readonly pointers = new Map<number, Pointer>();
+  private readonly paths: PathTools;
+  /** kopierte Form mit ihrer Ebene beim Kopieren (Einfügen in eine andere Ebene hält das Bild) */
+  private clip: { shape: ZoneShape; from: ZonePlane } | null = null;
+  /** Rang jeder Form in ihrer Ebene (Tiefenversatz der Griffe), nach jeder Änderung neu */
+  private ranks: Map<string, number> | null = null;
+  private altDown = false;
   private penSeen = false;
   private gesture: Gesture | null = null;
   private nav: Nav | null = null;
@@ -133,6 +149,43 @@ export class PlaneEditor {
     zone.nodes = this.nodes;
     this.active = planesOf(this.nodes)[0]?.id ?? null;
     this.views = new EditorViews(host.world);
+    this.paths = new PathTools({
+      nodes: () => this.nodes,
+      activePlane: () => this.plane,
+      selectedShape: () => this.shape,
+      select: (id) => this.selectShape(id),
+      planePoint: (plane, p) => this.planePoint(plane, p),
+      screenOf: (plane, q, shape) => this.screenOf(plane, q, shape),
+      pick: (p) => this.pickShape(p),
+      begin: () => this.history.begin(this.nodes),
+      commit: () => {
+        if (this.history.commit(this.nodes)) this.changed();
+        else this.changed(false);
+      },
+      cancel: () => this.cancelEdit(),
+      changed: () => this.changed(),
+      redraw: () => {
+        this.uiDirty = true;
+        this.drawOverlay();
+      },
+      toast: (m) => this.ui.toast(m),
+      ensurePlane: () => {
+        let p = this.plane;
+        if (!p) {
+          p = newPlane(this.nodes, 0);
+          this.nodes.push(p);
+          this.active = p.id;
+          this.changed();
+        }
+        return p;
+      },
+      addShape: (s) => {
+        s.order = shapesOf(this.nodes, s.parent).reduce((m, x) => Math.max(m, x.order), 0) + 1;
+        this.nodes.push(s);
+      },
+      fillFor: (plane) => placeholderFill(plane.z),
+      hitRadius: () => this.overlay.handleSize + 6,
+    });
     this.ui = new EditorUi(this.actions(), zone.name, this.overlay.el);
     this.ui.setTool(this.tool);
     this.ui.setView(this.viewChoice);
@@ -169,6 +222,7 @@ export class PlaneEditor {
   private setNodes(nodes: ZoneNode[]): void {
     this.nodes = nodes;
     this.zone.nodes = nodes;
+    this.ranks = null;
     if (!findShape(nodes, this.selected)) this.selected = null;
     if (!findPlane(nodes, this.active)) this.active = this.shape?.parent ?? planesOf(nodes)[0]?.id ?? null;
     this.changed();
@@ -178,6 +232,7 @@ export class PlaneEditor {
   private changed(markDirty = true): void {
     this.meshDirty = true;
     this.uiDirty = true;
+    this.ranks = null;
     window.clearTimeout(this.thumbTimer);
     this.thumbTimer = window.setTimeout(() => this.drawThumbs(), 180);
     if (markDirty) {
@@ -193,6 +248,35 @@ export class PlaneEditor {
     fn();
     if (this.history.commit(this.nodes)) this.changed();
     else this.changed(false);
+  }
+
+  /** Arbeitsschritt verwerfen: den Stand vom Beginn wiederherstellen, wenn sich etwas geändert hat */
+  private cancelEdit(): void {
+    const before = this.history.cancel();
+    if (before && JSON.stringify(serializeNodes(before)) !== JSON.stringify(serializeNodes(this.nodes))) this.setNodes(before);
+  }
+
+  /** Form wählen (null: keine); ihre Ebene wird die aktive */
+  private selectShape(id: string | null): void {
+    const s = findShape(this.nodes, id);
+    if (id && !s) return;
+    if (s && this.active !== s.parent) {
+      this.active = s.parent;
+      if (this.isolate !== 'off') this.meshDirty = true;
+    }
+    this.selected = s ? s.id : null;
+    this.paths.shapeChanged(this.selected);
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
+  /** vorderste Form unter dem Bildpunkt, die nicht gesperrt ist */
+  private pickShape(p: Pt): { id: string; face: number } | null {
+    return this.host.world.planes.pick(this.views.rayAt(p.x, p.y), (id) => {
+      const sh = findShape(this.nodes, id);
+      const pl = sh ? findPlane(this.nodes, sh.parent) : undefined;
+      return !!sh && !!pl && !sh.locked && !pl.locked;
+    });
   }
 
   /** Spielblick als Kamera für „Bild halten“ und die Tiefengrenze */
@@ -214,7 +298,8 @@ export class PlaneEditor {
     this.host.setGameUi(!on);
     this.meshDirty = true;
     if (!on) {
-      // das Spiel sieht immer den Spielblick
+      // ein laufender Pfad wird beendet; das Spiel sieht immer den Spielblick
+      this.paths.setTool(null);
       this.views.setMode('game', 0, { min: 0, max: 0 });
       this.viewChoice = 'game';
       this.ui.setView('game');
@@ -279,7 +364,9 @@ export class PlaneEditor {
     const planes = planesOf(this.nodes);
     const rows: LayerRow[] = planes.map((plane, i) => ({ plane, shapes: shapesOf(this.nodes, plane.id), gap: planes[i + 1] ? planes[i + 1].z - plane.z : null }));
     this.ui.setLayers(rows, this.active);
-    this.ui.setContext(this.building ? (this.plane ?? null) : null, this.building ? (this.shape ?? null) : null, this.isolate);
+    this.paths.shapeChanged(this.selected);
+    const path = this.building && isPathTool(this.tool) ? this.paths.context() : null;
+    this.ui.setContext(this.building ? (this.plane ?? null) : null, this.building ? (this.shape ?? null) : null, this.isolate, path, !!this.clip);
     const st = this.host.world.planes.stats;
     const tris = st.triangles >= 1000 ? `${(st.triangles / 1000).toFixed(1).replace('.', ',')}k` : String(st.triangles);
     this.ui.setTop(this.dirty, this.history.canUndo, this.history.canRedo, `${planes.length} Ebenen · ${st.shapes} Formen · ${tris} Dreiecke · Welt: ${this.host.world.drawCalls} Draw Call${this.host.world.drawCalls === 1 ? '' : 's'} · ${this.fps.value} fps`);
@@ -309,20 +396,23 @@ export class PlaneEditor {
       const ox = (c.width - (maxX - minX) * k) / 2;
       const oy = (c.height - (maxY - minY) * k) / 2;
       for (const s of shapes) {
-        const { outline, holes } = shapeLocalPolys(s);
-        const path = new Path2D();
-        for (const ring of [outline, ...holes]) {
-          ring.forEach(([px, py], i) => {
-            const q = shapeToPlane(s, px, py);
-            const x = ox + (q.x - minX) * k;
-            const y = c.height - (oy + (q.y - minY) * k);
-            if (i === 0) path.moveTo(x, y);
-            else path.lineTo(x, y);
-          });
-          path.closePath();
+        for (const face of shapeFaces(s)) {
+          const fill = faceFill(s, face);
+          if (fill === null) continue;
+          const path = new Path2D();
+          for (const ring of [face.outline, ...face.holes]) {
+            ring.forEach(([px, py], i) => {
+              const q = shapeToPlane(s, px, py);
+              const x = ox + (q.x - minX) * k;
+              const y = c.height - (oy + (q.y - minY) * k);
+              if (i === 0) path.moveTo(x, y);
+              else path.lineTo(x, y);
+            });
+            path.closePath();
+          }
+          g.fillStyle = fill;
+          g.fill(path, 'evenodd');
         }
-        g.fillStyle = s.fill;
-        g.fill(path, 'evenodd');
       }
     }
   }
@@ -330,7 +420,11 @@ export class PlaneEditor {
   /** Bildpunkt eines Ebenen-Punkts in der aktuellen Ansicht */
   private screenOf(plane: ZonePlane, q: Pt, shape?: ZoneShape): Pt | null {
     const w = planeToWorld(plane, q.x, q.y);
-    const rank = shape ? shapesOf(this.nodes, plane.id).indexOf(shape) * 0.003 : 0;
+    if (shape && !this.ranks) {
+      this.ranks = new Map();
+      for (const p of planesOf(this.nodes)) shapesOf(this.nodes, p.id).forEach((s, i) => this.ranks!.set(s.id, i));
+    }
+    const rank = shape ? (this.ranks!.get(shape.id) ?? 0) * 0.003 : 0;
     return this.views.toScreen(w.x, w.y, -plane.z + rank);
   }
 
@@ -352,14 +446,19 @@ export class PlaneEditor {
   }
 
   private drawOverlay(): void {
-    const st: OverlayState = { outlines: [], box: null, handles: [], preview: null };
-    if (this.building) {
+    const st = emptyOverlay();
+    if (this.building && isPathTool(this.tool)) {
+      this.paths.shapeChanged(this.selected);
+      this.paths.overlay(st);
+    } else if (this.building) {
       const s = this.shape;
       const p = s ? findPlane(this.nodes, s.parent) : undefined;
       if (s && p) {
         const { outline } = shapeLocalPolys(s);
         const ring = outline.map(([x, y]) => this.screenOf(p, shapeToPlane(s, x, y), s)).filter((q): q is Pt => !!q);
         st.outlines.push(ring);
+        // Teilungslinien zeigen, wie die Form in Flächen zerfällt
+        for (const c of s.cuts ?? []) st.lines.push(flattenPath(c.path, 0.3, c.closed).map(([x, y]) => this.screenOf(p, shapeToPlane(s, x, y), s)).filter((q): q is Pt => !!q));
         const hp = this.handlePoints(s).map((q) => this.screenOf(p, q, s));
         if (hp.every((q) => !!q)) {
           st.box = (hp as Pt[]).slice(0, 4);
@@ -449,12 +548,28 @@ export class PlaneEditor {
       },
       deletePlane: () => this.deletePlane(),
       fill: (color) => this.edit(() => {
+        // die ganze Form in einer Farbe; Löcher bleiben Löcher
         const s = this.shape;
-        if (s) s.fill = color;
+        if (!s) return;
+        s.fill = color;
+        const holes = s.regions?.filter((r) => r.fill === null);
+        if (holes?.length) s.regions = holes;
+        else delete s.regions;
       }),
       duplicate: () => this.duplicate(),
       orderShape: (dir) => this.orderShape(dir),
       deleteShape: () => this.deleteShape(),
+      flip: (axis) => this.flip(axis),
+      copy: () => this.copy(),
+      paste: () => this.paste(),
+      penDone: (closed) => this.paths.finishPen(closed),
+      penCancel: () => this.paths.cancelPen(),
+      anchorSmooth: () => this.paths.toggleAnchor(),
+      anchorDelete: () => this.paths.deleteAnchor(),
+      lineDelete: () => this.paths.deleteLine(),
+      faceFill: (fill) => this.paths.fillFace(fill),
+      exportSvg: (scope) => this.exportSvg(scope),
+      importSvg: (file) => void this.importSvg(file),
       tilt: (deg) => {
         this.host.cameraPanel?.setTilt(deg);
         this.syncCameraUi();
@@ -484,8 +599,11 @@ export class PlaneEditor {
 
   private setTool(t: Tool): void {
     this.tool = t;
+    this.paths.setTool(isPathTool(t) ? t : null);
     this.ui.setTool(t);
-    this.host.surface.style.cursor = t === 'select' ? '' : 'crosshair';
+    this.host.surface.style.cursor = t === 'select' || t === 'direct' ? '' : 'crosshair';
+    this.uiDirty = true;
+    this.drawOverlay();
   }
 
   private setView(v: ViewMode | 'side'): void {
@@ -583,13 +701,104 @@ export class PlaneEditor {
     });
   }
 
+  private flip(axis: 'x' | 'y'): void {
+    const s = this.shape;
+    if (s) this.edit(() => flipShape(s, axis));
+  }
+
+  private copy(cut = false): void {
+    const s = this.shape;
+    const p = s ? findPlane(this.nodes, s.parent) : undefined;
+    if (!s || !p) return;
+    this.clip = { shape: cloneNodes([s])[0] as ZoneShape, from: { ...p } };
+    if (cut) this.deleteShape();
+    else this.ui.toast('Kopiert: Einfügen in einer anderen Ebene setzt sie an dieselbe Stelle im Spielblick');
+    this.uiDirty = true;
+  }
+
+  /** kopierte Form in die aktive Ebene; aus einer anderen Ebene so, dass sie im Spielblick gleich aussieht (Bild halten) */
+  private paste(): void {
+    const c = this.clip;
+    const to = this.plane;
+    if (!c) return;
+    if (!to) {
+      this.ui.toast('Erst eine Ebene wählen');
+      return;
+    }
+    if (to.locked) {
+      this.ui.toast('Die aktive Ebene ist gesperrt');
+      return;
+    }
+    // die Ebene der Vorlage, wie sie jetzt liegt (sie kann seit dem Kopieren in der Tiefe gewandert sein)
+    const from = findPlane(this.nodes, c.from.id) ?? c.from;
+    const same = from.id === to.id;
+    this.edit(() => {
+      const copy = same ? (cloneNodes([c.shape])[0] as ZoneShape) : transferShape(c.shape, from, to, this.holdView());
+      copy.id = nextNodeId(this.nodes, 's');
+      copy.parent = to.id;
+      copy.order = shapesOf(this.nodes, to.id).reduce((m, x) => Math.max(m, x.order), 0) + 1;
+      if (same && findShape(this.nodes, c.shape.id)) {
+        copy.x += 1;
+        copy.y -= 1;
+      }
+      this.nodes.push(copy);
+      this.selected = copy.id;
+    });
+    if (!same) this.ui.toast(this.hold ? `In ${to.name} eingefügt: gleiche Stelle im Spielblick` : `In ${to.name} eingefügt: gleiche Lage in Metern (Welt halten)`);
+  }
+
+  /** SVG sichern: alle sichtbaren Ebenen oder nur die aktive (Plan 4.10) */
+  private exportSvg(scope: 'all' | 'plane'): void {
+    const plane = this.plane;
+    if (scope === 'plane' && !plane) return;
+    const svg = planesToSvg(this.nodes, { planes: scope === 'plane' && plane ? [plane.id] : undefined, zoneName: this.zone.name });
+    const name = `${this.zone.name}-${scope === 'plane' && plane ? slug(plane.name) || plane.id : 'ebenen'}.svg`;
+    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    this.ui.toast(`${name} gesichert: je Ebene eine Gruppe, 1 m = 10 px`);
+  }
+
+  /** SVG laden: Gruppen mit Ebenen-Kennung ersetzen ihre Ebene, andere werden neue Ebenen (ein Schritt im Verlauf) */
+  private async importSvg(file: File): Promise<void> {
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      this.ui.toast('Die Datei ließ sich nicht lesen');
+      return;
+    }
+    if (!/<svg[\s>]/i.test(text)) {
+      this.ui.toast('Das ist keine SVG-Datei');
+      return;
+    }
+    this.paths.setTool(isPathTool(this.tool) ? this.tool : null);
+    const r = svgToPlanes(text, this.nodes);
+    this.history.begin(this.nodes);
+    this.setNodes(r.nodes);
+    if (this.history.commit(this.nodes)) this.changed();
+    const parts: string[] = [];
+    if (r.replaced) parts.push(`${r.replaced} ${r.replaced === 1 ? 'Ebene' : 'Ebenen'} ersetzt`);
+    if (r.added) parts.push(`${r.added} neu`);
+    parts.push(`${r.shapes} ${r.shapes === 1 ? 'Form' : 'Formen'}${r.kept ? `, davon ${r.kept} unverändert` : ''}`);
+    this.ui.toast(`SVG geladen: ${parts.join(', ')}${r.warnings.length ? `. ${r.warnings.join('. ')}` : ''}`);
+  }
+
   private undo(): void {
+    if (this.paths.undoPoint()) return;
+    if (this.paths.busy) return;
     const prev = this.history.undo(this.nodes);
     if (prev) this.setNodes(prev);
     else this.ui.toast('Nichts zum Rückgängigmachen');
   }
 
   private redo(): void {
+    if (this.paths.busy) return;
     const next = this.history.redo(this.nodes);
     if (next) this.setNodes(next);
   }
@@ -697,6 +906,7 @@ export class PlaneEditor {
       /* ignore */
     }
     if (e.pointerType === 'pen') this.penSeen = true;
+    this.altDown = e.altKey;
     if (e.pointerType === 'touch') {
       const t = this.touches();
       if (t.length >= 2) {
@@ -718,12 +928,17 @@ export class PlaneEditor {
   private onMove = (e: PointerEvent): void => {
     if (!this.building) return;
     const ptr = this.pointers.get(e.pointerId);
-    if (!ptr) return;
+    if (!ptr) {
+      // ohne Druck: Gummiband des Zeichenstifts (Maus, schwebender Pencil)
+      if (this.tool === 'pen' && e.pointerType !== 'touch') this.paths.hoverAt(this.local(e));
+      return;
+    }
     e.stopPropagation();
     e.preventDefault();
     const p = this.local(e);
     ptr.x = p.x;
     ptr.y = p.y;
+    this.altDown = e.altKey;
     if (Math.hypot(p.x - ptr.sx, p.y - ptr.sy) > TAP_DIST) ptr.moved = true;
     this.shiftDown = e.shiftKey;
     const nav = this.nav;
@@ -819,6 +1034,7 @@ export class PlaneEditor {
   }
 
   private cancelGesture(): void {
+    this.paths.cancelActive();
     if (!this.gesture) return;
     const before = this.history.cancel();
     if (before && this.gesture.kind !== 'create' && this.gesture.kind !== 'empty') this.setNodes(before);
@@ -834,6 +1050,10 @@ export class PlaneEditor {
 
   private toolDown(pointerId: number, p: Pt, shift: boolean): void {
     this.shiftDown = shift;
+    if (isPathTool(this.tool) && this.views.mode !== 'free') {
+      this.paths.down(pointerId, p, { alt: this.altDown });
+      return;
+    }
     if (this.tool !== 'select' && this.views.mode !== 'free') {
       let plane = this.plane;
       this.history.begin(this.nodes);
@@ -872,11 +1092,7 @@ export class PlaneEditor {
         return;
       }
     }
-    const hit = this.host.world.planes.pick(this.views.rayAt(p.x, p.y), (id) => {
-      const sh = findShape(this.nodes, id);
-      const pl = sh ? findPlane(this.nodes, sh.parent) : undefined;
-      return !!sh && !!pl && !sh.locked && !pl.locked;
-    });
+    const hit = this.pickShape(p);
     const shape = hit ? findShape(this.nodes, hit.id) : undefined;
     const plane = shape ? findPlane(this.nodes, shape.parent) : undefined;
     if (shape && plane) {
@@ -899,7 +1115,10 @@ export class PlaneEditor {
 
   private toolMove(pointerId: number, p: Pt): void {
     const g = this.gesture;
-    if (!g || g.pointerId !== pointerId) return;
+    if (!g || g.pointerId !== pointerId) {
+      this.paths.move(pointerId, p, { alt: this.altDown });
+      return;
+    }
     if (g.kind === 'empty') {
       if (g.orbit) this.views.orbit(p.x - g.last.x, p.y - g.last.y);
       if (Math.hypot(p.x - g.start.x, p.y - g.start.y) > TAP_DIST) g.moved = true;
@@ -943,7 +1162,10 @@ export class PlaneEditor {
 
   private toolUp(pointerId: number, p: Pt): void {
     const g = this.gesture;
-    if (!g || g.pointerId !== pointerId) return;
+    if (!g || g.pointerId !== pointerId) {
+      this.paths.up(pointerId);
+      return;
+    }
     this.gesture = null;
     if (g.kind === 'empty') {
       // Tippen ins Leere hebt die Auswahl auf (die aktive Ebene bleibt); Kreisen in der freien Ansicht nicht
@@ -1018,12 +1240,22 @@ export class PlaneEditor {
     const k = e.key.toLowerCase();
     this.shiftDown = e.shiftKey;
     let handled = true;
-    if (cmd && k === 'z') e.shiftKey ? this.redo() : this.undo();
+    if (!cmd && isPathTool(this.tool) && this.paths.key(k)) handled = true;
+    else if (cmd && k === 'z') e.shiftKey ? this.redo() : this.undo();
     else if (cmd && k === 'y') this.redo();
     else if (cmd && k === 's') void this.save();
     else if (cmd && k === 'd') this.duplicate();
+    else if (cmd && k === 'c') this.copy();
+    else if (cmd && k === 'x') this.copy(true);
+    else if (cmd && k === 'v') this.paste();
     else if (cmd) handled = false;
+    else if (e.shiftKey && k === 'h') this.flip('x');
+    else if (e.shiftKey && k === 'v') this.flip('y');
     else if (k === 'v') this.setTool('select');
+    else if (k === 'a') this.setTool('direct');
+    else if (k === 'p') this.setTool('pen');
+    else if (k === 'b') this.setTool('brush');
+    else if (k === 'k') this.setTool('knife');
     else if (k === 'm') this.setTool('rect');
     else if (k === 'l') this.setTool('ellipse');
     else if (k === 'u') this.setTool(this.tool === 'rect' ? 'ellipse' : 'rect');
@@ -1033,11 +1265,8 @@ export class PlaneEditor {
     else if (k === '4') this.setView('side');
     else if (k === 'tab') this.setBuilding(false);
     else if (k === ' ') this.spaceDown = true;
-    else if (k === 'escape') {
-      this.selected = null;
-      this.uiDirty = true;
-      this.drawOverlay();
-    } else if (k === 'delete' || k === 'backspace') this.deleteShape();
+    else if (k === 'escape') this.selectShape(null);
+    else if (k === 'delete' || k === 'backspace') this.deleteShape();
     else if (k === ']') this.orderShape(1);
     else if (k === '[') this.orderShape(-1);
     else if (k.startsWith('arrow') && this.shape) {

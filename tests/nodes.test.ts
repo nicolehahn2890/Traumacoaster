@@ -184,3 +184,78 @@ describe('Probe aus dem Scheibenstapel', () => {
     expect(new Set(planes.map((p) => p.role))).toEqual(new Set(['front', 'play', 'backdrop']));
   });
 });
+
+describe('Pfade bearbeiten (Stufe 2)', () => {
+  it('ein eingefügter Anker ändert die Kurve nicht', async () => {
+    const { insertAnchor, segmentPoint } = await import('@/zone/nodes');
+    const path = ellipsePath(5, 3);
+    const split = insertAnchor(path, 1, 0.37);
+    expect(split.length).toBe(5);
+    // derselbe Punkt der Kurve: alt Stück 1 bei t, neu Anker 2
+    const a = segmentPoint(path, 1, 0.37);
+    expect(split[2].x).toBeCloseTo(a.x, 9);
+    expect(split[2].y).toBeCloseTo(a.y, 9);
+    // Hälften: Stück 1 neu bei 0,5 entspricht Stück 1 alt bei 0,37·0,5 (gleiche Kurve, neu parametriert)
+    const b = segmentPoint(split, 1, 1);
+    expect(b.x).toBeCloseTo(a.x, 9);
+    const c = segmentPoint(split, 2, 1);
+    const d = segmentPoint(path, 1, 1);
+    expect(c.x).toBeCloseTo(d.x, 9);
+    expect(c.y).toBeCloseTo(d.y, 9);
+  });
+
+  it('Anker löschen und zwischen Ecke und Rund umschalten', async () => {
+    const { removeAnchor, toggleSmooth } = await import('@/zone/nodes');
+    const r = rectPath(4, 2);
+    expect(removeAnchor(r, 1).length).toBe(3);
+    const smooth = toggleSmooth(r, true, 0);
+    expect(smooth[0].outX).toBeDefined();
+    expect(toggleSmooth(smooth, true, 0)[0].outX).toBeUndefined();
+  });
+
+  it('ein Pfad aus der Ebene wird eine Form mit Ursprung in ihrer Mitte', async () => {
+    const { shapeFromPlanePath } = await import('@/zone/nodes');
+    const nodes = stack([0]);
+    const plane = planesOf(nodes)[0];
+    const s = shapeFromPlanePath(nodes, plane.id, rectPath(4, 2).map((p) => ({ x: p.x + 10, y: p.y + 6 })), '#123456');
+    expect([s.x, s.y]).toEqual([10, 6]);
+    expect(s.path[0]).toEqual({ x: -2, y: -1 });
+  });
+
+  it('Linie entfernen und Löcher ersetzen über setPath', async () => {
+    const { setPath } = await import('@/zone/nodes');
+    const nodes = stack([0]);
+    const s = newShape(nodes, planesOf(nodes)[0].id, rectPath(4, 4), 0, 0, '#000000');
+    s.cuts = [{ path: [{ x: -3, y: 0 }, { x: 3, y: 0 }], closed: false }];
+    const before = s.cuts;
+    setPath(s, { kind: 'cut', i: 0 }, [{ x: -3, y: 1 }, { x: 3, y: 1 }]);
+    expect(s.cuts).not.toBe(before);
+    expect(s.cuts?.[0].path[0].y).toBe(1);
+    setPath(s, { kind: 'cut', i: 0 }, null);
+    expect(s.cuts).toBeUndefined();
+  });
+
+  it('Kopieren in eine andere Ebene mit „Bild halten“: kein Punkt wandert im Spielblick', async () => {
+    const { transferShape } = await import('@/zone/nodes');
+    setCameraTilt(12 * DEG);
+    const cam = new WorldCamera();
+    cam.set({ cx: 50, cy: 5, zoom: 11, width: 844, height: 390, persp: true, fov: 18 });
+    const hold: HoldView = { cx: 50, cy: 5, D: cam.distance, tilt: 12 * DEG };
+    const nodes = stack([2, 30]);
+    const [a, b] = planesOf(nodes);
+    b.x = 4;
+    b.scale = 1.4;
+    const s = newShape(nodes, a.id, ellipsePath(3, 2), 47, 9, '#000000');
+    s.sx = 1.3;
+    const c = transferShape(s, a, b, hold);
+    expect(c.parent).toBe(b.id);
+    for (const p of s.path) {
+      const wa = planeToWorld(a, s.x + s.sx * p.x, s.y + s.sy * p.y);
+      const wb = planeToWorld(b, c.x + c.sx * p.x, c.y + c.sy * p.y);
+      const sa = cam.toScreen(wa.x, wa.y, a.z / LANE_DEPTH);
+      const sb = cam.toScreen(wb.x, wb.y, b.z / LANE_DEPTH);
+      expect(sb.x).toBeCloseTo(sa.x, 2);
+      expect(sb.y).toBeCloseTo(sa.y, 2);
+    }
+  });
+});

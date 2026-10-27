@@ -13,7 +13,7 @@
  */
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import sharp from 'sharp';
 
@@ -571,7 +571,7 @@ if (want('11')) {
     return { planes: (z.nodes ?? []).filter((n) => n.kind === 'plane').length, shapes: (z.nodes ?? []).filter((n) => n.kind === 'shape').length };
   });
   check(await page.locator('.ze-root').count() === 1 && (await count()).planes === 0, 'Editor-Oberfläche steht, die neue Zone hat keine Ebenen');
-  await page.click('text=Probe: Scheiben-Stapel');
+  await page.click('text=Probe-Stapel');
   await sleep(1200);
   const probe = await page.evaluate(() => ({ stats: window.tcGame.world.planes.stats, ground: window.tcGame.world.groundHidden, draw: window.tcGame.dev?.drawCalls ?? 0 }));
   const c1 = await count();
@@ -646,6 +646,112 @@ if (want('11')) {
   await page.click('text=Spielblick');
   await sleep(200);
   check(view === 'PerspectiveCamera' && (await page.evaluate(() => window.tcGame.world.viewCamera)) === null, `Seitenansicht mit eigener Kamera (${view}), zurück im Spielblick`);
+}
+
+// 12. Zonen-Editor, Stufe 2: Zeichenstift mit Teilungslinie, Direktauswahl (Fläche färben, Loch), Formpinsel, Messer,
+// Kopieren in eine andere Ebene („Bild halten“), SVG-Rundlauf über Sichern und Laden, rückgängig
+if (want('12')) {
+  await page.goto(`${BASE}?zone=editor-formen&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const shapes = () => page.evaluate(() => window.tcGame.current.planeEditor.nodes.filter((n) => n.kind === 'shape').map((s) => ({ id: s.id, n: s.path.length, cuts: s.cuts?.length ?? 0, regions: s.regions ?? [], parent: s.parent, fill: s.fill })));
+  // gezeichnete Flächen je Form (Löcher werden nicht gezeichnet)
+  const faces = (id) => page.evaluate((id) => window.tcGame.world.planes.owners.filter((o) => o.id === id).length, id);
+  const canon = () => page.evaluate(() => {
+    const sort = (v) => (Array.isArray(v) ? v.map(sort) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, sort(x)])) : v);
+    return JSON.stringify(sort(window.tcGame.current.planeEditor.nodes));
+  });
+  const click = async (x, y) => {
+    await page.mouse.click(x, y);
+    await sleep(60);
+  };
+  await page.keyboard.press('p');
+  for (const [x, y] of [[360, 260], [700, 260], [700, 520], [360, 520], [362, 262]]) await click(x, y);
+  let list = await shapes();
+  check(list.length === 1 && list[0].n === 4, `Zeichenstift: eine Form aus vier Ankern (${list.length} Form, ${list[0]?.n} Anker)`);
+  // Teilungslinie: Anfang und Ende knapp neben den Kanten (rasten ein), in der Mitte gezogen (Kurve), Eingabe beendet
+  await click(352, 380);
+  await page.mouse.move(530, 430);
+  await page.mouse.down();
+  await page.mouse.move(590, 430, { steps: 4 });
+  await page.mouse.up();
+  await click(708, 360);
+  await page.keyboard.press('Enter');
+  await sleep(150);
+  list = await shapes();
+  const id = list[0].id;
+  const f1 = await faces(id);
+  check(list[0].cuts === 1 && f1 === 2, `Teilungslinie rastet an den Kanten ein und teilt die Form in ${f1} Flächen`);
+  // Direktauswahl: obere Fläche färben, untere zum Loch
+  await page.keyboard.press('a');
+  await click(530, 300);
+  await page.click('.ze-context .ze-swatch[title="#d9a07a"]');
+  await click(530, 500);
+  await page.click('.ze-context >> text=Loch');
+  await sleep(150);
+  list = await shapes();
+  const f2 = await faces(id);
+  check(list[0].regions.length === 2 && list[0].regions.some((r) => r.fill === '#d9a07a') && list[0].regions.some((r) => r.fill === null) && f2 === 1, `Direktauswahl: eine Fläche gefärbt, eine zum Loch (noch ${f2} gezeichnete Fläche)`);
+  await page.screenshot({ path: 'screenshots/scenario-12-formen.png' });
+  // Formpinsel: geschlossener Freihandkreis neben dem Rechteck, dann das Messer quer hindurch
+  await page.keyboard.press('b');
+  const loop = [];
+  for (let k = 0; k <= 48; k++) loop.push([860 + 95 * Math.cos((k / 48) * 2 * Math.PI), 400 + 70 * Math.sin((k / 48) * 2 * Math.PI)]);
+  await page.mouse.move(loop[0][0], loop[0][1]);
+  await page.mouse.down();
+  for (const [x, y] of loop.slice(1)) await page.mouse.move(x, y);
+  await page.mouse.up();
+  await sleep(150);
+  list = await shapes();
+  const blob = list.at(-1);
+  check(list.length === 2 && blob.n >= 3 && blob.n <= 12, `Formpinsel: eine glatte Form mit ${blob?.n} Ankern`);
+  await page.keyboard.press('k');
+  await page.mouse.move(740, 380);
+  await page.mouse.down();
+  await page.mouse.move(980, 430, { steps: 12 });
+  await page.mouse.up();
+  await sleep(150);
+  list = await shapes();
+  const f3 = await faces(blob.id);
+  check(list.at(-1).cuts === 1 && f3 === 2, `Messer: die Pinselform zerfällt in ${f3} Flächen`);
+  // Kopieren in eine neue Ebene dahinter: im Spielblick an derselben Stelle
+  await page.keyboard.press('v');
+  await click(400, 300);
+  await page.keyboard.press('Meta+c');
+  await page.click('.ze-head >> text=+');
+  await sleep(100);
+  await page.click('.ze-context >> text=Einfügen');
+  await sleep(150);
+  const paste = await page.evaluate((src) => {
+    const ed = window.tcGame.current.planeEditor;
+    const shapesNow = ed.nodes.filter((n) => n.kind === 'shape');
+    const a = shapesNow.find((s) => s.id === src);
+    const b = shapesNow.at(-1);
+    const pa = ed.nodes.find((n) => n.id === a.parent);
+    const pb = ed.nodes.find((n) => n.id === b.parent);
+    const dev = a.path.map((p, i) => {
+      const s1 = ed.screenOf(pa, { x: a.x + a.sx * p.x, y: a.y + a.sy * p.y }, a);
+      const q = b.path[i];
+      const s2 = ed.screenOf(pb, { x: b.x + b.sx * q.x, y: b.y + b.sy * q.y }, b);
+      return Math.hypot(s1.x - s2.x, s1.y - s2.y);
+    });
+    return { other: pa.id !== pb.id, deeper: pb.z > pa.z, dev: Math.max(...dev) };
+  }, id);
+  check(paste.other && paste.deeper && paste.dev < 0.05, `Kopie in der Ebene dahinter liegt im Spielblick an derselben Stelle (größte Abweichung ${paste.dev.toFixed(4)} px)`);
+  // SVG sichern und dieselbe Datei wieder laden: alles bleibt, wie es war
+  const before = await canon();
+  const steps = () => page.evaluate(() => window.tcGame.current.planeEditor.history.past.length);
+  const steps0 = await steps();
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('.ze-foot >> text=SVG sichern')]);
+  const file = await download.path();
+  const svgText = readFileSync(file, 'utf8');
+  check(download.suggestedFilename() === 'editor-formen-ebenen.svg' && /<g id="p1-/.test(svgText) && /id="s\d+-f\d+"/.test(svgText) && / C/.test(svgText), `SVG gesichert (${download.suggestedFilename()}, ${(svgText.length / 1024).toFixed(1)} KB, Gruppen je Ebene, Flächen mit Kurven)`);
+  await page.setInputFiles('.ze-foot input[type=file]', file);
+  await sleep(400);
+  const toast = await page.locator('.ze-toast').textContent();
+  const after = await canon();
+  check(after === before && /unverändert/.test(toast ?? '') && (await steps()) === steps0, `SVG-Rundlauf ohne Änderung und ohne Schritt im Verlauf: ${toast}`);
+  await page.keyboard.press('Escape');
+  await page.screenshot({ path: 'screenshots/scenario-12-formen-kopie.png' });
 }
 
 await browser.close();

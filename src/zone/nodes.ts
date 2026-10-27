@@ -11,7 +11,8 @@
  *
  * Ohne Renderer und DOM, damit Spiel, Editor und Tests dasselbe rechnen.
  */
-import { flattenPath, simplifyPoly, type Poly, type ZonePath } from './path';
+import { flattenPath, insideWithHoles, simplifyPoly, type Poly, type ZonePath } from './path';
+import { computeFaces, type Face } from './faces';
 import { LANE_DEPTH } from '@/track/stage';
 import type { SliceRole, SliceStack } from './slices';
 
@@ -37,6 +38,22 @@ export interface ZonePlane {
   locked?: boolean;
 }
 
+/** Teilungslinie einer Form (Vektornetz, Stufe 2): offen von Kante zu Kante oder geschlossen als Ring in einer Fläche */
+export interface ZoneCut {
+  path: ZonePath;
+  closed: boolean;
+}
+
+/**
+ * Füllung einer Fläche: gilt für die Fläche, die den Punkt (x, y) in Pfad-Koordinaten enthält; fill null ist ein Loch.
+ * So bleibt eine Füllung an „ihrer“ Fläche, auch wenn Linien und Anker sich bewegen (wie Illustrators Interaktiv malen)
+ */
+export interface ZoneRegion {
+  x: number;
+  y: number;
+  fill: string | null;
+}
+
 export interface ZoneShape {
   id: string;
   kind: 'shape';
@@ -53,7 +70,11 @@ export interface ZoneShape {
   /** Umriss um den eigenen Ursprung (Anker mit Griffen wie in Illustrator), Löcher als weitere Pfade */
   path: ZonePath;
   holes?: ZonePath[];
-  /** Platzhalter-Füllung (Vollton); der Füllstapel kommt mit Stufe 3 */
+  /** Teilungslinien und Ringe (Stufe 2): teilen die Form in Flächen */
+  cuts?: ZoneCut[];
+  /** Füllungen einzelner Flächen; ohne Eintrag gilt fill */
+  regions?: ZoneRegion[];
+  /** Platzhalter-Füllung (Vollton) aller Flächen ohne eigene; der Füllstapel kommt mit Stufe 3 */
   fill: string;
   hidden?: boolean;
   locked?: boolean;
@@ -254,6 +275,54 @@ export function shapeBounds(shape: ZoneShape): { minX: number; minY: number; max
   return { minX, minY, maxX, maxY };
 }
 
+interface FaceCache {
+  holes: ZonePath[] | undefined;
+  cuts: ZoneCut[] | undefined;
+  byFineness: Map<number, Face[]>;
+}
+const faceCache = new WeakMap<ZonePath, FaceCache>();
+
+/**
+ * Flächen einer Form in Pfad-Koordinaten (src/zone/faces.ts), zwischengespeichert, solange Umriss, Löcher und
+ * Teilungslinien dieselben Objekte bleiben; fine: Feinheit der Glättung (Zweierpotenz, größer = feiner)
+ */
+export function shapeFaces(shape: ZoneShape, fine = 1): Face[] {
+  let entry = faceCache.get(shape.path);
+  if (!entry || entry.holes !== shape.holes || entry.cuts !== shape.cuts) {
+    entry = { holes: shape.holes, cuts: shape.cuts, byFineness: new Map() };
+    faceCache.set(shape.path, entry);
+  }
+  const hit = entry.byFineness.get(fine);
+  if (hit) return hit;
+  const step = FLATTEN_STEP / fine;
+  const faces = computeFaces(
+    flattenPath(shape.path, step),
+    (shape.holes ?? []).map((h) => flattenPath(h, step)),
+    (shape.cuts ?? []).map((c) => ({ poly: flattenPath(c.path, step, c.closed), closed: c.closed })),
+  );
+  entry.byFineness.set(fine, faces);
+  return faces;
+}
+
+/** Füllung einer Fläche: die Füllung, deren Punkt in ihr liegt (null = Loch), sonst die der Form */
+export function faceFill(shape: ZoneShape, face: Face): string | null {
+  for (const r of shape.regions ?? []) if (insideWithHoles(face.outline, face.holes, r.x, r.y)) return r.fill;
+  return shape.fill;
+}
+
+/**
+ * Füllung einer Fläche setzen (neue Liste, alte Einträge derselben Fläche fallen weg); Einträge, deren Punkt in keiner
+ * Fläche mehr liegt, räumt das mit auf
+ */
+export function setFaceFill(shape: ZoneShape, face: Face, fill: string | null): void {
+  const faces = shapeFaces(shape);
+  const live = (r: ZoneRegion) => faces.some((f) => insideWithHoles(f.outline, f.holes, r.x, r.y));
+  const rest = (shape.regions ?? []).filter((r) => !insideWithHoles(face.outline, face.holes, r.x, r.y) && live(r));
+  const regions = fill === shape.fill ? rest : [...rest, { x: round(face.inner[0], 3), y: round(face.inner[1], 3), fill }];
+  if (regions.length) shape.regions = regions;
+  else delete shape.regions;
+}
+
 /**
  * Platzhalter-Farbe einer neuen Form nach der Tiefe ihrer Ebene: vorn satt und dunkel, hinten hell und kühl (Paket 0,
  * Regel 6); Stufe 3 ersetzt das durch Palette und Füllstapel
@@ -264,6 +333,211 @@ export function placeholderFill(z: number): string {
   const b = [0xc6, 0xd4, 0xdc];
   const c = a.map((v, i) => Math.round(v + (b[i] - v) * t));
   return `#${c.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+// ------------------------------------------------------------------ Pfade bearbeiten (Stufe 2)
+
+/** welcher Pfad einer Form: der Umriss, ein Loch oder eine Teilungslinie */
+export type PathRef = { kind: 'outline' } | { kind: 'hole'; i: number } | { kind: 'cut'; i: number };
+
+/** alle Pfade einer Form mit ihrem Verweis */
+export function shapePaths(shape: ZoneShape): Array<{ ref: PathRef; path: ZonePath; closed: boolean }> {
+  return [
+    { ref: { kind: 'outline' }, path: shape.path, closed: true },
+    ...(shape.holes ?? []).map((path, i) => ({ ref: { kind: 'hole', i } as PathRef, path, closed: true })),
+    ...(shape.cuts ?? []).map((c, i) => ({ ref: { kind: 'cut', i } as PathRef, path: c.path, closed: c.closed })),
+  ];
+}
+
+export function getPath(shape: ZoneShape, ref: PathRef): { path: ZonePath; closed: boolean } | null {
+  if (ref.kind === 'outline') return { path: shape.path, closed: true };
+  if (ref.kind === 'hole') return shape.holes?.[ref.i] ? { path: shape.holes[ref.i], closed: true } : null;
+  const c = shape.cuts?.[ref.i];
+  return c ? { path: c.path, closed: c.closed } : null;
+}
+
+/** Pfad ersetzen (neue Listen, damit die zwischengespeicherten Flächen neu entstehen); null entfernt Loch oder Linie */
+export function setPath(shape: ZoneShape, ref: PathRef, path: ZonePath | null): void {
+  if (ref.kind === 'outline') {
+    if (path) shape.path = path;
+    return;
+  }
+  if (ref.kind === 'hole') {
+    const holes = [...(shape.holes ?? [])];
+    if (path) holes[ref.i] = path;
+    else holes.splice(ref.i, 1);
+    if (holes.length) shape.holes = holes;
+    else delete shape.holes;
+    return;
+  }
+  const cuts = [...(shape.cuts ?? [])];
+  if (path) cuts[ref.i] = { ...cuts[ref.i], path };
+  else cuts.splice(ref.i, 1);
+  if (cuts.length) shape.cuts = cuts;
+  else delete shape.cuts;
+}
+
+/** Punkt der Kurve zwischen Anker i und dem nächsten bei t (Pfad-Koordinaten) */
+export function segmentPoint(path: ZonePath, i: number, t: number): { x: number; y: number } {
+  const a = path[i];
+  const b = path[(i + 1) % path.length];
+  const c1x = a.x + (a.outX ?? 0);
+  const c1y = a.y + (a.outY ?? 0);
+  const c2x = b.x + (b.inX ?? 0);
+  const c2y = b.y + (b.inY ?? 0);
+  const u = 1 - t;
+  return {
+    x: u * u * u * a.x + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * b.x,
+    y: u * u * u * a.y + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * b.y,
+  };
+}
+
+/** Anker auf dem Stück nach Anker i bei t einfügen, ohne dass sich die Kurve ändert (de Casteljau) */
+export function insertAnchor(path: ZonePath, i: number, t: number): ZonePath {
+  const a = path[i];
+  const j = (i + 1) % path.length;
+  const b = path[j];
+  const p0 = { x: a.x, y: a.y };
+  const p1 = { x: a.x + (a.outX ?? 0), y: a.y + (a.outY ?? 0) };
+  const p2 = { x: b.x + (b.inX ?? 0), y: b.y + (b.inY ?? 0) };
+  const p3 = { x: b.x, y: b.y };
+  const lerp = (p: { x: number; y: number }, q: { x: number; y: number }) => ({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t });
+  const q0 = lerp(p0, p1);
+  const q1 = lerp(p1, p2);
+  const q2 = lerp(p2, p3);
+  const r0 = lerp(q0, q1);
+  const r1 = lerp(q1, q2);
+  const m = lerp(r0, r1);
+  const straight = !a.outX && !a.outY && !b.inX && !b.inY;
+  const out = path.map((p) => ({ ...p }));
+  if (!straight) {
+    out[i] = { ...out[i], outX: q0.x - a.x, outY: q0.y - a.y };
+    out[j] = { ...out[j], inX: q2.x - b.x, inY: q2.y - b.y };
+  }
+  const mid: ZonePath[number] = straight ? { x: m.x, y: m.y } : { x: m.x, y: m.y, inX: r0.x - m.x, inY: r0.y - m.y, outX: r1.x - m.x, outY: r1.y - m.y };
+  out.splice(i + 1, 0, mid);
+  return out;
+}
+
+/** Anker i entfernen */
+export function removeAnchor(path: ZonePath, i: number): ZonePath {
+  return path.filter((_, k) => k !== i).map((p) => ({ ...p }));
+}
+
+/** Anker i zwischen Ecke (ohne Griffe) und Rund (Griffe entlang der Nachbarn, ein Drittel des Abstands) umschalten */
+export function toggleSmooth(path: ZonePath, closed: boolean, i: number): ZonePath {
+  const out = path.map((p) => ({ ...p }));
+  const p = out[i];
+  if (p.inX || p.inY || p.outX || p.outY) {
+    out[i] = { x: p.x, y: p.y };
+    return out;
+  }
+  const n = out.length;
+  const prev = closed || i > 0 ? out[(i - 1 + n) % n] : p;
+  const next = closed || i < n - 1 ? out[(i + 1) % n] : p;
+  const dx = next.x - prev.x;
+  const dy = next.y - prev.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const kIn = Math.hypot(p.x - prev.x, p.y - prev.y) / 3;
+  const kOut = Math.hypot(next.x - p.x, next.y - p.y) / 3;
+  out[i] = { x: p.x, y: p.y, inX: (-dx / len) * kIn, inY: (-dy / len) * kIn, outX: (dx / len) * kOut, outY: (dy / len) * kOut };
+  return out;
+}
+
+/** Pfad in Ebenen-Koordinaten in die Pfad-Koordinaten einer Form umrechnen (Lage und Maßstab der Form) */
+export function planePathToShape(shape: ZoneShape, path: ZonePath): ZonePath {
+  return path.map((p) => {
+    const o: ZonePath[number] = { x: round((p.x - shape.x) / shape.sx, 3), y: round((p.y - shape.y) / shape.sy, 3) };
+    if (p.inX || p.inY) {
+      o.inX = round((p.inX ?? 0) / shape.sx, 3);
+      o.inY = round((p.inY ?? 0) / shape.sy, 3);
+    }
+    if (p.outX || p.outY) {
+      o.outX = round((p.outX ?? 0) / shape.sx, 3);
+      o.outY = round((p.outY ?? 0) / shape.sy, 3);
+    }
+    return o;
+  });
+}
+
+/** neue Form aus einem geschlossenen Pfad in Ebenen-Koordinaten: Ursprung in der Mitte ihrer Grenzen */
+export function shapeFromPlanePath(nodes: readonly ZoneNode[], planeId: string, path: ZonePath, fill: string): ZoneShape {
+  const b = polyBoundsOf(flattenPath(path));
+  const cx = (b.minX + b.maxX) / 2;
+  const cy = (b.minY + b.maxY) / 2;
+  const s = newShape(nodes, planeId, [], cx, cy, fill);
+  s.path = planePathToShape(s, path);
+  return s;
+}
+
+function polyBoundsOf(poly: Poly): { minX: number; minY: number; maxX: number; maxY: number } {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const [x, y] of poly) {
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+/**
+ * Form aus Ebene from in Ebene to übertragen, sodass sie im Spielblick gleich aussieht (Kopieren über Ebenen, „Bild
+ * halten“, Befund 11): dieselbe Streckung um den Fußpunkt der Kamera wie beim Verschieben einer Ebene. view null: gleiche
+ * Weltlage und Größe in Metern („Welt halten“)
+ */
+export function transferShape(shape: ZoneShape, from: ZonePlane, to: ZonePlane, view: HoldView | null): ZoneShape {
+  const copy = cloneNodes([shape])[0] as ZoneShape;
+  copy.parent = to.id;
+  // Ursprung der Form in der Welt (Ebene from), dann auf die Ebene to projiziert
+  let wx = from.x + from.scale * shape.x;
+  let wy = from.y + from.scale * shape.y;
+  let k = from.scale;
+  if (view) {
+    if (Number.isFinite(view.D)) {
+      const along = view.D * Math.cos(view.tilt);
+      const t = (along + to.z) / (along + from.z);
+      const Cy = view.cy + view.D * Math.sin(view.tilt);
+      wx = view.cx + t * (wx - view.cx);
+      wy = Cy + t * (wy - Cy);
+      k *= t;
+    } else wy -= (to.z - from.z) * Math.tan(view.tilt);
+  }
+  copy.x = round((wx - to.x) / to.scale, 3);
+  copy.y = round((wy - to.y) / to.scale, 3);
+  copy.sx = (shape.sx * k) / to.scale;
+  copy.sy = (shape.sy * k) / to.scale;
+  return copy;
+}
+
+/** Form an der Mitte ihrer Grenzen spiegeln (x: waagrecht, y: senkrecht); Pfade, Löcher, Linien und Füllpunkte mit */
+export function flipShape(shape: ZoneShape, axis: 'x' | 'y'): void {
+  const b0 = shapeBounds(shape);
+  const fx = axis === 'x' ? -1 : 1;
+  const fy = axis === 'y' ? -1 : 1;
+  const flip = (path: ZonePath): ZonePath =>
+    path.map((p) => {
+      const o: ZonePath[number] = { x: p.x * fx || 0, y: p.y * fy || 0 };
+      if (p.inX || p.inY) {
+        o.inX = (p.inX ?? 0) * fx || 0;
+        o.inY = (p.inY ?? 0) * fy || 0;
+      }
+      if (p.outX || p.outY) {
+        o.outX = (p.outX ?? 0) * fx || 0;
+        o.outY = (p.outY ?? 0) * fy || 0;
+      }
+      return o;
+    });
+  shape.path = flip(shape.path);
+  if (shape.holes) shape.holes = shape.holes.map(flip);
+  if (shape.cuts) shape.cuts = shape.cuts.map((c) => ({ ...c, path: flip(c.path) }));
+  if (shape.regions) shape.regions = shape.regions.map((r) => ({ ...r, x: r.x * fx || 0, y: r.y * fy || 0 }));
+  const b1 = shapeBounds(shape);
+  shape.x = round(shape.x + (b0.minX + b0.maxX - b1.minX - b1.maxX) / 2, 3);
+  shape.y = round(shape.y + (b0.minY + b0.maxY - b1.minY - b1.maxY) / 2, 3);
 }
 
 // ------------------------------------------------------------------ Probe aus der Kamerasession
@@ -318,8 +592,8 @@ function round(v: number, digits = 2): number {
   return Math.round(v * f) / f;
 }
 
-function parsePathList(v: unknown): ZonePath | null {
-  if (!Array.isArray(v) || v.length < 3 || v.length > 5000) return null;
+function parsePathList(v: unknown, min = 3): ZonePath | null {
+  if (!Array.isArray(v) || v.length < min || v.length > 5000) return null;
   const out: ZonePath = [];
   for (const raw of v) {
     const p = raw as Record<string, unknown>;
@@ -384,6 +658,23 @@ export function parseNodes(v: unknown): ZoneNode[] {
         const holes = o.holes.map(parsePathList).filter((h): h is ZonePath => !!h);
         if (holes.length) s.holes = holes;
       }
+      if (Array.isArray(o.cuts)) {
+        const cuts: ZoneCut[] = [];
+        for (const raw2 of o.cuts) {
+          const c = raw2 as Record<string, unknown>;
+          const path = c ? parsePathList(c.path, 2) : null;
+          if (path) cuts.push({ path, closed: c.closed === true && path.length >= 3 });
+        }
+        if (cuts.length) s.cuts = cuts;
+      }
+      if (Array.isArray(o.regions)) {
+        const regions: ZoneRegion[] = [];
+        for (const raw2 of o.regions) {
+          const r = raw2 as Record<string, unknown>;
+          if (r && num(r.x) && num(r.y)) regions.push({ x: r.x, y: r.y, fill: typeof r.fill === 'string' && COLOR.test(r.fill) ? r.fill.toLowerCase() : null });
+        }
+        if (regions.length) s.regions = regions;
+      }
       if (o.hidden === true) s.hidden = true;
       if (o.locked === true) s.locked = true;
       out.push(s);
@@ -396,14 +687,14 @@ export function parseNodes(v: unknown): ZoneNode[] {
 
 const pathOut = (path: ZonePath): Array<Record<string, number>> =>
   path.map((p) => {
-    const o: Record<string, number> = { x: round(p.x), y: round(p.y) };
+    const o: Record<string, number> = { x: round(p.x, 3), y: round(p.y, 3) };
     if (p.inX || p.inY) {
-      o.inX = round(p.inX ?? 0);
-      o.inY = round(p.inY ?? 0);
+      o.inX = round(p.inX ?? 0, 3);
+      o.inY = round(p.inY ?? 0, 3);
     }
     if (p.outX || p.outY) {
-      o.outX = round(p.outX ?? 0);
-      o.outY = round(p.outY ?? 0);
+      o.outX = round(p.outX ?? 0, 3);
+      o.outY = round(p.outY ?? 0, 3);
     }
     return o;
   });
@@ -421,6 +712,8 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
     for (const s of shapesOf(nodes, p.id)) {
       const o: Record<string, unknown> = { id: s.id, kind: 'shape', parent: s.parent, order: round(s.order, 4), name: s.name, x: round(s.x, 3), y: round(s.y, 3), sx: round(s.sx, 4), sy: round(s.sy, 4), fill: s.fill, path: pathOut(s.path) };
       if (s.holes?.length) o.holes = s.holes.map(pathOut);
+      if (s.cuts?.length) o.cuts = s.cuts.map((c) => ({ closed: c.closed, path: pathOut(c.path) }));
+      if (s.regions?.length) o.regions = s.regions.map((r) => ({ x: round(r.x, 3), y: round(r.y, 3), fill: r.fill }));
       if (s.hidden) o.hidden = true;
       if (s.locked) o.locked = true;
       out.push(o);
@@ -431,5 +724,15 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
 
 /** tiefe Kopie (für den Arbeitsverlauf und das Sichern) */
 export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
-  return nodes.map((n) => (isPlane(n) ? { ...n } : { ...n, path: n.path.map((p) => ({ ...p })), ...(n.holes ? { holes: n.holes.map((h) => h.map((p) => ({ ...p }))) } : {}) }));
+  return nodes.map((n) =>
+    isPlane(n)
+      ? { ...n }
+      : {
+          ...n,
+          path: n.path.map((p) => ({ ...p })),
+          ...(n.holes ? { holes: n.holes.map((h) => h.map((p) => ({ ...p }))) } : {}),
+          ...(n.cuts ? { cuts: n.cuts.map((c) => ({ closed: c.closed, path: c.path.map((p) => ({ ...p })) })) } : {}),
+          ...(n.regions ? { regions: n.regions.map((r) => ({ ...r })) } : {}),
+        },
+  );
 }

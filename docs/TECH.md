@@ -576,7 +576,7 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   0,06 Spuren je Meter. Tests in
   `tests/field.test.ts`, `tests/rock.test.ts` (Pinsel im Freiraumfeld), `tests/underground.test.ts`.
 
-## 4i. Zonen-Editor, Stufe 1 (`?zone=<name>&editor=2`, Branch `zoneneditor`)
+## 4i. Zonen-Editor, Stufe 1 und 2 (`?zone=<name>&editor=2`, Branch `zoneneditor`)
 
 Plan: `docs/ZONENEDITOR-PLAN.md`. Der Editor hängt sich wie der Klötzchen-Editor in die Level-Szene einer Zone und nutzt
 deren Weltrenderer und Spielkamera; seine Oberfläche ist HTML über dem Spielbild (`src/zoneeditor/ui.ts`).
@@ -607,10 +607,41 @@ deren Weltrenderer und Spielkamera; seine Oberfläche ist HTML über dem Spielbi
 - **Verlauf und Sichern** (`src/zoneeditor/history.ts`): Schnappschüsse je Geste; Sichern über den Dev-Server
   (`saveZone`), Sicherungskopie im `localStorage` (`tc.zoneeditor.<zone>`), beim Start als „Wiederherstellen“ angeboten;
   ändert sich die Datei außen und gibt es nichts Ungesichertes, lädt der Editor neu.
-- **Probe:** „Probe: Scheiben-Stapel“ fügt die 32 Scheiben der Kamerasession als Ebenen ein (`slicesToNodes`), Last für
+- **Probe:** „Probe-Stapel“ fügt die 32 Scheiben der Kamerasession als Ebenen ein (`slicesToNodes`), Last für
   die Handy-Messung: 32 Ebenen, 36 Formen, rund 4.600 Dreiecke, ein Draw Call für die Ebenen.
-- **Prüfungen:** `tests/nodes.test.ts`, `tests/planeMesh.test.ts`, Szenario 11 (`node scripts/scenario.mjs 11`, mit
-  `TC_URL` gegen den eigenen Server).
+- **Vektornetz (Stufe 2,** `src/zone/faces.ts`): Eine Form hat neben Umriss und Löchern Teilungslinien `cuts` (offen
+  oder geschlossen) und Füllpunkte `regions` ({x, y, fill}, fill null = Loch). `computeFaces` glättet alles, rechnet im
+  Millimeter-Raster in ganzen Zahlen, teilt alle Strecken an ihren Kreuzungen (Sortieren und Fegen), zieht Linienenden
+  bis 3 cm (auch genau auf der Kante liegende) auf die getroffene Strecke, schneidet lose Enden ab und läuft die Flächen
+  ab (am Punkt der nächste Nachbar im Uhrzeigersinn); Außenränder der Teile werden Löcher der kleinsten umgebenden
+  Fläche, es bleiben die Flächen im Umriss außerhalb der Löcher. `shapeFaces` speichert je Pfad-Objekt, Löcher, Linien
+  und Feinheit zwischen; `faceFill` nimmt die Füllung des Füllpunkts in der Fläche, sonst die der Form; `setFaceFill`
+  setzt einen Füllpunkt in die Fläche und räumt verwaiste auf. `planeMesh` zeichnet je Fläche (Löcher gar nicht),
+  `pick` meldet Form und Fläche. Pfade werden auf Millimeter gesichert (wie das Raster).
+- **Pfad-Werkzeuge (Stufe 2,** `src/zoneeditor/pathTools.ts`, Zugang über `PathToolHost`, damit sie ohne Kamera testbar
+  sind): Zeichenstift (Punkte in Ebenen-Koordinaten, Einrasten zuerst an Ankern, dann an Kanten der Zielform, Ziel nur,
+  wenn der Pfad die gewählte Form berührt), Direktauswahl (Treffer in der Reihenfolge Griffe des gewählten Ankers,
+  Anker, Linie mit Doppeltippen, Fläche, andere Form), Formpinsel (Strich in Ebenen-Koordinaten, `fitCurve` in
+  `src/zone/path.ts`: gleichmäßig neu abtasten, Knicke über 70° als Ecken, je Stück Schneiders Kurvenanpassung mit
+  Newton-Nachstellen, Ringe in mindestens drei Stücken, Toleranz 3 Bildpunkte), Messer (Kreuzungen mit allen Pfaden der
+  obersten getroffenen Form, Linie zwischen erster und letzter). Linienenden „kleben“: `glueOf` merkt sich zu Beginn
+  eines Ziehens Stück und Lage jedes Linienendes auf einem anderen Pfad, `applyGlue` setzt sie nach jeder Bewegung neu;
+  nach Anker löschen oder Ecke/Rund werden sie auf den nächsten Punkt gezogen.
+- **Kopieren über Ebenen** (`transferShape`): dieselbe Streckung um den Fußpunkt der Spielkamera wie „Bild halten“;
+  Spiegeln (`flipShape`) spiegelt Pfade, Löcher, Linien und Füllpunkte und hält die Mitte der Grenzen.
+- **SVG** (`src/zone/svgPlanes.ts`): `planesToSvg` schreibt je Ebene eine Gruppe `p3-name` (hinten zuerst), 1 m = 10 px in
+  Ebenen-Koordinaten, Rahmen `rahmen-x<minX>-y<maxY>` (m = minus) und Datenattribute `data-min-x`, `data-max-y`; eine
+  geteilte Form wird eine Gruppe ihrer Flächen mit echten Kurven: `src/zone/faceCurves.ts` ordnet jede Kante eines
+  Flächenrands einem Pfad der Form zu (Abtastung wie `flattenPath`, Lage = Stück + Anteil, die Kantenmitte muss auf
+  demselben Pfad liegen), fasst Läufe zusammen und schneidet die Kurvenstücke mit de Casteljau heraus; Laufenden liegen
+  genau auf den Ecken der Fläche. `svgToPlanes` liest ohne DOM (Tags per Muster, Kommentare und `<style>`-Klassen,
+  Verläufe als erste Stopp-Farbe, `switch` und namenlose Hüllen durchsichtig, `foreignObject` und `i:pgf` übergangen),
+  ordnet Gruppen mit Ebenen-Kennung ihrer Ebene zu, sonst wird jede oberste benannte Gruppe eine neue Ebene; eine Form
+  bleibt unverändert, wenn Farben und Ränder (Grenzen bis 2 cm, Fläche bis 1 %) zurückkommen; Ursprung aus den
+  Datenattributen, sonst dem Rahmen, sonst unten links der Zeichenfläche.
+- **Prüfungen:** `tests/nodes.test.ts`, `tests/planeMesh.test.ts`, `tests/faces.test.ts`, `tests/pathTools.test.ts`,
+  `tests/faceCurves.test.ts`, `tests/svgPlanes.test.ts`; Szenario 11 (Stufe 1) und 12 (Stufe 2) mit
+  `node scripts/scenario.mjs 11 12` und `TC_URL` gegen den eigenen Server.
 
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).

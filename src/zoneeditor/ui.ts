@@ -7,9 +7,10 @@
  * Diese Datei baut nur Elemente und meldet Bedienungen über `UiActions`; was sie bedeuten, entscheidet der Editor.
  */
 import { PLANE_ROLE_WORDS, PLANE_ROLES, type PlaneRole, type ZonePlane, type ZoneShape } from '@/zone/nodes';
+import type { PathContext } from './pathTools';
 import { VIEW_WORDS, type ViewMode } from './views';
 
-export type Tool = 'select' | 'rect' | 'ellipse';
+export type Tool = 'select' | 'direct' | 'pen' | 'brush' | 'knife' | 'rect' | 'ellipse';
 export type Isolate = 'off' | 'front' | 'only';
 export const ISOLATE_WORDS: Record<Isolate, string> = { off: 'alle Ebenen', front: 'davor ausgeblendet', only: 'nur diese' };
 
@@ -44,6 +45,19 @@ export interface UiActions {
   duplicate(): void;
   orderShape(dir: 1 | -1): void;
   deleteShape(): void;
+  flip(axis: 'x' | 'y'): void;
+  copy(): void;
+  paste(): void;
+  /** Zeichenstift: fertig (offen oder geschlossen), abbrechen */
+  penDone(closed: boolean): void;
+  penCancel(): void;
+  /** Direktauswahl: Anker Ecke/Rund, Anker löschen, Loch oder Teilungslinie löschen, Fläche füllen (null = Loch) */
+  anchorSmooth(): void;
+  anchorDelete(): void;
+  lineDelete(): void;
+  faceFill(fill: string | null): void;
+  exportSvg(scope: 'all' | 'plane'): void;
+  importSvg(file: File): void;
   tilt(deg: number): void;
   fov(deg: number): void;
   addProbe(): void;
@@ -66,13 +80,20 @@ const CSS = `
 .ze-box{fill:none;stroke:#8db4ff;stroke-width:1;stroke-dasharray:4 3;opacity:.9}
 .ze-preview{fill:rgba(141,180,255,.12);stroke:#8db4ff;stroke-width:1.2}
 .ze-handle{fill:#16181c;stroke:#8db4ff;stroke-width:1.5}
+.ze-face{fill:rgba(141,180,255,.16);stroke:#8db4ff;stroke-width:1;stroke-dasharray:3 3}
+.ze-line{fill:none;stroke:#8db4ff;stroke-width:1.5;stroke-linejoin:round}
+.ze-stroke{fill:none;stroke:#e7e5e0;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:.85}
+.ze-tangent{fill:none;stroke:#8db4ff;stroke-width:1;opacity:.8}
+.ze-anchor{fill:#16181c;stroke:#8db4ff;stroke-width:1.5}
+.ze-anchor.on{fill:#8db4ff}
+.ze-cp{fill:#16181c;stroke:#8db4ff;stroke-width:1.2}
 .ze-panel{position:absolute;pointer-events:auto;background:rgba(22,24,28,.82);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.07);border-radius:12px;touch-action:none;user-select:none;-webkit-user-select:none}
 .ze-btn{appearance:none;border:0;background:transparent;color:inherit;font:inherit;min-width:36px;height:36px;padding:0 10px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
 .ze-btn:hover{background:rgba(255,255,255,.06)}
 .ze-btn.on{background:rgba(255,255,255,.13)}
 .ze-btn:disabled{opacity:.35;cursor:default}
 .ze-btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6}
-@media (pointer:coarse){.ze-btn{min-width:44px;height:44px}.ze-stats{top:calc(env(safe-area-inset-top,0px) + 70px)}}
+@media (pointer:coarse){.ze-btn{min-width:44px;height:44px}.ze-stats{top:calc(env(safe-area-inset-top,0px) + 70px)}.ze-toast{bottom:calc(env(safe-area-inset-bottom,0px) + 76px)}}
 .ze-top{left:calc(env(safe-area-inset-left,0px) + 12px);top:calc(env(safe-area-inset-top,0px) + 12px);display:flex;align-items:center;gap:2px;padding:4px}
 .ze-zone{padding:0 8px 0 6px;color:#bdbab3}
 .ze-dot{width:7px;height:7px;border-radius:50%;background:#7fc69a;margin-right:4px}
@@ -118,7 +139,7 @@ const CSS = `
 .ze-pill.drag{background:rgba(141,180,255,.25);color:#fff}
 .ze-pill input{width:56px;font:inherit;color:inherit;background:transparent;border:0;text-align:center;user-select:text;-webkit-user-select:text}
 .ze-foot{display:flex;gap:2px;padding-top:4px;border-top:1px solid rgba(255,255,255,.06);margin-top:4px}
-.ze-foot .ze-btn{font-size:11px;color:#8f8c86;height:30px}
+.ze-foot .ze-btn{font-size:11px;color:#8f8c86;height:30px;padding:0 7px}
 .ze-context{left:calc(env(safe-area-inset-left,0px) + 64px);right:calc(env(safe-area-inset-right,0px) + 290px);margin:0 auto;width:max-content;max-width:calc(100vw - 354px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);display:none;flex-wrap:wrap;align-items:center;justify-content:center;gap:2px;padding:4px}
 @media (pointer:coarse){.ze-context{right:calc(env(safe-area-inset-right,0px) + 306px);max-width:calc(100vw - 370px)}}
 .ze-context.show{display:flex}
@@ -126,7 +147,7 @@ const CSS = `
 @media (pointer:coarse){.ze-swatch{width:30px;height:30px}}
 .ze-swatch.on{border-color:#e7e5e0}
 .ze-label{color:#8f8c86;font-size:11px;padding:0 6px 0 8px}
-.ze-toast{left:calc(env(safe-area-inset-left,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 32px);padding:9px 12px;opacity:0;transition:opacity .25s;pointer-events:none}
+.ze-toast{left:calc(env(safe-area-inset-left,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 66px);max-width:min(560px,calc(100vw - 32px));padding:9px 12px;opacity:0;transition:opacity .25s;pointer-events:none}
 .ze-toast.show{opacity:1}
 .ze-banner{left:50%;top:calc(env(safe-area-inset-top,0px) + 64px);transform:translateX(-50%);display:none;align-items:center;gap:4px;padding:4px 4px 4px 12px}
 .ze-banner.show{display:flex}
@@ -137,7 +158,11 @@ const CSS = `
 `;
 
 const ICONS: Record<Tool, string> = {
-  select: '<svg viewBox="0 0 24 24"><path d="M6 3l12 9-5.5 1.2L15 20l-2.6 1-2.6-6.6L6 18z"/></svg>',
+  select: '<svg viewBox="0 0 24 24"><path d="M6 3l12 9-5.5 1.2L15 20l-2.6 1-2.6-6.6L6 18z" fill="currentColor"/></svg>',
+  direct: '<svg viewBox="0 0 24 24"><path d="M6 3l12 9-5.5 1.2L15 20l-2.6 1-2.6-6.6L6 18z"/></svg>',
+  pen: '<svg viewBox="0 0 24 24"><path d="M12 3l6 9-6 9-6-9z"/><path d="M12 3v7"/><circle cx="12" cy="12" r="1.6"/></svg>',
+  brush: '<svg viewBox="0 0 24 24"><path d="M4 17c2-6 6-1 8-6s6-6 8-4"/><path d="M4 20h7"/></svg>',
+  knife: '<svg viewBox="0 0 24 24"><path d="M4 20L18 4c1.5 2 1.5 5-1 8l-6 6"/><path d="M11 13l2 2"/></svg>',
   rect: '<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>',
   ellipse: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6"/></svg>',
 };
@@ -147,7 +172,19 @@ const LOCK = '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" 
 const UNDO = '<svg viewBox="0 0 24 24"><path d="M9 7L4 12l5 5M4 12h10a6 6 0 0 1 0 12"/></svg>';
 const REDO = '<svg viewBox="0 0 24 24"><path d="M15 7l5 5-5 5M20 12H10a6 6 0 0 0 0 12"/></svg>';
 
-const TOOL_TITLES: Record<Tool, string> = { select: 'Auswahl (V)', rect: 'Rechteck (M)', ellipse: 'Ellipse (L)' };
+const FLIP_X = '<svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M9 7L3 17h6z"/><path d="M15 7l6 10h-6z" fill="currentColor"/></svg>';
+const FLIP_Y = '<svg viewBox="0 0 24 24"><path d="M3 12h18"/><path d="M7 9L17 3v6z"/><path d="M7 15l10 6v-6z" fill="currentColor"/></svg>';
+
+const TOOL_TITLES: Record<Tool, string> = {
+  select: 'Auswahl (V)',
+  direct: 'Direktauswahl (A): Punkte, Griffe und Flächen',
+  pen: 'Zeichenstift (P): tippen gibt eine Ecke, ziehen eine Kurve',
+  brush: 'Formpinsel (B): freihand, wird eine glatte Kurve',
+  knife: 'Messer (K): quer durch eine Form ziehen',
+  rect: 'Rechteck (M)',
+  ellipse: 'Ellipse (L)',
+};
+const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'pen', 'brush', 'knife', 'rect', 'ellipse'];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -265,7 +302,7 @@ export class EditorUi {
     this.cam.append(this.tiltSlider.el, this.fovSlider.el);
 
     // links: Werkzeuge
-    for (const t of ['select', 'rect', 'ellipse'] as const) {
+    for (const t of TOOL_ORDER) {
       const b = button(ICONS[t], TOOL_TITLES[t], () => a.tool(t));
       this.toolBtns.set(t, b);
       this.tools.append(b);
@@ -282,7 +319,21 @@ export class EditorUi {
     });
     head.append(title, this.holdBtn, button('+', 'Neue Ebene hinter der aktiven', () => a.addPlane()));
     const foot = el('div', 'ze-foot');
-    foot.append(button('Probe: Scheiben-Stapel', '32 Ebenen aus der Kamerasession einfügen (Last für die Handy-Messung)', () => a.addProbe()));
+    const file = el('input');
+    file.type = 'file';
+    file.accept = '.svg,image/svg+xml';
+    file.style.display = 'none';
+    file.addEventListener('change', () => {
+      const f = file.files?.[0];
+      if (f) a.importSvg(f);
+      file.value = '';
+    });
+    foot.append(
+      button('Probe-Stapel', '32 Ebenen aus der Kamerasession einfügen (Last für die Handy-Messung)', () => a.addProbe()),
+      button('SVG laden', 'SVG aus Illustrator laden: Gruppen p… ersetzen ihre Ebene, andere Gruppen werden neue Ebenen', () => file.click()),
+      button('SVG sichern', 'Alle sichtbaren Ebenen als SVG, je Ebene eine Gruppe von hinten nach vorn', () => a.exportSvg('all')),
+      file,
+    );
     this.layers.append(head, this.depth, this.list, foot);
 
     this.banner.append(this.bannerText, button('Wiederherstellen', '', () => a.restore()), button('Verwerfen', '', () => a.discardBackup()));
@@ -333,7 +384,8 @@ export class EditorUi {
     this.toastEl.textContent = msg;
     this.toastEl.classList.add('show');
     window.clearTimeout(this.toastTimer);
-    this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), 2600);
+    // lange Meldungen (etwa nach dem Laden einer SVG) bleiben länger stehen
+    this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), Math.max(2600, msg.length * 55));
   }
 
   showBanner(text: string | null): void {
@@ -561,28 +613,60 @@ export class EditorUi {
     }
   }
 
-  /** Leiste unten: für eine gewählte Form Farbe und Reihenfolge, sonst für die aktive Ebene Rolle und Isolieren */
-  setContext(plane: ZonePlane | null, shape: ZoneShape | null, isolate: Isolate): void {
+  /** Farbknöpfe; on: die gewählte Farbe */
+  private swatches(on: string | null | undefined, pick: (c: string) => void): void {
+    for (const c of SWATCHES) {
+      const s = el('span', `ze-swatch${on === c ? ' on' : ''}`);
+      s.style.background = c;
+      s.title = c;
+      s.addEventListener('click', (e) => {
+        e.stopPropagation();
+        pick(c);
+      });
+      this.context.append(s);
+    }
+  }
+
+  /**
+   * Leiste unten: beim Zeichnen Fertig und Abbrechen, für einen gewählten Anker oder eine Fläche deren Befehle, für eine
+   * gewählte Form Farbe und Reihenfolge, sonst für die aktive Ebene Rolle und Isolieren
+   */
+  setContext(plane: ZonePlane | null, shape: ZoneShape | null, isolate: Isolate, path: PathContext | null = null, canPaste = false): void {
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
-    const key = shape ? `s|${shape.id}|${shape.name}|${shape.fill}` : plane ? `p|${plane.id}|${plane.name}|${plane.role}|${isolate}` : '';
+    const pk = path ? (path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.smooth}|${path.line}` : `f|${path.shape.id}|${path.fill}`) : '';
+    const key = path ? pk : shape ? `s|${shape.id}|${shape.name}|${shape.fill}` : plane ? `p|${plane.id}|${plane.name}|${plane.role}|${isolate}|${canPaste}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
     this.context.replaceChildren();
-    if (shape) {
+    if (path?.kind === 'pen') {
+      this.context.append(el('span', 'ze-label', `Zeichenstift · ${path.count} ${path.count === 1 ? 'Punkt' : 'Punkte'}${path.into ? ` in ${path.into}` : ''}`));
+      if (path.into && path.count >= 3) this.context.append(button('Schließen', 'Als geschlossenen Ring in die Form (oder auf den ersten Punkt tippen)', () => this.a.penDone(true)));
+      this.context.append(
+        button('Fertig', path.into ? 'Als Teilungslinie in die Form (Eingabe, oder auf den letzten Punkt tippen)' : 'Form schließen (Eingabe)', () => this.a.penDone(false)),
+        button('Abbrechen', 'Verwerfen', () => this.a.penCancel()),
+      );
+    } else if (path?.kind === 'anchor') {
+      this.context.append(
+        el('span', 'ze-label', `${path.shape.name} · Punkt`),
+        button('Ecke', 'Ecke ohne Griffe', () => !path.smooth || this.a.anchorSmooth(), path.smooth ? '' : 'on'),
+        button('Rund', 'Rund mit Griffen', () => path.smooth || this.a.anchorSmooth(), path.smooth ? 'on' : ''),
+        el('span', 'ze-sep'),
+        button('Punkt löschen', 'Punkt löschen (Entf)', () => this.a.anchorDelete()),
+      );
+      if (path.line !== 'outline') this.context.append(button(path.line === 'hole' ? 'Loch löschen' : 'Linie löschen', 'Den ganzen Pfad dieses Punkts entfernen', () => this.a.lineDelete()));
+    } else if (path?.kind === 'face') {
+      this.context.append(el('span', 'ze-label', `${path.shape.name} · Fläche`));
+      this.swatches(path.fill, (c) => this.a.faceFill(c));
+      this.context.append(el('span', 'ze-sep'), button('Loch', 'Fläche zum Loch machen (Entf); eine Farbe füllt sie wieder', () => this.a.faceFill(null), path.fill === null ? 'on' : ''));
+    } else if (shape) {
       this.context.append(el('span', 'ze-label', shape.name));
-      for (const c of SWATCHES) {
-        const s = el('span', `ze-swatch${shape.fill === c ? ' on' : ''}`);
-        s.style.background = c;
-        s.title = c;
-        s.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.a.fill(c);
-        });
-        this.context.append(s);
-      }
+      this.swatches(shape.fill, (c) => this.a.fill(c));
       this.context.append(
         el('span', 'ze-sep'),
         button('Duplizieren', 'Duplizieren (Cmd+D)', () => this.a.duplicate()),
+        button('Kopieren', 'Kopieren (Cmd+C); in einer anderen Ebene einfügen hält das Bild', () => this.a.copy()),
+        button(FLIP_X, 'Waagrecht spiegeln (Shift+H)', () => this.a.flip('x')),
+        button(FLIP_Y, 'Senkrecht spiegeln (Shift+V)', () => this.a.flip('y')),
         button('Nach vorn', 'In der Ebene nach vorn (])', () => this.a.orderShape(1)),
         button('Nach hinten', 'In der Ebene nach hinten ([)', () => this.a.orderShape(-1)),
         button('Löschen', 'Löschen (Entf)', () => this.a.deleteShape()),
@@ -592,9 +676,11 @@ export class EditorUi {
       for (const r of PLANE_ROLES) this.context.append(button(PLANE_ROLE_WORDS[r], `Rolle: ${PLANE_ROLE_WORDS[r]} (wirkt ab Stufe 4 auf Pinsel und Stützen)`, () => this.a.setRole(r), plane.role === r ? 'on' : ''));
       this.context.append(el('span', 'ze-sep'));
       for (const i of ['off', 'front', 'only'] as const) this.context.append(button(i === 'off' ? 'Alle' : i === 'front' ? 'Davor aus' : 'Nur diese', `Isolieren: ${ISOLATE_WORDS[i]}`, () => this.a.setIsolate(i), isolate === i ? 'on' : ''));
-      this.context.append(el('span', 'ze-sep'), button('Ebene löschen', 'Ebene mit allen Formen löschen', () => this.a.deletePlane()));
+      this.context.append(el('span', 'ze-sep'));
+      if (canPaste) this.context.append(button('Einfügen', 'Kopierte Form in diese Ebene, an derselben Stelle im Spielblick (Cmd+V)', () => this.a.paste()));
+      this.context.append(button('Als SVG', 'Nur diese Ebene als SVG sichern', () => this.a.exportSvg('plane')), button('Ebene löschen', 'Ebene mit allen Formen löschen', () => this.a.deletePlane()));
     }
-    this.context.classList.toggle('show', !!(shape || plane));
+    this.context.classList.toggle('show', !!(path || shape || plane));
   }
 
   destroy(): void {

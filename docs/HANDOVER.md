@@ -17,7 +17,12 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   **Stufe 1 gebaut (27.10.):** `?zone=<name>&editor=2` öffnet den Zonen-Editor mit Ebenen, Abständen („Bild halten“),
   Ansichten, Grundformen, Isolieren, Rückgängig, Sichern und Stift- und Fingereingabe (`TECH.md` 4i); 316 Tests, Build,
   Replay und Szenario 11 grün. **Tor S1 bestanden (Florian, 27.10.)**; sein Befund (Frontal ohne Farbe, Nebel) ist
-  behoben. Nächster Schritt: Stufe 2 (Formen).
+  behoben.
+  **Stufe 2 im Kern gebaut (27.10.):** Vektornetz mit Flächen und Löchern, Zeichenstift, Direktauswahl, Formpinsel,
+  Messer, Kopieren über Ebenen mit „Bild halten“, Spiegeln, SVG sichern und laden (Illustrator-Brücke, Flächen mit echten
+  Kurven); 356 Tests, Build und Szenario 12 grün. Wartet auf **Tor S2**. Noch offen aus Stufe 2: Boolesche Operationen,
+  Vereinfachen, Einrasten im Bild, Mehrfachauswahl, Gruppen, Drehen, Ausrichten, Kurvenstift, Band, Skizze als
+  Pause-Ebene (`ZONENEDITOR-PLAN.md` Abschnitt 6).
 
 - **25.10., Etappe 2 begonnen** (Branch `etappe-2-bahn-und-welt` von `main`; die zwölf Arbeitsschritte mit drei Toren stehen in
   `docs/GROSSER-PLAN.md`, Paket 10, von Florian bestätigt). Technik in `docs/TECH.md` 4h.
@@ -270,13 +275,15 @@ ab sechs CPU-Kernen), `?dev=1` (Overlay mit fps, Draw-Calls, Partikeln; Taste F 
 (Weltrenderer der Etappe 1, Perspektive 18° Standard; dort `?persp=0` für die Bühne, `?aa=0` ohne Kantenglättung).
 Eigene automatische Tests im Dev-Server mit `TC_NO_RECORD=1`, damit sie die echten Aufnahmen nicht verfälschen.
 
-## 3. Nächster Schritt: Stufe 1 des Zonen-Editors
+## 3. Nächster Schritt: Tor S2 des Zonen-Editors
 
 **Seit 27.10.2026 gilt:** Etappe 2 ruht; gebaut wird der Zonen-Editor nach `docs/ZONENEDITOR-PLAN.md`, Abschnitt 6, auf
-dem Branch `zoneneditor`. Stufe 1 ist gebaut, Tor S1 bestanden (27.10.); als Nächstes Stufe 2 (Formen: Zeichenstift,
-Kurvenstift, Formpinsel, Vektornetz mit Flächen, Messer, Boolesche Operationen, SVG-Austausch mit Illustrator).
-Für das iPad den HTTPS-Zugang nutzen (Profil aus `/__tc-ca.pem` installieren und voll vertrauen, `TECH.md` 12). Danach
-Stufe 2 (Formen). Der Text unten beschreibt den Stand vor der Pause und gilt wieder, wenn der große Plan weiterläuft.
+dem Branch `zoneneditor`. Stufe 1 ist gebaut, Tor S1 bestanden (27.10.); Stufe 2 ist im Kern gebaut (27.10.) und wartet
+auf Tor S2: Florian zeichnet Bild 1 und 2 (Kontur, Unterteilung, Höhlenöffnung) am iPad mit dem Pencil und am Mac, die
+SVG öffnet sauber in Illustrator und kommt zurück. Danach die offenen Teile von Stufe 2 (Boolesche Operationen,
+Vereinfachen, Einrasten im Bild, Gruppen, Drehen, Ausrichten, Kurvenstift, Band, Skizze) oder Stufe 3, wie Florian es
+am Tor entscheidet. Für das iPad den HTTPS-Zugang nutzen (Profil aus `/__tc-ca.pem` installieren und voll vertrauen,
+`TECH.md` 12). Der Text unten beschreibt den Stand vor der Pause und gilt wieder, wenn der große Plan weiterläuft.
 
 ### Vor der Pause: Etappe 2 des großen Plans
 

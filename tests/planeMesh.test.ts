@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Raycaster, Vector2 } from 'three';
 import { WorldCamera } from '@/world/camera';
-import { PlaneLayer, triangulateShape } from '@/world/planeMesh';
-import { ellipsePath, newPlane, newShape, planesOf, rectPath, slicesToNodes, type ZoneNode } from '@/zone/nodes';
+import { PlaneLayer, triangulateFace } from '@/world/planeMesh';
+import { ellipsePath, newPlane, newShape, planesOf, rectPath, setFaceFill, shapeFaces, slicesToNodes, type ZoneNode } from '@/zone/nodes';
 import { buildSliceStack } from '@/zone/slices';
 import { LANE_DEPTH } from '@/track/stage';
 
@@ -51,12 +51,34 @@ describe('Ebenen im Weltrenderer', () => {
     const s = scene();
     const shape = s.nodes.find((n) => n.id === s.a)!;
     if (shape.kind !== 'shape') throw new Error('Form erwartet');
-    const t1 = triangulateShape(shape);
+    const f1 = shapeFaces(shape)[0];
+    const t1 = triangulateFace(f1);
     shape.x += 5;
     shape.sx = 1.2;
-    expect(triangulateShape(shape)).toBe(t1);
+    expect(shapeFaces(shape)[0]).toBe(f1);
+    expect(triangulateFace(shapeFaces(shape)[0])).toBe(t1);
     shape.path = rectPath(10, 10);
-    expect(triangulateShape(shape)).not.toBe(t1);
+    expect(shapeFaces(shape)[0]).not.toBe(f1);
+  });
+
+  it('eine Teilungslinie macht zwei Flächen mit eigener Farbe, ein Loch wird nicht gezeichnet und nicht getroffen', () => {
+    const s = scene();
+    const shape = s.nodes.find((n) => n.id === s.a)!;
+    if (shape.kind !== 'shape') throw new Error('Form erwartet');
+    shape.cuts = [{ path: [{ x: -30, y: 2 }, { x: 30, y: 2 }], closed: false }];
+    const faces = shapeFaces(shape);
+    expect(faces.length).toBe(2);
+    const upper = faces.find((f) => f.inner[1] > 2)!;
+    setFaceFill(shape, upper, '#ff0000');
+    const layer = new PlaneLayer();
+    layer.build(s.nodes, { showPlane: (p) => p.id !== s.front });
+    expect(layer.pick(centerRay())?.id).toBe(s.a);
+    // die untere Fläche (Mitte des Bildes liegt in ihr) zum Loch machen: der Strahl geht durch
+    const lower = faces.find((f) => f.inner[1] < 2)!;
+    setFaceFill(shape, lower, null);
+    layer.build(s.nodes, { showPlane: (p) => p.id !== s.front });
+    expect(layer.pick(centerRay())).toBeNull();
+    expect(shape.regions?.map((r) => r.fill).sort()).toEqual(['#ff0000', null].sort());
   });
 
   it('der Scheibenstapel der Kamerasession wird als Ebenen ein Mesh mit vertretbar vielen Dreiecken', () => {
