@@ -1,10 +1,19 @@
-# Übergabe – Trauma Coaster (Stand 25.10.2026)
+# Übergabe – Trauma Coaster (Stand 27.10.2026)
 
 Für die nächste Session (Florian oder wer auch immer weitermacht): Was fertig ist, was offen ist, wie du
 weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md`, die Technik in
 `docs/TECH.md`, der Stil in `docs/ART.md`, der Plan mit allen Paketen und dem Umsetzungsstand in `docs/PLAN.md`.
 
 ## 1. Wo wir stehen
+
+- **27.10., Zonen-Editor statt Etappe 2.** Florian lässt den großen Plan ruhen und zuerst einen eigenen Zonen-Editor
+  bauen: Tiefenebenen mit einstellbarem Abstand, Formen wie in Illustrator, Farbe und Verläufe wie in Procreate,
+  Earle-Schichten als Shader, Portale, SVG und Malvorlagen, am Mac und am iPad. Plan mit Befunden, Recherchen, Stufen 0
+  bis 8 und Florians Antworten: `docs/ZONENEDITOR-PLAN.md` (Startfragen A1 bis A7 am 27.10. alle wie empfohlen
+  beantwortet; die Oberfläche so minimalistisch und ruhig wie möglich). Branch `zoneneditor` (Worktree
+  `.claude/worktrees/zoneneditor`) aus Etappe 2 (`b30bb71`, Ebenen-Probe gesichert) plus `test-kamerawinkel`; Stufe 0
+  gebaut: 300 Tests grün, Replay wie die Kamerasession, HTTPS im WLAN für das iPad (`scripts/https-cert.sh`,
+  `npm run dev:https`, `TECH.md` 12). Beide Branches sind nur lokal. Nächster Schritt: Stufe 1 (Gerüst, Ebenen, Kamera).
 
 - **25.10., Etappe 2 begonnen** (Branch `etappe-2-bahn-und-welt` von `main`; die zwölf Arbeitsschritte mit drei Toren stehen in
   `docs/GROSSER-PLAN.md`, Paket 10, von Florian bestätigt). Technik in `docs/TECH.md` 4h.
@@ -257,7 +266,15 @@ ab sechs CPU-Kernen), `?dev=1` (Overlay mit fps, Draw-Calls, Partikeln; Taste F 
 (Weltrenderer der Etappe 1, Perspektive 18° Standard; dort `?persp=0` für die Bühne, `?aa=0` ohne Kantenglättung).
 Eigene automatische Tests im Dev-Server mit `TC_NO_RECORD=1`, damit sie die echten Aufnahmen nicht verfälschen.
 
-## 3. Nächster Schritt: Etappe 2 des großen Plans
+## 3. Nächster Schritt: Stufe 1 des Zonen-Editors
+
+**Seit 27.10.2026 gilt:** Etappe 2 ruht; der nächste Schritt ist Stufe 1 des Zonen-Editors nach
+`docs/ZONENEDITOR-PLAN.md`, Abschnitt 6 (Editor-Seite mit dem Spielrenderer, Ebenen mit Abstandspillen und „Bild
+halten“, Kamera-Panel und Ansichten, Grundformen, Rückgängig, Sichern; Tor S1 am Mac und am iPad). Vorher prüft Florian
+den HTTPS-Zugang auf dem iPad (Profil aus `/__tc-ca.pem` installieren und voll vertrauen). Der Text unten beschreibt den
+Stand vor der Pause und gilt wieder, wenn der große Plan weiterläuft.
+
+### Vor der Pause: Etappe 2 des großen Plans
 
 Etappe 1 (Weltrenderer und Klötzchen-Editor) ist auf dem Branch `etappe-1-weltrenderer` fertig, Tor 1a und Tor 1b sind
 bestanden; der Pull Request nach `main` ist https://github.com/nicolehahn2890/Traumacoaster/pull/4 (der Merge deployt

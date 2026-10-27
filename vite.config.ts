@@ -3,6 +3,18 @@ import type { Plugin } from 'vite';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 
+/** erster vorhandener Pfad `name` im Arbeitsordner oder darüber (Worktrees liegen im Haupt-Checkout unter .claude/worktrees) */
+function upwards(name: string): string | null {
+  let dir = process.cwd();
+  for (let i = 0; i < 6; i++) {
+    if (existsSync(`${dir}/${name}`)) return `${dir}/${name}`;
+    const up = dir.replace(/\/[^/]+$/, '');
+    if (!up || up === dir) break;
+    dir = up;
+  }
+  return null;
+}
+
 /**
  * Strich-Rekorder (nur im Dev-Server): Das Spiel schickt jeden fertigen Strich (rohe Fingerpunkte, Lesart, Zoom,
  * Ergebnis) an /__strokes; sie landen zeilenweise in recordings/strokes.jsonl. So lassen sich echte Striche vom Handy
@@ -15,6 +27,8 @@ function strokeRecorder(): Plugin {
     configureServer(server) {
       // TC_NO_RECORD=1: nichts aufzeichnen (automatische Tests, damit sie die echten Aufnahmen nicht verfälschen)
       const record = !process.env.TC_NO_RECORD;
+      // in einem Worktree unter .claude/worktrees landen die Striche in der Datei des Haupt-Checkouts, wo das Replay sie sucht
+      const file = upwards('recordings/strokes.jsonl') ?? 'recordings/strokes.jsonl';
       server.middlewares.use('/__strokes', (req, res) => {
         if (req.method !== 'POST') {
           res.statusCode = 405;
@@ -27,8 +41,8 @@ function strokeRecorder(): Plugin {
           try {
             JSON.parse(body);
             if (record) {
-              mkdirSync('recordings', { recursive: true });
-              appendFileSync('recordings/strokes.jsonl', body.replace(/\n/g, ' ') + '\n');
+              mkdirSync(file.replace(/\/[^/]+$/, ''), { recursive: true });
+              appendFileSync(file, body.replace(/\n/g, ' ') + '\n');
             }
             res.statusCode = 204;
           } catch {
@@ -112,11 +126,54 @@ function zoneStore(): Plugin {
   };
 }
 
+/**
+ * HTTPS im WLAN (Zonen-Editor auf dem iPad, docs/ZONENEDITOR-PLAN.md, Entscheidung A7): Safari zählt
+ * http://192.168.… nicht als sicheren Kontext, ohne HTTPS fehlen dem Editor Zwischenablage, Teilen und dauerhafter
+ * Speicher. Die Zertifikate legt scripts/https-cert.sh im Ordner .certs des Haupt-Checkouts an; die Worktrees unter
+ * .claude/worktrees finden ihn, indem sie nach oben suchen.
+ */
+function certDir(): string | null {
+  const dir = upwards('.certs');
+  return dir && existsSync(`${dir}/dev.pem`) ? dir : null;
+}
+
+/** TC_HTTPS=1 (npm run dev:https): Schlüssel und Zertifikat für den Dev-Server */
+function devHttps(): { key: Buffer; cert: Buffer } | undefined {
+  if (!process.env.TC_HTTPS) return undefined;
+  const dir = certDir();
+  if (!dir) throw new Error('Keine Zertifikate gefunden: erst scripts/https-cert.sh ausführen');
+  return { key: readFileSync(`${dir}/dev.key`), cert: readFileSync(`${dir}/dev.pem`) };
+}
+
+/**
+ * Die CA zum Installieren auf dem iPad: /__tc-ca.pem im Dev-Server (mit und ohne HTTPS) liefert rootCA.pem so aus, dass
+ * Safari anbietet, sie als Profil zu laden. Nur das öffentliche Zertifikat, nie ein Schlüssel.
+ */
+function caDownload(): Plugin {
+  return {
+    name: 'tc-ca-download',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use('/__tc-ca.pem', (_req, res) => {
+        const dir = certDir();
+        if (!dir || !existsSync(`${dir}/rootCA.pem`)) {
+          res.statusCode = 404;
+          res.end('Keine CA: erst scripts/https-cert.sh ausführen\n');
+          return;
+        }
+        res.setHeader('Content-Type', 'application/x-x509-ca-cert');
+        res.setHeader('Content-Disposition', 'attachment; filename="TraumaCoaster-Dev-CA.pem"');
+        res.end(readFileSync(`${dir}/rootCA.pem`));
+      });
+    },
+  };
+}
+
 // base './' sorgt dafür, dass der Build unter jedem Pfad läuft
 // (GitHub Pages unter /Traumacoaster/, lokal unter /, später Capacitor file://).
 export default defineConfig({
   base: './',
-  plugins: [strokeRecorder(), zoneStore()],
+  plugins: [strokeRecorder(), zoneStore(), caDownload()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -129,6 +186,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    https: devHttps(),
     // Zonendateien meldet der Zonen-Speicher selbst (tc:zone); Vites Wächter lüde sonst die ganze Seite neu
     watch: { ignored: ['**/public/zones/**'] },
   },

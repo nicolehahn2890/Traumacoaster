@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
+    "dev:https": "TC_HTTPS=1 vite --host --port 5180 --strictPort",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
     "preview": "vite preview --host --port 4173",
     "test": "vitest run",

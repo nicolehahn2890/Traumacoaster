@@ -13,3 +13,5 @@ refs/
 # persönliche Claude-Code-Einstellungen
 .claude/launch.json
 .claude/settings.local.json
+# Zertifikate für HTTPS im WLAN (scripts/https-cert.sh), mit privaten Schlüsseln
+.certs/

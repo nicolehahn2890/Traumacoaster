@@ -649,6 +649,7 @@ GitHub Pages über `.github/workflows/deploy.yml`: Bei Push auf den Hauptbranch 
 ```
 npm install
 npm run dev          # http://localhost:5173
+npm run dev:https    # https://<Mac>.local:5180 für das iPad (Zonen-Editor); Zertifikate vorher mit scripts/https-cert.sh
 npm run test         # Vitest
 npm run build        # Typecheck + Build nach dist/
 npm run preview      # Build lokal ansehen
@@ -656,6 +657,12 @@ npm run levels:doc   # docs/LEVELS.md neu erzeugen
 npm run screenshots  # Playwright-Screenshots nach screenshots/
 npm run scenario     # Szenario-Test: Looping, Kurve, Fahrt bis zum Ergebnis
 ```
+**HTTPS im WLAN** (Zonen-Editor auf dem iPad, `docs/ZONENEDITOR-PLAN.md` 3.3): `scripts/https-cert.sh` legt eine eigene
+Zertifizierungsstelle (nur für lokale Namen und Heimnetz-Adressen) und ein Server-Zertifikat im Ordner `.certs` des
+Haupt-Checkouts an; der Mac vertraut ihr nicht und braucht es nicht (`localhost` ist dort sicher). Einmal auf dem iPad:
+`/__tc-ca.pem` des Dev-Servers öffnen, Profil installieren und unter Einstellungen › Allgemein › Info ›
+Zertifikatsvertrauenseinstellungen voll vertrauen. Ändert sich die WLAN-Adresse, das Skript erneut ausführen (die
+Stelle bleibt). Striche aus Dev-Servern in Worktrees landen in `recordings/strokes.jsonl` des Haupt-Checkouts.
 
 ## 13. Karte und Übergang ins Level
 - **Ein Boden, zwei Krümmungen** (`src/render/bend.ts`): Alles auf der Karte liegt in flachen Koordinaten (u = Bogenlänge ab der Bildmitte, v = Höhe über dem Boden, in Karten-Pixeln) und wird mit Krümmung k auf den Kreis der Drehscheibe gelegt; k = 0 ist der flache Boden des Levels. Der Übergang dreht nur an k, am Maßstab und am Fokus. Texturen (Miniaturen, das Level-Bild) liegen auf einem Gitter (`BentSheet`), dessen Punkte jedes Bild neu gebogen werden.

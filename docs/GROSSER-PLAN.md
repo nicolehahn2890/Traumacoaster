@@ -7,6 +7,12 @@ betroffenen Paket nachgetragen; was Florian ändert, ebenso. Vorläufig bleiben 
 Autoscroll am Tunnel (wird ausprobiert). Eingabe war `docs/UEBERGABE-PLAN.md`; die Technik steht in
 `docs/RICHTLINIE.md` und wird hier nicht neu verhandelt. Der alte Plan `docs/PLAN.md` bleibt als Archiv.
 
+**Nachtrag 27.10.2026 (Florian): Der Plan ruht.** Nach der Kamerawinkel-Session (Ebenen-Welt aus vielen parallaktischen
+Vektorebenen, Tiefe der Bahn aus den Ebenen) baut Florian zuerst einen eigenen Zonen-Editor; Plan, Befunde, Recherchen
+und Stufen stehen in `docs/ZONENEDITOR-PLAN.md`, gebaut wird auf dem Branch `zoneneditor`. Etappe 2 ruht nach Schritt 7,
+dem Freiraumfeld und der Ebenen-Probe (gesichert als `b30bb71`). Viele Pakete behalten ihre Bedeutung; wie sie danach
+weiterlaufen, steht dort in Abschnitt 8.
+
 ## A. Stand der Abstimmung
 
 | Paket | Inhalt | Stand | bestätigt am |
@@ -23,7 +29,7 @@ Autoscroll am Tunnel (wird ausprobiert). Eingabe war `docs/UEBERGABE-PLAN.md`; d
 | 1 | Weltrenderer (Technik, Richtlinie Schritt 2) | **bestätigt**: Technik aus der Richtlinie, Module unter `src/world/`, Tore; Etappe 1 | 24.10.2026 |
 | 8b | Asset-Pipeline und Aufträge | **bestätigt**: Session erzeugt über Florians Figma-Konto (am ersten Auftrag geprüft), automatische Prüfung gegen Auftrag und Leitbilder, eigene Teile je Zone, Katalog, Aufträge in Sätzen | 24.10.2026 |
 | 9 | Produktion vieler Level | **bestätigt**: Vorschlag-Generator, Prüfer mit Lösungsbahn in der CI, zweite Zone „Mystischer Neon-Freizeitpark“ ohne neuen Engine-Code | 24.10.2026 |
-| 10 | Etappen und Abnahmen | **bestätigt**: acht Etappen E1 bis E8 mit vier Prüfungen je Tor, Zwischentor nach E2, Stilprobe parallel zu E3; Nachtrag: kein Kalender, Etappe 1 als Arbeitsschritte in Reihenfolge; 25.10.: Etappe 2 als zwölf Arbeitsschritte mit drei Toren bestätigt | 24.10.2026 |
+| 10 | Etappen und Abnahmen | **bestätigt**: acht Etappen E1 bis E8 mit vier Prüfungen je Tor, Zwischentor nach E2, Stilprobe parallel zu E3; Nachtrag: kein Kalender, Etappe 1 als Arbeitsschritte in Reihenfolge; 25.10.: Etappe 2 als zwölf Arbeitsschritte mit drei Toren bestätigt; **27.10.: Plan ruht, zuerst der Zonen-Editor (`docs/ZONENEDITOR-PLAN.md`)** | 24.10.2026 |
 | 11 | Risiken und Grenzen | **bestätigt**: Risikotabelle mit Gegenmaßnahme und Tor, Liste dessen, was bewusst nicht im Plan ist | 24.10.2026 |
 | 12 | Karte und Morph (neu auf Florians Wunsch, 24.10.) | **bestätigt**: ein Rad für alle Zonen in Sektoren, Miniaturen und Symbole, Morph in zwei Schritten mit messbaren Kriterien | 24.10.2026 |
 
