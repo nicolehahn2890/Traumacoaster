@@ -1,7 +1,8 @@
 # Trauma Coaster – Plan für den Zonen-Editor
 
 Stand 27.10.2026. **Startfragen A1 bis A7 von Florian am 27.10.2026 beantwortet (alle wie empfohlen, Abschnitt 9);
-Stufe 0 und Stufe 1 gebaut, Tor S1 bestanden (Florian, 27.10.2026); Stufe 2 im Kern gebaut, wartet auf Tor S2.** Gebaut wird Stufe für
+Stufe 0 und Stufe 1 gebaut, Tor S1 bestanden (Florian, 27.10.2026); Stufe 2 ganz gebaut (Befunde vom ersten Test
+eingearbeitet), wartet auf Tor S2.** Gebaut wird Stufe für
 Stufe mit Tor, auf dem Branch `zoneneditor`. Der große Plan (`docs/GROSSER-PLAN.md`)
 ruht seit heute auf Florians Wunsch; Etappe 2 steht nach Schritt 7, dem Freiraumfeld und der Freigabe der Ebenen-Probe,
 Tor 2b ist offen. Die Session von Etappe 2 hat die Pause per Nachricht bekommen (27.10.2026).
@@ -854,9 +855,9 @@ Kurvenanpassung, Flächen als Kurven, SVG-Rundlauf auch über eine Illustrator-a
 8 Prüfungen grün (Zeichenstift, Teilungslinie, Fläche färben und Loch, Formpinsel, Messer, Kopie in die Ebene dahinter
 mit 0,0014 px, SVG sichern und laden ohne Änderung), am Mac im Browser mit Maus und nachgestelltem Pencil und zwei
 Fingern durchgespielt. Spielcode ist nicht berührt. **Platzhalter:** die acht Füllfarben, das Aussehen von Werkzeugzeichen
-und Leisten. **Noch offen aus Stufe 2** (für das Tor nicht nötig; danach oder auf Zuruf): Boolesche Operationen (Vereinen,
-Abziehen, Schnittmenge), Vereinfachen, Einrasten im Bild und am Raster, Mehrfachauswahl und Gruppen, Drehen, Ausrichten,
-Kurvenstift (Shift+P), Band (O), Skizze als Pause-Ebene.
+und Leisten. **Noch offen aus Stufe 2** waren zu diesem Stand: Boolesche Operationen, Vereinfachen, Einrasten im Bild und
+am Raster, Mehrfachauswahl und Gruppen, Drehen, Ausrichten, Kurvenstift (Shift+P), Band (O), Skizze als Pause-Ebene;
+alle am selben Tag nachgebaut (die Befunde unten und „Rest von Stufe 2 gebaut“).
 **Befunde an Tor S2 (Florian, 27.10.2026) und was daraus wurde** (am selben Tag gebaut, Szenario 13):
 1. *Zeichenstift wie in Illustrator:* mit Befehlstaste Punkte und Griffe verschieben, auch am laufenden Pfad (Klick ins
    Leere beendet ihn), mit Wahltaste das Ankerpunkt-Werkzeug (Klick auf einen Anker: Ecke oder Rund; aus einem Anker
@@ -890,6 +891,47 @@ Zeile, Finger: der Ordner) zieht die ganze Gruppe mit ihren Abständen, nie in e
 zusammenhängender Lauf in der Liste bleibt, hält eine geschobene Tiefe 1 cm vor der nächsten Ebene einer anderen Gruppe
 an; dorthin geht es durch Ziehen in der Liste. Im SVG wird eine Ebenen-Gruppe eine Gruppe um ihre Ebenen (in Illustrator
 ein Ordner). **Noch nicht:** Gruppen in Gruppen.
+**Rest von Stufe 2 gebaut (27.10.2026, Szenario 15; je Paket geprüft und in Florians Teststand übernommen):**
+- *Drehen:* über dem Rahmen gewählter Formen sitzt ein runder Griff; ziehen dreht um die Mitte, mit Umschalt in
+  15°-Schritten. Gedreht wird vom Anfang des Ziehens aus (nichts summiert sich), zurück auf 0° ist die Form genau wie
+  vorher; Linien, Löcher und Flächenfarben drehen mit.
+- *Ausrichten und Verteilen:* ab zwei Formen einer Ebene „Ausrichten“ in der Leiste: links, waagrecht mittig, rechts,
+  oben, senkrecht mittig, unten am gemeinsamen Rahmen (wie Illustrators „an Auswahl ausrichten“), ab drei waagrecht
+  oder senkrecht verteilen (gleiche Abstände der Mitten).
+- *Boolesche Operationen:* ab zwei Formen einer Ebene „Verbinden“: Vereinen, vordere von der hintersten abziehen,
+  Schnittmenge, Überlappung ausschließen (wie Illustrators Pathfinder). Das Ergebnis behält echte Kurven, Löcher werden
+  Löcher; die Farbe kommt von der vordersten Form (beim Abziehen von der hintersten). Teilungslinien und Flächenfarben
+  der Ausgangsformen fallen dabei weg (die Meldung sagt es).
+- *Vereinfachen:* „Vereinfachen“ in der Leiste einer Form nimmt Anker weg, solange der Umriss höchstens 1,5 Bildpunkte
+  (so wie er gerade zu sehen ist) danebenliegt; ein Pinselstrich mit vielen Ankern wird so wenige glatte Kurven.
+- *Kurvenstift (Shift+P,* wie Illustrators Kurvenzeichner*):* jedes Tippen setzt einen Anker, die Kurve läuft glatt
+  durch alle; ziehen verschiebt einen Anker, doppelt tippen wechselt Ecke und Rund, auf den ersten tippen schließt.
+  Berührt der Pfad die gewählte Form, wird er wie beim Zeichenstift eine Teilungslinie oder ein Ring in ihr.
+- *Band (O,* Plan 4.3*):* in der gewählten Form auf eine Kante drücken und nach innen ziehen: das Kantenstück bis zu den
+  nächsten Ecken (an einem runden Umriss so weit, wie die Kante ungefähr ihre Richtung hält; ein runder Lochrand ganz)
+  wird um die gezogene Weite versetzt und eine Teilungslinie, so entsteht eine eigene Fläche zum Färben (das helle
+  Randband aus Bild 2, ein Höhlenrand, wenn man an einem Loch nach außen zieht).
+- *Einrasten im Bild und Raster:* zwei Schalter oben (Magnet, zu Beginn an; Gitter, zu Beginn aus). Magnet: Punkte rasten an Ankern
+  (zuerst) und Kanten aller sichtbaren Formen ein, auch anderer Ebenen, und zwar so, wie sie im Bild liegen: ein Punkt
+  der vorderen Ebene sitzt im Spielblick genau auf der Kante der hinteren. Ein kleiner Ring zeigt, wo es einrastet.
+  Gitter: das Raster der aktiven Ebene in Metern, seine Weite passt sich dem Zoom an (mindestens 18 Bildpunkte). Gilt
+  für Zeichenstift, Kurvenstift, Formpinsel, Direktauswahl und Band.
+- *Skizze als Pause-Ebene:* in der Leiste einer Ebene „Skizze“ lädt ein Foto oder Bild (PNG, JPG, WebP). Es kommt neben
+  die Zonendatei (`public/zones/<zone>/skizze-….png`, nur mit Dev-Server; ohne ihn bleibt es bis zum Neuladen) und
+  liegt in Lage und Perspektive der Ebene, mitten im freien Bild und ganz zu sehen. Es liegt über allen Ebenen (sonst
+  verschwände es beim Nachzeichnen hinter den vorderen) und ist **multipliziert**: weißes Papier wird durchsichtig,
+  Linien dunkeln ab (abschaltbar, dann normal halbdurchsichtig). Anpassen: Ecke ziehen skaliert mit festem
+  Seitenverhältnis, innen ziehen verschiebt; Deckkraft 25, 50, 75, 100 %, Ausblenden, Anderes Bild, Entfernen, alles
+  rückgängig. Eine Skizze je Ebene; sie wird mit der Zone gesichert, im Spiel nicht gezeichnet und nicht exportiert.
+Geprüft: 384 Tests grün, Build grün, Szenarien 11 bis 15 mit 35 Prüfungen grün (Szenario 15: Skizze laden, verschieben,
+an der Ecke skalieren mit 0,00 px Abweichung der festen Ecke, über der vordersten Ebene dunkelt eine Linie auf 58 % ab,
+das Papier ändert höchstens 4 von 255, Deckkraft und Mischung rückgängig, im Spiel unsichtbar). Spielcode nicht berührt.
+**Platzhalter:** wie oben die acht Füllfarben und das Aussehen der Werkzeugzeichen; neu die Zeichen für Ausrichten und
+Verbinden. **Abweichung vom Plan:** Abschnitt 3 nennt Boolesche Operationen, „die änderbar bleiben“; gebaut ist die
+angewandte Form wie Illustrators Pathfinder ohne Alt (rückgängig geht, nachträglich ändern nicht). **Aus der Liste in 4.3
+noch nicht gebaut:** Formgruppen in einer Ebene (Cmd+G gruppiert Ebenen), Gruppen in Gruppen, Schnittmaske (Cmd+7),
+Kontur in Fläche, der Bogen (Portalform) als Grundform, Einrasten in 45°-Schritten und an Hilfslinien, Zahlen für Lage
+und Größe. Auf Zuruf oder mit der Stufe, die sie braucht.
 
 **Stufe 3: Farbe, Verläufe, Stile (M).** Farbmenü, Ziehen und Fallenlassen, Pipette, Verläufe auf der Fläche und über
 mehrere Flächen, Füllstapel mit Mischmodi und Deckkraft, Ebenenstapel, Luftperspektive, Zonenpalette, Stile (kopieren,

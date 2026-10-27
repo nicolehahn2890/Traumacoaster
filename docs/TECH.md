@@ -662,10 +662,50 @@ deren Weltrenderer und Spielkamera; seine Oberfläche ist HTML über dem Spielbi
   ordnet Gruppen mit Ebenen-Kennung ihrer Ebene zu, sonst wird jede oberste benannte Gruppe eine neue Ebene; eine Form
   bleibt unverändert, wenn Farben und Ränder (Grenzen bis 2 cm, Fläche bis 1 %) zurückkommen; Ursprung aus den
   Datenattributen, sonst dem Rahmen, sonst unten links der Zeichenfläche.
+- **Drehen, Ausrichten, Verteilen** (`src/zone/shapeOps.ts`): Eine Form trägt keinen Winkel; `rotateShape` rechnet
+  Drehung und Maßstab in Pfade, Löcher, Linien und Füllpunkte ein (danach sx = sy = 1) und dreht immer vom Stand zu
+  Beginn des Ziehens (`orig`), bei 0° stellt es ihn genau wieder her. Griff: über der Mitte der Oberkante des Rahmens
+  (`rotateHandle`), Drehpunkt die Rahmenmitte, Umschalt rastet in 15°. `alignShapes` und `distributeShapes` am
+  gemeinsamen Rahmen (`unionBounds`), oben ist y groß.
+- **Boolesche Operationen** (`src/zone/pathfinder.ts`, `booleanShapes`): alle Pfade der Formen in Ebenen-Koordinaten
+  in ein Vektornetz (`computeFaces` mit einem Rahmen 1 m um alles, Abtastung 5 cm); jede Fläche fragt an ihrem inneren
+  Punkt, in welchen Formen sie gefüllt liegt (`faceAt` + `faceFill`, Löcher zählen nicht), und wird nach der Operation
+  behalten. Die gerichteten Kanten der behaltenen Flächen (Außenrand gegen, Löcher mit dem Uhrzeigersinn, Schlüssel auf
+  Millimeter) heben sich paarweise auf; die übrigen werden mit der stärksten Linkskurve je Knoten zu Ringen verkettet
+  (Außenränder positiv, Löcher negativ, ein Loch zum kleinsten umgebenden Rand); die Kurven kommen über
+  `curvesOnPaths` (aus `faceCurves.ts`) von den Pfaden zurück. Der Editor ersetzt die Formen durch die Ergebnisse
+  (Farbe der vordersten, beim Abziehen der hintersten).
+- **Vereinfachen** (`simplifyShape` in `pathTools.ts`): je Pfad `fitCurve` über die geglättete Linie mit der Toleranz
+  1,5 Bildpunkte in Metern der Ebene (`metersPerPx` an der Stelle), nur wenn es weniger Anker werden; angeklebte
+  Linienenden werden neu auf ihre Kanten gesetzt.
+- **Kurvenstift und Band** (`pathTools.ts`): Der Kurvenstift ist der Zeichenstift mit `pen.auto` je Anker (rund oder
+  Ecke); `autoHandles` setzt die Griffe eines runden Ankers parallel zur Sehne seiner Nachbarn (ein Sechstel, höchstens
+  0,4 des kürzeren Abstands), Endpunkte offener Pfade bleiben Ecken. Band: `bandDown` nimmt auf dem getroffenen Pfad
+  der gewählten Form das Stück zwischen den nächsten Ecken (nicht runden Ankern), am Umriss höchstens so weit, wie die
+  Kante sich vom Druckpunkt aus um 80° dreht (sonst liefe es um einen runden Umriss ganz herum); ein Loch ohne Ecken wird
+  ganz genommen und gibt einen Ring. Abtastung 24 je Stück mit Normalen; `bandMove` versetzt um die Weite unter dem
+  Zeiger, `bandUp` kürzt die Linie auf die Form (`trimToShape`, sonst an die Enden des Stücks), glättet sie mit
+  `fitCurve`, legt sie als Teilungslinie an und wählt die neue Fläche.
+- **Einrasten** (`snapPicture`, `snapPoint` in `pathTools.ts`): im Bild zuerst der nächste Anker, dann die nächste
+  Kante aller sichtbaren Formen aller Ebenen innerhalb des Trefferradius, gemessen in Bildpunkten; der Punkt der
+  Zeichen-Ebene ist dann `planePoint` dieses Bildpunkts. Dadurch sitzt ein Punkt einer vorderen Ebene im Spielblick
+  genau auf der Kante einer hinteren. Ohne Treffer das Raster der Ebene (`gridStep`: kleinste Weite aus 0,25 · 2ⁿ und
+  5er-Stufen, die mindestens 18 Bildpunkte hat). Bewegte Pfade sind ausgenommen; `snapAt` gibt den Ring.
+- **Skizze** (`ZoneSketch` in `zone.nodes`, `src/zoneeditor/sketches.ts`): Mitte, Breite, Höhe in Ebenen-Koordinaten,
+  Deckkraft, `blend` ('normal', sonst multipliziert), `hidden`; eine je Ebene. Das Bild lädt `uploadZoneFile`
+  (`src/zone/io.ts`) über den Dev-Server-Weg `POST /__zonefile/<zone>/skizze-….(png|jpg|webp)` (höchstens 25 MB, nur
+  diese Namen) nach `public/zones/<zone>/`; ohne Dev-Server bleibt eine Objekt-URL, die nicht gesichert wird. Gelesen
+  werden nur `src` unter `/zones/`, eine Skizze ohne Ebene fällt weg. `SketchLayer` zeichnet je Skizze ein Rechteck mit
+  `MultiplyBlending` (verlangt `premultipliedAlpha`; Ergebnis dst · (1 − a + a · Bild), Weiß bleibt unsichtbar),
+  `depthTest: false` und `renderOrder` 10 (über allen Ebenen), ohne Nebel, nur beim Bauen. Platz beim Laden: mitten im
+  freien Bild zwischen Werkzeugleiste und Ebenenliste (`ui.freeSpan`), 84 % der Breite oder 70 % der Höhe.
+  Anpassen (`sketchEdit`, über `adjusting()` nur für die Skizze der aktiven Ebene beim Bauen; Werkzeug- oder
+  Ebenenwechsel beendet es): Ecke skaliert um die gegenüberliegende, innen verschiebt.
 - **Prüfungen:** `tests/nodes.test.ts`, `tests/planeMesh.test.ts`, `tests/faces.test.ts`, `tests/pathTools.test.ts`,
-  `tests/faceCurves.test.ts`, `tests/svgPlanes.test.ts`, `tests/planeGroups.test.ts`; Szenario 11 (Stufe 1), 12 (Stufe 2),
-  13 (Befunde an Tor S2) und 14 (Ebenen-Gruppen) mit `node scripts/scenario.mjs 11 12 13 14` und `TC_URL` gegen den
-  eigenen Server. Künstliche Tastenereignisse im Test
+  `tests/faceCurves.test.ts`, `tests/svgPlanes.test.ts`, `tests/planeGroups.test.ts`, `tests/shapeOps.test.ts`,
+  `tests/pathfinder.test.ts`; Szenario 11 (Stufe 1), 12 (Stufe 2), 13 (Befunde an Tor S2), 14 (Ebenen-Gruppen) und 15
+  (Skizze) mit `node scripts/scenario.mjs 11 12 13 14 15` und `TC_URL` gegen den eigenen Server; Szenario 15 lädt über
+  den Dev-Server hoch und löscht `public/zones/szenario-skizze` danach wieder. Künstliche Tastenereignisse im Test
   am `document.body` auslösen, nicht am `window`: dort erreichen sie auch die Tasten des Levels (Esc verlässt es).
 
 ## 5. Physik

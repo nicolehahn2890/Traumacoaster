@@ -20,12 +20,17 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   behoben.
   **Stufe 2 im Kern gebaut (27.10.):** Vektornetz mit Flächen und Löchern, Zeichenstift, Direktauswahl, Formpinsel,
   Messer, Kopieren über Ebenen mit „Bild halten“, Spiegeln, SVG sichern und laden (Illustrator-Brücke, Flächen mit echten
-  Kurven); 356 Tests, Build und Szenario 12 grün. Wartet auf **Tor S2**. Noch offen aus Stufe 2: Boolesche Operationen,
-  Vereinfachen, Einrasten im Bild, Mehrfachauswahl, Gruppen, Drehen, Ausrichten, Kurvenstift, Band, Skizze als
-  Pause-Ebene (`ZONENEDITOR-PLAN.md` Abschnitt 6). Florians erste Befunde an Tor S2 sind eingebaut (Zeichenstift mit
-  Befehls- und Wahltaste, Schließen mit Ziehen, Lasso und Mehrfachauswahl von Punkten, Formen und Ebenen, Tiefe je
-  Zeile statt Tiefenleiste, Ebenen umordnen) und danach Ebenen-Gruppen wie Ordner in Photoshop (gruppieren,
-  auflösen, zuklappen, ausblenden, sperren, als Ganzes ziehen; noch keine Gruppen in Gruppen).
+  Kurven); 356 Tests, Build und Szenario 12 grün. Wartet auf **Tor S2**. Florians erste Befunde an Tor S2 sind
+  eingebaut (Zeichenstift mit Befehls- und Wahltaste, Schließen mit Ziehen, Lasso und Mehrfachauswahl von Punkten,
+  Formen und Ebenen, Tiefe je Zeile statt Tiefenleiste, Ebenen umordnen) und danach Ebenen-Gruppen wie Ordner in
+  Photoshop (gruppieren, auflösen, zuklappen, ausblenden, sperren, als Ganzes ziehen; noch keine Gruppen in Gruppen).
+  **Rest von Stufe 2 gebaut (27.10.):** Drehen mit Griff, Ausrichten und Verteilen, Boolesche Operationen (Vereinen,
+  Abziehen, Schnittmenge, Überlappung ausschließen, mit echten Kurven), Vereinfachen, Kurvenstift (Shift+P), Band (O),
+  Einrasten im Bild und am Raster, Skizze als Pause-Ebene (über allem, multipliziert); 384 Tests, Build und Szenarien
+  11 bis 15 grün (`ZONENEDITOR-PLAN.md` „Rest von Stufe 2 gebaut“, `TECH.md` 4i). Gearbeitet wird im Seiten-Worktree
+  `.claude/worktrees/zoneneditor-tor2` (Branch `zoneneditor-tor2`, Dev-Server 5184); jedes geprüfte Paket kommt per
+  Vorspulen in `zoneneditor`, wo Florians Server laufen (iPad https 5180, Mac 5183). Nichts gepusht; vor einem Push
+  klären: acht WebP aus `refs/` unter `public/zones/ebenen` (die Referenzen sind absichtlich nicht öffentlich).
 
 - **25.10., Etappe 2 begonnen** (Branch `etappe-2-bahn-und-welt` von `main`; die zwölf Arbeitsschritte mit drei Toren stehen in
   `docs/GROSSER-PLAN.md`, Paket 10, von Florian bestätigt). Technik in `docs/TECH.md` 4h.
@@ -283,9 +288,10 @@ Eigene automatische Tests im Dev-Server mit `TC_NO_RECORD=1`, damit sie die echt
 **Seit 27.10.2026 gilt:** Etappe 2 ruht; gebaut wird der Zonen-Editor nach `docs/ZONENEDITOR-PLAN.md`, Abschnitt 6, auf
 dem Branch `zoneneditor`. Stufe 1 ist gebaut, Tor S1 bestanden (27.10.); Stufe 2 ist im Kern gebaut (27.10.) und wartet
 auf Tor S2: Florian zeichnet Bild 1 und 2 (Kontur, Unterteilung, Höhlenöffnung) am iPad mit dem Pencil und am Mac, die
-SVG öffnet sauber in Illustrator und kommt zurück. Danach die offenen Teile von Stufe 2 (Boolesche Operationen,
-Vereinfachen, Einrasten im Bild, Gruppen, Drehen, Ausrichten, Kurvenstift, Band, Skizze) oder Stufe 3, wie Florian es
-am Tor entscheidet. Für das iPad den HTTPS-Zugang nutzen (Profil aus `/__tc-ca.pem` installieren und voll vertrauen,
+SVG öffnet sauber in Illustrator und kommt zurück. Seit dem Abend des 27.10. ist auch der Rest von Stufe 2 gebaut
+(Drehen, Ausrichten, Boolesche Operationen, Vereinfachen, Kurvenstift, Band, Einrasten, Skizze); Florian testet alles
+zusammen am Tor. Danach Stufe 3 (Farbe, Verläufe, Stile) oder was das Tor ergibt; aus der Werkzeugliste in Plan 4.3
+fehlen noch Formgruppen, Schnittmaske, Kontur in Fläche, Bogen, 45°-Einrasten und Zahlen. Für das iPad den HTTPS-Zugang nutzen (Profil aus `/__tc-ca.pem` installieren und voll vertrauen,
 `TECH.md` 12). Der Text unten beschreibt den Stand vor der Pause und gilt wieder, wenn der große Plan weiterläuft.
 
 ### Vor der Pause: Etappe 2 des großen Plans
