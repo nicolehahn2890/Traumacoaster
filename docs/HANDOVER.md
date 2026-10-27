@@ -34,6 +34,14 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   `.claude/worktrees/zoneneditor-tor2` (Branch `zoneneditor-tor2`, Dev-Server 5184); jedes geprüfte Paket kommt per
   Vorspulen in `zoneneditor`, wo Florians Server laufen (iPad https 5180, Mac 5183). Nichts gepusht; vor einem Push
   klären: acht WebP aus `refs/` unter `public/zones/ebenen` (die Referenzen sind absichtlich nicht öffentlich).
+  **Tor S2 (27.10.):** Florian: „sieht gut aus“, ein paar Kleinigkeiten meldet er nach, „mach weiter“.
+  **Stufe 3 gebaut (27.10., Farbe, Verläufe, Stile):** ein Ebenen-Material (Shader) für Editor und Spiel mit Füllstapel,
+  Verläufen, sieben Mischmodi, Deckkraft und Luftperspektive; Farbmenü oben rechts (Scheibe, Klassisch, Harmonie,
+  Werte, Paletten, Stile, Zuletzt), Farbe auf Flächen ziehen, Weiter füllen, Pipette (auch Finger halten);
+  Verlaufswerkzeug G mit Regler am Objekt; Füllstapel als Liste, Ebenenstapel; Stile (sichern, verknüpfen, neu
+  festlegen, kopieren und einfügen); Zonenpalette mit Namen und Farben je Look; Verläufe im SVG hin und zurück.
+  426 Tests, Build, Szenarien 11 bis 23 mit 83 Prüfungen grün (`ZONENEDITOR-PLAN.md` Stufe 3, `TECH.md` 4j). Wartet auf
+  **Tor S3**; am iPad und am Handy (60 fps) noch nicht geprüft.
 
 - **25.10., Etappe 2 begonnen** (Branch `etappe-2-bahn-und-welt` von `main`; die zwölf Arbeitsschritte mit drei Toren stehen in
   `docs/GROSSER-PLAN.md`, Paket 10, von Florian bestätigt). Technik in `docs/TECH.md` 4h.
@@ -286,15 +294,17 @@ ab sechs CPU-Kernen), `?dev=1` (Overlay mit fps, Draw-Calls, Partikeln; Taste F 
 (Weltrenderer der Etappe 1, Perspektive 18° Standard; dort `?persp=0` für die Bühne, `?aa=0` ohne Kantenglättung).
 Eigene automatische Tests im Dev-Server mit `TC_NO_RECORD=1`, damit sie die echten Aufnahmen nicht verfälschen.
 
-## 3. Nächster Schritt: Tor S2 des Zonen-Editors
+## 3. Nächster Schritt: Tor S3 des Zonen-Editors
 
 **Seit 27.10.2026 gilt:** Etappe 2 ruht; gebaut wird der Zonen-Editor nach `docs/ZONENEDITOR-PLAN.md`, Abschnitt 6, auf
 dem Branch `zoneneditor`. Stufe 1 ist gebaut, Tor S1 bestanden (27.10.); Stufe 2 ist im Kern gebaut (27.10.) und wartet
 auf Tor S2: Florian zeichnet Bild 1 und 2 (Kontur, Unterteilung, Höhlenöffnung) am iPad mit dem Pencil und am Mac, die
 SVG öffnet sauber in Illustrator und kommt zurück. Seit dem Abend des 27.10. ist auch der Rest von Stufe 2 gebaut
 (Drehen, Ausrichten, Boolesche Operationen, Vereinfachen, Kurvenstift, Band, Einrasten, Skizze), danach Formgruppen,
-Bogen, 45°-Einrasten und Zahlen; Florian testet alles zusammen am Tor. Danach Stufe 3 (Farbe, Verläufe, Stile) oder was
-das Tor ergibt; aus der Werkzeugliste in Plan 4.3 fehlen noch Schnittmaske (Stufe 6), Kontur in Fläche und Hilfslinien. Für das iPad den HTTPS-Zugang nutzen (Profil aus `/__tc-ca.pem` installieren und voll vertrauen,
+Bogen, 45°-Einrasten und Zahlen. Tor S2 gab Florian am 27.10. frei („sieht gut aus“, Kleinigkeiten folgen). Stufe 3
+(Farbe, Verläufe, Stile) ist gebaut und wartet auf **Tor S3**: Bild 3, 4 und 5 im Editor nachbauen und im Spielblick
+prüfen, 60 fps am Handy, Florians Urteil über Farbe und Verlauf. Danach Stufe 4 (Spiel im Editor) oder was das Tor
+ergibt; aus der Werkzeugliste in Plan 4.3 fehlen noch Schnittmaske (Stufe 6), Kontur in Fläche und Hilfslinien. Für das iPad den HTTPS-Zugang nutzen (Profil aus `/__tc-ca.pem` installieren und voll vertrauen,
 `TECH.md` 12). Der Text unten beschreibt den Stand vor der Pause und gilt wieder, wenn der große Plan weiterläuft.
 
 ### Vor der Pause: Etappe 2 des großen Plans

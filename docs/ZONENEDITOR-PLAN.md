@@ -1,8 +1,9 @@
 # Trauma Coaster – Plan für den Zonen-Editor
 
 Stand 27.10.2026. **Startfragen A1 bis A7 von Florian am 27.10.2026 beantwortet (alle wie empfohlen, Abschnitt 9);
-Stufe 0 und Stufe 1 gebaut, Tor S1 bestanden (Florian, 27.10.2026); Stufe 2 ganz gebaut (Befunde vom ersten Test
-eingearbeitet, dazu Formgruppen, Bogen, 45°-Einrasten und Zahlen), wartet auf Tor S2.** Gebaut wird Stufe für
+Stufe 0 und Stufe 1 gebaut, Tor S1 bestanden (Florian, 27.10.2026); Stufe 2 ganz gebaut, Tor S2: „sieht gut aus“
+(Florian, 27.10.2026; ein paar Kleinigkeiten meldet er nach); Stufe 3 gebaut (Farbmenü, Verläufe, Füllstapel,
+Ebenenstapel, Luftperspektive, Stile, Looks, SVG), wartet auf Tor S3.** Gebaut wird Stufe für
 Stufe mit Tor, auf dem Branch `zoneneditor`. Der große Plan (`docs/GROSSER-PLAN.md`)
 ruht seit heute auf Florians Wunsch; Etappe 2 steht nach Schritt 7, dem Freiraumfeld und der Freigabe der Ebenen-Probe,
 Tor 2b ist offen. Die Session von Etappe 2 hat die Pause per Nachricht bekommen (27.10.2026).
@@ -968,6 +969,60 @@ Platzhalter-Farbtupfer darin stehen; mit dem Farbmenü aus Stufe 3 (oben rechts,
 mehrere Flächen, Füllstapel mit Mischmodi und Deckkraft, Ebenenstapel, Luftperspektive, Zonenpalette, Stile (kopieren,
 Bibliothek, verknüpft), Looks als Palettentausch; im Spiel ein gemeinsames Ebenen-Material. **Tor S3:** Bild 3, 4 und
 5 im Editor nachgebaut und im Spielblick geprüft; 60 fps am Handy; Florians Urteil über Farbe und Verlauf.
+**Stand 27.10.2026: gebaut, wartet auf Tor S3** (Technik in `docs/TECH.md` 4j; Tor S2 gab Florian am selben Tag mit
+„sieht gut aus“ frei, Kleinigkeiten folgen). In acht Paketen:
+- *Ebenen-Material* (5.3): ein Shader für alle Ebenen, im Editor und im Spiel. Eine Fläche zeigt ihre Grundfarbe und
+  darüber ihren Füllstapel (Farbe, linearer oder radialer Verlauf, Deckkraftverlauf; je Füllung Mischmodus Normal,
+  Multiplizieren, Negativ multiplizieren, Ineinanderkopieren, Weiches Licht, Farbig abwedeln, Farbe und Deckkraft;
+  höchstens 7 Füllungen), dazu die Deckkraft der ganzen Fläche. Gerechnet wird wie in Illustrator im sRGB-Raum.
+  Durchsichtige Flächen liegen in einem zweiten Mesh (ein Draw Call mehr, nur wenn es sie gibt), einfarbige nehmen einen
+  schnellen Weg, Schichten unter einer deckenden Füllung rechnet der Shader nicht.
+- *Farbmenü* (4.2, 4.6): der Farbknopf oben rechts; Scheibe, Klassisch, Harmonie (komplementär, geteilt, analog, Triade,
+  Tetrade), Werte (H, S, B, R, G, B, Hex), Paletten (Zonenpalette mit Namen, Platzhalter-Palette), Stile; darunter die
+  zehn zuletzt benutzten Farben. Eine gewählte Form oder Fläche bekommt die Farbe, ihre Farbe wird die aktuelle (wie
+  Illustrator); neue Formen bekommen die aktuelle. Die acht Farbtupfer der Leiste unten sind weg, sie ist wieder
+  einzeilig.
+- *Ziehen und Fallenlassen, Weiter füllen, Pipette* (3.1 ColorDrop): Farbknopf, jedes Feld und jeder Stil lassen sich auf
+  eine Fläche ziehen (sie leuchtet vorher auf); danach füllt jedes Antippen oder Überstreichen weitere Flächen, bis Esc
+  oder „Fertig“. Fällt eine Farbe auf eine Fläche mit Verlauf, fragt die Leiste: Grundfarbe oder Verlaufsstopp.
+  Pipette (I) nimmt die sichtbare Farbe auf; am iPad hält man dafür einen Finger (mit Lupe), sobald der Stift im Spiel
+  war; mit Wahltaste nimmt sie den ganzen Anstrich und legt ihn auf die Auswahl.
+- *Verlaufswerkzeug G* (4.6, Bild 5): über eine Fläche ziehen legt einen Verlauf an (von der aktuellen Farbe zur
+  Grundfarbe), über gewählte Formen einen gemeinsamen (in der Ebene an derselben Stelle, jede Form nimmt ihren beim
+  Verschieben mit, wie in Illustrator). Am Objekt: Anfang (offener Kreis), Ende (Punkt), Stopps als Farbfelder neben der
+  Linie, Mitten als Rauten; Tippen auf die Linie setzt einen Stopp, Wegziehen löscht ihn, das Farbmenü färbt den
+  gewählten. Linear, radial, umkehren, Deckkraft je Stopp, Deckkraftverlauf, entfernen.
+- *Füllstapel als Liste* (4.2 „Füllstapel als kleine Liste“): „Füllungen“ in der Leiste; je Zeile Auge, Vorschau,
+  Mischmodus als Buchstabe (wie das „N“ in Procreate), Deckkraft durch waagrechtes Ziehen; dazu, umordnen, entfernen,
+  „Regler“ öffnet einen Verlauf im Werkzeug G. *Ebenenstapel* (4.4) in der Leiste der Ebene: dieselbe Liste über allen
+  Formen der Ebene, dazu die *Luftperspektive* der Zone (Farbe, Stärke, ab und bis zu welcher Tiefe, Anteil je Ebene;
+  kommt zum Nebel der Welt dazu).
+- *Stile* (4.6): als Stil sichern (Griffe als Anteil am Rahmen, passt auf jede Fläche), antippen oder auf eine Fläche
+  ziehen verknüpft, „Neu festlegen“ ändert alle verknüpften, löschen lässt ihr Aussehen stehen; wer den Füllstapel
+  ändert, löst die Fläche (wie Illustrator); Stil kopieren und einfügen (Cmd+Wahl+C/V, Knöpfe im Füllstapel).
+- *Zonenpalette und Looks* (4.6, Paket 2): Felder mit Namen; Flächen verweisen auf ein Feld (globale Farbe); je Look
+  (Tag, Abend, Nacht, Neon) eine eigene Farbe, ohne eigene wie Tag; beim Bearbeiten zeigt das Bild den Look. Im Spiel
+  tauscht der Look der Fortschrittsstufe die Farben.
+- *SVG* (4.10): Verläufe gehen als SVG-Verläufe hinaus, weitere Füllungen als eigene Pfade `s12-L1` mit Deckkraft und
+  `mix-blend-mode`; Verläufe aus Illustrator (auch am Rahmen, gedreht, mit Stopp-Verweisen) kommen als Verlauf herein,
+  nicht mehr als Vollton; unverändert zurück lässt die Form, wie sie war.
+**Abweichungen vom Plan, mit Grund:** Das Verlaufswerkzeug rastet nur nahe an 45°-Richtungen ein (±7°), Umschalt
+erzwingt 45° (der Plan wollte immer einrasten und mit Umschalt frei; am iPad ohne Tastatur gäbe es dann keinen freien
+Winkel). Die vier Rollen-Knöpfe der Ebene liegen hinter einem Knopf „Rolle: …“ (sonst brach die Leiste mit
+„Ebenenstapel“ um). Felder der Zonenpalette und Stile öffnen sich über „Bearbeiten“ statt doppeltes Tippen (das erste
+Tippen legte sie schon auf die Auswahl). Paletten-Verweise und Stile liegen als Knoten `c…`, `y…` und `air` in
+`zone.nodes` (so laufen Rückgängig, Sicherungskopie und Sichern wie bei Ebenen und Formen).
+**Platzhalter:** Aussehen des Farbmenüs, der Füllstapel-Liste und des Verlaufsreglers, die Buchstaben der Mischmodi,
+die Platzhalter-Palette (acht Farben), die Vorgabe der Luftperspektive (kühles Hellblau, ab 24 m, voll bei 140 m, 50 %),
+die Stopps eines neuen Verlaufs, Name „Stil n“ und „Farbe n“. **Noch offen:** Farbe auf eine Ebene in der Liste fallen
+lassen (Ebenenstapel, 4.2: was die Farbe dort tun soll, klären wir), Deckkraftverläufe, Verlaufsmitten, Ebenenstapel und
+Luft im SVG, Texturen im Ebenenstapel (Stufe 5). **Nicht geprüft:** am echten iPad (Finger-Pipette nur nachgestellt) und
+die 60 fps am Handy. **Gemessen** am Mac (Apple M3 Pro, 2560 × 1600, Probe-Stapel mit 32 Ebenen und 36 großen Formen,
+Chromium mit Grafikkarte): leere Welt 3,5 ms, alle Flächen einfarbig 7,3 ms, je ein Verlauf 12,1 ms, je drei Füllungen
+(Multiplizieren, Verlauf mit drei Stopps, radialer Verlauf) 21,7 ms. Der Probe-Stapel ist der ungünstige Fall (viele
+große, sich überdeckende Flächen); ob das am Handy reicht, zeigt erst die Messung an Tor S3.
+Geprüft: 426 Tests grün, Build grün, Szenarien 11 bis 23 mit 83 Prüfungen grün (18 misst 45 Punkte des Shaders gegen
+die Rechenvorlage, Tag und Nacht; 19 Farbmenü; 20 Verlaufswerkzeug; 21 Füllstapel und Luft; 22 Stile; 23 Looks).
 
 **Stufe 4: Spiel im Editor (L).** Rollen, Material, Andockkanten, Freiraumfeld aus Flächen, Pinsel „Tiefe aus Ebenen“
 auf den neuen Ebenen, Stützen auf Kanten, Probebahn und Testfahrt im Editor, Spielobjekte aus dem Klötzchen-Editor,

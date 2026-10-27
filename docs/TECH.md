@@ -732,6 +732,67 @@ deren Weltrenderer und Spielkamera; seine Oberfläche ist HTML über dem Spielbi
   Dev-Server hoch und löscht `public/zones/szenario-skizze` danach wieder. Künstliche Tastenereignisse im Test
   am `document.body` auslösen, nicht am `window`: dort erreichen sie auch die Tasten des Levels (Esc verlässt es).
 
+## 4j. Zonen-Editor, Stufe 3: Farbe, Verläufe, Stile
+
+Plan: `docs/ZONENEDITOR-PLAN.md`, Stufe 3. Ohne DOM: `src/zone/paint.ts`, `src/zone/gradients.ts`, `src/zone/styles.ts`;
+Renderer `src/world/planeMesh.ts`; Oberfläche `src/zoneeditor/colorMenu.ts`, `src/zoneeditor/stackPanel.ts`.
+
+- **Datenmodell** (`paint.ts`, `nodes.ts`): Eine Farbe ist `#rrggbb` oder ein Verweis `@c3` auf ein Palettenfeld. Form
+  und Füllpunkt (`ZoneRegion`) tragen einen `Paint`: Grundfarbe `fill` (null = Loch), Füllstapel `fills` (von unten nach
+  oben, höchstens 7), verknüpften Stil `style`, Deckkraft `opacity`. `ZoneFill`: `color` (Farbe) oder `gradient`/`fade`
+  (Stopps mit Lage, Farbe, Deckkraft, Mitte; Anfang und Ende x0 … y1, radial: Mitte und Rand) mit `blend` und
+  `opacity`. Griffe liegen in Pfad-Koordinaten der Form (bei Stilen als Anteil am Rahmen 0 … 1, beim Ebenenstapel
+  `ZonePlane.fills` in Ebenen-Koordinaten); `rotateShape` und `flipShape` nehmen sie mit (`mapFillPoints`). Neue
+  Knotenarten in `zone.nodes`: `swatch` (`c…`: Name, Farbe, `looks` je Look), `style` (`y…`: Name, Paint mit Griffen am
+  Rahmen), `air` (Luftperspektive: Farbe, near, far, amount); je Ebene `air` als Anteil. `facePaint`/`setFacePaint`
+  (eine Form aus einer Fläche trägt den Anstrich selbst), `setFaceFill` behält den Stapel, `bakeSwatch` und `bakeStyle`
+  lösen vor dem Löschen auf.
+- **Rechnen** (`paint.ts`): `paintLayers` macht aus Paint und Stil die Schichten (Grundfarbe unten), `visibleLayers`
+  lässt alles unter der obersten deckenden weg, `rampOf` gibt das Farbband eines Verlaufs (256 Werte, Mitte verschiebt
+  den halben Weg), `gradientT` die Lage im Verlauf, `blendRgb` die Mischfunktion nach W3C, `evalLayers` rechnet einen
+  Punkt wie der Shader (vormultipliziert über „nichts“; Quelle mit gemischtem Wert, Deckkraftverlauf nimmt dem Bisherigen
+  Deckkraft). Pipette, Vorschaubilder und Szenario 18 nutzen ihn als Vorlage.
+- **Ebenen-Material** (`planeMesh.ts`): ShaderMaterial (Three kompiliert GLSL 3.0), Nebel über die Three-Bausteine,
+  Ausgabe über `colorspace_fragment`. Je Ecke Lage, Pfad-Punkt (`aLocal`), Ebenen-Punkt (`aPlane`) und die Zeilen
+  (`aRows`: Anstrich, Ebene). Stil-Datentextur RGBA32F, 17 Texel je Zeile: Kopf (Zahl der Schichten, Deckkraft der
+  Fläche, Anteil der Luft), je Schicht zwei Texel (Art, Mischmodus, Deckkraft, Farbband-Zeile; Farbe oder Griffe).
+  Farbbänder in einer zweiten Textur (256 × Zeilen, von Hand interpoliert). Gleiche Anstriche teilen eine Zeile;
+  Palettenverweise werden erst beim Füllen aufgelöst, `setLook` (aus `WorldRenderer.setLook`) füllt nur die Texturen neu.
+  Schneller Weg: hat eine Fläche nur eine Farbe und ihre Ebene keinen Stapel, holt der Vertex-Shader sie (samt Luft)
+  einmal je Ecke. Flächen, die durchsichtig werden können, liegen im zweiten Mesh (von hinten nach vorn sortiert,
+  ohne Tiefenschreiben). Luftperspektive: `airAmount` je Ebene (weich zwischen near und far) in ihrer Zeile, Farbe als
+  Uniform, gemischt in sRGB.
+- **Farbmenü** (`colorMenu.ts`): Knopf in der Leiste oben rechts, Panel darunter; Wähler auf Leinwänden (Ring und
+  Quadrat, Regler mit CSS-Verläufen), HSB↔RGB selbst gerechnet. Quellen (`source`) unterscheiden Tippen und Ziehen
+  (7 Bildpunkte); beim Ziehen folgt ein Kreis dem Zeiger, `dropHover`/`drop` melden Bildschirmpunkte, über einem Panel
+  wird abgebrochen. Ein Stil reist als `style:y3`. „Bearbeiten“ schaltet Felder und Stile auf Öffnen; ein Feld bekommt
+  je Look eine Farbe (`previewLook` zeigt den Look im Bild und stellt ihn danach zurück).
+- **Editor** (`planeEditor.ts`): aktuelle Farbe `color` (null: Platzhalter nach Tiefe für neue Formen), folgt der Auswahl
+  (`syncColorFromSelection`). `pickColor` geht der Reihe nach an die gewählte Zeile des Füllstapels, den gewählten
+  Verlaufsstopp, die gewählte Fläche, die gewählten Formen. ColorDrop (`dropColor`): Stil verknüpfen, Stopp färben oder
+  einsetzen, nachfragen bei einer Fläche mit Verlauf, sonst füllen und `fillMode` („Weiter füllen“, Geste `fill`).
+  Pipette: `sampleColor` (Fläche unter dem Strahl, `evalLayers` mit Ebenenstapel, ohne Nebel); Finger halten
+  (`HOLD_TIME` 450 ms, nur wenn ein Stift im Spiel war) mit Lupe in der Überlagerung.
+- **Verlaufswerkzeug** (`gradients.ts`, Editor): Ziele als Verweise (`GradRef`: Form, Fläche über einen Punkt im Pfad,
+  oder Ebene), bearbeitete Schicht `layer` oder der oberste Verlauf der Art. `readGradient`/`writeGradient` rechnen die
+  Linie in Ebenen-Koordinaten und lösen einen verknüpften Stil (`ownPaint`). Gesten `gradNew`, `gradEnd`, `gradStop`
+  (40 Bildpunkte neben der Linie: löschen), `gradMid`; `snapDir` rastet nahe 45° ein. Der Regler steht in
+  `OverlayState.gradient`; die Stopps sitzen um Griffgröße + 9 px neben der Linie.
+- **Füllstapel-Liste** (`stackPanel.ts`): baut nur die Liste, `StackActions` gehen an den Editor (`stackEdit` ändert
+  den Anstrich des Ziels als ein Schritt, Ziehen der Deckkraft mit start, move, end). Ziel: gewählte Fläche, zuletzt
+  gewählte Form oder die aktive Ebene; liegt über der Leiste unten (`placeStack`).
+- **Stile** (`styles.ts`): `paintToStyle` (Griffe als Anteil am Rahmen, `targetBox`), `linkStyle` (Kennung plus Kopie als
+  Rückfall), `unlinkStyle`, `pasteStyle` (mit Stil: verknüpfen), `styleFromClip`, `bakeStyle`.
+- **SVG** (`svgPlanes.ts`): `exportLayers` je Fläche; ein deckender Verlauf allein wird `fill="url(#v1)"`, sonst je Füllung
+  ein Pfad `…-L1` mit `opacity` und `mix-blend-mode`; `<defs>` nach dem Rahmen. `parseGradients` liest linear und
+  radial, `gradientUnits`, `gradientTransform`, Stopps aus Attribut oder Stil und über `xlink:href`; `gradLayer`
+  rechnet in Ebenen-Koordinaten (Transformation, Rahmen, Matrix des Elements, Ursprung). Unverändert zurück vergleicht
+  Grundfarbe (beim eigenen Verlauf die erste Stopp-Farbe), Ränder und `layersKey`.
+- **Prüfungen:** `tests/paint.test.ts`, `tests/gradients.test.ts`, `tests/styles.test.ts`, `tests/colorMenu.test.ts`,
+  vier neue Fälle in `tests/svgPlanes.test.ts`; Szenarien 18 bis 23 (Dev-Server nötig, sie laden `src/zone/*.ts` im
+  Browser). Für Pixelmessungen das Papierkorn ausblenden (`view.paper.visible = false`, es multipliziert das ganze
+  Bild leicht).
+
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).
 - g-Kräfte: f = v²·κ⃗ (Mindestradius 2,5 m; κ⃗ aus `sampleTrack` über ±1,2 m gemittelt, ein Wagen spürt keine kürzeren Spitzen) + a_tan·T + g·ŷ, wobei a_tan die echte Tangentialbeschleunigung des Zugs ist (Hangabtrieb minus Reibung, Kettenzug hält das Tempo, Launch, Booster, Bremse); zerlegt im Wagen-Rahmen (T, U, S) mit Schräglage. So drückt die Kette die Fahrgäste in die Lehne, der Launch in den Sitz, die Bremse nach vorn. Entgleisen bei seitlichem g über dem Limit des Schienentyps (`SKIN_PHYSICS`: Holz 2,0, Hybrid 2,4, Mine 2,2, Stahl 3,0, Gold 3,0, Neon 3,2, Eis 2,6, Geister 2,3, Lava 3,0, Space 3,5), Herausfallen bei kopfüber mit g_v < −0,15 über 0,12 s, Blackout über 7 g (nur ein Merker, kostet den dritten Stern). Entgleisen und Herausfallen übergeben den Zug in den Freiflug (unten), Rückroller und Wasser lassen ihn auf der Schiene ausrollen.
