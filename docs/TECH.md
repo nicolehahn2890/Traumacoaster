@@ -701,11 +701,35 @@ deren Weltrenderer und Spielkamera; seine Oberfläche ist HTML über dem Spielbi
   freien Bild zwischen Werkzeugleiste und Ebenenliste (`ui.freeSpan`), 84 % der Breite oder 70 % der Höhe.
   Anpassen (`sketchEdit`, über `adjusting()` nur für die Skizze der aktiven Ebene beim Bauen; Werkzeug- oder
   Ebenenwechsel beendet es): Ecke skaliert um die gegenüberliegende, innen verschiebt.
+- **Formgruppen** (`src/zone/shapeGroups.ts`): `ZoneShape.groups` sind die Kennungen `fg…` von außen nach innen; eine
+  Gruppe hat keinen eigenen Knoten (Name oder Schnittmaske kämen später als Knoten dazu, die Mitgliedschaft bleibt an der
+  Form). `normalizeShapeGroups` (in `changed()` nach jeder Änderung) entfernt Kennungen, die in mehreren Ebenen, auf
+  verschiedenen Stufen oder unter verschiedenen Eltern stehen, Gruppen unter zwei Formen und eine Gruppe so groß wie ihre
+  Eltern; dann ordnet `tidyOrder` die Formen jeder Ebene so, dass jede Gruppe zusammenhängt (Sortierschlüssel je Form:
+  für jede ihrer Gruppen die Lage der vordersten Form dieser Gruppe, zuletzt die eigene Lage; verteilt nur die vorhandenen
+  Werte von order neu). Kontext `inGroup` (betretene Gruppen) im Editor; `unitKey`/`unitShapes`/`expandToUnits` geben die
+  Einheit einer Form im Kontext; `groupShapes` setzt die neue Gruppe hinter den gemeinsamen Anfang der Pfade und nimmt
+  Formen aus teilweise gewählten Untergruppen heraus; `ungroupShapes`, `moveUnit` (Block an der nächsten Einheit vorbei),
+  `copyGroups` (ganz kopierte Gruppen neu, teilweise je nach Ziel behalten oder weg; die Ganzheit wird vor dem Einfügen
+  der Kopien bestimmt), `renumberOrder`. `booleanShapes` nimmt Operanden (Form oder Liste von Formen, Mitgliedschaft
+  „in irgendeiner“), `alignShapes`/`distributeShapes` Einheiten. Zweimal tippen: das erste Abheben merkt Form und Zeit
+  (`lastPick`), das zweite Drücken markiert die Geste (`tap`), erst das Abheben ohne Ziehen (unter `TAP_DIST`) geht
+  hinein. SVG: `planesToSvg` öffnet und schließt `<g id="fg…">` an den Wechseln der Pfade; `svgToPlanes` macht aus den
+  Gruppen unter der Ebenen-Gruppe (ohne Formhüllen `s…` und ohne fremde Hüllen um alle Formen) eine Kette und behält
+  fg-Kennungen, die keine andere Ebene trägt.
+- **Bogen und Umschalt:** `archPath(w, h)` in `nodes.ts` (fünf Anker, flach drei); Werkzeug `arch`, `primitivePath` im
+  Editor für Vorschau und Form. `constrain45(a, q)` in `pathTools.ts` (Richtungstabelle, Länge als Projektion, genau 0
+  auf den Achsen): `penPoint` beim Setzen und Schweben, `penDragMove` für Griffe und Kurvenstift-Anker, `moveAnchors` in
+  Metern der Ebene (Maßstab der Form herausgerechnet), Verschieben in `toolMove` je Form in ihrer Ebene.
+- **Zahlen:** Die Leiste bekommt die Zusätze als ein Objekt (`ContextExtra`: Ebenen-Gruppe, Skizze, Einheiten, Rahmen
+  `nums`); `applyNumbers` verschiebt die Mitte, streckt um die Mitte (sx, sy und Lage wie die Rahmengriffe) oder dreht
+  mit `rotateShape` um die Mitte. Die Eingabefelder halten Tasten vom Editor fern (`stopPropagation`).
 - **Prüfungen:** `tests/nodes.test.ts`, `tests/planeMesh.test.ts`, `tests/faces.test.ts`, `tests/pathTools.test.ts`,
   `tests/faceCurves.test.ts`, `tests/svgPlanes.test.ts`, `tests/planeGroups.test.ts`, `tests/shapeOps.test.ts`,
-  `tests/pathfinder.test.ts`; Szenario 11 (Stufe 1), 12 (Stufe 2), 13 (Befunde an Tor S2), 14 (Ebenen-Gruppen) und 15
-  (Skizze) mit `node scripts/scenario.mjs 11 12 13 14 15` und `TC_URL` gegen den eigenen Server; Szenario 15 lädt über
-  den Dev-Server hoch und löscht `public/zones/szenario-skizze` danach wieder. Künstliche Tastenereignisse im Test
+  `tests/pathfinder.test.ts`, `tests/shapeGroups.test.ts`; Szenario 11 (Stufe 1), 12 (Stufe 2), 13 (Befunde an Tor S2),
+  14 (Ebenen-Gruppen), 15 (Skizze), 16 (Formgruppen) und 17 (Bogen, Zahlen, Umschalt) mit
+  `node scripts/scenario.mjs 11 12 13 14 15 16 17` und `TC_URL` gegen den eigenen Server; Szenario 15 lädt über den
+  Dev-Server hoch und löscht `public/zones/szenario-skizze` danach wieder. Künstliche Tastenereignisse im Test
   am `document.body` auslösen, nicht am `window`: dort erreichen sie auch die Tasten des Levels (Esc verlässt es).
 
 ## 5. Physik

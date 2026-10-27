@@ -27,7 +27,10 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   **Rest von Stufe 2 gebaut (27.10.):** Drehen mit Griff, Ausrichten und Verteilen, Boolesche Operationen (Vereinen,
   Abziehen, Schnittmenge, Überlappung ausschließen, mit echten Kurven), Vereinfachen, Kurvenstift (Shift+P), Band (O),
   Einrasten im Bild und am Raster, Skizze als Pause-Ebene (über allem, multipliziert); 384 Tests, Build und Szenarien
-  11 bis 15 grün (`ZONENEDITOR-PLAN.md` „Rest von Stufe 2 gebaut“, `TECH.md` 4i). Gearbeitet wird im Seiten-Worktree
+  11 bis 15 grün (`ZONENEDITOR-PLAN.md` „Rest von Stufe 2 gebaut“, `TECH.md` 4i). Danach (Florian unterwegs, „mach gerne
+  weiter“) die Lücken aus Plan 4.3: Formgruppen in einer Ebene wie in Illustrator (Cmd+G, zweimal tippen hinein, Esc
+  heraus, verschachtelt, im SVG als `fg…`), der Bogen als Grundform (U), Umschalt in 45°-Schritten, Zahlen für Lage,
+  Größe und Drehung; 400 Tests, Build und Szenarien 11 bis 17 grün. Gearbeitet wird im Seiten-Worktree
   `.claude/worktrees/zoneneditor-tor2` (Branch `zoneneditor-tor2`, Dev-Server 5184); jedes geprüfte Paket kommt per
   Vorspulen in `zoneneditor`, wo Florians Server laufen (iPad https 5180, Mac 5183). Nichts gepusht; vor einem Push
   klären: acht WebP aus `refs/` unter `public/zones/ebenen` (die Referenzen sind absichtlich nicht öffentlich).
@@ -289,9 +292,9 @@ Eigene automatische Tests im Dev-Server mit `TC_NO_RECORD=1`, damit sie die echt
 dem Branch `zoneneditor`. Stufe 1 ist gebaut, Tor S1 bestanden (27.10.); Stufe 2 ist im Kern gebaut (27.10.) und wartet
 auf Tor S2: Florian zeichnet Bild 1 und 2 (Kontur, Unterteilung, Höhlenöffnung) am iPad mit dem Pencil und am Mac, die
 SVG öffnet sauber in Illustrator und kommt zurück. Seit dem Abend des 27.10. ist auch der Rest von Stufe 2 gebaut
-(Drehen, Ausrichten, Boolesche Operationen, Vereinfachen, Kurvenstift, Band, Einrasten, Skizze); Florian testet alles
-zusammen am Tor. Danach Stufe 3 (Farbe, Verläufe, Stile) oder was das Tor ergibt; aus der Werkzeugliste in Plan 4.3
-fehlen noch Formgruppen, Schnittmaske, Kontur in Fläche, Bogen, 45°-Einrasten und Zahlen. Für das iPad den HTTPS-Zugang nutzen (Profil aus `/__tc-ca.pem` installieren und voll vertrauen,
+(Drehen, Ausrichten, Boolesche Operationen, Vereinfachen, Kurvenstift, Band, Einrasten, Skizze), danach Formgruppen,
+Bogen, 45°-Einrasten und Zahlen; Florian testet alles zusammen am Tor. Danach Stufe 3 (Farbe, Verläufe, Stile) oder was
+das Tor ergibt; aus der Werkzeugliste in Plan 4.3 fehlen noch Schnittmaske (Stufe 6), Kontur in Fläche und Hilfslinien. Für das iPad den HTTPS-Zugang nutzen (Profil aus `/__tc-ca.pem` installieren und voll vertrauen,
 `TECH.md` 12). Der Text unten beschreibt den Stand vor der Pause und gilt wieder, wenn der große Plan weiterläuft.
 
 ### Vor der Pause: Etappe 2 des großen Plans

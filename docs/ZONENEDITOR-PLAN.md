@@ -2,7 +2,7 @@
 
 Stand 27.10.2026. **Startfragen A1 bis A7 von Florian am 27.10.2026 beantwortet (alle wie empfohlen, Abschnitt 9);
 Stufe 0 und Stufe 1 gebaut, Tor S1 bestanden (Florian, 27.10.2026); Stufe 2 ganz gebaut (Befunde vom ersten Test
-eingearbeitet), wartet auf Tor S2.** Gebaut wird Stufe für
+eingearbeitet, dazu Formgruppen, Bogen, 45°-Einrasten und Zahlen), wartet auf Tor S2.** Gebaut wird Stufe für
 Stufe mit Tor, auf dem Branch `zoneneditor`. Der große Plan (`docs/GROSSER-PLAN.md`)
 ruht seit heute auf Florians Wunsch; Etappe 2 steht nach Schritt 7, dem Freiraumfeld und der Freigabe der Ebenen-Probe,
 Tor 2b ist offen. Die Session von Etappe 2 hat die Pause per Nachricht bekommen (27.10.2026).
@@ -928,10 +928,41 @@ an der Ecke skalieren mit 0,00 px Abweichung der festen Ecke, über der vorderst
 das Papier ändert höchstens 4 von 255, Deckkraft und Mischung rückgängig, im Spiel unsichtbar). Spielcode nicht berührt.
 **Platzhalter:** wie oben die acht Füllfarben und das Aussehen der Werkzeugzeichen; neu die Zeichen für Ausrichten und
 Verbinden. **Abweichung vom Plan:** Abschnitt 3 nennt Boolesche Operationen, „die änderbar bleiben“; gebaut ist die
-angewandte Form wie Illustrators Pathfinder ohne Alt (rückgängig geht, nachträglich ändern nicht). **Aus der Liste in 4.3
-noch nicht gebaut:** Formgruppen in einer Ebene (Cmd+G gruppiert Ebenen), Gruppen in Gruppen, Schnittmaske (Cmd+7),
-Kontur in Fläche, der Bogen (Portalform) als Grundform, Einrasten in 45°-Schritten und an Hilfslinien, Zahlen für Lage
-und Größe. Auf Zuruf oder mit der Stufe, die sie braucht.
+angewandte Form wie Illustrators Pathfinder ohne Alt (rückgängig geht, nachträglich ändern nicht).
+**Lücken aus 4.3 nachgebaut (27.10.2026, Szenarien 16 und 17; Florian war unterwegs und sagte „mach gerne weiter“):**
+- *Formgruppen in einer Ebene* (Abschnitt 4.1 „Schicht … oder Gruppe“, 4.3 „Gruppieren“, Abschnitt 3 Isolationsmodus):
+  wie Gruppen in Illustrator. Gewählte Formen einer Ebene mit Cmd+G oder „Gruppieren“ zusammenfassen, auch Gruppen mit
+  Formen zu einer größeren (verschachtelt); Shift+Cmd+G oder „Auflösen“ löst die äußerste gewählte auf. Mit der Auswahl
+  (V) wählt Tippen die ganze Gruppe, Ziehen bewegt sie; zweimal tippen (ohne Ziehen) geht hinein: ein fein gestrichelter
+  Rahmen zeigt die Gruppe, darin wählt Tippen einzelne Formen; Esc, „Gruppe verlassen“ oder Tippen ins Leere geht heraus.
+  Die Formen einer Gruppe rücken in der Zeichenreihenfolge zusammen (dorthin, wo die vorderste lag), „Nach vorn/hinten“
+  bewegt die Gruppe als Block. Duplizieren legt die Kopie gleich vor das Original (eine ganz kopierte Gruppe wird eine
+  eigene), Einfügen in eine betretene Gruppe landet darin. Ausrichten, Verteilen und Verbinden behandeln eine Gruppe als
+  ein Teil; eine einzelne gewählte Gruppe lässt sich in sich verbinden; ein Ergebnis aus mehreren Teilen bleibt als
+  Gruppe beisammen. Im SVG ist eine Formgruppe eine Gruppe `fg3` in der Ebene; Gruppen, die in Illustrator dazukommen
+  oder umgebaut werden, kommen als Formgruppen zurück. Cmd+G gruppiert Formen, sobald Formen gewählt sind, sonst wie
+  bisher die gewählten Ebenen.
+- *Bogen (Portalform) als Grundform* (4.3 „Grundformen U: Ellipse, Rechteck, Bogen“): neues Werkzeug unter der Ellipse,
+  U wechselt Rechteck, Ellipse, Bogen. Unten gerade, senkrechte Seiten, oben ein Halbkreis; ist der Rahmen flacher als
+  halb so hoch wie breit, eine halbe Ellipse. Tippen ohne Ziehen gibt 8 × 10 m.
+- *Umschalt in 45°-Schritten* (Abschnitt 3 „Einrasten in 45°-Schritten“): Zeichen- und Kurvenstift setzen den nächsten
+  Anker waagrecht, senkrecht oder schräg zum letzten (auch das Gummiband), gezogene Griffe drehen in 45°-Schritten,
+  gezogene Anker und verschobene Formen laufen nur waagrecht, senkrecht oder schräg, gemessen in Metern der Ebene (im
+  geneigten Spielblick bleibt senkrecht wirklich senkrecht). Solange Umschalt gedrückt ist, rastet nichts an Kanten ein.
+- *Zahlen* (Abschnitt 2 Punkt 9 „Zahleneingabe, sonst fehlt Präzision“; 4.2 Grundsatz 1 „Zahlen nur auf Wunsch“):
+  „Zahlen“ in der Leiste gewählter Formen öffnet X und Y (Mitte des Rahmens), B und H (Meter in der Ebene; die Kette
+  ändert beide im Seitenverhältnis) und ↻ (um so viele Grad drehen). Komma oder Punkt, Eingabe übernimmt, Esc verwirft;
+  jede Zahl ist ein Schritt im Verlauf.
+Geprüft: 400 Tests grün (16 neue), Build grün, Szenarien 11 bis 17 mit 46 Prüfungen grün (Szenario 16: gruppieren,
+Gruppe wählen und ziehen, hinein, eine Form allein ziehen, Esc, verschachtelt gruppieren, duplizieren, auflösen, SVG;
+Szenario 17: Bogen über U, Breite und Mitte als Zahl, Umschalt beim Verschieben und beim Zeichenstift). Dabei gefunden und
+behoben: ein Klick mit gleich folgendem Ziehen galt als zweimal Tippen und ging in die Gruppe (jetzt erst beim Abheben
+des zweiten Tippens ohne Ziehen); beim Duplizieren einer ganzen Gruppe behielt die Kopie die Kennungen. Meldungen stehen
+jetzt über der Leiste unten, auch wenn sie zweizeilig umbricht; „Nach vorn/hinten“ sind Zeichen. **Platzhalter:** die
+Zeichen für Bogen, Nach vorn/hinten und die Kette. **Noch offen aus 4.3:** Schnittmaske (Cmd+7, gehört zu Stufe 6),
+Kontur in Fläche (es gibt noch keine Konturen; kommt, wenn Linien mit Breite gebraucht werden), Hilfslinien, Ebenen-
+Gruppen in Ebenen-Gruppen. Die Leiste unten bricht mit mehreren gewählten Formen auf zwei Zeilen um, solange die acht
+Platzhalter-Farbtupfer darin stehen; mit dem Farbmenü aus Stufe 3 (oben rechts, Plan 4.2) wird sie wieder einzeilig.
 
 **Stufe 3: Farbe, Verläufe, Stile (M).** Farbmenü, Ziehen und Fallenlassen, Pipette, Verläufe auf der Fläche und über
 mehrere Flächen, Füllstapel mit Mischmodi und Deckkraft, Ebenenstapel, Luftperspektive, Zonenpalette, Stile (kopieren,
