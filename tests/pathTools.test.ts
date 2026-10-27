@@ -9,16 +9,17 @@ const toPlane = (p: { x: number; y: number }) => ({ x: (p.x - 400) / 10, y: (300
 
 function setup(): { nodes: ZoneNode[]; tools: PathTools; selected: () => ZoneShape | undefined; select: (id: string | null) => void; toasts: string[]; commits: () => number } {
   const nodes: ZoneNode[] = [];
-  let selected: string | null = null;
+  let selection: string[] = [];
   let commits = 0;
   const toasts: string[] = [];
   const host: PathToolHost = {
     nodes: () => nodes,
     activePlane: () => nodes.find((n): n is ZonePlane => n.kind === 'plane'),
-    selectedShape: () => findShape(nodes, selected),
-    select: (id) => {
-      selected = id;
+    selectedShapes: () => selection.map((id) => findShape(nodes, id)).filter((s): s is ZoneShape => !!s),
+    setSelection: (ids) => {
+      selection = [...ids];
     },
+    regionPlanes: () => nodes.filter((n): n is ZonePlane => n.kind === 'plane'),
     planePoint: (_plane, p) => toPlane(p),
     screenOf: (_plane, q) => toScreen(q),
     pick: (p) => {
@@ -52,16 +53,21 @@ function setup(): { nodes: ZoneNode[]; tools: PathTools; selected: () => ZoneSha
     fillFor: () => '#3d5a63',
     hitRadius: () => 15,
   };
-  return { nodes, tools: new PathTools(host), selected: () => findShape(nodes, selected), select: (id) => (selected = id), toasts, commits: () => commits };
+  return { nodes, tools: new PathTools(host), selected: () => findShape(nodes, selection.at(-1) ?? null), select: (id) => (selection = id ? [id] : []), toasts, commits: () => commits };
 }
 
-const tap = (t: PathTools, x: number, y: number, id = 1) => {
-  t.down(id, { x, y }, { alt: false });
+const M = { cmd: false, alt: false, shift: false };
+const CMD = { ...M, cmd: true };
+const ALT = { ...M, alt: true };
+const SHIFT = { ...M, shift: true };
+
+const tap = (t: PathTools, x: number, y: number, mods = M, id = 1) => {
+  t.down(id, { x, y }, mods);
   t.up(id);
 };
-const stroke = (t: PathTools, pts: Array<[number, number]>, id = 1) => {
-  t.down(id, { x: pts[0][0], y: pts[0][1] }, { alt: false });
-  for (const [x, y] of pts.slice(1)) t.move(id, { x, y }, { alt: false });
+const stroke = (t: PathTools, pts: Array<[number, number]>, mods = M, id = 1) => {
+  t.down(id, { x: pts[0][0], y: pts[0][1] }, mods);
+  for (const [x, y] of pts.slice(1)) t.move(id, { x, y }, mods);
   t.up(id);
 };
 
@@ -247,5 +253,140 @@ describe('Formpinsel in eine Form', () => {
     expect(cut[0].x).toBeCloseTo(-10, 2);
     expect(cut[cut.length - 1].x).toBeCloseTo(10, 2);
     expect(shapeFaces(s).length).toBe(2);
+  });
+});
+
+/** Rechteck 20 × 20 m um die Bildmitte (Ecken bei 300/500 px), gezeichnet mit dem Zeichenstift */
+function square(t: ReturnType<typeof setup>): ZoneShape {
+  t.tools.setTool('pen');
+  for (const [x, y] of [[300, 200], [500, 200], [500, 400], [300, 400], [301, 201]]) tap(t.tools, x, y);
+  return t.selected()!;
+}
+
+describe('Zeichenstift wie in Illustrator', () => {
+  it('Schließen mit Ziehen dreht die Griffe des Startpunkts (beide gleich, mit Wahltaste nur der zum Schluss)', () => {
+    const t = setup();
+    t.tools.setTool('pen');
+    for (const [x, y] of [[300, 200], [500, 200], [500, 400]]) tap(t.tools, x, y);
+    t.tools.down(1, { x: 300, y: 200 }, M);
+    t.tools.move(1, { x: 310, y: 230 }, M);
+    t.tools.move(1, { x: 320, y: 260 }, M);
+    t.tools.up(1);
+    const s = t.selected()!;
+    expect(s.path.length).toBe(3);
+    const a = s.path[0];
+    // Ziehen um (20, 60) Bildpunkte = (2, -6) Meter: Griff nach vorn so, der zum Schluss entgegen
+    expect(a.outX).toBeCloseTo(2, 2);
+    expect(a.outY).toBeCloseTo(-6, 2);
+    expect(a.inX).toBeCloseTo(-2, 2);
+    expect(a.inY).toBeCloseTo(6, 2);
+
+    const t2 = setup();
+    t2.tools.setTool('pen');
+    for (const [x, y] of [[300, 200], [500, 200], [500, 400]]) tap(t2.tools, x, y);
+    t2.tools.down(1, { x: 300, y: 200 }, ALT);
+    t2.tools.move(1, { x: 320, y: 260 }, ALT);
+    t2.tools.up(1);
+    const b = t2.selected()!.path[0];
+    expect(b.inX).toBeCloseTo(-2, 2);
+    expect(b.outX ?? 0).toBe(0);
+  });
+
+  it('Befehlstaste: einen Anker des laufenden Pfads verschieben, Klick ins Leere beendet', () => {
+    const t = setup();
+    t.tools.setTool('pen');
+    for (const [x, y] of [[300, 200], [500, 200], [500, 400]]) tap(t.tools, x, y);
+    t.tools.down(1, { x: 500, y: 200 }, CMD);
+    t.tools.move(1, { x: 540, y: 200 }, CMD);
+    t.tools.up(1);
+    expect(t.tools.context()).toEqual({ kind: 'pen', count: 3, into: null });
+    tap(t.tools, 700, 700, CMD);
+    const s = t.selected()!;
+    expect(s).toBeTruthy();
+    // der zweite Anker liegt 4 m weiter rechts (Pfad-Koordinaten relativ zur Mitte der Form)
+    const xs = s.path.map((a) => a.x + s.x).sort((a, b) => a - b);
+    expect(xs.at(-1)).toBeCloseTo(14, 3);
+  });
+
+  it('Wahltaste: Klick auf den letzten Anker nimmt den Griff nach vorn weg, Ziehen aus einem Anker zieht Griffe heraus', () => {
+    const t = setup();
+    t.tools.setTool('pen');
+    tap(t.tools, 300, 200);
+    t.tools.down(1, { x: 500, y: 200 }, M);
+    t.tools.move(1, { x: 540, y: 240 }, M);
+    t.tools.up(1);
+    tap(t.tools, 500, 200, ALT);
+    t.tools.down(1, { x: 300, y: 200 }, ALT);
+    t.tools.move(1, { x: 300, y: 260 }, ALT);
+    t.tools.up(1);
+    tap(t.tools, 400, 400);
+    t.tools.key('enter');
+    const s = t.selected()!;
+    const second = s.path[1];
+    expect(second.inX).toBeCloseTo(-4, 2);
+    expect(second.outX ?? 0).toBe(0);
+    const first = s.path[0];
+    expect(first.outY).toBeCloseTo(-6, 2);
+    expect(first.inY).toBeCloseTo(6, 2);
+  });
+
+  it('Wahltaste auf einem Anker der gewählten Form wechselt Ecke und Rund', () => {
+    const t = setup();
+    const s = square(t);
+    tap(t.tools, 500, 200, ALT);
+    const a = s.path.find((p) => Math.abs(p.x + s.x - 10) < 1e-6 && Math.abs(p.y + s.y - 10) < 1e-6)!;
+    expect(a.outX || a.outY).toBeTruthy();
+  });
+});
+
+describe('Mehrfachauswahl von Punkten', () => {
+  it('Umschalt nimmt Anker dazu, Ziehen bewegt alle gewählten', () => {
+    const t = setup();
+    const s = square(t);
+    t.tools.setTool('direct');
+    tap(t.tools, 300, 200);
+    tap(t.tools, 500, 200, SHIFT);
+    expect(t.tools.context()).toMatchObject({ kind: 'anchor', count: 2 });
+    t.tools.down(1, { x: 500, y: 200 }, M);
+    t.tools.move(1, { x: 500, y: 160 }, M);
+    t.tools.up(1);
+    const top = s.path.map((p) => p.y + s.y).sort((a, b) => b - a);
+    expect(top[0]).toBeCloseTo(14, 3);
+    expect(top[1]).toBeCloseTo(14, 3);
+    expect(top[2]).toBeCloseTo(-10, 3);
+  });
+
+  it('Rechteck aus dem Leeren (Direktauswahl) und Lasso wählen Anker; Entf löscht sie, der Umriss behält drei', () => {
+    const t = setup();
+    const s = square(t);
+    t.tools.setTool('direct');
+    stroke(t.tools, [[280, 180], [420, 260], [520, 240]]);
+    expect(t.tools.context()).toMatchObject({ kind: 'anchor', count: 2 });
+    t.tools.setTool('lasso');
+    t.tools.setLassoForm('lasso');
+    stroke(t.tools, [[280, 380], [320, 380], [330, 420], [280, 420]]);
+    expect(t.tools.context()).toMatchObject({ kind: 'lasso', count: 1 });
+    stroke(t.tools, [[480, 380], [520, 380], [520, 420], [480, 420]], SHIFT);
+    expect(t.tools.context()).toMatchObject({ kind: 'lasso', count: 2 });
+    // zwei von vier Ankern des Umrisses löschen ließe zwei übrig: abgelehnt
+    t.tools.key('delete');
+    expect(s.path.length).toBe(4);
+    expect(t.toasts.at(-1)).toMatch(/drei/);
+    // einer allein geht
+    stroke(t.tools, [[480, 380], [520, 380], [520, 420], [480, 420]]);
+    t.tools.key('delete');
+    expect(s.path.length).toBe(3);
+  });
+
+  it('das Lasso im Rechteck wählt über ganzen Formen hinweg, Ecke/Rund gilt für alle gewählten', () => {
+    const t = setup();
+    const s = square(t);
+    t.tools.setTool('lasso');
+    t.tools.setLassoForm('rect');
+    stroke(t.tools, [[290, 190], [400, 300], [510, 210]]);
+    expect(t.tools.context()).toMatchObject({ kind: 'lasso', form: 'rect', count: 2, smooth: false });
+    t.tools.toggleAnchor();
+    const topCorners = s.path.filter((p) => p.y + s.y > 9);
+    expect(topCorners.every((p) => p.outX || p.outY)).toBe(true);
   });
 });

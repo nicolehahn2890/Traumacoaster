@@ -22,7 +22,9 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Messer, Kopieren über Ebenen mit „Bild halten“, Spiegeln, SVG sichern und laden (Illustrator-Brücke, Flächen mit echten
   Kurven); 356 Tests, Build und Szenario 12 grün. Wartet auf **Tor S2**. Noch offen aus Stufe 2: Boolesche Operationen,
   Vereinfachen, Einrasten im Bild, Mehrfachauswahl, Gruppen, Drehen, Ausrichten, Kurvenstift, Band, Skizze als
-  Pause-Ebene (`ZONENEDITOR-PLAN.md` Abschnitt 6).
+  Pause-Ebene (`ZONENEDITOR-PLAN.md` Abschnitt 6). Florians erste Befunde an Tor S2 sind eingebaut (Zeichenstift mit
+  Befehls- und Wahltaste, Schließen mit Ziehen, Lasso und Mehrfachauswahl von Punkten, Formen und Ebenen, Tiefe je
+  Zeile statt Tiefenleiste, Ebenen umordnen); Gruppen wie in Photoshop stehen noch aus.
 
 - **25.10., Etappe 2 begonnen** (Branch `etappe-2-bahn-und-welt` von `main`; die zwölf Arbeitsschritte mit drei Toren stehen in
   `docs/GROSSER-PLAN.md`, Paket 10, von Florian bestätigt). Technik in `docs/TECH.md` 4h.

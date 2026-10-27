@@ -10,7 +10,7 @@ import { PLANE_ROLE_WORDS, PLANE_ROLES, type PlaneRole, type ZonePlane, type Zon
 import type { PathContext } from './pathTools';
 import { VIEW_WORDS, type ViewMode } from './views';
 
-export type Tool = 'select' | 'direct' | 'pen' | 'brush' | 'knife' | 'rect' | 'ellipse';
+export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'brush' | 'knife' | 'rect' | 'ellipse';
 export type Isolate = 'off' | 'front' | 'only';
 export const ISOLATE_WORDS: Record<Isolate, string> = { off: 'alle Ebenen', front: 'davor ausgeblendet', only: 'nur diese' };
 
@@ -25,7 +25,10 @@ export interface UiActions {
   save(): void;
   toggleBuild(): void;
   addPlane(): void;
-  selectPlane(id: string): void;
+  /** Ebene in der Liste wählen: allein, dazu oder heraus (Befehlstaste, nach rechts wischen), bis hierher (Umschalt) */
+  selectPlane(id: string, mode?: 'single' | 'toggle' | 'range'): void;
+  /** Ebenen in der Liste verschieben: vor die Ebene before (null: ganz nach hinten); die Tiefe folgt */
+  movePlanes(ids: string[], before: string | null): void;
   togglePlaneHidden(id: string): void;
   togglePlaneLocked(id: string): void;
   renamePlane(id: string, name: string): void;
@@ -33,7 +36,7 @@ export interface UiActions {
   gapStart(frontId: string): void;
   gapChange(frontId: string, gap: number): void;
   gapEnd(): void;
-  /** Tiefenleiste: eine Ebene allein in der Tiefe schieben */
+  /** Tiefe einer Ebene (mit den anderen gewählten) allein schieben: Ziehen an der Tiefe in der Zeile */
   depthStart(id: string): void;
   depthChange(id: string, z: number): void;
   depthEnd(): void;
@@ -57,6 +60,7 @@ export interface UiActions {
   lineDelete(): void;
   faceFill(fill: string | null): void;
   exportSvg(scope: 'all' | 'plane'): void;
+  lassoForm(form: 'lasso' | 'rect'): void;
   importSvg(file: File): void;
   tilt(deg: number): void;
   fov(deg: number): void;
@@ -87,6 +91,7 @@ const CSS = `
 .ze-anchor{fill:#16181c;stroke:#8db4ff;stroke-width:1.5}
 .ze-anchor.on{fill:#8db4ff}
 .ze-cp{fill:#16181c;stroke:#8db4ff;stroke-width:1.2}
+.ze-region{fill:rgba(141,180,255,.08);stroke:#8db4ff;stroke-width:1;stroke-dasharray:4 3}
 .ze-panel{position:absolute;pointer-events:auto;background:rgba(22,24,28,.82);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.07);border-radius:12px;touch-action:none;user-select:none;-webkit-user-select:none}
 .ze-btn{appearance:none;border:0;background:transparent;color:inherit;font:inherit;min-width:36px;height:36px;padding:0 10px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
 .ze-btn:hover{background:rgba(255,255,255,.06)}
@@ -116,18 +121,21 @@ const CSS = `
 .ze-head{display:flex;align-items:center;gap:2px;padding:0 0 4px 8px}
 .ze-head .ze-title{flex:1;color:#bdbab3;cursor:pointer;white-space:nowrap}
 .ze-layers.collapsed{bottom:auto}
-.ze-layers.collapsed .ze-depth,.ze-layers.collapsed .ze-list,.ze-layers.collapsed .ze-foot{display:none}
+.ze-layers.collapsed .ze-list,.ze-layers.collapsed .ze-foot{display:none}
 .ze-hold{font-size:11px;color:#bdbab3}
-.ze-depth{position:relative;height:26px;margin:2px 6px 6px;touch-action:none}
-.ze-depth::before{content:"";position:absolute;left:0;right:0;top:12px;height:2px;background:rgba(255,255,255,.1);border-radius:1px}
-.ze-tick{position:absolute;top:4px;width:3px;height:18px;margin-left:-1.5px;border-radius:2px;background:rgba(255,255,255,.35);cursor:ew-resize}
-.ze-tick.on{background:#8db4ff;width:4px}
-.ze-tick::after{content:"";position:absolute;left:-8px;right:-8px;top:-4px;bottom:-4px}
 .ze-list{flex:1;overflow-y:auto;overflow-x:hidden;touch-action:pan-y;-webkit-overflow-scrolling:touch;padding-right:2px}
 .ze-row{display:flex;align-items:center;gap:6px;height:40px;padding:0 4px 0 6px;border-radius:8px;cursor:pointer}
 @media (pointer:coarse){.ze-row{height:46px}}
-.ze-row.on{background:rgba(255,255,255,.09)}
-.ze-row canvas{width:48px;height:28px;border-radius:4px;background:rgba(255,255,255,.04);flex:none}
+.ze-row.on{background:rgba(255,255,255,.11)}
+.ze-row.sel{background:rgba(141,180,255,.1)}
+.ze-row.lift{opacity:.45}
+.ze-text{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:2px}
+.ze-meta{display:flex;align-items:center;gap:6px;min-width:0}
+.ze-z{font-size:11px;color:#bdbab3;padding:0 6px;border-radius:7px;background:rgba(255,255,255,.06);cursor:ew-resize;touch-action:none;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ze-z.drag{background:rgba(141,180,255,.25);color:#fff}
+.ze-z input{width:48px;font:inherit;color:inherit;background:transparent;border:0;user-select:text;-webkit-user-select:text}
+.ze-drop{height:2px;margin:-1px 6px;border-radius:1px;background:#8db4ff}
+.ze-row canvas{width:48px;height:28px;border-radius:4px;background:rgba(255,255,255,.04);flex:none;touch-action:none;cursor:grab}
 .ze-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ze-name input{width:100%;font:inherit;color:inherit;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:3px 5px;user-select:text;-webkit-user-select:text}
 .ze-role{color:#8f8c86;font-size:11px}
@@ -160,6 +168,7 @@ const CSS = `
 const ICONS: Record<Tool, string> = {
   select: '<svg viewBox="0 0 24 24"><path d="M6 3l12 9-5.5 1.2L15 20l-2.6 1-2.6-6.6L6 18z" fill="currentColor"/></svg>',
   direct: '<svg viewBox="0 0 24 24"><path d="M6 3l12 9-5.5 1.2L15 20l-2.6 1-2.6-6.6L6 18z"/></svg>',
+  lasso: '<svg viewBox="0 0 24 24"><path d="M7 16c-3-1.5-4-4-2.5-6.5C7 5 15 4 18.5 7s1 8-5 9c-2 .3-4 .2-5.5-.3" stroke-dasharray="2.5 2"/><path d="M7 16c-1 1.5-.5 3 1 4"/></svg>',
   pen: '<svg viewBox="0 0 24 24"><path d="M12 3l6 9-6 9-6-9z"/><path d="M12 3v7"/><circle cx="12" cy="12" r="1.6"/></svg>',
   brush: '<svg viewBox="0 0 24 24"><path d="M4 17c2-6 6-1 8-6s6-6 8-4"/><path d="M4 20h7"/></svg>',
   knife: '<svg viewBox="0 0 24 24"><path d="M4 20L18 4c1.5 2 1.5 5-1 8l-6 6"/><path d="M11 13l2 2"/></svg>',
@@ -177,14 +186,15 @@ const FLIP_Y = '<svg viewBox="0 0 24 24"><path d="M3 12h18"/><path d="M7 9L17 3v
 
 const TOOL_TITLES: Record<Tool, string> = {
   select: 'Auswahl (V)',
-  direct: 'Direktauswahl (A): Punkte, Griffe und Flächen',
+  direct: 'Direktauswahl (A): Punkte, Griffe und Flächen; Umschalt nimmt dazu, aus dem Leeren ziehen wählt im Rechteck',
+  lasso: 'Lasso (Q): freihand oder als Rechteck überall im Bild, wählt Punkte in den gewählten Ebenen',
   pen: 'Zeichenstift (P): tippen gibt eine Ecke, ziehen eine Kurve',
   brush: 'Formpinsel (B): freihand, wird eine glatte Kurve',
   knife: 'Messer (K): quer durch eine Form ziehen',
   rect: 'Rechteck (M)',
   ellipse: 'Ellipse (L)',
 };
-const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'pen', 'brush', 'knife', 'rect', 'ellipse'];
+const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'brush', 'knife', 'rect', 'ellipse'];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -259,7 +269,6 @@ export class EditorUi {
   private readonly toolBtns = new Map<Tool, HTMLButtonElement>();
   private readonly layers = el('div', 'ze-panel ze-layers');
   private readonly holdBtn: HTMLButtonElement;
-  private readonly depth = el('div', 'ze-depth');
   private readonly list = el('div', 'ze-list');
   private readonly context = el('div', 'ze-panel ze-context');
   private readonly toastEl = el('div', 'ze-panel ze-toast');
@@ -268,8 +277,15 @@ export class EditorUi {
   private toastTimer = 0;
   /** Zeile, deren Name gerade bearbeitet wird (dann nicht neu aufbauen) */
   private editing: string | null = null;
-  /** gerade gezogene Abstandspille oder Tiefenmarke (dann nur Zahlen nachführen) */
+  /** gerade gezogene Abstandspille, Tiefe oder Zeile (dann nur Zahlen nachführen) */
   private dragging = false;
+  /** Tiefe und Auswahl je Ebene beim letzten Nachführen (für Ziehen und Eingabe) */
+  private depths = new Map<string, number>();
+  private selectedPlanes = new Set<string>();
+  /** Zeile, die gerade gezogen wird (Umordnen), mit der Einfügemarke */
+  private rowDrag: { ids: string[]; mark: HTMLElement; before: string | null } | null = null;
+  /** nach Wischen oder Ziehen kommt noch ein click; den schlucken */
+  private swallowClick = false;
   private thumbs = new Map<string, HTMLCanvasElement>();
 
   constructor(
@@ -334,7 +350,7 @@ export class EditorUi {
       button('SVG sichern', 'Alle sichtbaren Ebenen als SVG, je Ebene eine Gruppe von hinten nach vorn', () => a.exportSvg('all')),
       file,
     );
-    this.layers.append(head, this.depth, this.list, foot);
+    this.layers.append(head, this.list, foot);
 
     this.banner.append(this.bannerText, button('Wiederherstellen', '', () => a.restore()), button('Verwerfen', '', () => a.discardBackup()));
     this.root.append(this.top, this.views, this.cam, this.tools, this.layers, this.context, this.toastEl, this.banner, this.stats);
@@ -399,17 +415,24 @@ export class EditorUi {
   }
 
   /**
-   * Ebenenliste von vorn nach hinten mit Abstandspillen. Neu aufgebaut wird nur, wenn sich Ebenen, Namen, Rollen oder
-   * Schalter ändern; Auswahl und Abstände werden an Ort und Stelle nachgeführt (sonst käme ein Doppeltippen nie an)
+   * Ebenenliste von vorn nach hinten mit Abstandspillen; je Zeile der Name und darunter die Tiefe (ziehen schiebt nur
+   * diese Ebene, mit den anderen gewählten; tippen gibt eine Zahl) und die Rolle. Neu aufgebaut wird nur, wenn sich
+   * Ebenen, Namen, Rollen oder Schalter ändern; Auswahl, Tiefen und Abstände werden an Ort und Stelle nachgeführt (sonst
+   * käme ein Doppeltippen nie an)
    */
-  setLayers(rows: LayerRow[], activeId: string | null): void {
-    this.renderDepth(rows, activeId);
+  setLayers(rows: LayerRow[], activeId: string | null, selected: readonly string[] = []): void {
     const structure = rows.map((r) => `${r.plane.id}|${r.plane.name}|${r.plane.role}|${r.plane.hidden ? 1 : 0}|${r.plane.locked ? 1 : 0}|${r.gap === null ? '-' : '+'}`).join(';');
+    this.depths = new Map(rows.map((r) => [r.plane.id, r.plane.z]));
+    this.selectedPlanes = new Set(selected);
     if (this.dragging || this.editing || structure === this.structure) {
       for (const r of rows) {
         const pill = this.list.querySelector<HTMLElement>(`[data-gap="${r.plane.id}"]`);
         if (pill && r.gap !== null && !pill.querySelector('input')) pill.textContent = `${fmt(r.gap)} m`;
-        this.list.querySelector(`[data-row="${r.plane.id}"]`)?.classList.toggle('on', r.plane.id === activeId);
+        const z = this.list.querySelector<HTMLElement>(`[data-z="${r.plane.id}"]`);
+        if (z && !z.querySelector('input')) z.textContent = `${fmt(r.plane.z)} m`;
+        const row = this.list.querySelector(`[data-row="${r.plane.id}"]`);
+        row?.classList.toggle('on', r.plane.id === activeId);
+        row?.classList.toggle('sel', r.plane.id !== activeId && this.selectedPlanes.has(r.plane.id));
       }
       if (structure === this.structure || this.dragging) this.gaps = new Map(rows.map((r) => [r.plane.id, r.gap ?? 0]));
       return;
@@ -421,11 +444,12 @@ export class EditorUi {
     const keep = new Map<string, HTMLCanvasElement>();
     for (const r of rows) {
       const p = r.plane;
-      const row = el('div', `ze-row${p.id === activeId ? ' on' : ''}`);
+      const row = el('div', `ze-row${p.id === activeId ? ' on' : this.selectedPlanes.has(p.id) ? ' sel' : ''}`);
       row.dataset.row = p.id;
       const thumb = this.thumbs.get(p.id) ?? el('canvas');
       thumb.width = 96;
       thumb.height = 56;
+      thumb.title = 'Ziehen: Ebene in der Liste verschieben (die Tiefe folgt)';
       keep.set(p.id, thumb);
       const name = el('span', 'ze-name');
       name.textContent = p.name;
@@ -441,16 +465,183 @@ export class EditorUi {
         }
         this.lastNameTap = { id: p.id, t: now };
       });
-      const role = el('span', 'ze-role', PLANE_ROLE_WORDS[p.role]);
+      const meta = el('div', 'ze-meta');
+      meta.append(this.depthChip(p), el('span', 'ze-role', PLANE_ROLE_WORDS[p.role]));
+      const text = el('div', 'ze-text');
+      text.append(name, meta);
       const eye = button(p.hidden ? EYE_OFF : EYE, p.hidden ? 'Einblenden' : 'Ausblenden', () => this.a.togglePlaneHidden(p.id), p.hidden ? '' : 'on');
       const lock = button(LOCK, p.locked ? 'Entsperren' : 'Sperren', () => this.a.togglePlaneLocked(p.id), p.locked ? 'on' : '');
-      row.append(thumb, name, role, eye, lock);
-      row.addEventListener('click', () => this.a.selectPlane(p.id));
+      row.append(thumb, text, eye, lock);
+      row.addEventListener('click', (e) => {
+        if (this.swallowClick) {
+          this.swallowClick = false;
+          return;
+        }
+        this.a.selectPlane(p.id, e.shiftKey ? 'range' : e.metaKey || e.ctrlKey ? 'toggle' : 'single');
+      });
+      this.rowGestures(row, thumb, p.id);
       this.list.append(row);
       if (r.gap !== null) this.list.append(this.gapPill(p.id));
     }
     this.thumbs = keep;
     this.list.scrollTop = scroll;
+  }
+
+  /**
+   * Gesten auf einer Zeile: nach rechts wischen (Finger, wie in Procreate) nimmt die Ebene in die Auswahl oder heraus;
+   * Ziehen verschiebt sie in der Liste (Maus überall, Finger und Pencil am Vorschaubild, sonst scrollt die Liste)
+   */
+  private rowGestures(row: HTMLElement, handle: HTMLElement, id: string): void {
+    let st: { x: number; y: number; pointerId: number; touch: boolean; grip: boolean; mode: 'none' | 'swipe' | 'drag' } | null = null;
+    row.addEventListener('pointerdown', (e) => {
+      if ((e.target as HTMLElement).closest('.ze-btn, .ze-z, input')) return;
+      const grip = handle.contains(e.target as Node);
+      st = { x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType !== 'mouse', grip, mode: 'none' };
+      if (!st.touch || grip) row.setPointerCapture(e.pointerId);
+    });
+    row.addEventListener('pointermove', (e) => {
+      if (!st || st.pointerId !== e.pointerId) return;
+      const dx = e.clientX - st.x;
+      const dy = e.clientY - st.y;
+      if (st.mode === 'none') {
+        if (st.touch && !st.grip && dx > 28 && Math.abs(dy) < 18) {
+          st.mode = 'swipe';
+          this.swallowClick = true;
+          this.a.selectPlane(id, 'toggle');
+          return;
+        }
+        if ((!st.touch || st.grip) && Math.abs(dy) > 6) {
+          st.mode = 'drag';
+          this.beginRowDrag(id);
+        }
+      }
+      if (st.mode === 'drag') this.moveRowDrag(e.clientY);
+    });
+    const end = (e: PointerEvent) => {
+      if (!st || st.pointerId !== e.pointerId) return;
+      const mode = st.mode;
+      st = null;
+      if (row.hasPointerCapture(e.pointerId)) row.releasePointerCapture(e.pointerId);
+      if (mode === 'drag') {
+        this.swallowClick = true;
+        this.endRowDrag(e.type === 'pointerup');
+      }
+    };
+    row.addEventListener('pointerup', end);
+    row.addEventListener('pointercancel', end);
+  }
+
+  private beginRowDrag(id: string): void {
+    const order = [...this.list.querySelectorAll<HTMLElement>('.ze-row')].map((r) => r.dataset.row!);
+    const ids = this.selectedPlanes.has(id) && this.selectedPlanes.size > 1 ? order.filter((x) => this.selectedPlanes.has(x)) : [id];
+    for (const x of ids) this.list.querySelector(`[data-row="${x}"]`)?.classList.add('lift');
+    this.rowDrag = { ids, mark: el('div', 'ze-drop'), before: null };
+    this.dragging = true;
+  }
+
+  /** Einfügemarke vor die erste Zeile, deren Mitte unter dem Zeiger liegt; am Rand der Liste rollt sie mit */
+  private moveRowDrag(clientY: number): void {
+    const d = this.rowDrag;
+    if (!d) return;
+    const box = this.list.getBoundingClientRect();
+    if (clientY < box.top + 24) this.list.scrollTop -= 8;
+    if (clientY > box.bottom - 24) this.list.scrollTop += 8;
+    let before: HTMLElement | null = null;
+    for (const r of this.list.querySelectorAll<HTMLElement>('.ze-row')) {
+      const b = r.getBoundingClientRect();
+      if (clientY < b.top + b.height / 2) {
+        before = r;
+        break;
+      }
+    }
+    if (before) this.list.insertBefore(d.mark, before.previousElementSibling?.classList.contains('ze-gap') ? before.previousElementSibling : before);
+    else this.list.append(d.mark);
+    d.before = before?.dataset.row ?? null;
+  }
+
+  private endRowDrag(drop: boolean): void {
+    const d = this.rowDrag;
+    this.rowDrag = null;
+    this.dragging = false;
+    if (!d) return;
+    d.mark.remove();
+    for (const r of this.list.querySelectorAll('.ze-row.lift')) r.classList.remove('lift');
+    // die Liste wird mit der neuen Reihenfolge neu aufgebaut
+    this.structure = '';
+    if (drop) this.a.movePlanes(d.ids, d.before);
+  }
+
+  /** Tiefe in der Zeile: waagrecht ziehen schiebt die Ebene (und die anderen gewählten) allein, tippen gibt eine Zahl */
+  private depthChip(p: ZonePlane): HTMLElement {
+    const chip = el('span', 'ze-z');
+    chip.dataset.z = p.id;
+    chip.textContent = `${fmt(p.z)} m`;
+    chip.title = 'Tiefe: waagrecht ziehen schiebt nur diese Ebene (und die anderen gewählten), tippen für eine Zahl';
+    let start: { x: number; z: number; moved: boolean } | null = null;
+    chip.addEventListener('pointerdown', (e) => {
+      if (chip.querySelector('input')) return;
+      e.stopPropagation();
+      e.preventDefault();
+      chip.setPointerCapture(e.pointerId);
+      start = { x: e.clientX, z: this.depths.get(p.id) ?? p.z, moved: false };
+    });
+    chip.addEventListener('pointermove', (e) => {
+      if (!start || !chip.hasPointerCapture(e.pointerId)) return;
+      const dx = e.clientX - start.x;
+      if (!start.moved && Math.abs(dx) < 3) return;
+      if (!start.moved) {
+        start.moved = true;
+        this.dragging = true;
+        chip.classList.add('drag');
+        this.a.depthStart(p.id);
+      }
+      // 5 cm je Bildpunkt, mit Umschalt 1 cm
+      this.a.depthChange(p.id, start.z + dx * (e.shiftKey ? 0.01 : 0.05));
+    });
+    const end = (e: PointerEvent) => {
+      if (!start) return;
+      const moved = start.moved;
+      start = null;
+      if (chip.hasPointerCapture(e.pointerId)) chip.releasePointerCapture(e.pointerId);
+      if (moved) {
+        this.dragging = false;
+        chip.classList.remove('drag');
+        this.a.depthEnd();
+      } else if (e.type === 'pointerup') this.editDepth(chip, p.id);
+    };
+    chip.addEventListener('pointerup', end);
+    chip.addEventListener('pointercancel', end);
+    chip.addEventListener('click', (e) => e.stopPropagation());
+    return chip;
+  }
+
+  private editDepth(chip: HTMLElement, id: string): void {
+    this.editing = id;
+    const z = this.depths.get(id) ?? 0;
+    const input = el('input');
+    input.inputMode = 'decimal';
+    input.value = fmt(z);
+    chip.replaceChildren(input);
+    input.focus();
+    input.select();
+    input.addEventListener('pointerdown', (e) => e.stopPropagation());
+    const done = (ok: boolean) => {
+      if (this.editing !== id) return;
+      this.editing = null;
+      chip.textContent = `${fmt(z)} m`;
+      const v = Number(input.value.replace(',', '.').replace(/[^\d.-]/g, ''));
+      if (ok && Number.isFinite(v) && v !== z) {
+        this.a.depthStart(id);
+        this.a.depthChange(id, v);
+        this.a.depthEnd();
+      }
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') done(true);
+      if (e.key === 'Escape') done(false);
+    });
+    input.addEventListener('blur', () => done(true));
   }
 
   /** Bauplan der Liste beim letzten Aufbau */
@@ -559,60 +750,6 @@ export class EditorUi {
     input.addEventListener('blur', () => done(true));
   }
 
-  /** Tiefenleiste: der Stapel von der Seite, vorn links, hinten rechts; eine Marke ziehen schiebt nur diese Ebene */
-  private renderDepth(rows: LayerRow[], activeId: string | null): void {
-    const zs = rows.map((r) => r.plane.z);
-    const min = Math.min(0, ...zs);
-    const max = Math.max(min + 10, ...zs);
-    const w = () => this.depth.getBoundingClientRect().width || 240;
-    const pos = (z: number) => ((z - min) / (max - min)) * 100;
-    if (this.dragging) {
-      for (const r of rows) {
-        const t = this.depth.querySelector<HTMLElement>(`[data-tick="${r.plane.id}"]`);
-        if (t) t.style.left = `${pos(r.plane.z)}%`;
-      }
-      return;
-    }
-    this.depth.replaceChildren();
-    for (const r of rows) {
-      const t = el('div', `ze-tick${r.plane.id === activeId ? ' on' : ''}`);
-      t.dataset.tick = r.plane.id;
-      t.style.left = `${pos(r.plane.z)}%`;
-      t.title = `${r.plane.name}: ${fmt(r.plane.z)} m`;
-      let start: { x: number; z: number; moved: boolean } | null = null;
-      t.addEventListener('pointerdown', (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        t.setPointerCapture(e.pointerId);
-        start = { x: e.clientX, z: r.plane.z, moved: false };
-      });
-      t.addEventListener('pointermove', (e) => {
-        if (!start || !t.hasPointerCapture(e.pointerId)) return;
-        const dx = e.clientX - start.x;
-        if (!start.moved && Math.abs(dx) < 3) return;
-        if (!start.moved) {
-          start.moved = true;
-          this.dragging = true;
-          this.a.depthStart(r.plane.id);
-        }
-        this.a.depthChange(r.plane.id, start.z + (dx / w()) * (max - min));
-      });
-      const end = (e: PointerEvent) => {
-        if (!start) return;
-        const moved = start.moved;
-        start = null;
-        if (t.hasPointerCapture(e.pointerId)) t.releasePointerCapture(e.pointerId);
-        if (moved) {
-          this.dragging = false;
-          this.a.depthEnd();
-        } else this.a.selectPlane(r.plane.id);
-      };
-      t.addEventListener('pointerup', end);
-      t.addEventListener('pointercancel', end);
-      this.depth.append(t);
-    }
-  }
-
   /** Farbknöpfe; on: die gewählte Farbe */
   private swatches(on: string | null | undefined, pick: (c: string) => void): void {
     for (const c of SWATCHES) {
@@ -628,16 +765,26 @@ export class EditorUi {
   }
 
   /**
-   * Leiste unten: beim Zeichnen Fertig und Abbrechen, für einen gewählten Anker oder eine Fläche deren Befehle, für eine
-   * gewählte Form Farbe und Reihenfolge, sonst für die aktive Ebene Rolle und Isolieren
+   * Leiste unten: beim Zeichnen Fertig und Abbrechen, für gewählte Anker, das Lasso oder eine Fläche deren Befehle, für
+   * gewählte Formen Farbe und Reihenfolge, sonst für die gewählten Ebenen Rolle und Isolieren
    */
-  setContext(plane: ZonePlane | null, shape: ZoneShape | null, isolate: Isolate, path: PathContext | null = null, canPaste = false): void {
+  setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false): void {
+    const plane = planes.at(-1) ?? null;
+    const shape = shapes.at(-1) ?? null;
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
-    const pk = path ? (path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.smooth}|${path.line}` : `f|${path.shape.id}|${path.fill}`) : '';
-    const key = path ? pk : shape ? `s|${shape.id}|${shape.name}|${shape.fill}` : plane ? `p|${plane.id}|${plane.name}|${plane.role}|${isolate}|${canPaste}` : '';
+    const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : `l|${path.form}|${path.count}|${path.smooth}`;
+    const key = path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
     this.context.replaceChildren();
+    const anchorButtons = (smooth: boolean, count: number) => {
+      this.context.append(
+        button('Ecke', 'Ecke ohne Griffe', () => !smooth || this.a.anchorSmooth(), smooth ? '' : 'on'),
+        button('Rund', 'Rund mit Griffen', () => smooth || this.a.anchorSmooth(), smooth ? 'on' : ''),
+        el('span', 'ze-sep'),
+        button(count > 1 ? 'Punkte löschen' : 'Punkt löschen', 'Löschen (Entf)', () => this.a.anchorDelete()),
+      );
+    };
     if (path?.kind === 'pen') {
       this.context.append(el('span', 'ze-label', `Zeichenstift · ${path.count} ${path.count === 1 ? 'Punkt' : 'Punkte'}${path.into ? ` in ${path.into}` : ''}`));
       if (path.into && path.count >= 3) this.context.append(button('Schließen', 'Als geschlossenen Ring in die Form (oder auf den ersten Punkt tippen)', () => this.a.penDone(true)));
@@ -646,39 +793,49 @@ export class EditorUi {
         button('Abbrechen', 'Verwerfen', () => this.a.penCancel()),
       );
     } else if (path?.kind === 'anchor') {
+      this.context.append(el('span', 'ze-label', path.count > 1 ? `${path.count} Punkte` : `${path.shape.name} · Punkt`));
+      anchorButtons(path.smooth, path.count);
+      if (path.count === 1 && path.line !== 'outline') this.context.append(button(path.line === 'hole' ? 'Loch löschen' : 'Linie löschen', 'Den ganzen Pfad dieses Punkts entfernen', () => this.a.lineDelete()));
+    } else if (path?.kind === 'lasso') {
       this.context.append(
-        el('span', 'ze-label', `${path.shape.name} · Punkt`),
-        button('Ecke', 'Ecke ohne Griffe', () => !path.smooth || this.a.anchorSmooth(), path.smooth ? '' : 'on'),
-        button('Rund', 'Rund mit Griffen', () => path.smooth || this.a.anchorSmooth(), path.smooth ? 'on' : ''),
-        el('span', 'ze-sep'),
-        button('Punkt löschen', 'Punkt löschen (Entf)', () => this.a.anchorDelete()),
+        el('span', 'ze-label', 'Lasso'),
+        button('Freihand', 'Freihand umfahren', () => this.a.lassoForm('lasso'), path.form === 'lasso' ? 'on' : ''),
+        button('Rechteck', 'Rechteck aufziehen', () => this.a.lassoForm('rect'), path.form === 'rect' ? 'on' : ''),
       );
-      if (path.line !== 'outline') this.context.append(button(path.line === 'hole' ? 'Loch löschen' : 'Linie löschen', 'Den ganzen Pfad dieses Punkts entfernen', () => this.a.lineDelete()));
+      if (path.count) {
+        this.context.append(el('span', 'ze-sep'), el('span', 'ze-label', `${path.count} ${path.count === 1 ? 'Punkt' : 'Punkte'}`));
+        anchorButtons(path.smooth, path.count);
+      }
     } else if (path?.kind === 'face') {
       this.context.append(el('span', 'ze-label', `${path.shape.name} · Fläche`));
       this.swatches(path.fill, (c) => this.a.faceFill(c));
       this.context.append(el('span', 'ze-sep'), button('Loch', 'Fläche zum Loch machen (Entf); eine Farbe füllt sie wieder', () => this.a.faceFill(null), path.fill === null ? 'on' : ''));
     } else if (shape) {
-      this.context.append(el('span', 'ze-label', shape.name));
-      this.swatches(shape.fill, (c) => this.a.fill(c));
+      const many = shapes.length > 1;
+      this.context.append(el('span', 'ze-label', many ? `${shapes.length} Formen` : shape.name));
+      this.swatches(shapes.every((s) => s.fill === shape.fill) ? shape.fill : null, (c) => this.a.fill(c));
       this.context.append(
         el('span', 'ze-sep'),
         button('Duplizieren', 'Duplizieren (Cmd+D)', () => this.a.duplicate()),
         button('Kopieren', 'Kopieren (Cmd+C); in einer anderen Ebene einfügen hält das Bild', () => this.a.copy()),
         button(FLIP_X, 'Waagrecht spiegeln (Shift+H)', () => this.a.flip('x')),
         button(FLIP_Y, 'Senkrecht spiegeln (Shift+V)', () => this.a.flip('y')),
-        button('Nach vorn', 'In der Ebene nach vorn (])', () => this.a.orderShape(1)),
-        button('Nach hinten', 'In der Ebene nach hinten ([)', () => this.a.orderShape(-1)),
-        button('Löschen', 'Löschen (Entf)', () => this.a.deleteShape()),
       );
+      if (!many) this.context.append(button('Nach vorn', 'In der Ebene nach vorn (])', () => this.a.orderShape(1)), button('Nach hinten', 'In der Ebene nach hinten ([)', () => this.a.orderShape(-1)));
+      this.context.append(button('Löschen', 'Löschen (Entf)', () => this.a.deleteShape()));
     } else if (plane) {
-      this.context.append(el('span', 'ze-label', plane.name));
-      for (const r of PLANE_ROLES) this.context.append(button(PLANE_ROLE_WORDS[r], `Rolle: ${PLANE_ROLE_WORDS[r]} (wirkt ab Stufe 4 auf Pinsel und Stützen)`, () => this.a.setRole(r), plane.role === r ? 'on' : ''));
+      const many = planes.length > 1;
+      this.context.append(el('span', 'ze-label', many ? `${planes.length} Ebenen` : plane.name));
+      const role = planes.every((p) => p.role === plane.role) ? plane.role : null;
+      for (const r of PLANE_ROLES) this.context.append(button(PLANE_ROLE_WORDS[r], `Rolle: ${PLANE_ROLE_WORDS[r]} (wirkt ab Stufe 4 auf Pinsel und Stützen)`, () => this.a.setRole(r), role === r ? 'on' : ''));
       this.context.append(el('span', 'ze-sep'));
-      for (const i of ['off', 'front', 'only'] as const) this.context.append(button(i === 'off' ? 'Alle' : i === 'front' ? 'Davor aus' : 'Nur diese', `Isolieren: ${ISOLATE_WORDS[i]}`, () => this.a.setIsolate(i), isolate === i ? 'on' : ''));
-      this.context.append(el('span', 'ze-sep'));
-      if (canPaste) this.context.append(button('Einfügen', 'Kopierte Form in diese Ebene, an derselben Stelle im Spielblick (Cmd+V)', () => this.a.paste()));
-      this.context.append(button('Als SVG', 'Nur diese Ebene als SVG sichern', () => this.a.exportSvg('plane')), button('Ebene löschen', 'Ebene mit allen Formen löschen', () => this.a.deletePlane()));
+      if (!many) for (const i of ['off', 'front', 'only'] as const) this.context.append(button(i === 'off' ? 'Alle' : i === 'front' ? 'Davor aus' : 'Nur diese', `Isolieren: ${ISOLATE_WORDS[i]}`, () => this.a.setIsolate(i), isolate === i ? 'on' : ''));
+      if (!many) this.context.append(el('span', 'ze-sep'));
+      if (canPaste) this.context.append(button('Einfügen', 'Kopierte Formen in die aktive Ebene, an derselben Stelle im Spielblick (Cmd+V)', () => this.a.paste()));
+      this.context.append(
+        button('Als SVG', many ? 'Die gewählten Ebenen als SVG sichern' : 'Nur diese Ebene als SVG sichern', () => this.a.exportSvg('plane')),
+        button(many ? 'Ebenen löschen' : 'Ebene löschen', many ? 'Die gewählten Ebenen mit allen Formen löschen' : 'Ebene mit allen Formen löschen', () => this.a.deletePlane()),
+      );
     }
     this.context.classList.toggle('show', !!(path || shape || plane));
   }

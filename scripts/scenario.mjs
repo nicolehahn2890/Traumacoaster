@@ -754,6 +754,84 @@ if (want('12')) {
   await page.screenshot({ path: 'screenshots/scenario-12-formen-kopie.png' });
 }
 
+// 13. Befunde an Tor S2: Zeichenstift mit Befehls- und Wahltaste, Schließen mit Ziehen, Lasso und Mehrfachauswahl von
+// Punkten und Formen, Ebenen in der Liste mehrfach wählen, ihre Tiefe ziehen und sie umordnen
+if (want('13')) {
+  await page.goto(`${BASE}?zone=editor-tor2&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const ed = (fn, arg) => page.evaluate(fn, arg);
+  const click = async (x, y, mods = []) => {
+    for (const m of mods) await page.keyboard.down(m);
+    await page.mouse.click(x, y);
+    for (const m of mods) await page.keyboard.up(m);
+    await sleep(50);
+  };
+  const dragTo = async (from, to, mods = [], steps = 6) => {
+    for (const m of mods) await page.keyboard.down(m);
+    await page.mouse.move(from[0], from[1]);
+    await page.mouse.down();
+    await page.mouse.move(to[0], to[1], { steps });
+    await page.mouse.up();
+    for (const m of mods) await page.keyboard.up(m);
+    await sleep(80);
+  };
+  // Zeichenstift: drei Punkte, den mittleren mit Befehlstaste verschieben, mit Ziehen am ersten Punkt schließen
+  await page.keyboard.press('p');
+  for (const [x, y] of [[300, 260], [520, 260], [520, 480]]) await click(x, y);
+  await dragTo([520, 260], [560, 240], ['Meta']);
+  const penPts = await ed(() => window.tcGame.current.planeEditor.paths.pen?.pts.length ?? 0);
+  await dragTo([300, 260], [330, 300]);
+  const closed = await ed(() => {
+    const e = window.tcGame.current.planeEditor;
+    const s = e.nodes.filter((n) => n.kind === 'shape').at(-1);
+    return s ? { n: s.path.length, first: s.path[0], pen: !!e.paths.pen } : null;
+  });
+  check(penPts === 3 && closed?.n === 3 && !closed.pen && Math.abs(closed.first.outX ?? 0) > 0.5 && Math.abs((closed.first.inX ?? 0) + (closed.first.outX ?? 0)) < 1e-6, `Befehlstaste verschiebt einen Punkt des laufenden Pfads, Schließen mit Ziehen dreht die Griffe des Startpunkts (${JSON.stringify(closed?.first)})`);
+  // Wahltaste: Klick auf einen Anker der gewählten Form macht ihn rund
+  await page.keyboard.down('Alt');
+  await page.mouse.move(520, 480);
+  await sleep(60);
+  await click(520, 480, ['Alt']);
+  await page.keyboard.up('Alt');
+  const round = await ed(() => window.tcGame.current.planeEditor.shape.path.filter((a) => a.inX || a.outX || a.inY || a.outY).length);
+  check(round === 2, `Wahltaste macht einen Anker der Form rund (${round} runde Anker)`);
+  // Lasso als Rechteck über die obere Kante: zwei Punkte, mit der Direktauswahl zusammen ziehen
+  await page.keyboard.press('q');
+  await page.click('.ze-context >> text=Rechteck');
+  await dragTo([270, 200], [600, 300]);
+  const lasso = await ed(() => window.tcGame.current.planeEditor.paths.anchors.length);
+  await page.keyboard.press('a');
+  const before = await ed(() => window.tcGame.current.planeEditor.shape.path.map((a) => a.y));
+  await dragTo([300, 260], [300, 230]);
+  const after = await ed(() => window.tcGame.current.planeEditor.shape.path.map((a) => a.y));
+  const movedCount = after.filter((y, i) => Math.abs(y - before[i]) > 0.5).length;
+  check(lasso === 2 && movedCount === 2, `Lasso wählt ${lasso} Punkte, die Direktauswahl zieht beide zugleich (${movedCount} bewegt)`);
+  // Probe-Stapel: Ebenen mit Umschalt wählen, Tiefe in der Zeile ziehen, eine Zeile umordnen
+  await page.keyboard.press('Escape');
+  await page.click('text=Probe-Stapel');
+  await sleep(600);
+  const row = (name) => page.locator('.ze-row', { has: page.locator('.ze-name', { hasText: new RegExp(`^${name}$`) }) });
+  await row('Scheibe 3').click();
+  await row('Scheibe 6').click({ modifiers: ['Shift'] });
+  const sel = await page.locator('.ze-row.on, .ze-row.sel').count();
+  const z0 = await ed(() => Object.fromEntries(window.tcGame.current.planeEditor.nodes.filter((n) => n.kind === 'plane').map((p) => [p.name, p.z])));
+  const chip = await row('Scheibe 4').locator('.ze-z').boundingBox();
+  await dragTo([chip.x + 8, chip.y + chip.height / 2], [chip.x + 48, chip.y + chip.height / 2]);
+  const z1 = await ed(() => Object.fromEntries(window.tcGame.current.planeEditor.nodes.filter((n) => n.kind === 'plane').map((p) => [p.name, p.z])));
+  const moved = Object.keys(z0).filter((k) => Math.abs(z1[k] - z0[k]) > 1e-6);
+  const dz = z1['Scheibe 4'] - z0['Scheibe 4'];
+  check(sel === 4 && moved.length === 4 && moved.every((k) => Math.abs(z1[k] - z0[k] - dz) < 1e-6) && dz > 1, `Umschalt wählt 4 Ebenen; Ziehen an der Tiefe schiebt genau sie um ${dz.toFixed(2)} m (${moved.join(', ')})`);
+  await row('Scheibe 9').click();
+  const thumb = await row('Scheibe 9').locator('canvas').boundingBox();
+  const target = await row('Scheibe 7').boundingBox();
+  await dragTo([thumb.x + 10, thumb.y + 10], [thumb.x + 10, target.y + 6], [], 12);
+  await sleep(300);
+  const order = await page.locator('.ze-row .ze-name').allTextContents();
+  const i9 = order.indexOf('Scheibe 9');
+  check(order[i9 + 1] === 'Scheibe 7', `Zeile gezogen: Scheibe 9 steht jetzt vor Scheibe 7 (${order.slice(4, 10).join(', ')})`);
+  await page.screenshot({ path: 'screenshots/scenario-13-tor2.png' });
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));

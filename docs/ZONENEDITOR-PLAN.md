@@ -857,6 +857,29 @@ Fingern durchgespielt. Spielcode ist nicht berührt. **Platzhalter:** die acht F
 und Leisten. **Noch offen aus Stufe 2** (für das Tor nicht nötig; danach oder auf Zuruf): Boolesche Operationen (Vereinen,
 Abziehen, Schnittmenge), Vereinfachen, Einrasten im Bild und am Raster, Mehrfachauswahl und Gruppen, Drehen, Ausrichten,
 Kurvenstift (Shift+P), Band (O), Skizze als Pause-Ebene.
+**Befunde an Tor S2 (Florian, 27.10.2026) und was daraus wurde** (am selben Tag gebaut, Szenario 13):
+1. *Zeichenstift wie in Illustrator:* mit Befehlstaste Punkte und Griffe verschieben, auch am laufenden Pfad (Klick ins
+   Leere beendet ihn), mit Wahltaste das Ankerpunkt-Werkzeug (Klick auf einen Anker: Ecke oder Rund; aus einem Anker
+   ziehen: neue Griffe; an einem Griff ziehen: nur dieser; am letzten Anker des Pfads fällt der Griff nach vorn weg).
+2. *Beim Schließen den Punkt drehen:* auf den ersten Punkt drücken und ziehen dreht seine Griffe (beide gleich, mit
+   Wahltaste nur der zum Schluss hin).
+3. *Rechteck und Lasso, Mehrfachauswahl:* neues Werkzeug **Lasso (Q)**, freihand oder als Rechteck, überall im Bild
+   (auch über Flächen); es wählt die Punkte in den gewählten Ebenen und damit ihre Formen. Direktauswahl: Umschalt nimmt
+   Punkte dazu, Ziehen bewegt alle gewählten, aus dem Leeren ein Rechteck; Ecke, Rund und Löschen gelten für alle.
+   Auswahl (V): Umschalt nimmt Formen dazu, aus dem Leeren ein Rechteck (Formen, deren Umriss es berührt, wie in
+   Illustrator); mehrere Formen verschieben (jede in ihrer Ebene unter dem Zeiger), in einer Ebene am gemeinsamen Rahmen
+   skalieren, spiegeln, duplizieren, kopieren, färben, löschen; Cmd+A wählt alle Formen der gewählten Ebenen. Ebenen in
+   der Liste: Umschalt wählt bis hierher, Befehlstaste nimmt dazu oder heraus, am iPad nach rechts wischen wie in
+   Procreate; Rolle, „Als SVG“ und Löschen gelten für alle gewählten.
+4. *Die Tiefenleiste ist bei vielen Ebenen viel zu schmal:* stimmt, die Leiste aus Befund 6 (Abschnitt 2) taugt ab etwa
+   15 Ebenen nicht mehr. Sie ist weg; jede Zeile zeigt unter dem Namen ihre **Tiefe**: waagrecht ziehen schiebt nur
+   diese Ebene (mit den anderen gewählten), 5 cm je Bildpunkt, mit Umschalt 1 cm; tippen gibt eine Zahl. Die
+   Abstandspillen bleiben, den Überblick über den Stapel gibt die Ansicht „Seite“.
+5. *Ebenen in der Liste ziehen, Gruppen wie in Photoshop (als Info):* Umordnen ist gebaut („Reihenfolge ziehen“ stand
+   in Plan 4.4 und in Stufe 1 und fehlte dort): mit der Maus die Zeile, mit Finger oder Pencil das Vorschaubild ziehen
+   (sonst rollt die Liste); die Ebene kommt mittig in die Lücke, ist sie zu schmal, rücken die Ebenen dahinter ein Stück
+   nach hinten; „Bild halten“ gilt. **Gruppen** fehlen noch; geplant sind Ebenen-Gruppen (Befund 6) und Baugruppen
+   (Abschnitt 3.4, Stufe 8). Vorschlag: Ebenen-Gruppen wie Ordner in Photoshop als Rest von Stufe 2, mit Florian klären.
 
 **Stufe 3: Farbe, Verläufe, Stile (M).** Farbmenü, Ziehen und Fallenlassen, Pipette, Verläufe auf der Fläche und über
 mehrere Flächen, Füllstapel mit Mischmodi und Deckkraft, Ebenenstapel, Luftperspektive, Zonenpalette, Stile (kopieren,

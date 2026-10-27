@@ -627,6 +627,21 @@ deren Weltrenderer und Spielkamera; seine Oberfläche ist HTML über dem Spielbi
   obersten getroffenen Form, Linie zwischen erster und letzter). Linienenden „kleben“: `glueOf` merkt sich zu Beginn
   eines Ziehens Stück und Lage jedes Linienendes auf einem anderen Pfad, `applyGlue` setzt sie nach jeder Bewegung neu;
   nach Anker löschen oder Ecke/Rund werden sie auf den nächsten Punkt gezogen.
+- **Auswahl** (nach Tor S2): `selection` hält mehrere Formen (die zuletzt gewählte am Ende, sie bestimmt Leiste und
+  aktive Ebene), `planeSel` mehrere Ebenen (die aktive gehört dazu). Rechteck und Lasso wählen nur in den gewählten
+  Ebenen (sonst fängt ein Bereich bei 30 Ebenen Punkte von überall); findet ein Bereich dort nichts, aber in anderen
+  Ebenen, sagt es eine Meldung. Formen per Rechteck: berührt der geglättete Umriss das Rechteck (wie Illustrator; ein
+  Rechteck ganz in einer großen Fläche wählt sie nicht). Mehrere Formen verschieben: jede rechnet den Weg des Zeigers in
+  ihrer Ebene; skalieren nur, wenn alle in einer Ebene liegen (gemeinsamer Rahmen). Mehrere Anker (`PathTools.anchors`)
+  ziehen: je Form der Weg in ihren Pfad-Koordinaten, angeklebte Linienenden wandern mit, mitgezogene Enden nicht.
+- **Zeichenstift-Tasten:** Befehlstaste: `penAnchor`/`penKnob` am laufenden Pfad, sonst die Direktauswahl, Klick ins
+  Leere beendet; Wahltaste: `penPull`/`pull` (aus einem Anker neue Griffe, Klick: Ecke/Rund), `penKnob`/`knob` ohne
+  Spiegeln; der erste Anker schließt auch mit Wahltaste. Schließen: `pen.closing` merkt den Startpunkt, Ziehen setzt
+  seine Griffe, Loslassen schließt.
+- **Ebenenliste:** je Zeile die Tiefe zum Ziehen (`depthStart/Change/End`, alle gewählten um dasselbe Δz, „Bild
+  halten“) und Umordnen (`movePlanes`: mittig in die Lücke, bei unter 5 cm je Ebene rücken die dahinter nach; Tiefen
+  folgen der Reihenfolge). Gesten: Maus zieht die Zeile, Finger und Pencil das Vorschaubild (`touch-action: none` nur
+  dort, sonst rollt die Liste), nach rechts wischen nimmt eine Ebene in die Auswahl. Die Tiefenleiste ist weg.
 - **Kopieren über Ebenen** (`transferShape`): dieselbe Streckung um den Fußpunkt der Spielkamera wie „Bild halten“;
   Spiegeln (`flipShape`) spiegelt Pfade, Löcher, Linien und Füllpunkte und hält die Mitte der Grenzen.
 - **SVG** (`src/zone/svgPlanes.ts`): `planesToSvg` schreibt je Ebene eine Gruppe `p3-name` (hinten zuerst), 1 m = 10 px in
@@ -640,8 +655,9 @@ deren Weltrenderer und Spielkamera; seine Oberfläche ist HTML über dem Spielbi
   bleibt unverändert, wenn Farben und Ränder (Grenzen bis 2 cm, Fläche bis 1 %) zurückkommen; Ursprung aus den
   Datenattributen, sonst dem Rahmen, sonst unten links der Zeichenfläche.
 - **Prüfungen:** `tests/nodes.test.ts`, `tests/planeMesh.test.ts`, `tests/faces.test.ts`, `tests/pathTools.test.ts`,
-  `tests/faceCurves.test.ts`, `tests/svgPlanes.test.ts`; Szenario 11 (Stufe 1) und 12 (Stufe 2) mit
-  `node scripts/scenario.mjs 11 12` und `TC_URL` gegen den eigenen Server.
+  `tests/faceCurves.test.ts`, `tests/svgPlanes.test.ts`; Szenario 11 (Stufe 1), 12 (Stufe 2) und 13 (Befunde an Tor S2)
+  mit `node scripts/scenario.mjs 11 12 13` und `TC_URL` gegen den eigenen Server. Künstliche Tastenereignisse im Test
+  am `document.body` auslösen, nicht am `window`: dort erreichen sie auch die Tasten des Levels (Esc verlässt es).
 
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).

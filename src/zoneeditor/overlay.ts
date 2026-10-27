@@ -30,9 +30,11 @@ export interface OverlayState {
   preview: Pt[] | null;
   /** Freihandstrich (Formpinsel, Messer) */
   stroke: Pt[] | null;
+  /** Auswahlbereich (Rechteck oder Lasso), gestrichelt */
+  region: Pt[] | null;
 }
 
-export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null });
+export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null });
 
 const ring = (pts: Pt[]): string => (pts.length ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z` : '');
 const open = (pts: Pt[]): string => (pts.length > 1 ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}` : '');
@@ -45,6 +47,7 @@ export class EditorOverlay {
   private readonly boxPath = document.createElementNS(NS, 'path');
   private readonly previewPath = document.createElementNS(NS, 'path');
   private readonly strokePath = document.createElementNS(NS, 'path');
+  private readonly regionPath = document.createElementNS(NS, 'path');
   private readonly tangentPath = document.createElementNS(NS, 'path');
   private readonly anchorGroup = document.createElementNS(NS, 'g');
   private readonly knobGroup = document.createElementNS(NS, 'g');
@@ -61,8 +64,9 @@ export class EditorOverlay {
     this.boxPath.setAttribute('class', 'ze-box');
     this.previewPath.setAttribute('class', 'ze-preview');
     this.strokePath.setAttribute('class', 'ze-stroke');
+    this.regionPath.setAttribute('class', 'ze-region');
     this.tangentPath.setAttribute('class', 'ze-tangent');
-    this.el.append(this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.tangentPath, this.anchorGroup, this.knobGroup, this.handleGroup);
+    this.el.append(this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.regionPath, this.tangentPath, this.anchorGroup, this.knobGroup, this.handleGroup);
   }
 
   set visible(on: boolean) {
@@ -86,6 +90,7 @@ export class EditorOverlay {
     this.boxPath.setAttribute('d', s.box ? ring(s.box) : '');
     this.previewPath.setAttribute('d', s.preview ? ring(s.preview) : '');
     this.strokePath.setAttribute('d', s.stroke ? open(s.stroke) : '');
+    this.regionPath.setAttribute('d', s.region && s.region.length > 1 ? ring(s.region) : '');
     this.tangentPath.setAttribute('d', s.tangents.map(([a, b]) => `M${a.x.toFixed(1)} ${a.y.toFixed(1)}L${b.x.toFixed(1)} ${b.y.toFixed(1)}`).join(''));
     const h = this.handleSize;
     this.pool(this.handleGroup, s.handles.length, 'rect', 'ze-handle');
