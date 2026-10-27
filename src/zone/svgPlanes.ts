@@ -9,12 +9,19 @@
  * Import (Brücke aus Illustrator): Gruppen mit Ebenen-Kennung ersetzen die Formen ihrer Ebene, andere oberste Gruppen
  * werden neue Ebenen hinter dem Stapel. Eine Form, deren Geometrie und Farben unverändert zurückkommen, bleibt wie sie war
  * (mit Teilungslinien); geänderte Flächen kommen als eigene Formen. Gelesen werden Pfade (alle Befehle), Rechtecke (auch
- * abgerundet), Kreise, Ellipsen und Polygone in Gruppen mit Transformationen; Füllungen aus Attributen, Stil und Klassen;
- * Verläufe werden Vollton. Ohne DOM, damit es in Tests gleich läuft.
+ * abgerundet), Kreise, Ellipsen und Polygone in Gruppen mit Transformationen; Füllungen aus Attributen, Stil und Klassen.
+ * Ohne DOM, damit es in Tests gleich läuft.
+ *
+ * Füllstapel (Stufe 3): Ein Verlauf geht als SVG-Verlauf hinaus (`<defs>`, in Bildpunkten); weitere Füllungen werden
+ * eigene Pfade derselben Form (`s12-L1`) mit Deckkraft und `mix-blend-mode`. Steht über der Grundfarbe nur ein deckender
+ * Verlauf, trägt der Pfad ihn selbst (wie in Illustrator). Herein kommen SVG-Verläufe (linear und radial, in Bildpunkten
+ * oder am Rahmen, mit gradientTransform und Stopps über xlink:href) als Verlaufsfüllung, `-L`-Pfade als Füllungen ihrer
+ * Form. Nicht im SVG: Deckkraftverläufe, Verlaufsmitten, Ebenenstapel und Luftperspektive.
  */
 import { faceCurves } from './faceCurves';
-import { cloneNodes, DEFAULT_GAP, faceFill, groupOf, newPlane, nextNodeId, planeHidden, planePathToShape, planesOf, shapeFaces, shapeFromPlanePath, shapesOf, swatchMap, type ZoneNode, type ZonePlane, type ZoneShape } from './nodes';
-import { resolveColor, type SwatchMap } from './paint';
+import { cloneNodes, DEFAULT_GAP, facePaint, groupOf, newPlane, nextNodeId, planeHidden, planePathToShape, planesOf, shapeFaces, shapeFromPlanePath, shapesOf, styleMap, swatchMap, type ZoneNode, type ZonePlane, type ZoneShape } from './nodes';
+import { faceBox } from './faces';
+import { paintLayers, resolveColor, type BlendMode, type GradientStop, type SwatchMap, type ZoneFill, type ZoneStyle } from './paint';
 import { flattenPath, inPolygon, polyArea, type PathPoint, type ZonePath } from './path';
 import { GROUP_ID, nextGroupId } from './shapeGroups';
 import { parsePathData, parseTransform, SVG_SCALE, svgPathData } from './svg';
@@ -43,12 +50,60 @@ export function slug(name: string): string {
 /** ganze Zahl als Kennungsteil (m für minus) */
 const encInt = (v: number): string => (v < 0 ? `m${-v}` : String(v));
 
+/** Füllung über der Grundfarbe im SVG: Farbe oder Verlauf (Griffe in Ebenen-Koordinaten), Farben als Wert */
+type ExportLayer =
+  | { kind: 'color'; color: string; blend: BlendMode; opacity: number }
+  | { kind: 'gradient'; radial: boolean; stops: Array<{ t: number; color: string; a: number }>; x0: number; y0: number; x1: number; y1: number; blend: BlendMode; opacity: number };
+
 interface Item {
   /** Kennung im SVG: Form `s12` oder Fläche `s12-f0` */
   id: string;
   fill: string;
   /** Ränder in Ebenen-Koordinaten: der erste ist der Umriss, weitere Löcher */
   rings: ZonePath[];
+  /** Füllungen über der Grundfarbe (ohne Deckkraftverläufe) */
+  layers: ExportLayer[];
+}
+
+const r2 = (v: number): number => Math.round(v * 100) / 100;
+/** Vergleichsschlüssel der Füllungen (Rundlauf: kommt dasselbe zurück, bleibt die Form) */
+const layersKey = (layers: readonly ExportLayer[]): string =>
+  JSON.stringify(
+    layers.map((l) =>
+      l.kind === 'color'
+        ? ['c', l.color, l.blend, r2(l.opacity)]
+        : ['g', l.radial, l.blend, r2(l.opacity), ...[l.x0, l.y0, l.x1, l.y1].map((v) => Math.round(v * 20) / 20), ...l.stops.map((st) => [Math.round(st.t * 1000) / 1000, st.color, r2(st.a)])],
+    ),
+  );
+
+/** ein deckender Verlauf ohne Mischmodus allein über der Grundfarbe: der Pfad trägt ihn selbst */
+const ownGradient = (it: Item): Extract<ExportLayer, { kind: 'gradient' }> | null => {
+  const l = it.layers.length === 1 ? it.layers[0] : null;
+  return l && l.kind === 'gradient' && l.blend === 'normal' && l.opacity >= 1 && l.stops.every((st) => st.a >= 1) ? l : null;
+};
+
+/** Füllungen einer Fläche für das SVG (Griffe von Pfad- in Ebenen-Koordinaten) */
+function exportLayers(s: ZoneShape, face: ReturnType<typeof shapeFaces>[number], sw: SwatchMap, styles: ReadonlyMap<string, ZoneStyle>): { fill: string | null; layers: ExportLayer[] } {
+  const pl = paintLayers(facePaint(s, face), styles, faceBox(face));
+  if (!pl) return { fill: null, layers: [] };
+  const base = pl.layers[0];
+  const out: ExportLayer[] = [];
+  for (const f of pl.layers.slice(1) as ZoneFill[]) {
+    if (f.type === 'color') out.push({ kind: 'color', color: resolveColor(f.color, sw), blend: f.blend, opacity: f.opacity });
+    else if (f.type === 'gradient')
+      out.push({
+        kind: 'gradient',
+        radial: !!f.radial,
+        stops: f.stops.map((st) => ({ t: st.t, color: resolveColor(st.color, sw), a: st.a })),
+        x0: s.x + s.sx * f.x0,
+        y0: s.y + s.sy * f.y0,
+        x1: s.x + s.sx * f.x1,
+        y1: s.y + s.sy * f.y1,
+        blend: f.blend,
+        opacity: f.opacity,
+      });
+  }
+  return { fill: base.type === 'color' ? resolveColor(base.color, sw) : '#808080', layers: out };
 }
 
 /** Pfad einer Form in Ebenen-Koordinaten */
@@ -71,21 +126,23 @@ function toPlane(s: ZoneShape, path: ZonePath): ZonePath {
  * was eine Form im SVG wird: ein Pfad, oder (geteilt) je gefüllte Fläche einer; group: als Gruppe ihrer Flächen.
  * Palettenfarben gehen als ihr Wert hinaus (Look Tag)
  */
-export function shapeItems(s: ZoneShape, sw: SwatchMap = new Map()): { group: boolean; items: Item[] } {
+export function shapeItems(s: ZoneShape, sw: SwatchMap = new Map(), styles: ReadonlyMap<string, ZoneStyle> = new Map()): { group: boolean; items: Item[] } {
   const faces = shapeFaces(s);
   if (!s.cuts?.length && faces.length === 1) {
-    const fill = faceFill(s, faces[0]);
-    return { group: false, items: fill === null ? [] : [{ id: s.id, fill: resolveColor(fill, sw), rings: [toPlane(s, s.path), ...(s.holes ?? []).map((h) => toPlane(s, h))] }] };
+    const { fill, layers } = exportLayers(s, faces[0], sw, styles);
+    return { group: false, items: fill === null ? [] : [{ id: s.id, fill, rings: [toPlane(s, s.path), ...(s.holes ?? []).map((h) => toPlane(s, h))], layers }] };
   }
   const items: Item[] = [];
   faces.forEach((face, k) => {
-    const fill = faceFill(s, face);
+    const { fill, layers } = exportLayers(s, face, sw, styles);
     if (fill === null) return;
     const c = faceCurves(s, face);
-    items.push({ id: `${s.id}-f${k}`, fill: resolveColor(fill, sw), rings: [toPlane(s, c.outline), ...c.holes.map((h) => toPlane(s, h))] });
+    items.push({ id: `${s.id}-f${k}`, fill, rings: [toPlane(s, c.outline), ...c.holes.map((h) => toPlane(s, h))], layers });
   });
   return { group: true, items };
 }
+
+const CSS_BLEND: Record<BlendMode, string> = { normal: 'normal', multiply: 'multiply', screen: 'screen', overlay: 'overlay', softLight: 'soft-light', colorDodge: 'color-dodge', color: 'color' };
 
 /**
  * Ebenen als SVG: die angegebenen (sonst alle sichtbaren), von hinten nach vorn je eine Gruppe; ausgeblendete Formen
@@ -93,6 +150,7 @@ export function shapeItems(s: ZoneShape, sw: SwatchMap = new Map()): { group: bo
  */
 export function planesToSvg(nodes: readonly ZoneNode[], opts: { planes?: readonly string[]; zoneName?: string } = {}): string {
   const sw = swatchMap(nodes);
+  const styles = styleMap(nodes);
   const planes = planesOf(nodes)
     .filter((p) => (opts.planes ? opts.planes.includes(p.id) : !planeHidden(nodes, p)))
     .reverse();
@@ -100,7 +158,7 @@ export function planesToSvg(nodes: readonly ZoneNode[], opts: { planes?: readonl
     plane,
     shapes: shapesOf(nodes, plane.id)
       .filter((s) => !s.hidden)
-      .map((s) => ({ shape: s, ...shapeItems(s, sw) }))
+      .map((s) => ({ shape: s, ...shapeItems(s, sw, styles) }))
       .filter((x) => x.items.length),
   }));
   let minX = Infinity;
@@ -137,6 +195,32 @@ export function planesToSvg(nodes: readonly ZoneNode[], opts: { planes?: readonl
   lines.push(`  <!-- Trauma Coaster, Zone ${esc(zone)}: je Ebene eine Gruppe, von hinten nach vorn; 1 m = ${S} px; Ursprung x ${minX} m, oben y ${maxY} m. Kennungen (p…, s…, rahmen-…) behalten, dann ordnet der Editor beim Laden alles wieder zu. Zurück mit Exportieren als › SVG. -->`);
   lines.push(`  <rect id="rahmen-x${encInt(minX)}-y${encInt(maxY)}" x="0" y="0" width="${W}" height="${H}" fill="none" stroke="#c8c8c8" stroke-width="1"/>`);
   const d = (rings: ZonePath[]) => rings.map((r) => svgPathData(r, toSvg)).join(' ');
+  // Verläufe in <defs> (in Bildpunkten, userSpaceOnUse); sie kommen vor die Ebenen
+  const defs: string[] = [];
+  const defsAt = lines.length;
+  const gradientDef = (l: Extract<ExportLayer, { kind: 'gradient' }>): string => {
+    const id = `v${defs.length + 1}`;
+    const [ax, ay] = toSvg(l.x0, l.y0);
+    const [bx, by] = toSvg(l.x1, l.y1);
+    const stops = l.stops.map((st) => `<stop offset="${f(st.t)}" stop-color="${st.color}"${st.a < 1 ? ` stop-opacity="${f(st.a)}"` : ''}/>`).join('');
+    defs.push(
+      l.radial
+        ? `    <radialGradient id="${id}" gradientUnits="userSpaceOnUse" cx="${f(ax)}" cy="${f(ay)}" r="${f(Math.hypot(bx - ax, by - ay))}">${stops}</radialGradient>`
+        : `    <linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${f(ax)}" y1="${f(ay)}" x2="${f(bx)}" y2="${f(by)}">${stops}</linearGradient>`,
+    );
+    return `url(#${id})`;
+  };
+  /** Pfad einer Fläche mit ihren Füllungen: ein Pfad mit eigenem Verlauf, sonst Grundfarbe und je Füllung ein Pfad */
+  const itemPaths = (it: Item, indent: string): void => {
+    const own = ownGradient(it);
+    lines.push(`${indent}<path id="${it.id}" d="${d(it.rings)}" fill="${own ? gradientDef(own) : esc(it.fill)}" fill-rule="evenodd"/>`);
+    if (own) return;
+    it.layers.forEach((l, k) => {
+      const fill = l.kind === 'color' ? l.color : gradientDef(l);
+      const extra = `${l.opacity < 1 ? ` opacity="${f(l.opacity)}"` : ''}${l.blend !== 'normal' ? ` style="mix-blend-mode:${CSS_BLEND[l.blend]}"` : ''}`;
+      lines.push(`${indent}<path id="${it.id}-L${k + 1}" d="${d(it.rings)}" fill="${fill}" fill-rule="evenodd"${extra}/>`);
+    });
+  };
   // Ebenen einer Ebenen-Gruppe stehen in einer Gruppe (in Illustrator ein Ordner mit den Ebenen darin)
   let open: string | null = null;
   for (const g of groups) {
@@ -169,12 +253,11 @@ export function planesToSvg(nodes: readonly ZoneNode[], opts: { planes?: readonl
         stack.push(path[stack.length]);
       }
       if (!s.group) {
-        const it = s.items[0];
-        lines.push(`${ind()}<path id="${it.id}" d="${d(it.rings)}" fill="${esc(it.fill)}" fill-rule="evenodd"/>`);
+        itemPaths(s.items[0], ind());
         continue;
       }
       lines.push(`${ind()}<g id="${s.shape.id}">`);
-      for (const it of s.items) lines.push(`${ind()}  <path id="${it.id}" d="${d(it.rings)}" fill="${esc(it.fill)}" fill-rule="evenodd"/>`);
+      for (const it of s.items) itemPaths(it, `${ind()}  `);
       lines.push(`${ind()}</g>`);
     }
     while (stack.length) {
@@ -185,6 +268,7 @@ export function planesToSvg(nodes: readonly ZoneNode[], opts: { planes?: readonl
   }
   if (open) lines.push('  </g>');
   lines.push('</svg>');
+  if (defs.length) lines.splice(defsAt, 0, '  <defs>', ...defs, '  </defs>');
   return lines.join('\n') + '\n';
 }
 
@@ -195,6 +279,21 @@ interface RawGroup {
   name: string | null;
 }
 
+/** SVG-Verlauf: linear oder radial, in Bildpunkten (user) oder am Rahmen des Elements (box), Stopps */
+interface GradDef {
+  radial: boolean;
+  units: 'user' | 'box';
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  cx: number;
+  cy: number;
+  r: number;
+  transform: Matrix;
+  stops: Array<{ t: number; color: string; a: number }>;
+}
+
 interface RawShape {
   id: string | null;
   name: string | null;
@@ -203,7 +302,67 @@ interface RawShape {
   /** Teilpfade in SVG-Pixeln (transformiert) */
   subs: ZonePath[];
   fill: string;
+  /** Verlauf der Füllung mit der Matrix des Elements und seinem Rahmen (vor der Matrix) */
+  grad: { def: GradDef; m: Matrix; box: [number, number, number, number] } | null;
+  opacity: number;
+  blend: BlendMode;
 }
+
+/** Zahl oder Prozent (am Rahmen: Anteil) */
+const unit = (v: string | undefined, d: number): number => {
+  if (v === undefined || v.trim() === '') return d;
+  const n = parseFloat(v);
+  if (!Number.isFinite(n)) return d;
+  return v.trim().endsWith('%') ? n / 100 : n;
+};
+
+/** alle Verläufe der Datei; Stopps auch über xlink:href (Illustrator verweist so auf gemeinsame Stopps) */
+function parseGradients(svg: string): Map<string, GradDef> {
+  const raw = new Map<string, { attrs: Record<string, string>; stops: GradDef['stops']; radial: boolean }>();
+  for (const g of svg.matchAll(/<(linearGradient|radialGradient)\b([^>]*?)(\/>|>([\s\S]*?)<\/\1>)/gi)) {
+    const attrs: Record<string, string> = {};
+    for (const a of g[2].matchAll(/([\w:.-]+)\s*=\s*("([^"]*)"|'([^']*)')/g)) attrs[a[1].toLowerCase()] = a[3] ?? a[4] ?? '';
+    const stops: GradDef['stops'] = [];
+    for (const st of (g[4] ?? '').matchAll(/<stop\b([^>]*)>/gi)) {
+      const sa: Record<string, string> = {};
+      for (const a of st[1].matchAll(/([\w:.-]+)\s*=\s*("([^"]*)"|'([^']*)')/g)) sa[a[1].toLowerCase()] = a[3] ?? a[4] ?? '';
+      const style = decls(sa.style ?? '');
+      const color = parseColor(style['stop-color'] ?? sa['stop-color']) ?? '#000000';
+      const op = parseFloat(style['stop-opacity'] ?? sa['stop-opacity'] ?? '1');
+      stops.push({ t: Math.max(0, Math.min(1, unit(sa.offset, 0))), color, a: Number.isFinite(op) ? Math.max(0, Math.min(1, op)) : 1 });
+    }
+    if (attrs.id) raw.set(attrs.id, { attrs, stops, radial: g[1].toLowerCase() === 'radialgradient' });
+  }
+  const out = new Map<string, GradDef>();
+  for (const [id, g] of raw) {
+    let stops = g.stops;
+    let href = (g.attrs['xlink:href'] ?? g.attrs.href ?? '').replace(/^#/, '');
+    for (let k = 0; !stops.length && href && k < 8; k++) {
+      const next = raw.get(href);
+      if (!next) break;
+      stops = next.stops;
+      href = (next.attrs['xlink:href'] ?? next.attrs.href ?? '').replace(/^#/, '');
+    }
+    if (stops.length < 2) continue;
+    const a = g.attrs;
+    out.set(id, {
+      radial: g.radial,
+      units: a.gradientunits === 'userSpaceOnUse' || a.gradientunits === 'userspaceonuse' ? 'user' : 'box',
+      x1: unit(a.x1, 0),
+      y1: unit(a.y1, 0),
+      x2: unit(a.x2, 1),
+      y2: unit(a.y2, 0),
+      cx: unit(a.cx, 0.5),
+      cy: unit(a.cy, 0.5),
+      r: unit(a.r, 0.5),
+      transform: parseTransform(a.gradienttransform),
+      stops: [...stops].sort((p, q) => p.t - q.t),
+    });
+  }
+  return out;
+}
+
+const BLEND_OF: Record<string, BlendMode> = { normal: 'normal', multiply: 'multiply', screen: 'screen', overlay: 'overlay', 'soft-light': 'softLight', 'color-dodge': 'colorDodge', color: 'color' };
 
 const NAMED: Record<string, string> = {
   black: '#000000',
@@ -300,20 +459,11 @@ function walk(text: string): Walked {
       }
     }
   }
-  // Verläufe: erste Stopp-Farbe als Vollton
-  const gradients = new Map<string, string>();
-  for (const g of svg.matchAll(/<(linearGradient|radialGradient)\b([^>]*)>([\s\S]*?)<\/\1>/gi)) {
-    const id = /\bid\s*=\s*["']([^"']+)["']/.exec(g[2])?.[1];
-    const stops = [...g[3].matchAll(/<stop\b([^>]*)>/gi)].map((s) => {
-      const a = s[1];
-      return parseColor(/stop-color\s*[:=]\s*["']?([^"';\s]+)/i.exec(a)?.[1]);
-    });
-    const c = stops.find((x) => x);
-    if (id && c) gradients.set(id, c);
-  }
+  // Verläufe: als Verlauf übernommen (die Form bekommt die erste Stopp-Farbe als Grundfarbe)
+  const gradients = parseGradients(svg);
   const out: Walked = { shapes: [], frame: null, root: {}, pgf: /<i:pgf\b|i:pgfRef/.test(svg), gradients: 0, skipped: 0 };
-  type Frame = { m: Matrix; fill: string | null; hidden: boolean; group: RawGroup | null; tag: string };
-  const stack: Frame[] = [{ m: [1, 0, 0, 1, 0, 0], fill: '#000000', hidden: false, group: null, tag: '' }];
+  type Frame = { m: Matrix; fill: string | null; grad: GradDef | null; hidden: boolean; group: RawGroup | null; tag: string };
+  const stack: Frame[] = [{ m: [1, 0, 0, 1, 0, 0], fill: '#000000', grad: null, hidden: false, group: null, tag: '' }];
   const tagRe = /<\s*(\/?)([a-zA-Z][\w:.-]*)([^>]*?)(\/?)\s*>/g;
   let m: RegExpExecArray | null;
   let first = true;
@@ -343,17 +493,20 @@ function walk(text: string): Walked {
     // Vorrang: style-Attribut, Klassen, Attribut, geerbt
     const fillRaw = style.fill ?? cls.fill ?? attrs.fill;
     let fill = top.fill;
+    let grad = top.grad;
     if (fillRaw !== undefined) {
       const url = /url\(\s*#([^)\s]+)\s*\)/.exec(fillRaw);
+      grad = null;
       if (url) {
-        fill = gradients.get(url[1]) ?? '#808080';
-        out.gradients++;
+        grad = gradients.get(url[1]) ?? null;
+        fill = grad?.stops[0].color ?? '#808080';
+        if (!grad) out.gradients++;
       } else fill = parseColor(fillRaw);
     }
     const hidden = top.hidden || (style.display ?? cls.display ?? attrs.display) === 'none' || (style.visibility ?? attrs.visibility) === 'hidden';
     const mat = mul(top.m, parseTransform(attrs.transform));
     if (GROUPS.has(name)) {
-      if (!selfClose) stack.push({ m: name === 'svg' ? top.m : mat, fill, hidden, group: name === 'g' || name === 'a' ? { id: attrs.id ?? null, name: attrs['data-name'] ?? null } : null, tag: name });
+      if (!selfClose) stack.push({ m: name === 'svg' ? top.m : mat, fill, grad, hidden, group: name === 'g' || name === 'a' ? { id: attrs.id ?? null, name: attrs['data-name'] ?? null } : null, tag: name });
       continue;
     }
     const num = (k: string, d = 0): number => {
@@ -424,7 +577,12 @@ function walk(text: string): Walked {
     }
     const groups = stack.map((s) => s.group).filter((g): g is RawGroup => !!g);
     const ok = subs.map((s) => s.map((p) => apply(mat, p))).filter((s) => s.length >= 3);
-    if (ok.length) out.shapes.push({ id: attrs.id ?? null, name: attrs['data-name'] ?? null, groups, subs: ok, fill });
+    // Rahmen vor der Matrix (für Verläufe am Rahmen), Deckkraft und Mischmodus des Elements
+    const pts = subs.flat();
+    const box: [number, number, number, number] = pts.length ? [Math.min(...pts.map((q) => q.x)), Math.min(...pts.map((q) => q.y)), Math.max(...pts.map((q) => q.x)), Math.max(...pts.map((q) => q.y))] : [0, 0, 1, 1];
+    const op = parseFloat(style.opacity ?? cls.opacity ?? attrs.opacity ?? '1') * parseFloat(style['fill-opacity'] ?? cls['fill-opacity'] ?? attrs['fill-opacity'] ?? '1');
+    const blend = BLEND_OF[(style['mix-blend-mode'] ?? cls['mix-blend-mode'] ?? '').trim()] ?? 'normal';
+    if (ok.length) out.shapes.push({ id: attrs.id ?? null, name: attrs['data-name'] ?? null, groups, subs: ok, fill, grad: grad ? { def: grad, m: mat, box } : null, opacity: Number.isFinite(op) ? Math.max(0, Math.min(1, op)) : 1, blend });
   }
   return out;
 }
@@ -494,7 +652,7 @@ export function svgToPlanes(svg: string, nodes: readonly ZoneNode[]): SvgImport 
   const out = cloneNodes(nodes);
   const warnings: string[] = [];
   if (w.pgf) warnings.push('Die Datei enthält Illustrator-Bearbeitungsdaten; sie wurden übergangen (besser Exportieren als › SVG)');
-  if (w.gradients) warnings.push(`${w.gradients} Verläufe als Vollton übernommen`);
+  if (w.gradients) warnings.push(`${w.gradients} Verläufe nicht lesbar, als Grau übernommen`);
   if (w.skipped) warnings.push(`${w.skipped} Linien ohne Füllung übergangen`);
   // Maßstab und Ursprung: Datenattribute des eigenen Exports, sonst der Rahmen, sonst unten links auf der Zeichenfläche
   const scale = Number(w.root['data-scale']) || SVG_SCALE;
@@ -581,12 +739,37 @@ export function svgToPlanes(svg: string, nodes: readonly ZoneNode[]): SvgImport 
     const before = shapesOf(out, target.id).filter((s) => !s.hidden);
     const keepIds = new Set<string>();
     const fresh: ZoneShape[] = [];
-    // nach Form gruppieren: Gruppe s12 oder Kennung s12 / s12-f3
+    // nach Form gruppieren: Gruppe s12 oder Kennung s12 / s12-f3 / s12-f3-L1 (Füllung über der Grundfarbe)
     const keyOf = (s: RawShape): string | null => {
       const g = [...s.groups].reverse().find((x) => x.id && /^s\d+$/.test(x.id));
       if (g) return g.id;
-      return /^(s\d+)(?:-f\d+)?$/.exec(s.id ?? '')?.[1] ?? null;
+      return /^(s\d+)(?:-f\d+)?(?:-L\d+)?$/.exec(s.id ?? '')?.[1] ?? null;
     };
+    /** Verlauf eines Elements in Ebenen-Koordinaten (gradientTransform, Rahmen, Matrix des Elements, Ursprung) */
+    const gradLayer = (g: NonNullable<RawShape['grad']>, blend: BlendMode, opacity: number): ExportLayer => {
+      const d = g.def;
+      const [bx0, by0, bx1, by1] = g.box;
+      const P = (x: number, y: number): PathPoint => {
+        const t = d.transform;
+        let qx = t[0] * x + t[2] * y + t[4];
+        let qy = t[1] * x + t[3] * y + t[5];
+        if (d.units === 'box') {
+          qx = bx0 + qx * (bx1 - bx0);
+          qy = by0 + qy * (by1 - by0);
+        }
+        return toPlanePt(apply(g.m, { x: qx, y: qy }));
+      };
+      const a = d.radial ? P(d.cx, d.cy) : P(d.x1, d.y1);
+      const b = d.radial ? P(d.cx + d.r, d.cy) : P(d.x2, d.y2);
+      return { kind: 'gradient', radial: d.radial, stops: d.stops.map((st) => ({ ...st })), x0: a.x, y0: a.y, x1: b.x, y1: b.y, blend, opacity };
+    };
+    /** Füllungen in Pfad-Koordinaten einer neuen Form */
+    const toFills = (layers: readonly ExportLayer[], sh: ZoneShape): ZoneFill[] =>
+      layers.map((l) =>
+        l.kind === 'color'
+          ? { type: 'color', color: l.color, blend: l.blend, opacity: l.opacity }
+          : { type: 'gradient', ...(l.radial ? { radial: true } : {}), stops: l.stops.map((st): GradientStop => ({ t: st.t, color: st.color, a: st.a })), x0: (l.x0 - sh.x) / sh.sx, y0: (l.y0 - sh.y) / sh.sy, x1: (l.x1 - sh.x) / sh.sx, y1: (l.y1 - sh.y) / sh.sy, blend: l.blend, opacity: l.opacity },
+      );
     const seen = new Set<string>();
     for (const raw of entry.shapes) {
       const key = keyOf(raw);
@@ -599,13 +782,24 @@ export function svgToPlanes(svg: string, nodes: readonly ZoneNode[]): SvgImport 
         else delete s.groups;
       };
       const old = key ? before.find((s) => s.id === key) : undefined;
-      const imported = parts.map((p) => ({ id: p.id, fill: p.fill, rings: p.subs.map((sub) => sub.map(toPlanePt)) }));
+      // Füllungs-Pfade (-L1 …) gehören zum Pfad ihrer Fläche; ein Verlauf auf dem Pfad selbst ist seine erste Füllung
+      const isLayer = (p: RawShape) => /-L\d+$/.test(p.id ?? '');
+      const imported = parts
+        .filter((p) => !isLayer(p))
+        .map((p) => {
+          const layers: ExportLayer[] = [];
+          if (p.grad) layers.push(gradLayer(p.grad, p.blend, p.opacity));
+          for (const q of parts.filter((x) => isLayer(x) && x.id!.replace(/-L\d+$/, '') === p.id))
+            layers.push(q.grad ? gradLayer(q.grad, q.blend, q.opacity) : { kind: 'color', color: q.fill, blend: q.blend, opacity: q.opacity });
+          return { id: p.id, fill: p.fill, rings: p.subs.map((sub) => sub.map(toPlanePt)), layers };
+        });
       if (old) {
-        // unverändert zurück: die Form bleibt, wie sie war (mit Teilungslinien und Füllpunkten)
-        const exp = shapeItems(old, swatchMap(nodes)).items;
+        // unverändert zurück: die Form bleibt, wie sie war (mit Teilungslinien, Füllpunkten und Verlaufsmitten)
+        const exp = shapeItems(old, swatchMap(nodes), styleMap(nodes)).items;
         const same = exp.length === imported.length && exp.every((e) => {
           const im = imported.find((i) => i.id === e.id);
-          return !!im && parseColor(im.fill) === parseColor(e.fill) && sameRings(e.rings, im.rings);
+          const own = ownGradient(e);
+          return !!im && parseColor(im.fill) === parseColor(own ? own.stops[0].color : e.fill) && sameRings(e.rings, im.rings) && layersKey(im.layers) === layersKey(e.layers);
         });
         if (same) {
           keepIds.add(old.id);
@@ -619,6 +813,7 @@ export function svgToPlanes(svg: string, nodes: readonly ZoneNode[]): SvgImport 
         outlines(im.rings).forEach(({ outline, holes }, k) => {
           const s = shapeFromPlanePath(out, target.id, outline, im.fill);
           if (holes.length) s.holes = holes.map((h) => planePathToShape(s, h));
+          if (im.layers.length) s.fills = toFills(im.layers, s);
           // die erste Form übernimmt Kennung und Namen der alten, wenn es eine einzelne war
           if (old && k === 0 && imported.length === 1 && !keepIds.has(old.id)) {
             s.id = old.id;

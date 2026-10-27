@@ -181,3 +181,73 @@ describe('SVG-Austausch der Ebenen', () => {
     expect(fills.filter((x) => x === null).length).toBe(1);
   });
 });
+
+describe('SVG-Austausch: Füllstapel und Verläufe (Stufe 3)', () => {
+  const grad = (x0: number, x1: number) => ({ type: 'gradient' as const, stops: [{ t: 0, color: '#ffffff', a: 1 }, { t: 1, color: '#203040', a: 1 }], x0, y0: 0, x1, y1: 0, blend: 'normal' as const, opacity: 1 });
+
+  function stacked(): { nodes: ZoneNode[]; a: ZoneShape; b: ZoneShape } {
+    const nodes: ZoneNode[] = [newPlane([], 0, 'Fels')];
+    const a = newShape(nodes, 'p1', rectPath(20, 10), 30, 5, '#3d5a63');
+    a.fills = [grad(-10, 10)];
+    nodes.push(a);
+    const b = newShape(nodes, 'p1', ellipsePath(6, 4), 60, 5, '#808080');
+    b.fills = [{ type: 'color', color: '#ff8040', blend: 'multiply', opacity: 0.5 }, { ...grad(-6, 6), blend: 'overlay', opacity: 0.8 }];
+    nodes.push(b);
+    return { nodes, a, b };
+  }
+
+  it('Export: ein deckender Verlauf sitzt auf dem Pfad, weitere Füllungen sind eigene Pfade mit Mischmodus und Deckkraft', () => {
+    const svg = planesToSvg(stacked().nodes);
+    expect(svg).toMatch(/<defs>[\s\S]*<linearGradient id="v1" gradientUnits="userSpaceOnUse"/);
+    expect(svg).toMatch(/<path id="s1" d="[^"]+" fill="url\(#v1\)"/);
+    expect(svg).toMatch(/<path id="s2" d="[^"]+" fill="#808080"/);
+    expect(svg).toMatch(/<path id="s2-L1" d="[^"]+" fill="#ff8040" fill-rule="evenodd" opacity="0.5" style="mix-blend-mode:multiply"\/>/);
+    expect(svg).toMatch(/<path id="s2-L2" d="[^"]+" fill="url\(#v\d\)" fill-rule="evenodd" opacity="0.8" style="mix-blend-mode:overlay"\/>/);
+  });
+
+  it('Rundlauf: Verläufe und Füllungen kommen unverändert zurück, die Formen bleiben', () => {
+    const { nodes } = stacked();
+    const r = svgToPlanes(planesToSvg(nodes), nodes);
+    expect(r.kept).toBe(2);
+    expect(json(r.nodes)).toBe(json(nodes));
+  });
+
+  it('in Illustrator verschoben: der Verlauf kommt mit den neuen Griffen zurück', () => {
+    const { nodes } = stacked();
+    const svg = planesToSvg(nodes).replace(/(<linearGradient id="v1"[^>]*x2=")([\d.]+)"/, (_m, a: string, x: string) => `${a}${Number(x) - 50}"`);
+    const r = svgToPlanes(svg, nodes);
+    const a = shapesOf(r.nodes, 'p1')[0];
+    const g = a.fills?.[0];
+    expect(r.kept).toBe(1);
+    expect(g?.type).toBe('gradient');
+    if (g?.type !== 'gradient') return;
+    // 50 px = 5 m kürzer, in Pfad-Koordinaten der neuen Form
+    expect(a.x + a.sx * g.x1 - (a.x + a.sx * g.x0)).toBeCloseTo(15, 3);
+    expect(a.fill).toBe('#ffffff');
+  });
+
+  it('Illustrator-Verlauf am Rahmen mit Drehung und Stopps über xlink:href wird ein Verlauf', () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 200">
+      <defs>
+        <linearGradient id="SVGID_1_"><stop offset="0" style="stop-color:#FF0000"/><stop offset="100%" style="stop-color:#0000FF;stop-opacity:0.5"/></linearGradient>
+        <linearGradient id="SVGID_2_" xlink:href="#SVGID_1_" gradientTransform="rotate(90 0.5 0.5)"/>
+      </defs>
+      <g id="Wand"><rect x="100" y="50" width="200" height="100" fill="url(#SVGID_2_)"/></g>
+    </svg>`;
+    const r = svgToPlanes(svg, []);
+    const s = r.nodes.find((n): n is ZoneShape => n.kind === 'shape')!;
+    const g = s.fills?.[0];
+    expect(r.warnings.join(' ')).not.toMatch(/Verläufe/);
+    expect(s.fill).toBe('#ff0000');
+    expect(g?.type).toBe('gradient');
+    if (g?.type !== 'gradient') return;
+    expect(g.stops.map((st) => [st.t, st.color, st.a])).toEqual([
+      [0, '#ff0000', 1],
+      [1, '#0000ff', 0.5],
+    ]);
+    // gedreht um die Mitte des Rahmens: von oben nach unten (Ebene: y nach oben, 1 m = 10 px)
+    const [x0, y0, x1, y1] = [s.x + s.sx * g.x0, s.y + s.sy * g.y0, s.x + s.sx * g.x1, s.y + s.sy * g.y1];
+    expect(x0).toBeCloseTo(x1, 6);
+    expect(y0 - y1).toBeCloseTo(10, 6);
+  });
+});
