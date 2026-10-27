@@ -259,3 +259,18 @@ describe('Pfade bearbeiten (Stufe 2)', () => {
     }
   });
 });
+
+describe('Skizzen als Pause-Ebenen', () => {
+  it('werden mit Ebene, Lage, Größe, Deckkraft und Mischung gesichert; nur Bilder neben der Zone, eine verwaiste fällt weg', async () => {
+    const { parseNodes: parse, serializeNodes: ser, newPlane: np, cloneNodes: clone } = await import('@/zone/nodes');
+    const nodes: import('@/zone/nodes').ZoneNode[] = [np([], 0)];
+    nodes.push({ id: 'k1', kind: 'sketch', parent: 'p1', name: 'Bild 2', src: '/zones/werkstatt/skizze-k1.png', x: 3, y: 4, w: 40, h: 30, opacity: 0.5, blend: 'normal' });
+    nodes.push({ id: 'k2', kind: 'sketch', parent: 'p1', name: 'flüchtig', src: 'blob:abc', x: 0, y: 0, w: 10, h: 10, opacity: 0.5 });
+    const out = ser(nodes);
+    expect(out.filter((o) => o.kind === 'sketch').length).toBe(1);
+    const back = parse(JSON.parse(JSON.stringify([...out, { id: 'k9', kind: 'sketch', parent: 'p9', name: 'x', src: '/zones/a/skizze-x.png', x: 0, y: 0, w: 1, h: 1, opacity: 1 }])));
+    expect(back.filter((n) => n.kind === 'sketch').map((n) => n.id)).toEqual(['k1']);
+    expect(back.find((n) => n.id === 'k1')).toMatchObject({ blend: 'normal', opacity: 0.5, w: 40 });
+    expect(JSON.stringify(ser(clone(back)))).toBe(JSON.stringify(out));
+  });
+});

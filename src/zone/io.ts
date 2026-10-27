@@ -28,6 +28,19 @@ export async function saveZone(zone: ZoneFile): Promise<boolean> {
   }
 }
 
+/**
+ * Bild neben die Zonendatei legen (nur im Dev-Server, etwa eine Skizze des Zonen-Editors): gibt die Adresse, unter der das
+ * Spiel es lädt, oder null
+ */
+export async function uploadZoneFile(zone: string, filename: string, data: Blob): Promise<string | null> {
+  try {
+    const res = await fetch(`/__zonefile/${zone}/${filename}`, { method: 'POST', body: data });
+    return res.ok ? `/zones/${zone}/${filename}` : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Hot-Reload: Rückruf, wenn eine Zonendatei auf der Platte geändert wurde (nur im Dev-Server) */
 export function onZoneChange(cb: (name: string) => void): void {
   if (import.meta.hot) import.meta.hot.on('tc:zone', (data: { name: string }) => cb(data.name));

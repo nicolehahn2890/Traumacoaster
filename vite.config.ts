@@ -95,6 +95,32 @@ function zoneStore(): Plugin {
           res.end();
         });
       });
+      // Bilder zur Zone (Skizzen des Zonen-Editors): POST /__zonefile/<zone>/skizze-<name>.<png|jpg|webp>, höchstens 25 MB
+      server.middlewares.use('/__zonefile', (req, res) => {
+        const m = /^\/([a-z0-9-]{1,40})\/(skizze-[a-z0-9-]{1,40}\.(?:png|jpe?g|webp))$/.exec((req.url ?? '').split(/[?#]/)[0]);
+        if (req.method !== 'POST' || !m) {
+          res.statusCode = req.method !== 'POST' ? 405 : 400;
+          res.end();
+          return;
+        }
+        const chunks: Buffer[] = [];
+        let size = 0;
+        req.on('data', (c: Buffer) => {
+          size += c.length;
+          if (size <= 25e6) chunks.push(c);
+        });
+        req.on('end', () => {
+          if (size > 25e6) {
+            res.statusCode = 413;
+            res.end();
+            return;
+          }
+          mkdirSync(`${dir}/${m[1]}`, { recursive: true });
+          writeFileSync(`${dir}/${m[1]}/${m[2]}`, Buffer.concat(chunks));
+          res.statusCode = 204;
+          res.end();
+        });
+      });
       // Zonendateien und ihre Bilder direkt von der Platte (ohne Vites Verzeichnisliste, die public/zones nicht beobachtet):
       // so erscheinen neue Zonen und neu abgelegte Bilder ohne Neustart, und nichts wird zwischengespeichert
       const types: Record<string, string> = { json: 'application/json', webp: 'image/webp', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', svg: 'image/svg+xml' };

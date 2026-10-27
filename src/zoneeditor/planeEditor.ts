@@ -16,7 +16,7 @@ import type { WorldRenderer } from '@/world/renderer';
 import type { WorldView } from '@/render/worldView';
 import type { CameraTiltPanel } from '@/ui/cameraTiltPanel';
 import { CAMERA_TILT, viewState } from '@/track/stage';
-import { loadZone, onZoneChange, saveZone } from '@/zone/io';
+import { loadZone, onZoneChange, saveZone, uploadZoneFile } from '@/zone/io';
 import type { ZoneFile } from '@/zone/types';
 import { buildSliceStack } from '@/zone/slices';
 import { flattenPath } from '@/zone/path';
@@ -43,6 +43,8 @@ import {
   planesOf,
   findGroup,
   groupMembers,
+  sketchesOf,
+  type ZoneSketch,
   groupOf,
   planeHidden,
   planeLocked,
@@ -66,6 +68,7 @@ import {
 } from '@/zone/nodes';
 import { History } from './history';
 import { EditorOverlay, emptyOverlay } from './overlay';
+import { SketchLayer } from './sketches';
 import { NO_MODS, PathTools, regionRing, regionTest, simplifyShape, type Mods, type PathTool } from './pathTools';
 import { booleanShapes, type BoolOp } from '@/zone/pathfinder';
 import { EditorUi, type Isolate, type LayerRow, type Tool } from './ui';
@@ -102,6 +105,9 @@ type Gesture =
   /** gewählte Formen einer Ebene am gemeinsamen Rahmen skalieren */
   | { kind: 'scale'; pointerId: number; plane: string; axis: 'xy' | 'x' | 'y'; anchor: Pt; h0: Pt; orig: Map<string, { x: number; y: number; sx: number; sy: number }> }
   | { kind: 'create'; pointerId: number; plane: string; shape: 'rect' | 'ellipse'; a: Pt; b: Pt }
+  /** Skizze anpassen: verschieben (innen) oder an einer Ecke gleichmäßig skalieren (die Ecke gegenüber bleibt) */
+  | { kind: 'sketchMove'; pointerId: number; id: string; start: Pt; orig: Pt }
+  | { kind: 'sketchScale'; pointerId: number; id: string; anchor: Pt; h0: Pt; orig: { x: number; y: number; w: number; h: number } }
   /** ins Leere: ziehen wählt im Rechteck (in der freien Ansicht: umkreisen), tippen hebt die Auswahl auf */
   | { kind: 'empty'; pointerId: number; start: Pt; last: Pt; orbit: boolean; moved: boolean; add: boolean };
 
@@ -129,6 +135,9 @@ export class PlaneEditor {
   private tool: Tool = 'select';
   private isolate: Isolate = 'off';
   private hold = true;
+  /** Skizzen als Pause-Ebenen; die gerade angepasst wird (Rahmen mit Ecken) */
+  private readonly sketches = new SketchLayer();
+  private sketchEdit: string | null = null;
   /** Einrasten an Ankern und Kanten im Bild; Raster der aktiven Ebene */
   private snapOn = true;
   private gridOn = false;
@@ -173,6 +182,7 @@ export class PlaneEditor {
     zone.nodes = this.nodes;
     this.active = planesOf(this.nodes)[0]?.id ?? null;
     this.views = new EditorViews(host.world);
+    host.world.scene.add(this.sketches.group);
     this.paths = new PathTools({
       nodes: () => this.nodes,
       activePlane: () => this.plane,
@@ -466,6 +476,10 @@ export class PlaneEditor {
 
   private rebuildMesh(): void {
     this.host.world.planes.build(this.nodes, { showPlane: (p) => this.planeShown(p) });
+    this.sketches.update(this.nodes, this.building, (id) => {
+      const p = findPlane(this.nodes, id);
+      return !!p && this.planeShown(p);
+    });
     // Kein Boden mehr (Befund 16): sobald die Zone Ebenen hat, verschwindet der flache Boden des Levels
     this.host.world.setLevelGroundVisible(!this.nodes.some(isPlane));
     this.drawOverlay();
@@ -482,7 +496,7 @@ export class PlaneEditor {
     );
     this.paths.selectionChanged(this.selection);
     const path = this.building && isPathTool(this.tool) ? this.paths.context() : null;
-    this.ui.setContext(this.building ? this.selectedPlanes() : [], this.building ? this.selectedShapes() : [], this.isolate, path, this.clip.length > 0, this.building ? (findGroup(this.nodes, this.groupSel) ?? null) : null);
+    this.ui.setContext(this.building ? this.selectedPlanes() : [], this.building ? this.selectedShapes() : [], this.isolate, path, this.clip.length > 0, this.building ? (findGroup(this.nodes, this.groupSel) ?? null) : null, this.activeSketch(), !!this.adjusting());
     const st = this.host.world.planes.stats;
     const tris = st.triangles >= 1000 ? `${(st.triangles / 1000).toFixed(1).replace('.', ',')}k` : String(st.triangles);
     this.ui.setTop(this.dirty, this.history.canUndo, this.history.canRedo, `${planes.length} Ebenen · ${st.shapes} Formen · ${tris} Dreiecke · Welt: ${this.host.world.drawCalls} Draw Call${this.host.world.drawCalls === 1 ? '' : 's'} · ${this.fps.value} fps`);
@@ -598,6 +612,17 @@ export class PlaneEditor {
   private drawOverlay(): void {
     const st = emptyOverlay();
     if (this.building) st.grid = this.gridLines();
+    const sk = this.adjusting();
+    const skp = sk ? findPlane(this.nodes, sk.parent) : undefined;
+    if (sk && skp) {
+      const corners = this.sketchCorners(sk).map((q) => this.screenOf(skp, q));
+      if (corners.every(Boolean)) {
+        st.box = corners as Pt[];
+        st.handles = corners as Pt[];
+      }
+      this.overlay.draw(st);
+      return;
+    }
     if (this.building && isPathTool(this.tool)) {
       this.paths.selectionChanged(this.selection);
       this.paths.overlay(st);
@@ -720,6 +745,36 @@ export class PlaneEditor {
         this.changed();
       },
       depthEnd: () => this.endDrag(),
+      sketchLoad: (file) => void this.loadSketch(file),
+      sketchOpacity: () => {
+        const k = this.activeSketch();
+        if (!k) return;
+        const steps = [0.25, 0.5, 0.75, 1];
+        this.edit(() => (k.opacity = steps[(steps.findIndex((v) => Math.abs(v - k.opacity) < 0.01) + 1) % steps.length]));
+      },
+      sketchBlend: () => {
+        const k = this.activeSketch();
+        if (k) this.edit(() => (k.blend = k.blend ? undefined : 'normal'));
+      },
+      sketchHide: () => {
+        const k = this.activeSketch();
+        if (k) this.edit(() => (k.hidden = !k.hidden || undefined));
+      },
+      sketchAdjust: () => {
+        const k = this.activeSketch();
+        this.sketchEdit = this.adjusting() || !k ? null : k.id;
+        this.uiDirty = true;
+        this.drawOverlay();
+      },
+      sketchRemove: () => {
+        const k = this.activeSketch();
+        if (!k) return;
+        this.sketchEdit = null;
+        this.edit(() => {
+          this.nodes = this.nodes.filter((n) => n.id !== k.id);
+          this.zone.nodes = this.nodes;
+        });
+      },
       toggleSnap: () => {
         this.snapOn = !this.snapOn;
         this.ui.setSnap(this.snapOn, this.gridOn);
@@ -800,6 +855,7 @@ export class PlaneEditor {
 
   private setTool(t: Tool): void {
     this.tool = t;
+    this.sketchEdit = null;
     this.paths.setTool(isPathTool(t) ? t : null);
     this.ui.setTool(t);
     this.updateCursor();
@@ -973,7 +1029,7 @@ export class PlaneEditor {
     const last = planes.findIndex((p) => p.id === sel[sel.length - 1].id);
     const nextActive = planes.slice(last + 1).find((p) => !ids.has(p.id)) ?? [...planes.slice(0, last)].reverse().find((p) => !ids.has(p.id));
     this.edit(() => {
-      this.nodes = this.nodes.filter((n) => !ids.has(n.id) && !(n.kind === 'shape' && ids.has(n.parent)));
+      this.nodes = this.nodes.filter((n) => !ids.has(n.id) && !((n.kind === 'shape' || n.kind === 'sketch') && ids.has(n.parent)));
       this.zone.nodes = this.nodes;
       this.active = nextActive?.id ?? null;
       this.planeSel = this.active ? [this.active] : [];
@@ -1084,6 +1140,74 @@ export class PlaneEditor {
       this.selection = ids;
     });
     if (moved) this.ui.toast(this.hold ? `In ${to.name} eingefügt: gleiche Stelle im Spielblick` : `In ${to.name} eingefügt: gleiche Lage in Metern (Welt halten)`);
+  }
+
+  /** Skizze der aktiven Ebene (eine je Ebene) */
+  private activeSketch(): ZoneSketch | null {
+    return this.active ? (sketchesOf(this.nodes, this.active)[0] ?? null) : null;
+  }
+
+  /** Skizze, die gerade angepasst wird: nur die der aktiven Ebene beim Bauen; wechselt die Ebene, endet das Anpassen */
+  private adjusting(): ZoneSketch | null {
+    const k = this.building && this.sketchEdit ? this.activeSketch() : null;
+    if (k?.id !== this.sketchEdit) this.sketchEdit = null;
+    return this.sketchEdit ? k : null;
+  }
+
+  /** Ecken einer Skizze in Ebenen-Koordinaten (links unten, rechts unten, rechts oben, links oben) */
+  private sketchCorners(k: ZoneSketch): Pt[] {
+    return [
+      { x: k.x - k.w / 2, y: k.y - k.h / 2 },
+      { x: k.x + k.w / 2, y: k.y - k.h / 2 },
+      { x: k.x + k.w / 2, y: k.y + k.h / 2 },
+      { x: k.x - k.w / 2, y: k.y + k.h / 2 },
+    ];
+  }
+
+  /**
+   * Skizze laden: das Bild kommt neben die Zonendatei (Dev-Server) und liegt dann mitten im freien Teil des Bildes auf
+   * der aktiven Ebene, so groß, dass es ganz zu sehen ist; eine vorhandene Skizze der Ebene wird ersetzt
+   */
+  private async loadSketch(file: File): Promise<void> {
+    const plane = this.plane;
+    if (!plane) {
+      this.ui.toast('Erst eine Ebene wählen');
+      return;
+    }
+    let size: { w: number; h: number };
+    try {
+      const bmp = await createImageBitmap(file);
+      size = { w: bmp.width, h: bmp.height };
+      bmp.close();
+    } catch {
+      this.ui.toast('Das Bild ließ sich nicht lesen (PNG, JPG oder WebP)');
+      return;
+    }
+    const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+    const id = nextNodeId(this.nodes, 'k');
+    const url = await uploadZoneFile(this.zone.name, `skizze-${id}-${Date.now().toString(36)}.${ext}`, file);
+    const src = url ?? URL.createObjectURL(file);
+    // in den freien Teil des Bildes (nicht unter die Ebenenliste), mit Rand; ein hohes Bild nach der Höhe
+    const box = this.host.surface.getBoundingClientRect();
+    const free = this.ui.freeSpan();
+    const x0 = Math.max(0, free.left - box.left) + 24;
+    const x1 = Math.min(this.width, free.right - box.left) - 24;
+    const c = { x: (x0 + x1) / 2, y: this.height / 2 };
+    const mid = this.planePoint(plane, c);
+    const l = this.planePoint(plane, { x: x0 + (x1 - x0) * 0.08, y: c.y });
+    const r = this.planePoint(plane, { x: x1 - (x1 - x0) * 0.08, y: c.y });
+    const t = this.planePoint(plane, { x: c.x, y: this.height * 0.14 });
+    const b = this.planePoint(plane, { x: c.x, y: this.height * 0.84 });
+    const byW = l && r ? Math.hypot(r.x - l.x, r.y - l.y) : 20;
+    const byH = t && b ? (Math.hypot(t.x - b.x, t.y - b.y) * size.w) / size.h : Infinity;
+    const w = Math.max(1, Math.min(byW, byH));
+    this.edit(() => {
+      this.nodes = this.nodes.filter((n) => !(n.kind === 'sketch' && n.parent === plane.id));
+      this.zone.nodes = this.nodes;
+      this.nodes.push({ id, kind: 'sketch', parent: plane.id, name: file.name.slice(0, 60) || 'Skizze', src, x: mid?.x ?? 0, y: mid?.y ?? 0, w, h: (w * size.h) / size.w, opacity: 0.5 });
+    });
+    this.sketchEdit = id;
+    this.ui.toast(url ? 'Skizze liegt auf der Ebene: Ecken ziehen skaliert, innen ziehen verschiebt, dann „Fertig“' : 'Skizze nur bis zum Neuladen (ohne Dev-Server lässt sie sich nicht sichern)');
   }
 
   /** gewählte Formen einer Ebene am gemeinsamen Rahmen ausrichten */
@@ -1461,6 +1585,7 @@ export class PlaneEditor {
   }
 
   private toolDown(pointerId: number, p: Pt): void {
+    if (this.adjusting() && this.sketchDown(pointerId, p)) return;
     if (isPathTool(this.tool) && this.views.mode !== 'free') {
       this.paths.down(pointerId, p, this.mods);
       return;
@@ -1531,6 +1656,34 @@ export class PlaneEditor {
     this.gesture = { kind: 'empty', pointerId, start: p, last: p, orbit: this.views.mode === 'free', moved: false, add: this.mods.shift };
   }
 
+  /** Skizze anpassen: an einer Ecke skalieren, innen verschieben; daneben endet das Anpassen */
+  private sketchDown(pointerId: number, p: Pt): boolean {
+    const k = this.nodes.find((n) => n.id === this.sketchEdit) as ZoneSketch | undefined;
+    const plane = k ? findPlane(this.nodes, k.parent) : undefined;
+    const at = plane ? this.planePoint(plane, p) : null;
+    if (!k || !plane || !at) return false;
+    const corners = this.sketchCorners(k);
+    const r = this.overlay.handleSize + 6;
+    const i = corners.findIndex((q) => {
+      const s = this.screenOf(plane, q);
+      return !!s && Math.hypot(s.x - p.x, s.y - p.y) <= r;
+    });
+    if (i >= 0) {
+      this.history.begin(this.nodes);
+      this.gesture = { kind: 'sketchScale', pointerId, id: k.id, anchor: corners[(i + 2) % 4], h0: corners[i], orig: { x: k.x, y: k.y, w: k.w, h: k.h } };
+      return true;
+    }
+    if (Math.abs(at.x - k.x) <= k.w / 2 && Math.abs(at.y - k.y) <= k.h / 2) {
+      this.history.begin(this.nodes);
+      this.gesture = { kind: 'sketchMove', pointerId, id: k.id, start: at, orig: { x: k.x, y: k.y } };
+      return true;
+    }
+    this.sketchEdit = null;
+    this.uiDirty = true;
+    this.drawOverlay();
+    return true;
+  }
+
   /** Rechteck ins Leere gezogen: Formen der gewählten Ebenen, deren Umriss es berührt (wie in Illustrator) */
   private regionSelect(a: Pt, b: Pt, add: boolean): void {
     const inside = regionTest('rect', [a, b]);
@@ -1577,6 +1730,26 @@ export class PlaneEditor {
       const b = plane ? this.paths.snapPoint(plane, p) : null;
       if (b) g.b = b;
       this.drawOverlay();
+      return;
+    }
+    if (g.kind === 'sketchMove' || g.kind === 'sketchScale') {
+      const k = this.nodes.find((n) => n.id === g.id) as ZoneSketch | undefined;
+      const plane = k ? findPlane(this.nodes, k.parent) : undefined;
+      const at = plane ? this.planePoint(plane, p) : null;
+      if (!k || !at) return;
+      if (g.kind === 'sketchMove') {
+        k.x = g.orig.x + (at.x - g.start.x);
+        k.y = g.orig.y + (at.y - g.start.y);
+      } else {
+        // gleichmäßig: das Verhältnis bleibt, die Ecke gegenüber steht
+        const d0 = Math.hypot(g.h0.x - g.anchor.x, g.h0.y - g.anchor.y) || 1;
+        const kk = Math.max(0.05, Math.hypot(at.x - g.anchor.x, at.y - g.anchor.y) / d0);
+        k.w = g.orig.w * kk;
+        k.h = g.orig.h * kk;
+        k.x = g.anchor.x + (g.orig.x - g.anchor.x) * kk;
+        k.y = g.anchor.y + (g.orig.y - g.anchor.y) * kk;
+      }
+      this.changed();
       return;
     }
     if (g.kind === 'rotate') {
@@ -1780,6 +1953,7 @@ export class PlaneEditor {
     s.style.cursor = '';
     this.host.world.viewCamera = null;
     this.host.world.viewFog = null;
+    this.sketches.dispose();
     this.ui.destroy();
   }
 }

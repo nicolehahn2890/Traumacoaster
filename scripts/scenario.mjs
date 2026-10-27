@@ -13,7 +13,7 @@
  */
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import sharp from 'sharp';
 
@@ -896,6 +896,92 @@ if (want('14')) {
   await sleep(200);
   const l5 = await listText();
   check(!/\[/.test(l5) && (await ed(() => window.tcGame.current.planeEditor.nodes.some((n) => n.kind === 'group'))) === false, `Shift+Cmd+G löst die Gruppe auf, die Ebenen bleiben (${l5})`);
+}
+
+// 15. Skizze als Pause-Ebene: ein Bild über „Skizze“ auf eine hintere Ebene laden; es liegt ganz im freien Bild, ist
+// multipliziert (Papier durchsichtig, Linien dunkeln ab) und liegt über den Ebenen davor; innen ziehen verschiebt, an
+// der Ecke ziehen skaliert (die Ecke gegenüber steht), Deckkraft und Rückgängig; im Spiel unsichtbar
+if (want('15')) {
+  await page.goto(`${BASE}?zone=szenario-skizze&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const ed = (fn, arg) => page.evaluate(fn, arg);
+  const ctxBtn = (text) => page.locator('.ze-context .ze-btn', { hasText: new RegExp(`^${text}`) });
+  const drag = async (from, to) => {
+    await page.mouse.move(from[0], from[1]);
+    await page.mouse.down();
+    await page.mouse.move(to[0], to[1], { steps: 8 });
+    await page.mouse.up();
+    await sleep(200);
+  };
+  await page.click('text=Probe-Stapel');
+  await sleep(600);
+  await page.locator('.ze-row', { has: page.locator('.ze-name', { hasText: /^Scheibe 9$/ }) }).click();
+  // Papier mit einem dunklen Balken quer durch die Mitte
+  const png = await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><rect width="800" height="500" fill="#fbf8f0"/><rect x="100" y="215" width="600" height="70" fill="#2a2a2a"/><circle cx="400" cy="110" r="60" fill="none" stroke="#2a2a2a" stroke-width="8"/></svg>')).png().toBuffer();
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), ctxBtn('Skizze').click()]);
+  await chooser.setFiles({ name: 'bild-2.png', mimeType: 'image/png', buffer: png });
+  await sleep(1200);
+  const info = () =>
+    ed(() => {
+      const e = window.tcGame.current.planeEditor;
+      const k = e.nodes.find((n) => n.kind === 'sketch');
+      if (!k) return null;
+      const plane = e.nodes.find((n) => n.id === k.parent);
+      const front = e.nodes.filter((n) => n.kind === 'plane').reduce((a, b) => (b.z < a.z ? b : a));
+      const fs = e.nodes.find((n) => n.kind === 'shape' && n.parent === front.id);
+      return { k: { ...k }, plane: plane.name, corners: e.sketchCorners(k).map((q) => e.screenOf(plane, q)), mid: e.screenOf(plane, { x: k.x, y: k.y }), paper: e.screenOf(plane, { x: k.x + 0.3 * k.w, y: k.y - 0.3 * k.h }), front: e.screenOf(front, { x: fs.x, y: fs.y }, fs), free: e.ui.freeSpan(), edit: e.sketchEdit, meshes: e.sketches.group.children.length };
+    });
+  const a = await info();
+  const served = a?.k.src.startsWith('/zones/') ? (await page.evaluate((u) => fetch(u).then((r) => `${r.status} ${r.headers.get('content-type')}`), a.k.src)) : 'nur im Speicher (ohne Dev-Server)';
+  const inFree = a && a.corners.every((c) => c.x > a.free.left && c.x < a.free.right && c.y > 0 && c.y < 800);
+  check(a && a.plane === 'Scheibe 9' && a.meshes === 1 && a.edit === a.k.id && !a.k.blend && inFree, `Skizze geladen auf Scheibe 9, ganz im freien Bild, multipliziert, Anpassen an (${a?.k.src}: ${served})`);
+  // innen ziehen: die Mitte der Skizze (der Balken) auf eine Form der vordersten Ebene
+  await drag([a.mid.x, a.mid.y], [a.front.x, a.front.y]);
+  const b = await info();
+  check(Math.hypot(b.mid.x - a.front.x, b.mid.y - a.front.y) < 1.5, `innen gezogen: die Skizze folgt dem Zeiger (Abstand ${Math.hypot(b.mid.x - a.front.x, b.mid.y - a.front.y).toFixed(2)} px)`);
+  // an der Ecke rechts oben ziehen: links unten steht, das Seitenverhältnis bleibt
+  await drag([b.corners[2].x, b.corners[2].y], [b.corners[2].x + 40, b.corners[2].y - 25]);
+  const c = await info();
+  const still = Math.hypot(c.corners[0].x - b.corners[0].x, c.corners[0].y - b.corners[0].y);
+  check(c.k.w > b.k.w && Math.abs(c.k.w / c.k.h - b.k.w / b.k.h) < 1e-6 && still < 0.5, `an der Ecke skaliert: ${b.k.w.toFixed(1)} → ${c.k.w.toFixed(1)} m breit, Ecke gegenüber steht (${still.toFixed(2)} px)`);
+  // über den Ebenen davor: auf der vordersten Form dunkelt der Balken ab, das Papier daneben ändert nichts
+  await page.mouse.click(Math.min(Math.max(c.corners[1].x, c.corners[2].x) + 80, c.free.right - 20), 650);
+  await sleep(200);
+  const d = await info();
+  check(d.edit === null, `ein Tipp neben die Skizze beendet das Anpassen (${d.edit})`);
+  const shot = async () => sharp(await page.screenshot()).raw().toBuffer({ resolveWithObject: true });
+  const px = ({ data, info: i }, p) => {
+    const at = (Math.round(p.y) * i.width + Math.round(p.x)) * i.channels;
+    return [data[at], data[at + 1], data[at + 2]];
+  };
+  const on = await shot();
+  // die Leiste der Skizze bleibt nach dem Anpassen offen
+  await ctxBtn('Ausblenden').click();
+  await sleep(300);
+  const off = await shot();
+  const lum = (v) => v[0] + v[1] + v[2];
+  const ratio = lum(px(on, d.mid)) / Math.max(1, lum(px(off, d.mid)));
+  const paperDiff = Math.max(...px(on, d.paper).map((v, i) => Math.abs(v - px(off, d.paper)[i])));
+  const seen = [d.mid, d.paper].every((p) => p.x >= 0 && p.x < 1280 && p.y >= 0 && p.y < 740);
+  check(seen && ratio < 0.8 && paperDiff <= 10, `über der vordersten Ebene: Balken dunkelt auf ${(ratio * 100).toFixed(0)} % ab, Papier ändert höchstens ${paperDiff} von 255 (rgb ${px(off, d.paper).join(', ')})`);
+  await ctxBtn('Einblenden').click();
+  await ctxBtn('Deckkraft').click();
+  const op1 = (await info()).k.opacity;
+  await page.keyboard.press('Meta+z');
+  await sleep(150);
+  const op2 = (await info()).k.opacity;
+  await ctxBtn('Multiplizieren').click();
+  const blend = (await info()).k.blend;
+  await page.keyboard.press('Meta+z');
+  await sleep(150);
+  check(op1 === 0.75 && op2 === 0.5 && blend === 'normal' && !(await info()).k.blend, `Deckkraft 50 → 75 %, Multiplizieren aus, beides mit Cmd+Z zurück`);
+  await page.screenshot({ path: 'screenshots/scenario-15-skizze.png' });
+  await page.click('.ze-views .ze-btn:text-is("Spielen")');
+  await sleep(300);
+  const inGame = await ed(() => window.tcGame.current.planeEditor.sketches.group.visible);
+  check(inGame === false, 'im Spiel ist die Skizze nicht zu sehen');
+  // hochgeladene Bilder des Szenarios wieder weg (nur wenn der Dev-Server aus diesem Stand lief)
+  if (a.k.src.startsWith('/zones/szenario-skizze/')) rmSync('public/zones/szenario-skizze', { recursive: true, force: true });
 }
 
 await browser.close();

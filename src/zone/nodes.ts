@@ -54,6 +54,26 @@ export interface ZoneGroup {
   locked?: boolean;
 }
 
+/**
+ * Skizze als Pause-Ebene (Rest von Stufe 2): ein Bild auf einer Ebene, nur im Editor zu sehen, zum Nachzeichnen; das Bild
+ * liegt neben der Zonendatei (src), Lage und Größe in Ebenen-Koordinaten (Mitte, Breite, Höhe in Metern)
+ */
+export interface ZoneSketch {
+  id: string;
+  kind: 'sketch';
+  parent: string;
+  name: string;
+  src: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  opacity: number;
+  /** normal halbdurchsichtig; sonst multipliziert (weißes Papier wird durchsichtig, Linien dunkeln ab) */
+  blend?: 'normal';
+  hidden?: boolean;
+}
+
 /** Teilungslinie einer Form (Vektornetz, Stufe 2): offen von Kante zu Kante oder geschlossen als Ring in einer Fläche */
 export interface ZoneCut {
   path: ZonePath;
@@ -96,11 +116,17 @@ export interface ZoneShape {
   locked?: boolean;
 }
 
-export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup;
+export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup | ZoneSketch;
 
 export const isPlane = (n: ZoneNode): n is ZonePlane => n.kind === 'plane';
 export const isShape = (n: ZoneNode): n is ZoneShape => n.kind === 'shape';
 export const isGroup = (n: ZoneNode): n is ZoneGroup => n.kind === 'group';
+export const isSketch = (n: ZoneNode): n is ZoneSketch => n.kind === 'sketch';
+
+/** Skizzen einer Ebene */
+export function sketchesOf(nodes: readonly ZoneNode[], planeId: string): ZoneSketch[] {
+  return nodes.filter((n): n is ZoneSketch => isSketch(n) && n.parent === planeId);
+}
 
 /** Ebenen von vorn nach hinten */
 export function planesOf(nodes: readonly ZoneNode[]): ZonePlane[] {
@@ -155,7 +181,7 @@ export function newGroup(nodes: readonly ZoneNode[], name?: string): ZoneGroup {
 }
 
 /** nächste freie Kennung mit Vorsilbe (p für Ebenen, s für Formen, g für Gruppen), hochgezählt wie die Kennungen der Zonendatei */
-export function nextNodeId(nodes: readonly ZoneNode[], prefix: 'p' | 's' | 'g'): string {
+export function nextNodeId(nodes: readonly ZoneNode[], prefix: 'p' | 's' | 'g' | 'k'): string {
   const ids = new Set(nodes.map((n) => n.id));
   let n = nodes.filter((x) => x.id.startsWith(prefix)).length + 1;
   while (ids.has(`${prefix}${n}`)) n++;
@@ -690,6 +716,12 @@ export function parseNodes(v: unknown): ZoneNode[] {
       if (typeof o.group === 'string' && ID.test(o.group)) p.group = o.group;
       out.push(p);
       ids.add(p.id);
+    } else if (o.kind === 'sketch' && typeof o.parent === 'string' && typeof o.src === 'string' && /^\/zones\/[a-z0-9-]{1,40}\/[\w.-]{1,120}$/.test(o.src) && num(o.w) && num(o.h) && o.w > 0 && o.h > 0) {
+      const k: ZoneSketch = { id: o.id, kind: 'sketch', parent: o.parent, name, src: o.src, x: num(o.x) ? o.x : 0, y: num(o.y) ? o.y : 0, w: o.w, h: o.h, opacity: num(o.opacity) ? Math.max(0.05, Math.min(1, o.opacity)) : 0.5 };
+      if (o.blend === 'normal') k.blend = 'normal';
+      if (o.hidden === true) k.hidden = true;
+      out.push(k);
+      ids.add(k.id);
     } else if (o.kind === 'group') {
       const g: ZoneGroup = { id: o.id, kind: 'group', name };
       if (o.collapsed === true) g.collapsed = true;
@@ -788,13 +820,20 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
       out.push(o);
     }
   }
+  for (const k of nodes.filter(isSketch)) {
+    if (!k.src.startsWith('/zones/')) continue;
+    const o: Record<string, unknown> = { id: k.id, kind: 'sketch', parent: k.parent, name: k.name, src: k.src, x: round(k.x, 3), y: round(k.y, 3), w: round(k.w, 3), h: round(k.h, 3), opacity: round(k.opacity, 2) };
+    if (k.blend) o.blend = k.blend;
+    if (k.hidden) o.hidden = true;
+    out.push(o);
+  }
   return out;
 }
 
 /** tiefe Kopie (für den Arbeitsverlauf und das Sichern) */
 export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
   return nodes.map((n) =>
-    isPlane(n) || isGroup(n)
+    isPlane(n) || isGroup(n) || isSketch(n)
       ? { ...n }
       : {
           ...n,

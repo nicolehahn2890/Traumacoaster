@@ -6,7 +6,7 @@
  *
  * Diese Datei baut nur Elemente und meldet Bedienungen über `UiActions`; was sie bedeuten, entscheidet der Editor.
  */
-import { PLANE_ROLE_WORDS, PLANE_ROLES, type PlaneRole, type ZoneGroup, type ZonePlane, type ZoneShape } from '@/zone/nodes';
+import { PLANE_ROLE_WORDS, PLANE_ROLES, type PlaneRole, type ZoneGroup, type ZonePlane, type ZoneShape, type ZoneSketch } from '@/zone/nodes';
 import type { PathContext } from './pathTools';
 import { VIEW_WORDS, type ViewMode } from './views';
 
@@ -49,6 +49,13 @@ export interface UiActions {
   depthChange(id: string, z: number): void;
   depthEnd(): void;
   toggleHold(): void;
+  /** Skizze der aktiven Ebene: Bild laden, Deckkraft weiterschalten, aus- und einblenden, anpassen, entfernen */
+  sketchLoad(file: File): void;
+  sketchOpacity(): void;
+  sketchBlend(): void;
+  sketchHide(): void;
+  sketchAdjust(): void;
+  sketchRemove(): void;
   /** Einrasten im Bild und Raster ein- und ausschalten */
   toggleSnap(): void;
   toggleGrid(): void;
@@ -340,8 +347,10 @@ export class EditorUi {
   private rowDrag: { ids: string[]; group: string | null; mark: HTMLElement; before: string | null; into: string | null } | null = null;
   /** nach Wischen oder Ziehen kommt noch ein click; den schlucken */
   private swallowClick = false;
-  /** Leiste unten zeigt für mehrere Formen die Knöpfe zum Ausrichten oder Verbinden */
-  private sub: 'align' | 'combine' | null = null;
+  /** Leiste unten zeigt für mehrere Formen die Knöpfe zum Ausrichten oder Verbinden, für die Ebene die der Skizze */
+  private sub: 'align' | 'combine' | 'sketch' | null = null;
+  /** Bildauswahl für Skizzen */
+  private readonly sketchFile = el('input');
   private thumbs = new Map<string, HTMLCanvasElement>();
 
   constructor(
@@ -402,6 +411,15 @@ export class EditorUi {
       if (f) a.importSvg(f);
       file.value = '';
     });
+    this.sketchFile.type = 'file';
+    this.sketchFile.accept = 'image/png,image/jpeg,image/webp';
+    this.sketchFile.style.display = 'none';
+    this.sketchFile.addEventListener('change', () => {
+      const f = this.sketchFile.files?.[0];
+      if (f) a.sketchLoad(f);
+      this.sketchFile.value = '';
+    });
+    this.root.append(this.sketchFile);
     foot.append(
       button('Probe-Stapel', '32 Ebenen aus der Kamerasession einfügen (Last für die Handy-Messung)', () => a.addProbe()),
       button('SVG laden', 'SVG aus Illustrator laden: Gruppen p… ersetzen ihre Ebene, andere Gruppen werden neue Ebenen', () => file.click()),
@@ -457,6 +475,13 @@ export class EditorUi {
     this.undoBtn.disabled = !canUndo;
     this.redoBtn.disabled = !canRedo;
     if (this.stats.textContent !== stats) this.stats.textContent = stats;
+  }
+
+  /** freier Teil des Bildes zwischen Werkzeugleiste und Ebenenliste (Bildschirm-Bildpunkte) */
+  freeSpan(): { left: number; right: number } {
+    const t = this.tools.getBoundingClientRect();
+    const l = this.layers.getBoundingClientRect();
+    return { left: t.width ? t.right : 0, right: l.width ? l.left : window.innerWidth };
   }
 
   toast(msg: string): void {
@@ -915,12 +940,12 @@ export class EditorUi {
    * Leiste unten: beim Zeichnen Fertig und Abbrechen, für gewählte Anker, das Lasso oder eine Fläche deren Befehle, für
    * gewählte Formen Farbe und Reihenfolge, sonst für die gewählten Ebenen Rolle und Isolieren
    */
-  setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false, group: ZoneGroup | null = null): void {
+  setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false, group: ZoneGroup | null = null, sketch: ZoneSketch | null = null, sketchEdit = false): void {
     const plane = planes.at(-1) ?? null;
     const shape = shapes.at(-1) ?? null;
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
     const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : path.kind === 'band' ? `b|${path.shape}` : `l|${path.form}|${path.count}|${path.smooth}`;
-    const key = path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${this.sub}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}` : '';
+    const key = path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${this.sub}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
     this.context.replaceChildren();
@@ -997,8 +1022,28 @@ export class EditorUi {
       this.context.append(button('Vereinfachen', 'Weniger Anker, höchstens 1,5 Bildpunkte daneben', () => this.a.simplify()));
       if (!many) this.context.append(button('Nach vorn', 'In der Ebene nach vorn (])', () => this.a.orderShape(1)), button('Nach hinten', 'In der Ebene nach hinten ([)', () => this.a.orderShape(-1)));
       this.context.append(button('Löschen', 'Löschen (Entf)', () => this.a.deleteShape()));
+    } else if (plane && sketch && (this.sub === 'sketch' || sketchEdit)) {
+      // die Leiste bleibt auch nach dem Anpassen (frisch geladen), bis „Fertig“
+      this.sub = 'sketch';
+      this.context.append(
+        el('span', 'ze-label', `Skizze auf ${plane.name}`),
+        button(`Deckkraft ${Math.round(sketch.opacity * 100)} %`, 'Deckkraft weiterschalten (25, 50, 75, 100 %)', () => this.a.sketchOpacity()),
+        button('Multiplizieren', 'An: weißes Papier wird durchsichtig, Linien dunkeln ab. Aus: normal halbdurchsichtig', () => this.a.sketchBlend(), sketch.blend ? '' : 'on'),
+        button(sketchEdit ? 'Anpassen fertig' : 'Anpassen', 'Ecken ziehen skaliert, innen ziehen verschiebt', () => this.a.sketchAdjust(), sketchEdit ? 'on' : ''),
+        button(sketch.hidden ? 'Einblenden' : 'Ausblenden', 'Skizze zeigen oder verbergen', () => this.a.sketchHide()),
+        button('Anderes Bild', 'Ein anderes Bild als Skizze laden', () => this.sketchFile.click()),
+        button('Entfernen', 'Skizze von der Ebene nehmen', () => this.a.sketchRemove()),
+        el('span', 'ze-sep'),
+        button('Fertig', 'Zurück zur Leiste der Ebene', () => {
+          this.sub = null;
+          if (sketchEdit) this.a.sketchAdjust();
+          this.contextKey = '-';
+          this.setContext(planes, shapes, isolate, path, canPaste, group, sketch, false);
+        }),
+      );
     } else if (plane) {
       const many = planes.length > 1;
+      if (this.sub === 'sketch') this.sub = null;
       this.context.append(el('span', 'ze-label', group ? `${group.name} · ${planes.length} ${planes.length === 1 ? 'Ebene' : 'Ebenen'}` : many ? `${planes.length} Ebenen` : plane.name));
       const role = planes.every((p) => p.role === plane.role) ? plane.role : null;
       for (const r of PLANE_ROLES) this.context.append(button(PLANE_ROLE_WORDS[r], `Rolle: ${PLANE_ROLE_WORDS[r]} (wirkt ab Stufe 4 auf Pinsel und Stützen)`, () => this.a.setRole(r), role === r ? 'on' : ''));
@@ -1007,6 +1052,18 @@ export class EditorUi {
       if (!many) this.context.append(el('span', 'ze-sep'));
       if (canPaste) this.context.append(button('Einfügen', 'Kopierte Formen in die aktive Ebene, an derselben Stelle im Spielblick (Cmd+V)', () => this.a.paste()));
       this.context.append(group ? button('Auflösen', 'Gruppe auflösen, die Ebenen bleiben (Shift+Cmd+G)', () => this.a.ungroup()) : button('Gruppieren', 'Die gewählten Ebenen zu einer Gruppe (Cmd+G)', () => this.a.groupPlanes()));
+      if (!many)
+        this.context.append(
+          button('Skizze', sketch ? 'Skizze der Ebene: Deckkraft, anpassen, entfernen' : 'Ein Bild (deine Skizze) halbdurchsichtig auf die Ebene legen, zum Nachzeichnen', () => {
+            if (!sketch) {
+              this.sketchFile.click();
+              return;
+            }
+            this.sub = 'sketch';
+            this.contextKey = '-';
+            this.setContext(planes, shapes, isolate, path, canPaste, group, sketch, sketchEdit);
+          }),
+        );
       this.context.append(
         button('Als SVG', many ? 'Die gewählten Ebenen als SVG sichern' : 'Nur diese Ebene als SVG sichern', () => this.a.exportSvg('plane')),
         group
