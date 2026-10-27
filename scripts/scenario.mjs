@@ -2059,6 +2059,95 @@ if (want('26')) {
   await page.screenshot({ path: 'screenshots/scenario-26-hoehle.png' });
 }
 
+// 27. Testszenen (Florian, 27.10.2026; scripts/testzonen.ts): drei Zonen aus organischen, verschachtelten Ebenen. Je Zone
+// startet der Editor mit dem Feld im Bild; gespielt steht die Station mit Vorgabestück da, ein Strich ab ihrem Ende landet
+// in den erwarteten Tiefen (Hügel: vorn, dann Hügel 2; Grotte: durch den Höhlenmund bis an die Höhlenwand; Bogenland: über
+// das Plateau, dann durch ein Fenster an die Wand der Unterwelt), die Stützen stehen auf Kanten, die Fahrt läuft.
+if (want('27')) {
+  const scenes = [
+    { zone: 'test-huegel', pts: [['Hügel 1 vorn', 0, 9.2], ['Hügel 1 vorn', 28, 10.2], ['Hügel 1 vorn', 36, 11.6], ['Hügel 2', 44, 24.2], ['Hügel 2', 52, 22.6], ['Hügel 2', 60, 20]], first: 'Hügel 1 vorn', last: 'Hügel 2' },
+    { zone: 'test-grotte', pts: [['Fels vorn', 0, 8.2], ['Fels vorn', 26, 9], ['Fels vorn', 34, 11], ['Fels vorn', 40, 12], ['Fels vorn', 46, 12], ['Fels vorn', 54, 12], ['Fels vorn', 62, 12], ['Fels vorn', 70, 12], ['Fels vorn', 76, 12]], first: 'Fels vorn', last: 'Höhlenwand' },
+    { zone: 'test-boegen', pts: [['Plateau', 0, 28.4], ['Plateau', 26, 32.3], ['Plateau', 34, 32.6], ['Plateau', 40, 24], ['Plateau', 46, 14], ['Plateau', 52, 9], ['Plateau', 58, 8], ['Plateau', 62, 9]], first: 'Plateau', last: 'Unterwelt Wand' },
+  ];
+  for (const sc of scenes) {
+    await page.goto(`${BASE}?zone=${sc.zone}&editor=2&dev=1&fast=6`, { waitUntil: 'networkidle' });
+    await sleep(2500);
+    const start = await page.evaluate(() => {
+      const s = window.tcGame.current;
+      const v = s.view.cameraView();
+      const ed = s.planeEditor;
+      const planes = ed.nodes.filter((n) => n.kind === 'plane');
+      const st = ed.nodes.find((n) => n.kind === 'station');
+      return { cx: v.cx, cy: v.cy, planes: planes.length, shapes: ed.nodes.filter((n) => n.kind === 'shape').length, station: st ? { plane: planes.find((p) => p.id === st.parent)?.name, x: st.x } : null, lanes: Object.fromEntries(planes.map((p) => [p.name, (p.z - 1) / 8.4])) };
+    });
+    check(Math.abs(start.cx - 60) < 0.5 && Math.abs(start.cy - 22.5) < 0.5, `${sc.zone}: Editor startet mit dem Feld im Bild (Mitte ${start.cx.toFixed(1)}, ${start.cy.toFixed(1)}; ${start.planes} Ebenen, ${start.shapes} Formen)`);
+    await page.keyboard.press('Tab');
+    await sleep(1500);
+    const piece = await page.evaluate(() => {
+      const n = window.tcGame.current.path?.nodes;
+      return n?.length ? { kind: n[0].kind, z: n[0].z } : null;
+    });
+    check(piece?.kind === 'station' && Math.abs(piece.z - start.lanes[start.station.plane]) < 1e-3, `${sc.zone}: Station mit Vorgabestück auf „${start.station?.plane}“ (Spur ${piece?.z?.toFixed(2)})`);
+    // Strich ab dem leuchtenden Ende des Vorgabestücks (weiter oben lägen die Griffe am Ende), dann durch die Punkte in
+    // Koordinaten der jeweiligen Ebene
+    const pts = await page.evaluate(({ pts }) => {
+      const s = window.tcGame.current;
+      const ed = s.planeEditor;
+      const end = s.path.nodes[s.path.nodes.length - 1];
+      // Ende im Bild der Welt (perspektivisch, wie der leuchtende Punkt), dann ein kurzes Stück waagrecht weiter
+      const q0 = window.tcGame.world.camera.toScreen(end.x, end.y, end.z);
+      const byName = (name) => ed.nodes.find((n) => n.kind === 'plane' && n.name === name);
+      return [[q0.x, q0.y], [q0.x + 24, q0.y - 2], ...pts.slice(1).map(([name, x, y]) => {
+        const q = ed.screenOf(byName(name), { x, y });
+        return [q.x, q.y];
+      })];
+    }, { pts: sc.pts });
+    if (process.env.TC_DEBUG) console.log('  strich', JSON.stringify(pts.map(([x, y]) => [Math.round(x), Math.round(y)])), JSON.stringify(await page.evaluate(() => window.tcGame.current.view.cameraView())));
+    // Strich als Zeigerereignisse in der Seite: die ersten Bewegungen gleich nach dem Drücken, sonst löst bei den großen
+    // Szenen (Swiftshader zeichnet hier nur wenige Bilder je Sekunde) der Langdruck nach 480 ms aus und schluckt den Strich
+    await page.evaluate(async (pts) => {
+      const el = document.querySelector('canvas');
+      const ev = (type, [x, y]) => el.dispatchEvent(new PointerEvent(type, { pointerId: 27, pointerType: 'mouse', button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: x, clientY: y, bubbles: true, cancelable: true, isPrimary: true }));
+      const dense = [];
+      for (let i = 0; i + 1 < pts.length; i++) for (let k = 0; k < 8; k++) dense.push([pts[i][0] + ((pts[i + 1][0] - pts[i][0]) * k) / 8, pts[i][1] + ((pts[i + 1][1] - pts[i][1]) * k) / 8]);
+      dense.push(pts[pts.length - 1]);
+      ev('pointerdown', dense[0]);
+      for (let i = 1; i <= 5; i++) ev('pointermove', dense[i]);
+      for (let i = 6; i < dense.length; i++) {
+        ev('pointermove', dense[i]);
+        await new Promise((r) => setTimeout(r, 15));
+      }
+      ev('pointerup', dense[dense.length - 1]);
+    }, pts);
+    await sleep(1500);
+    const res = await page.evaluate(() => {
+      const s = window.tcGame.current;
+      return { z: (s.path?.nodes ?? []).map((n) => n.z), supports: window.tcGame.world.supportStats };
+    });
+    const near = (lane) => res.z.filter((z) => Math.abs(z - lane) < 0.1).length;
+    const lf = start.lanes[sc.first];
+    const ll = start.lanes[sc.last];
+    // vorn beginnt die Bahn in der Tiefe der Stationsebene, ihr Ende liegt an der erwarteten Ebene (in der Hügelszene mischt
+    // die Bodenhöhe zwischen Hügel 2 und 3, darum 0,25 Spuren Spielraum)
+    const lastZ = res.z[res.z.length - 1];
+    check(res.z.length >= 4 && near(lf) >= 1 && Math.abs(lastZ - ll) < 0.25, `${sc.zone}: Strich in den erwarteten Tiefen (vorn „${sc.first}“ ${near(lf)} Knoten, Ende ${lastZ?.toFixed(2)} an „${sc.last}“ ${ll.toFixed(2)}; ${res.z.map((z) => z.toFixed(2)).join(' ')})`);
+    const sup = res.supports ?? { element: 0, ground: -1, floating: -1 };
+    check(sup.element > 0 && sup.ground === 0, `${sc.zone}: Stützen auf Kanten (${sup.element}, unsichtbarer Boden ${sup.ground}, schwebend ${sup.floating ?? 0})`);
+    await page.screenshot({ path: `screenshots/scenario-27-${sc.zone}.png` });
+    await page.mouse.click(640, 800 - 56);
+    let ride = null;
+    for (let i = 0; i < 20; i++) {
+      await sleep(400);
+      ride = await page.evaluate(() => {
+        const s = window.tcGame.current;
+        return { mode: s.mode, t: s.sim ? s.sim.t : 0, fail: s.sim?.failReason ?? null };
+      });
+      if (ride.mode === 'result' || ride.t > 2) break;
+    }
+    check(ride && (ride.t > 1 || ride.mode === 'result'), `${sc.zone}: Fahrt läuft (${ride?.mode}, ${Number(ride?.t ?? 0).toFixed(1)} s${ride?.fail ? `, ${ride.fail}` : ''})`);
+  }
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));

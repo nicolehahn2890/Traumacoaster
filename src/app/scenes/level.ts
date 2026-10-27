@@ -591,6 +591,12 @@ export class LevelScene implements Scene {
     else this.resetStationPiece();
     this.resize(game.width, game.height);
     this.fitCamera(true);
+    // Zonen-Editor: Start mit dem ersten Feld im Bild, damit die Zone als ganzes Bild erscheint (Testszenen, Stufe 4)
+    const startField = this.planeEditor ? zone?.fields[0] : undefined;
+    if (startField) {
+      this.view.camera.fitBounds({ minX: startField.x0, maxX: startField.x1, minY: startField.y0, maxY: startField.y1 }, 0.02, 30);
+      this.view.camera.snap();
+    }
     this.updateGoals();
     this.updateHint();
     this.updateUndoButtons();

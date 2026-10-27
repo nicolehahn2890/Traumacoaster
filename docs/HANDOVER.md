@@ -49,6 +49,8 @@ weiterarbeitest und welche Regeln gelten. Das Spielkonzept steht in `docs/GDD.md
   Kante, Probefahrt im Spielen-Modus, Handy-Link; 439 Tests, Szenarien 1 bis 26 grün (`ZONENEDITOR-PLAN.md` Stufe 4,
   `TECH.md` 4k). Offen: Freiraumfeld aus Flächen, übrige Spielobjekte auf Kanten, Feldrahmen, Durchblick-Prüfung,
   Szene 06 für Tor S4.
+  **Testszenen (27.10.):** `?zone=test-huegel`, `test-grotte`, `test-boegen` (mit `&editor=2`), gebaut von
+  `scripts/testzonen.ts`; Szenario 27 prüft sie. Platzhalter-Formen, Testgrundlage für Florian.
 
 - **25.10., Etappe 2 begonnen** (Branch `etappe-2-bahn-und-welt` von `main`; die zwölf Arbeitsschritte mit drei Toren stehen in
   `docs/GROSSER-PLAN.md`, Paket 10, von Florian bestätigt). Technik in `docs/TECH.md` 4h.

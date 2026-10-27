@@ -1051,6 +1051,16 @@ Etappe 2); Bahn durch die Höhle gezeichnet und gefahren, Stützen auf Kanten; R
   die Stützen stehen auf dem unteren Rand der Öffnung, ihr Fuß hinter der vorderen Ebene, wie in Szene 06).
 - *Handy-Link* („Handy“ oben links: Adresse im WLAN mit Bildrate), *Leistungsanzeige* (Bildrate, Draw Calls,
   Dreiecke oben links, schon seit Stufe 1).
+- *Testszenen* (Florians Wunsch vom 27.10.: Testgrundlage mit organischen, verschachtelten Ebenen, statt alles selbst
+  zu bauen): `test-huegel` (Hügelwellen in drei spielbaren Tiefen vor See, fernen Hügeln und Bergen; Baukasten 01, 02,
+  Visuals 14, 50, 52), `test-grotte` (Felsmassiv mit Höhlenmund, drei verschachtelte Bögen, Höhlenboden mit See,
+  Höhlenwand; Baukasten 03, 05, 06, 10, Montagen „Wald und Grotte“, „Große Bögen“), `test-boegen` (Plateau mit drei
+  Fenstern über einer Unterwelt, Überhang, schwebende Insel, Wasserfall; Visuals 21, 27, 31, 33, 35, Baukasten 07, 09).
+  Jede mit Station und einem Feld; der Editor beginnt mit dem Feld im Bild. Szenario 27: in allen drei Szenen landet ein
+  Strich in den erwarteten Tiefen, die Fahrt läuft. **Platzhalter:** alle Formen, Farben und Tiefen (Testgrundlage, kein
+  Inhalt; Szene 06 für Tor S4 bleibt eigens). **Befund:** Ein Teil der Stützen schwebt, wo die Bahn zwischen zwei Ebenen
+  liegt oder tief in einer Höhle hinter Bögen andockt (Grotte 5 von 10, Bogenland 4 von 7, Hügel 2 von 6); das gehört zu
+  „Stützen auf Kanten“ und zum Freiraumfeld.
 **Noch offen aus Stufe 4:** Freiraumfeld aus Flächen (die Bahn darf noch durch feste Flächen anderer Ebenen fahren; der
 Pinsel nutzt das Feld in Ebenen-Zonen wie bei den Scheiben nicht), die übrigen Spielobjekte auf Kanten (Schlange,
 Felder mit Kamerabegrenzung und Rahmen, Ziele, Stufen, Schalter, Coins, Baustellen; bis dahin der Klötzchen-Editor),
