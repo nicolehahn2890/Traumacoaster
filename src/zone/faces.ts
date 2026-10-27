@@ -26,6 +26,18 @@ export interface Face {
   inner: [number, number];
 }
 
+/** Rahmen einer Fläche (Pfad-Koordinaten); Stile rechnen ihre Verlaufsgriffe darauf um */
+export function faceBox(face: Face): { minX: number; minY: number; maxX: number; maxY: number } {
+  const b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const [x, y] of face.outline) {
+    b.minX = Math.min(b.minX, x);
+    b.minY = Math.min(b.minY, y);
+    b.maxX = Math.max(b.maxX, x);
+    b.maxY = Math.max(b.maxY, y);
+  }
+  return b;
+}
+
 export interface Line {
   poly: Poly;
   closed: boolean;

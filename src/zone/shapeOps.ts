@@ -4,6 +4,7 @@
  * Drehung, das Drehen rechnet sie (mit ihrem Maßstab) in die Pfade ein. Ohne DOM.
  */
 import { shapeBounds, type ZoneShape } from './nodes';
+import { cloneFills, mapFillPoints } from './paint';
 import type { PathPoint, ZonePath } from './path';
 
 interface Pt {
@@ -20,10 +21,11 @@ const r3 = (v: number): number => Math.round(v * 1000) / 1000 || 0;
  */
 export function rotateShape(shape: ZoneShape, orig: ZoneShape, pivot: Pt, angle: number): void {
   if (Math.abs(angle) < 1e-9) {
-    Object.assign(shape, { x: orig.x, y: orig.y, sx: orig.sx, sy: orig.sy, path: orig.path, holes: orig.holes, cuts: orig.cuts, regions: orig.regions });
+    Object.assign(shape, { x: orig.x, y: orig.y, sx: orig.sx, sy: orig.sy, path: orig.path, holes: orig.holes, cuts: orig.cuts, regions: orig.regions, fills: orig.fills });
     if (!orig.holes) delete shape.holes;
     if (!orig.cuts) delete shape.cuts;
     if (!orig.regions) delete shape.regions;
+    if (!orig.fills) delete shape.fills;
     return;
   }
   const c = Math.cos(angle);
@@ -55,8 +57,14 @@ export function rotateShape(shape: ZoneShape, orig: ZoneShape, pivot: Pt, angle:
   if (orig.regions)
     shape.regions = orig.regions.map((r) => {
       const [x, y] = rs(r.x, r.y);
-      return { ...r, x: r3(x), y: r3(y) };
+      const fills = cloneFills(r.fills);
+      mapFillPoints(fills, rs);
+      return { ...r, x: r3(x), y: r3(y), ...(fills ? { fills } : {}) };
     });
+  if (orig.fills) {
+    shape.fills = cloneFills(orig.fills);
+    mapFillPoints(shape.fills, rs);
+  }
   const dx = orig.x - pivot.x;
   const dy = orig.y - pivot.y;
   shape.x = r3(pivot.x + c * dx - s * dy);

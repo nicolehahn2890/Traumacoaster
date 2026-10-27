@@ -13,6 +13,7 @@
  */
 import { flattenPath, insideWithHoles, simplifyPoly, type Poly, type ZonePath } from './path';
 import { computeFaces, type Face } from './faces';
+import { cloneFills, mapFillPoints, parseColor, parseFills, samePaint, serializeFill, type Paint, type PaintColor, type ZoneFill, type ZoneStyle, type ZoneSwatch } from './paint';
 import { LANE_DEPTH } from '@/track/stage';
 import type { SliceRole, SliceStack } from './slices';
 
@@ -38,6 +39,11 @@ export interface ZonePlane {
   locked?: boolean;
   /** Gruppe in der Ebenenliste (wie ein Ordner in Photoshop); ihre Ebenen liegen in der Tiefe beieinander */
   group?: string;
+  /**
+   * Ebenenstapel (Stufe 3, Plan 4.4): Füllungen über allen Formen der Ebene (wie eine Schnittmaskengruppe), Verlaufsgriffe
+   * in Ebenen-Koordinaten
+   */
+  fills?: ZoneFill[];
 }
 
 /**
@@ -84,10 +90,9 @@ export interface ZoneCut {
  * Füllung einer Fläche: gilt für die Fläche, die den Punkt (x, y) in Pfad-Koordinaten enthält; fill null ist ein Loch.
  * So bleibt eine Füllung an „ihrer“ Fläche, auch wenn Linien und Anker sich bewegen (wie Illustrators Interaktiv malen)
  */
-export interface ZoneRegion {
+export interface ZoneRegion extends Paint {
   x: number;
   y: number;
-  fill: string | null;
 }
 
 export interface ZoneShape {
@@ -108,22 +113,47 @@ export interface ZoneShape {
   holes?: ZonePath[];
   /** Teilungslinien und Ringe (Stufe 2): teilen die Form in Flächen */
   cuts?: ZoneCut[];
-  /** Füllungen einzelner Flächen; ohne Eintrag gilt fill */
+  /** Füllungen einzelner Flächen; ohne Eintrag gilt der Anstrich der Form */
   regions?: ZoneRegion[];
-  /** Platzhalter-Füllung (Vollton) aller Flächen ohne eigene; der Füllstapel kommt mit Stufe 3 */
-  fill: string;
+  /** Grundfarbe aller Flächen ohne eigene (Wert oder Palettenverweis, src/zone/paint.ts) */
+  fill: PaintColor;
+  /** Füllstapel über der Grundfarbe (Stufe 3), Verlaufsgriffe in Pfad-Koordinaten */
+  fills?: ZoneFill[];
+  /** verknüpfter Stil (ersetzt Grundfarbe und Füllstapel) */
+  style?: string;
+  /** Deckkraft der Flächen (unter 1: durchsichtig) */
+  opacity?: number;
   /** Formgruppen, in denen sie liegt, von außen nach innen (src/zone/shapeGroups.ts) */
   groups?: string[];
   hidden?: boolean;
   locked?: boolean;
 }
 
-export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup | ZoneSketch;
+export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup | ZoneSketch | ZoneSwatch | ZoneStyle;
 
 export const isPlane = (n: ZoneNode): n is ZonePlane => n.kind === 'plane';
 export const isShape = (n: ZoneNode): n is ZoneShape => n.kind === 'shape';
 export const isGroup = (n: ZoneNode): n is ZoneGroup => n.kind === 'group';
 export const isSketch = (n: ZoneNode): n is ZoneSketch => n.kind === 'sketch';
+export const isSwatch = (n: ZoneNode): n is ZoneSwatch => n.kind === 'swatch';
+export const isStyle = (n: ZoneNode): n is ZoneStyle => n.kind === 'style';
+
+/** Felder der Zonenpalette in ihrer Reihenfolge, nach Kennung */
+export function swatchesOf(nodes: readonly ZoneNode[]): ZoneSwatch[] {
+  return nodes.filter(isSwatch);
+}
+
+export function swatchMap(nodes: readonly ZoneNode[]): Map<string, ZoneSwatch> {
+  return new Map(swatchesOf(nodes).map((s) => [s.id, s]));
+}
+
+export function stylesOf(nodes: readonly ZoneNode[]): ZoneStyle[] {
+  return nodes.filter(isStyle);
+}
+
+export function styleMap(nodes: readonly ZoneNode[]): Map<string, ZoneStyle> {
+  return new Map(stylesOf(nodes).map((s) => [s.id, s]));
+}
 
 /** Skizzen einer Ebene */
 export function sketchesOf(nodes: readonly ZoneNode[], planeId: string): ZoneSketch[] {
@@ -182,8 +212,11 @@ export function newGroup(nodes: readonly ZoneNode[], name?: string): ZoneGroup {
   return { id, kind: 'group', name: name ?? `Gruppe ${id.slice(1)}` };
 }
 
-/** nächste freie Kennung mit Vorsilbe (p für Ebenen, s für Formen, g für Gruppen), hochgezählt wie die Kennungen der Zonendatei */
-export function nextNodeId(nodes: readonly ZoneNode[], prefix: 'p' | 's' | 'g' | 'k'): string {
+/**
+ * nächste freie Kennung mit Vorsilbe (p für Ebenen, s für Formen, g für Gruppen, k für Skizzen, c für Palettenfelder,
+ * y für Stile), hochgezählt wie die Kennungen der Zonendatei
+ */
+export function nextNodeId(nodes: readonly ZoneNode[], prefix: 'p' | 's' | 'g' | 'k' | 'c' | 'y'): string {
   const ids = new Set(nodes.map((n) => n.id));
   let n = nodes.filter((x) => x.id.startsWith(prefix)).length + 1;
   while (ids.has(`${prefix}${n}`)) n++;
@@ -409,23 +442,44 @@ export function shapeFaces(shape: ZoneShape, fine = 1): Face[] {
   return faces;
 }
 
-/** Füllung einer Fläche: die Füllung, deren Punkt in ihr liegt (null = Loch), sonst die der Form */
-export function faceFill(shape: ZoneShape, face: Face): string | null {
-  for (const r of shape.regions ?? []) if (insideWithHoles(face.outline, face.holes, r.x, r.y)) return r.fill;
-  return shape.fill;
+/** Anstrich einer Fläche: der Füllpunkt, der in ihr liegt, sonst der der Form */
+export function facePaint(shape: ZoneShape, face: Face): Paint {
+  for (const r of shape.regions ?? []) if (insideWithHoles(face.outline, face.holes, r.x, r.y)) return r;
+  return shape;
+}
+
+/** Grundfarbe einer Fläche (null = Loch) */
+export function faceFill(shape: ZoneShape, face: Face): PaintColor | null {
+  return facePaint(shape, face).fill;
+}
+
+/** Anstrich als eigene Kopie (ohne Lage), für Füllpunkte und Zwischenablage */
+export function copyPaint(p: Paint): Paint {
+  const o: Paint = { fill: p.fill };
+  if (p.fills?.length) o.fills = cloneFills(p.fills);
+  if (p.style) o.style = p.style;
+  if (p.opacity !== undefined && p.opacity < 1) o.opacity = p.opacity;
+  return o;
 }
 
 /**
- * Füllung einer Fläche setzen (neue Liste, alte Einträge derselben Fläche fallen weg); Einträge, deren Punkt in keiner
- * Fläche mehr liegt, räumt das mit auf
+ * Anstrich einer Fläche setzen (neue Liste, alte Einträge derselben Fläche fallen weg; gleicht er dem der Form, braucht es
+ * keinen); Einträge, deren Punkt in keiner Fläche mehr liegt, räumt das mit auf. Ein Loch trägt nur fill null
  */
-export function setFaceFill(shape: ZoneShape, face: Face, fill: string | null): void {
+export function setFacePaint(shape: ZoneShape, face: Face, paint: Paint): void {
   const faces = shapeFaces(shape);
   const live = (r: ZoneRegion) => faces.some((f) => insideWithHoles(f.outline, f.holes, r.x, r.y));
   const rest = (shape.regions ?? []).filter((r) => !insideWithHoles(face.outline, face.holes, r.x, r.y) && live(r));
-  const regions = fill === shape.fill ? rest : [...rest, { x: round(face.inner[0], 3), y: round(face.inner[1], 3), fill }];
+  const own = paint.fill === null ? { fill: null } : copyPaint(paint);
+  const regions = samePaint(own, shape) ? rest : [...rest, { x: round(face.inner[0], 3), y: round(face.inner[1], 3), ...own }];
   if (regions.length) shape.regions = regions;
   else delete shape.regions;
+}
+
+/** Grundfarbe einer Fläche setzen; ihr Füllstapel und ihre Deckkraft bleiben (null macht ein Loch) */
+export function setFaceFill(shape: ZoneShape, face: Face, fill: PaintColor | null): void {
+  const cur = facePaint(shape, face);
+  setFacePaint(shape, face, fill === null ? { fill: null } : { ...copyPaint(cur), fill, style: undefined });
 }
 
 /**
@@ -640,6 +694,9 @@ export function flipShape(shape: ZoneShape, axis: 'x' | 'y'): void {
   if (shape.holes) shape.holes = shape.holes.map(flip);
   if (shape.cuts) shape.cuts = shape.cuts.map((c) => ({ ...c, path: flip(c.path) }));
   if (shape.regions) shape.regions = shape.regions.map((r) => ({ ...r, x: r.x * fx || 0, y: r.y * fy || 0 }));
+  const mirror = (x: number, y: number): [number, number] => [x * fx || 0, y * fy || 0];
+  mapFillPoints(shape.fills, mirror);
+  for (const r of shape.regions ?? []) mapFillPoints(r.fills, mirror);
   const b1 = shapeBounds(shape);
   shape.x = round(shape.x + (b0.minX + b0.maxX - b1.minX - b1.maxX) / 2, 3);
   shape.y = round(shape.y + (b0.minY + b0.maxY - b1.minY - b1.maxY) / 2, 3);
@@ -742,6 +799,8 @@ export function parseNodes(v: unknown): ZoneNode[] {
       if (o.hidden === true) p.hidden = true;
       if (o.locked === true) p.locked = true;
       if (typeof o.group === 'string' && ID.test(o.group)) p.group = o.group;
+      const fills = parseFills(o.fills);
+      if (fills) p.fills = fills;
       out.push(p);
       ids.add(p.id);
     } else if (o.kind === 'sketch' && typeof o.parent === 'string' && typeof o.src === 'string' && /^\/zones\/[a-z0-9-]{1,40}\/[\w.-]{1,120}$/.test(o.src) && num(o.w) && num(o.h) && o.w > 0 && o.h > 0) {
@@ -750,6 +809,24 @@ export function parseNodes(v: unknown): ZoneNode[] {
       if (o.hidden === true) k.hidden = true;
       out.push(k);
       ids.add(k.id);
+    } else if (o.kind === 'swatch' && /^c\d{1,6}$/.test(o.id) && typeof o.color === 'string' && COLOR.test(o.color)) {
+      const c: ZoneSwatch = { id: o.id, kind: 'swatch', name, color: o.color.toLowerCase() };
+      if (o.looks && typeof o.looks === 'object') {
+        const looks: Record<string, string> = {};
+        for (const [k, v] of Object.entries(o.looks as Record<string, unknown>)) if (LOOK_KEYS.includes(k) && typeof v === 'string' && COLOR.test(v)) looks[k] = v.toLowerCase();
+        if (Object.keys(looks).length) c.looks = looks as ZoneSwatch['looks'];
+      }
+      out.push(c);
+      ids.add(c.id);
+    } else if (o.kind === 'style' && /^y\d{1,6}$/.test(o.id)) {
+      const fill = parseColor(o.fill);
+      if (!fill) continue;
+      const y: ZoneStyle = { id: o.id, kind: 'style', name, fill };
+      const fills = parseFills(o.fills);
+      if (fills) y.fills = fills;
+      if (num(o.opacity) && o.opacity >= 0 && o.opacity < 1) y.opacity = o.opacity;
+      out.push(y);
+      ids.add(y.id);
     } else if (o.kind === 'group') {
       const g: ZoneGroup = { id: o.id, kind: 'group', name };
       if (o.collapsed === true) g.collapsed = true;
@@ -771,8 +848,9 @@ export function parseNodes(v: unknown): ZoneNode[] {
         sx: num(o.sx) && Math.abs(o.sx) > 1e-4 ? o.sx : 1,
         sy: num(o.sy) && Math.abs(o.sy) > 1e-4 ? o.sy : 1,
         path,
-        fill: typeof o.fill === 'string' && COLOR.test(o.fill) ? o.fill.toLowerCase() : '#8aa0b8',
+        fill: parseColor(o.fill) ?? '#8aa0b8',
       };
+      readPaint(s, o);
       if (Array.isArray(o.holes)) {
         const holes = o.holes.map(parsePathList).filter((h): h is ZonePath => !!h);
         if (holes.length) s.holes = holes;
@@ -790,7 +868,10 @@ export function parseNodes(v: unknown): ZoneNode[] {
         const regions: ZoneRegion[] = [];
         for (const raw2 of o.regions) {
           const r = raw2 as Record<string, unknown>;
-          if (r && num(r.x) && num(r.y)) regions.push({ x: r.x, y: r.y, fill: typeof r.fill === 'string' && COLOR.test(r.fill) ? r.fill.toLowerCase() : null });
+          if (!r || !num(r.x) || !num(r.y)) continue;
+          const region: ZoneRegion = { x: r.x, y: r.y, fill: parseColor(r.fill) };
+          if (region.fill !== null) readPaint(region, r);
+          regions.push(region);
         }
         if (regions.length) s.regions = regions;
       }
@@ -807,7 +888,24 @@ export function parseNodes(v: unknown): ZoneNode[] {
   const planeIds = new Set(out.filter(isPlane).map((p) => p.id));
   const groupIds = new Set(out.filter(isGroup).map((g) => g.id));
   for (const p of out) if (isPlane(p) && p.group && !groupIds.has(p.group)) delete p.group;
-  return out.filter((n) => isPlane(n) || isGroup(n) || planeIds.has(n.parent));
+  return out.filter((n) => isPlane(n) || isGroup(n) || isSwatch(n) || isStyle(n) || planeIds.has(n.parent));
+}
+
+const LOOK_KEYS = ['day', 'dusk', 'night', 'neon'];
+
+/** Füllstapel, Stil und Deckkraft eines Anstrichs aus der Datei */
+function readPaint(p: Paint, o: Record<string, unknown>): void {
+  const fills = parseFills(o.fills);
+  if (fills) p.fills = fills;
+  if (typeof o.style === 'string' && /^y\d{1,6}$/.test(o.style)) p.style = o.style;
+  if (num(o.opacity) && o.opacity >= 0 && o.opacity < 1) p.opacity = o.opacity;
+}
+
+/** Füllstapel, Stil und Deckkraft eines Anstrichs für die Datei */
+function writePaint(o: Record<string, unknown>, p: Paint): void {
+  if (p.fills?.length) o.fills = p.fills.map(serializeFill);
+  if (p.style) o.style = p.style;
+  if (p.opacity !== undefined && p.opacity < 1) o.opacity = round(p.opacity, 3);
 }
 
 const pathOut = (path: ZonePath): Array<Record<string, number>> =>
@@ -827,6 +925,16 @@ const pathOut = (path: ZonePath): Array<Record<string, number>> =>
 /** Knoten für die Zonendatei: Ebenen von vorn nach hinten, dahinter ihre Formen in Zeichenreihenfolge; gerundet */
 export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string, unknown>> {
   const out: Array<Record<string, unknown>> = [];
+  for (const c of swatchesOf(nodes)) {
+    const o: Record<string, unknown> = { id: c.id, kind: 'swatch', name: c.name, color: c.color };
+    if (c.looks && Object.keys(c.looks).length) o.looks = { ...c.looks };
+    out.push(o);
+  }
+  for (const y of stylesOf(nodes)) {
+    const o: Record<string, unknown> = { id: y.id, kind: 'style', name: y.name, fill: y.fill };
+    writePaint(o, y);
+    out.push(o);
+  }
   for (const g of groupsOf(nodes)) {
     const o: Record<string, unknown> = { id: g.id, kind: 'group', name: g.name };
     if (g.collapsed) o.collapsed = true;
@@ -839,6 +947,7 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
     if (p.hidden) o.hidden = true;
     if (p.locked) o.locked = true;
     if (p.group) o.group = p.group;
+    if (p.fills?.length) o.fills = p.fills.map(serializeFill);
     out.push(o);
   }
   for (const p of planesOf(nodes)) {
@@ -846,7 +955,13 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
       const o: Record<string, unknown> = { id: s.id, kind: 'shape', parent: s.parent, order: round(s.order, 4), name: s.name, x: round(s.x, 3), y: round(s.y, 3), sx: round(s.sx, 4), sy: round(s.sy, 4), fill: s.fill, path: pathOut(s.path) };
       if (s.holes?.length) o.holes = s.holes.map(pathOut);
       if (s.cuts?.length) o.cuts = s.cuts.map((c) => ({ closed: c.closed, path: pathOut(c.path) }));
-      if (s.regions?.length) o.regions = s.regions.map((r) => ({ x: round(r.x, 3), y: round(r.y, 3), fill: r.fill }));
+      writePaint(o, s);
+      if (s.regions?.length)
+        o.regions = s.regions.map((r) => {
+          const q: Record<string, unknown> = { x: round(r.x, 3), y: round(r.y, 3), fill: r.fill };
+          if (r.fill !== null) writePaint(q, r);
+          return q;
+        });
       if (s.groups?.length) o.groups = [...s.groups];
       if (s.hidden) o.hidden = true;
       if (s.locked) o.locked = true;
@@ -865,16 +980,19 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
 
 /** tiefe Kopie (für den Arbeitsverlauf und das Sichern) */
 export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
-  return nodes.map((n) =>
-    isPlane(n) || isGroup(n) || isSketch(n)
-      ? { ...n }
-      : {
-          ...n,
-          path: n.path.map((p) => ({ ...p })),
-          ...(n.holes ? { holes: n.holes.map((h) => h.map((p) => ({ ...p }))) } : {}),
-          ...(n.cuts ? { cuts: n.cuts.map((c) => ({ closed: c.closed, path: c.path.map((p) => ({ ...p })) })) } : {}),
-          ...(n.regions ? { regions: n.regions.map((r) => ({ ...r })) } : {}),
-          ...(n.groups ? { groups: [...n.groups] } : {}),
-        },
-  );
+  return nodes.map((n): ZoneNode => {
+    if (isGroup(n) || isSketch(n)) return { ...n };
+    if (isPlane(n)) return { ...n, ...(n.fills ? { fills: cloneFills(n.fills) } : {}) };
+    if (isSwatch(n)) return { ...n, ...(n.looks ? { looks: { ...n.looks } } : {}) };
+    if (isStyle(n)) return { ...n, ...(n.fills ? { fills: cloneFills(n.fills) } : {}) };
+    return {
+      ...n,
+      path: n.path.map((p) => ({ ...p })),
+      ...(n.holes ? { holes: n.holes.map((h) => h.map((p) => ({ ...p }))) } : {}),
+      ...(n.cuts ? { cuts: n.cuts.map((c) => ({ closed: c.closed, path: c.path.map((p) => ({ ...p })) })) } : {}),
+      ...(n.regions ? { regions: n.regions.map((r) => ({ ...r, ...(r.fills ? { fills: cloneFills(r.fills) } : {}) })) } : {}),
+      ...(n.fills ? { fills: cloneFills(n.fills) } : {}),
+      ...(n.groups ? { groups: [...n.groups] } : {}),
+    };
+  });
 }

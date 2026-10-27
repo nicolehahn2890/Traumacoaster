@@ -13,7 +13,8 @@
  * Verläufe werden Vollton. Ohne DOM, damit es in Tests gleich läuft.
  */
 import { faceCurves } from './faceCurves';
-import { cloneNodes, DEFAULT_GAP, faceFill, groupOf, newPlane, nextNodeId, planeHidden, planePathToShape, planesOf, shapeFaces, shapeFromPlanePath, shapesOf, type ZoneNode, type ZonePlane, type ZoneShape } from './nodes';
+import { cloneNodes, DEFAULT_GAP, faceFill, groupOf, newPlane, nextNodeId, planeHidden, planePathToShape, planesOf, shapeFaces, shapeFromPlanePath, shapesOf, swatchMap, type ZoneNode, type ZonePlane, type ZoneShape } from './nodes';
+import { resolveColor, type SwatchMap } from './paint';
 import { flattenPath, inPolygon, polyArea, type PathPoint, type ZonePath } from './path';
 import { GROUP_ID, nextGroupId } from './shapeGroups';
 import { parsePathData, parseTransform, SVG_SCALE, svgPathData } from './svg';
@@ -66,19 +67,22 @@ function toPlane(s: ZoneShape, path: ZonePath): ZonePath {
   });
 }
 
-/** was eine Form im SVG wird: ein Pfad, oder (geteilt) je gefüllte Fläche einer; group: als Gruppe ihrer Flächen */
-export function shapeItems(s: ZoneShape): { group: boolean; items: Item[] } {
+/**
+ * was eine Form im SVG wird: ein Pfad, oder (geteilt) je gefüllte Fläche einer; group: als Gruppe ihrer Flächen.
+ * Palettenfarben gehen als ihr Wert hinaus (Look Tag)
+ */
+export function shapeItems(s: ZoneShape, sw: SwatchMap = new Map()): { group: boolean; items: Item[] } {
   const faces = shapeFaces(s);
   if (!s.cuts?.length && faces.length === 1) {
     const fill = faceFill(s, faces[0]);
-    return { group: false, items: fill === null ? [] : [{ id: s.id, fill, rings: [toPlane(s, s.path), ...(s.holes ?? []).map((h) => toPlane(s, h))] }] };
+    return { group: false, items: fill === null ? [] : [{ id: s.id, fill: resolveColor(fill, sw), rings: [toPlane(s, s.path), ...(s.holes ?? []).map((h) => toPlane(s, h))] }] };
   }
   const items: Item[] = [];
   faces.forEach((face, k) => {
     const fill = faceFill(s, face);
     if (fill === null) return;
     const c = faceCurves(s, face);
-    items.push({ id: `${s.id}-f${k}`, fill, rings: [toPlane(s, c.outline), ...c.holes.map((h) => toPlane(s, h))] });
+    items.push({ id: `${s.id}-f${k}`, fill: resolveColor(fill, sw), rings: [toPlane(s, c.outline), ...c.holes.map((h) => toPlane(s, h))] });
   });
   return { group: true, items };
 }
@@ -88,6 +92,7 @@ export function shapeItems(s: ZoneShape): { group: boolean; items: Item[] } {
  * fehlen. Der Rahmen umfasst alle Formen mit 2 m Rand, auf ganze Meter
  */
 export function planesToSvg(nodes: readonly ZoneNode[], opts: { planes?: readonly string[]; zoneName?: string } = {}): string {
+  const sw = swatchMap(nodes);
   const planes = planesOf(nodes)
     .filter((p) => (opts.planes ? opts.planes.includes(p.id) : !planeHidden(nodes, p)))
     .reverse();
@@ -95,7 +100,7 @@ export function planesToSvg(nodes: readonly ZoneNode[], opts: { planes?: readonl
     plane,
     shapes: shapesOf(nodes, plane.id)
       .filter((s) => !s.hidden)
-      .map((s) => ({ shape: s, ...shapeItems(s) }))
+      .map((s) => ({ shape: s, ...shapeItems(s, sw) }))
       .filter((x) => x.items.length),
   }));
   let minX = Infinity;
@@ -597,7 +602,7 @@ export function svgToPlanes(svg: string, nodes: readonly ZoneNode[]): SvgImport 
       const imported = parts.map((p) => ({ id: p.id, fill: p.fill, rings: p.subs.map((sub) => sub.map(toPlanePt)) }));
       if (old) {
         // unverändert zurück: die Form bleibt, wie sie war (mit Teilungslinien und Füllpunkten)
-        const exp = shapeItems(old).items;
+        const exp = shapeItems(old, swatchMap(nodes)).items;
         const same = exp.length === imported.length && exp.every((e) => {
           const im = imported.find((i) => i.id === e.id);
           return !!im && parseColor(im.fill) === parseColor(e.fill) && sameRings(e.rings, im.rings);

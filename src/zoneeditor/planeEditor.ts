@@ -29,7 +29,7 @@ import {
   depthBeside,
   archPath,
   ellipsePath,
-  faceFill,
+  facePaint,
   findPlane,
   findShape,
   flipShape,
@@ -61,6 +61,8 @@ import {
   shapesOf,
   shapeToPlane,
   slicesToNodes,
+  styleMap,
+  swatchMap,
   transferShape,
   worldToPlane,
   type HoldView,
@@ -73,6 +75,8 @@ import { EditorOverlay, emptyOverlay } from './overlay';
 import { SketchLayer } from './sketches';
 import { constrain45, NO_MODS, PathTools, regionRing, regionTest, simplifyShape, type Mods, type PathTool } from './pathTools';
 import { booleanShapes, type BoolOp } from '@/zone/pathfinder';
+import { evalLayers, paintLayers, rgbToHex } from '@/zone/paint';
+import { faceBox } from '@/zone/faces';
 import { EditorUi, type Isolate, type LayerRow, type Tool } from './ui';
 import { EditorViews, type ViewMode } from './views';
 
@@ -559,6 +563,9 @@ export class PlaneEditor {
 
   /** Vorschaubilder der Ebenen: Formen in ihrer Farbe, eingepasst */
   private drawThumbs(): void {
+    const sw = swatchMap(this.nodes);
+    const styles = styleMap(this.nodes);
+    const look = this.host.world.currentLook;
     for (const plane of planesOf(this.nodes)) {
       const c = this.ui.thumb(plane.id);
       const g = c?.getContext('2d');
@@ -582,8 +589,10 @@ export class PlaneEditor {
       const oy = (c.height - (maxY - minY) * k) / 2;
       for (const s of shapes) {
         for (const face of shapeFaces(s)) {
-          const fill = faceFill(s, face);
-          if (fill === null) continue;
+          // Farbe in der Mitte der Fläche (Füllstapel ausgewertet, ohne Ebenenstapel)
+          const pl = paintLayers(facePaint(s, face), styles, faceBox(face));
+          if (!pl) continue;
+          const col = evalLayers(pl.layers, face.inner[0], face.inner[1], sw, look);
           const path = new Path2D();
           for (const ring of [face.outline, ...face.holes]) {
             ring.forEach(([px, py], i) => {
@@ -595,8 +604,10 @@ export class PlaneEditor {
             });
             path.closePath();
           }
-          g.fillStyle = fill;
+          g.fillStyle = rgbToHex(...col.rgb);
+          g.globalAlpha = Math.max(0.15, col.a * pl.opacity);
           g.fill(path, 'evenodd');
+          g.globalAlpha = 1;
         }
       }
     }

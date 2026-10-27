@@ -139,6 +139,8 @@ export class WorldRenderer {
     this.lights.apply(look);
     const sky = this.levelData?.world.palette.sky[1] ?? look.background;
     this.fog.color.set(look.fog).lerp(new Color(sky), 0.4);
+    // Ebenen: Palettentausch je Look (Stufe 3)
+    this.planes.setLook(name);
   }
 
   get currentLook(): LookName {

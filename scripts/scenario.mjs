@@ -1145,6 +1145,127 @@ if (want('17')) {
   await page.screenshot({ path: 'screenshots/scenario-17-bogen-zahlen.png' });
 }
 
+// 18. Zonen-Editor, Stufe 3: das Ebenen-Material zeichnet Füllstapel wie die Vorlage evalLayers (src/zone/paint.ts):
+// Vollton, Verläufe linear und radial, Mischmodi mit Deckkraft, Palettenfarbe mit Tausch je Look, Ebenenstapel,
+// Deckkraftverlauf über einer anderen Form (zweites Mesh). Gemessen im Bildschirmfoto an Punkten mitten in den Flächen.
+// Braucht den Dev-Server (lädt src/zone/paint.ts im Browser).
+if (want('18')) {
+  await page.goto(`${BASE}?zone=szenario-farbe&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const setup = await page.evaluate(async () => {
+    const N = await import('/src/zone/nodes.ts');
+    const g = window.tcGame;
+    const ed = g.current.planeEditor;
+    const grad = (a, b, x0, y0, x1, y1, extra = {}) => ({ type: 'gradient', stops: [{ t: 0, color: a, a: 1 }, { t: 1, color: b, a: 1 }], x0, y0, x1, y1, blend: 'normal', opacity: 1, ...extra });
+    const cases = [];
+    ed.edit(() => {
+      const p = N.newPlane(ed.nodes, 0);
+      ed.nodes.push(p);
+      ed.nodes.push({ id: 'c1', kind: 'swatch', name: 'Fels', color: '#aa3355', looks: { night: '#112244' } });
+      const P = (x, y) => ed.planePoint(p, { x, y });
+      const m = (P(460, 300).x - P(400, 300).x) / 60;
+      const half = 35 * m;
+      const sq = [
+        { x: -half, y: -half },
+        { x: half, y: -half },
+        { x: half, y: half },
+        { x: -half, y: half },
+      ];
+      const add = (planeId, at, fill, more = {}) => {
+        const s = N.newShape(ed.nodes, planeId, sq, at.x, at.y, fill);
+        Object.assign(s, more);
+        ed.nodes.push(s);
+        return s;
+      };
+      const row = (i, y) => P(240 + i * 95, y);
+      const h2 = half * 0.6;
+      cases.push({ name: 'Vollton', s: add(p.id, row(0, 330), '#3366aa'), pts: [[0, 0]] });
+      cases.push({ name: 'Verlauf linear rot → blau', s: add(p.id, row(1, 330), '#000000', { fills: [grad('#ff0000', '#0000ff', -half, 0, half, 0)] }), pts: [[-h2, 0], [0, 0], [h2, 0]] });
+      cases.push({ name: 'Multiplizieren 50 %', s: add(p.id, row(2, 330), '#808080', { fills: [{ type: 'color', color: '#ff8040', blend: 'multiply', opacity: 0.5 }] }), pts: [[0, 0]] });
+      cases.push({ name: 'Ineinanderkopieren mit Verlauf', s: add(p.id, row(3, 330), '#336699', { fills: [grad('#ffffff', '#000000', 0, -half, 0, half, { blend: 'overlay' })] }), pts: [[0, -h2], [0, 0], [0, h2]] });
+      cases.push({ name: 'Weiches Licht, radial', s: add(p.id, row(4, 330), '#996633', { fills: [grad('#ffeecc', '#202060', 0, 0, half, 0, { radial: true, blend: 'softLight', opacity: 0.8 })] }), pts: [[0, 0], [h2, 0], [0, -h2]] });
+      cases.push({ name: 'Farbe (Farbton und Sättigung)', s: add(p.id, row(5, 330), '#c0c0c0', { fills: [{ type: 'color', color: '#3060ff', blend: 'color', opacity: 1 }] }), pts: [[0, 0]] });
+      cases.push({ name: 'Palettenfarbe', s: add(p.id, row(0, 450), '@c1'), pts: [[0, 0]], palette: true });
+      // Ebenenstapel: zweite Ebene mit einem multiplizierten Verlauf über allen ihren Formen
+      const p2 = N.newPlane(ed.nodes, 0.5);
+      ed.nodes.push(p2);
+      const at2 = ed.planePoint(p2, { x: 240 + 95, y: 450 });
+      p2.fills = [grad('#ffffff', '#ff6000', at2.x - half, 0, at2.x + half, 0, { blend: 'multiply' })];
+      cases.push({ name: 'Ebenenstapel', s: add(p2.id, at2, '#88aacc'), pts: [[-h2, 0], [0, 0], [h2, 0]], plane: p2.id });
+      // Deckkraftverlauf: weiße Form über einer dunklen, links deckend, rechts durchsichtig
+      const under = add(p.id, row(2, 450), '#224433');
+      cases.push({ name: 'Deckkraftverlauf', s: add(p.id, row(2, 450), '#ffffff', { fills: [{ type: 'fade', stops: [{ t: 0, color: '#000000', a: 1 }, { t: 1, color: '#000000', a: 0 }], x0: -half, y0: 0, x1: half, y1: 0, blend: 'normal', opacity: 1 }] }), pts: [[-h2, 0], [0, 0], [h2, 0]], over: under.id });
+    });
+    for (let i = 0; i < 3; i++) g.app.ticker.update(performance.now());
+    return { stats: g.world.planes.stats, n: cases.length };
+  });
+  check(setup.stats.paints >= 9 && setup.stats.gradients >= 4 && setup.stats.clear === 1, `Anstriche als Zeilen der Stil-Datentextur (${setup.stats.paints}), ${setup.stats.gradients} Farbbänder, eine durchsichtige Fläche im zweiten Mesh`);
+  await page.keyboard.press('Escape');
+  await page.mouse.move(5, 795);
+  const measure = async (look) => {
+    const pts = await page.evaluate(async (look) => {
+      const N = await import('/src/zone/nodes.ts');
+      const P = await import('/src/zone/paint.ts');
+      const g = window.tcGame;
+      // ohne das Papierkorn des Spiels (über das ganze Bild multipliziert): es tönt alles leicht ab
+      if (g.current.view?.paper) g.current.view.paper.visible = false;
+      g.world.setLook(look);
+      for (let i = 0; i < 3; i++) g.app.ticker.update(performance.now());
+      const ed = g.current.planeEditor;
+      const sw = N.swatchMap(ed.nodes);
+      const out = [];
+      for (const s of ed.nodes.filter((n) => n.kind === 'shape')) {
+        const plane = ed.nodes.find((n) => n.id === s.parent);
+        const same = (n) => n.kind === 'shape' && n !== s && n.parent === s.parent && n.x === s.x && n.y === s.y;
+        // die verdeckte Form unter dem Deckkraftverlauf misst die obere mit
+        if (ed.nodes.some((n) => same(n) && n.order > s.order)) continue;
+        const under = ed.nodes.find((n) => same(n) && n.order < s.order);
+        const layers = P.paintLayers(s, new Map(), { minX: 0, minY: 0, maxX: 1, maxY: 1 }).layers;
+        const k = 0.6 * Math.abs(s.path[0].x);
+        for (const [lx, ly] of [[0, 0], [-k, 0], [k, 0], [0, -k], [0, k]]) {
+          let c = P.evalLayers(layers, lx, ly, sw, look);
+          if (plane.fills) c = P.evalLayers(plane.fills, s.x + lx, s.y + ly, sw, look, c);
+          if (under) {
+            const b = P.evalLayers(P.paintLayers(under, new Map(), { minX: 0, minY: 0, maxX: 1, maxY: 1 }).layers, 0, 0, sw, look);
+            c = { rgb: c.rgb.map((v, i) => v * c.a + b.rgb[i] * (1 - c.a)), a: 1 };
+          }
+          const q = ed.screenOf(plane, { x: s.x + lx, y: s.y + ly }, s);
+          out.push({ id: s.id, x: q.x, y: q.y, want: c.rgb.map((v) => Math.round(v * 255)) });
+        }
+      }
+      return out;
+    }, look);
+    const png = await page.screenshot({ path: `screenshots/scenario-18-farbe-${look}.png` });
+    const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+    let worst = { d: 0, id: '', got: [], want: [] };
+    for (const p of pts) {
+      const at = (Math.round(p.y) * info.width + Math.round(p.x)) * info.channels;
+      const got = [data[at], data[at + 1], data[at + 2]];
+      const d = Math.max(...got.map((v, i) => Math.abs(v - p.want[i])));
+      if (d > worst.d) worst = { d, id: p.id, got, want: p.want };
+      if (d > 4 && process.env.TC_DEBUG) console.log('  abweichend', p.id, Math.round(p.x), Math.round(p.y), got, p.want);
+    }
+    return { n: pts.length, worst };
+  };
+  const day = await measure('day');
+  check(day.worst.d <= 4, `Tag: ${day.n} Punkte wie evalLayers (größte Abweichung ${day.worst.d}${day.worst.d ? ` bei ${day.worst.id}: rgb(${day.worst.got.join(', ')}) statt rgb(${day.worst.want.join(', ')})` : ''})`);
+  const night = await measure('night');
+  const swap = await page.evaluate(() => {
+    const ed = window.tcGame.current.planeEditor;
+    const s = ed.nodes.find((n) => n.kind === 'shape' && n.fill === '@c1');
+    return ed.screenOf(ed.nodes.find((n) => n.id === s.parent), { x: s.x, y: s.y }, s);
+  });
+  const png = await page.screenshot();
+  const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+  const at = (Math.round(swap.y) * info.width + Math.round(swap.x)) * info.channels;
+  const nightRgb = [data[at], data[at + 1], data[at + 2]];
+  check(night.worst.d <= 4 && Math.max(...nightRgb.map((v, i) => Math.abs(v - [0x11, 0x22, 0x44][i]))) <= 4, `Nacht: Palettenfarbe getauscht (rgb(${nightRgb.join(', ')})), alle ${night.n} Punkte wie evalLayers (Abweichung ${night.worst.d})`);
+  await page.evaluate(() => {
+    window.tcGame.world.setLook('day');
+    if (window.tcGame.current.view?.paper) window.tcGame.current.view.paper.visible = true;
+  });
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));
