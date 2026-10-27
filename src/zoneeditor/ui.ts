@@ -49,6 +49,9 @@ export interface UiActions {
   depthChange(id: string, z: number): void;
   depthEnd(): void;
   toggleHold(): void;
+  /** Einrasten im Bild und Raster ein- und ausschalten */
+  toggleSnap(): void;
+  toggleGrid(): void;
   setRole(role: PlaneRole): void;
   setIsolate(i: Isolate): void;
   deletePlane(): void;
@@ -107,6 +110,8 @@ const CSS = `
 .ze-anchor{fill:#16181c;stroke:#8db4ff;stroke-width:1.5}
 .ze-anchor.on{fill:#8db4ff}
 .ze-cp{fill:#16181c;stroke:#8db4ff;stroke-width:1.2}
+.ze-grid{fill:none;stroke:rgba(255,255,255,.16);stroke-width:1}
+.ze-snap{fill:none;stroke:#ffd27a;stroke-width:2}
 .ze-region{fill:rgba(141,180,255,.08);stroke:#8db4ff;stroke-width:1;stroke-dasharray:4 3}
 .ze-panel{position:absolute;pointer-events:auto;background:rgba(22,24,28,.82);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.07);border-radius:12px;touch-action:none;user-select:none;-webkit-user-select:none}
 .ze-btn{appearance:none;border:0;background:transparent;color:inherit;font:inherit;min-width:36px;height:36px;padding:0 10px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
@@ -205,6 +210,8 @@ const EYE = '<svg viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-
 const EYE_OFF = '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1C11 6 11.5 6 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.2 3.8M6.2 7.6A16.6 16.6 0 0 0 2 12s3.5 6 10 6c1.7 0 3.2-.4 4.4-1"/></svg>';
 const LOCK = '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 const FOLDER = '<svg viewBox="0 0 24 24"><path d="M3 7.5V18a1.5 1.5 0 0 0 1.5 1.5h15A1.5 1.5 0 0 0 21 18V9a1.5 1.5 0 0 0-1.5-1.5H11L9 5H4.5A1.5 1.5 0 0 0 3 6.5z"/></svg>';
+const MAGNET = '<svg viewBox="0 0 24 24"><path d="M6 4v8a6 6 0 0 0 12 0V4"/><path d="M6 8h4M14 8h4"/></svg>';
+const GRID = '<svg viewBox="0 0 24 24"><path d="M4 9h16M4 15h16M9 4v16M15 4v16"/></svg>';
 const UNDO = '<svg viewBox="0 0 24 24"><path d="M9 7L4 12l5 5M4 12h10a6 6 0 0 1 0 12"/></svg>';
 const REDO = '<svg viewBox="0 0 24 24"><path d="M15 7l5 5-5 5M20 12H10a6 6 0 0 0 0 12"/></svg>';
 
@@ -303,6 +310,8 @@ export class EditorUi {
   private readonly stats = el('span', 'ze-stats');
   private readonly undoBtn: HTMLButtonElement;
   private readonly redoBtn: HTMLButtonElement;
+  private readonly snapBtn: HTMLButtonElement;
+  private readonly gridBtn: HTMLButtonElement;
   private readonly views = el('div', 'ze-panel ze-views');
   private readonly viewBtns = new Map<ViewMode | 'side', HTMLButtonElement>();
   private readonly camBtn: HTMLButtonElement;
@@ -349,7 +358,9 @@ export class EditorUi {
     this.redoBtn = button(REDO, 'Wiederholen (Shift+Cmd+Z, drei Finger tippen)', () => a.redo());
     const name = el('span', 'ze-zone');
     name.append(this.dot, document.createTextNode(zoneName));
-    this.top.append(name, button('Sichern', 'Sichern (Cmd+S)', () => a.save()), el('span', 'ze-sep'), this.undoBtn, this.redoBtn);
+    this.snapBtn = button(MAGNET, 'Einrasten an Ankern und Kanten, auch über Ebenen so, wie es im Bild aussieht', () => a.toggleSnap());
+    this.gridBtn = button(GRID, 'Raster der aktiven Ebene (Punkte rasten daran ein)', () => a.toggleGrid());
+    this.top.append(name, button('Sichern', 'Sichern (Cmd+S)', () => a.save()), el('span', 'ze-sep'), this.undoBtn, this.redoBtn, el('span', 'ze-sep'), this.snapBtn, this.gridBtn);
 
     // oben rechts: Ansichten, Kamera, Spielen
     for (const v of ['game', 'front', 'free', 'side'] as const) {
@@ -429,6 +440,11 @@ export class EditorUi {
   setCamera(tilt: number, fov: number): void {
     this.tiltSlider.set(tilt);
     this.fovSlider.set(fov);
+  }
+
+  setSnap(snap: boolean, grid: boolean): void {
+    this.snapBtn.classList.toggle('on', snap);
+    this.gridBtn.classList.toggle('on', grid);
   }
 
   setHold(on: boolean): void {

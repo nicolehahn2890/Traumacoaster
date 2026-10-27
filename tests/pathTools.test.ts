@@ -7,7 +7,7 @@ import { faceAt } from '@/zone/faces';
 const toScreen = (q: { x: number; y: number }) => ({ x: 400 + q.x * 10, y: 300 - q.y * 10 });
 const toPlane = (p: { x: number; y: number }) => ({ x: (p.x - 400) / 10, y: (300 - p.y) / 10 });
 
-function setup(): { nodes: ZoneNode[]; tools: PathTools; selected: () => ZoneShape | undefined; select: (id: string | null) => void; toasts: string[]; commits: () => number } {
+function setup(opts: { snap?: boolean; grid?: number | null } = {}): { nodes: ZoneNode[]; tools: PathTools; selected: () => ZoneShape | undefined; select: (id: string | null) => void; toasts: string[]; commits: () => number } {
   const nodes: ZoneNode[] = [];
   let selection: string[] = [];
   let commits = 0;
@@ -52,6 +52,9 @@ function setup(): { nodes: ZoneNode[]; tools: PathTools; selected: () => ZoneSha
     },
     fillFor: () => '#3d5a63',
     hitRadius: () => 15,
+    snapping: () => !!opts.snap,
+    gridStep: () => opts.grid ?? null,
+    visible: () => true,
   };
   return { nodes, tools: new PathTools(host), selected: () => findShape(nodes, selection.at(-1) ?? null), select: (id) => (selection = id ? [id] : []), toasts, commits: () => commits };
 }
@@ -466,5 +469,50 @@ describe('Kurvenstift und Band', () => {
     t.tools.up(1);
     expect(h.cuts?.[0]?.closed).toBe(true);
     expect(shapeFaces(h).length).toBe(2);
+  });
+});
+
+describe('Einrasten', () => {
+  it('ein neuer Punkt rastet an einem Anker einer anderen Form ein, sonst am Raster', () => {
+    const t = setup({ snap: true });
+    const a = square(t);
+    t.select(null);
+    t.tools.setTool('pen');
+    // knapp neben der rechten oberen Ecke (500, 200) der ersten Form
+    for (const [x, y] of [[506, 196], [700, 200], [700, 400]]) tap(t.tools, x, y);
+    t.tools.key('enter');
+    const b = t.selected()!;
+    expect(b.id).not.toBe(a.id);
+    const xs = b.path.map((p) => p.x + b.x);
+    const ys = b.path.map((p) => p.y + b.y);
+    expect(xs.some((x, i) => Math.abs(x - 10) < 1e-6 && Math.abs(ys[i] - 10) < 1e-6)).toBe(true);
+
+    const g = setup({ grid: 1 });
+    g.tools.setTool('pen');
+    for (const [x, y] of [[303, 297], [447, 204], [512, 361]]) tap(g.tools, x, y);
+    g.tools.key('enter');
+    const s = g.selected()!;
+    for (const p of s.path) {
+      expect(Math.abs(p.x + s.x - Math.round(p.x + s.x))).toBeLessThan(1e-6);
+      expect(Math.abs(p.y + s.y - Math.round(p.y + s.y))).toBeLessThan(1e-6);
+    }
+  });
+
+  it('ein gezogener Anker rastet an der Kante einer anderen Form ein', () => {
+    const t = setup({ snap: true });
+    const a = square(t);
+    t.select(null);
+    t.tools.setTool('pen');
+    for (const [x, y] of [[600, 250], [700, 250], [700, 350], [600, 350], [601, 251]]) tap(t.tools, x, y);
+    const b = t.selected()!;
+    t.tools.setTool('direct');
+    // linken oberen Anker von b auf die rechte Kante von a ziehen (x = 500), knapp daneben loslassen
+    t.tools.down(1, { x: 600, y: 250 }, M);
+    t.tools.move(1, { x: 550, y: 255 }, M);
+    t.tools.move(1, { x: 505, y: 260 }, M);
+    t.tools.up(1);
+    const moved = b.path.find((p) => Math.abs(p.x + b.x - 10) < 1e-6);
+    expect(moved).toBeTruthy();
+    expect(a.path.length).toBe(4);
   });
 });

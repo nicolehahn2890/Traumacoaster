@@ -84,6 +84,12 @@ export interface PathToolHost {
   fillFor(plane: ZonePlane): string;
   /** Trefferradius in Bildpunkten */
   hitRadius(): number;
+  /** Einrasten an Ankern und Kanten aller sichtbaren Formen (auch anderer Ebenen, so wie sie im Bild liegen) */
+  snapping(): boolean;
+  /** Rasterweite (Meter in der Ebene) oder null ohne Raster */
+  gridStep(plane: ZonePlane): number | null;
+  /** wird die Ebene gerade gezeichnet (ausgeblendet, isoliert)? */
+  visible(plane: ZonePlane): boolean;
 }
 
 /** Leiste unten für die Pfad-Werkzeuge */
@@ -110,7 +116,7 @@ interface Glue {
 }
 
 type Drag =
-  | { kind: 'anchors'; pointerId: number; start: Pt; sels: AnchorSel[]; orig: Map<string, ZonePath>; glue: Map<string, Glue[]> }
+  | { kind: 'anchors'; pointerId: number; start: Pt; grab: Pt | null; sels: AnchorSel[]; orig: Map<string, ZonePath>; glue: Map<string, Glue[]> }
   | { kind: 'knob'; pointerId: number; sel: AnchorSel; side: 'in' | 'out'; orig: ZonePath; mirror: boolean; glue: Glue[] }
   | { kind: 'pull'; pointerId: number; sel: AnchorSel; start: Pt; orig: ZonePath; glue: Glue[]; moved: boolean }
   | { kind: 'penAnchor'; pointerId: number; i: number; start: Pt; orig: PathPoint }
@@ -478,6 +484,10 @@ export class PathTools {
   /** Kurvenstift: getippter Anker (Antippen des ersten schließt) */
   private curveTap: { i: number; moved: boolean } | null = null;
   private hover: Pt | null = null;
+  /** wo zuletzt eingerastet wurde (Bildpunkt, für den Ring in der Überlagerung) */
+  private snapMark: Pt | null = null;
+  /** eingerasteter Bildpunkt unter dem schwebenden Zeiger (Gummiband und Ring) */
+  private hoverSnap: Pt | null = null;
   private mods: Mods = NO_MODS;
   private lastTap = { x: 0, y: 0, t: 0 };
 
@@ -517,6 +527,11 @@ export class PathTools {
       return !!g && a.i < g.path.length;
     });
     if (this.face && !set.has(this.face.shape)) this.face = null;
+  }
+
+  /** wo gerade eingerastet wird (Bildpunkt), für die Überlagerung beim Aufziehen von Grundformen */
+  get snapAt(): Pt | null {
+    return this.snapMark;
   }
 
   get busy(): boolean {
@@ -562,7 +577,8 @@ export class PathTools {
   /** Zeichenstift: Punkt der Ebene unter p, eingerastet an Ankern (zuerst) und Kanten der Form, in die gezeichnet wird */
   private snapped(plane: ZonePlane, into: ZoneShape | null, p: Pt): Pt | null {
     const q = this.host.planePoint(plane, p);
-    if (!q || !into) return q;
+    this.snapMark = null;
+    if (!q || !into) return this.snapPoint(plane, p);
     const r = this.host.hitRadius();
     let best: Pt | null = null;
     let bestD = r * 1.2;
@@ -576,7 +592,10 @@ export class PathTools {
         }
       }
     }
-    if (best) return best;
+    if (best) {
+      this.snapMark = this.host.screenOf(plane, best);
+      return best;
+    }
     const mpp = this.metersPerPx(plane, p);
     bestD = r;
     for (const { path, closed } of shapePaths(into)) {
@@ -592,7 +611,82 @@ export class PathTools {
         }
       }
     }
-    return best ?? q;
+    if (best) {
+      this.snapMark = this.host.screenOf(plane, best);
+      return best;
+    }
+    return this.snapPoint(plane, p);
+  }
+
+  /**
+   * Einrasten im Bild (Plan 4.3): der nächste Anker (zuerst) oder die nächste Kante einer sichtbaren Form unter p, als
+   * Bildpunkt. Weil das im Bild geschieht, rastet ein Punkt einer vorderen Ebene dort ein, wo er im Spielblick auf der
+   * Kante einer hinteren liegt. skip: Pfade, die gerade bewegt werden
+   */
+  private snapPicture(p: Pt, skip?: (shape: ZoneShape, ref: PathRef) => boolean): Pt | null {
+    const r = this.host.hitRadius();
+    const nodes = this.host.nodes();
+    let best: Pt | null = null;
+    let bestD = r;
+    const lines: Pt[][] = [];
+    for (const plane of planesOf(nodes)) {
+      if (!this.host.visible(plane)) continue;
+      for (const s of shapesOf(nodes, plane.id)) {
+        if (s.hidden) continue;
+        for (const { ref, path, closed } of shapePaths(s)) {
+          if (skip?.(s, ref)) continue;
+          for (const a of path) {
+            const q = this.scr(s, plane, a.x, a.y);
+            const d = q ? dist(q, p) : Infinity;
+            if (d < bestD) {
+              bestD = d;
+              best = q;
+            }
+          }
+          lines.push(
+            flattenPath(path, 0.3, closed)
+              .map(([x, y]) => this.scr(s, plane, x, y))
+              .filter((q): q is Pt => !!q),
+          );
+          if (closed && lines[lines.length - 1].length) lines[lines.length - 1].push(lines[lines.length - 1][0]);
+        }
+      }
+    }
+    if (best) return best;
+    bestD = r * 0.7;
+    for (const line of lines) {
+      for (let i = 0; i + 1 < line.length; i++) {
+        const { d, t } = segDist(p, line[i], line[i + 1]);
+        if (d < bestD) {
+          bestD = d;
+          best = { x: line[i].x + (line[i + 1].x - line[i].x) * t, y: line[i].y + (line[i + 1].y - line[i].y) * t };
+        }
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Punkt der Ebene unter p mit Einrasten: zuerst im Bild an Ankern und Kanten (wenn eingeschaltet), sonst am Raster der
+   * Ebene (wenn an). Merkt sich den Bildpunkt für den Ring in der Überlagerung
+   */
+  snapPoint(plane: ZonePlane, p: Pt, skip?: (shape: ZoneShape, ref: PathRef) => boolean): Pt | null {
+    this.snapMark = null;
+    if (this.host.snapping()) {
+      const s = this.snapPicture(p, skip);
+      if (s) {
+        this.snapMark = s;
+        return this.host.planePoint(plane, s);
+      }
+    }
+    const q = this.host.planePoint(plane, p);
+    const step = this.host.gridStep(plane);
+    if (q && step) {
+      const g = { x: Math.round(q.x / step) * step, y: Math.round(q.y / step) * step };
+      this.snapMark = this.host.screenOf(plane, g);
+      return { x: round3(g.x), y: round3(g.y) };
+    }
+    return q;
   }
 
   /** berührt ein Pfad (Ebenen-Koordinaten) die Form: ein Punkt in ihr oder ein Schnitt mit ihrem Umriss? */
@@ -741,7 +835,19 @@ export class PathTools {
   }
 
   /** mehrere Anker zugleich: jede Form rechnet den Weg des Zeigers in ihrer eigenen Ebene */
-  private moveAnchors(d: Extract<Drag, { kind: 'anchors' }>, p: Pt): void {
+  private moveAnchors(d: Extract<Drag, { kind: 'anchors' }>, p0: Pt): void {
+    let p = p0;
+    this.snapMark = null;
+    if (d.grab && this.host.snapping()) {
+      // wo der gegriffene Anker landen würde; rastet er ein, verschiebt sich der ganze Zug entsprechend
+      const want = { x: d.grab.x + (p0.x - d.start.x), y: d.grab.y + (p0.y - d.start.y) };
+      const moving = new Set(d.sels.map((x) => `${x.shape}|${refKey(x.ref)}`));
+      const snap = this.snapPicture(want, (shape, ref) => moving.has(`${shape.id}|${refKey(ref)}`));
+      if (snap) {
+        this.snapMark = snap;
+        p = { x: p0.x + snap.x - want.x, y: p0.y + snap.y - want.y };
+      }
+    }
     const groups = byPath(d.sels);
     const shapes = new Set(d.sels.map((s) => s.shape));
     for (const id of shapes) {
@@ -830,6 +936,7 @@ export class PathTools {
   }
 
   up(pointerId: number): void {
+    this.snapMark = null;
     const pen = this.pen;
     if (pen && pen.auto && pen.drag !== null && pen.pointerId === pointerId) {
       // Kurvenstift: den ersten Anker nur angetippt (ab drei): schließen
@@ -921,7 +1028,15 @@ export class PathTools {
   /** Zeiger ohne Druck (Maus, schwebender Pencil): Gummiband des Zeichenstifts */
   hoverAt(p: Pt | null): void {
     this.hover = p;
-    if (this.pen) this.host.redraw();
+    // der Zeichenstift zeigt schon beim Schweben, wo der nächste Punkt einrastet
+    const pen = this.pen;
+    const plane = pen ? findPlane(this.host.nodes(), pen.plane) : this.host.activePlane();
+    if (p && plane && (this.tool === 'pen' || this.tool === 'curve')) {
+      const into = pen?.into ? (this.shapeOf(pen.into)?.shape ?? null) : null;
+      this.snapped(plane, into, p);
+      this.hoverSnap = this.snapMark;
+    } else this.hoverSnap = null;
+    this.host.redraw();
   }
 
   /**
@@ -1069,8 +1184,13 @@ export class PathTools {
       if (g && !orig.has(key)) orig.set(key, copyPath(g.path));
       if (!glue.has(a.shape)) glue.set(a.shape, glueOf(o.shape));
     }
+    // der gegriffene Anker (der Hauptanker) rastet beim Ziehen ein
+    const main = this.anchors.at(-1);
+    const mo = main ? this.shapeOf(main.shape) : null;
+    const ma = main && mo ? getPath(mo.shape, main.ref)?.path[main.i] : undefined;
+    const grab = mo && ma ? this.scr(mo.shape, mo.plane, ma.x, ma.y) : null;
     this.host.begin();
-    this.drag = { kind: 'anchors', pointerId, start: p, sels: [...this.anchors], orig, glue };
+    this.drag = { kind: 'anchors', pointerId, start: p, grab, sels: [...this.anchors], orig, glue };
   }
 
   /** Bereich fertig: Anker darin (in den gewählten Ebenen) wählen, ihre Formen mit; ein Tippen hebt die Auswahl auf */
@@ -1833,7 +1953,7 @@ export class PathTools {
     if (pen && penPlane) {
       // Kurvenstift: die Kurve, wie sie mit dem nächsten Anker unter dem Zeiger liefe
       let shown = pen.pts;
-      const hq = pen.auto && this.hover && pen.drag === null ? this.host.planePoint(penPlane, this.hover) : null;
+      const hq = pen.auto && this.hover && pen.drag === null ? this.host.planePoint(penPlane, this.hoverSnap ?? this.hover) : null;
       if (pen.auto && hq) {
         const probe: Pen = { ...pen, pts: [...pen.pts, { x: hq.x, y: hq.y }], auto: [...pen.auto, true] };
         this.autoHandles(probe, false);
@@ -1841,7 +1961,7 @@ export class PathTools {
       }
       const line = shown.length >= 2 ? flattenPath(shown, 0.3, false) : shown.map((a) => [a.x, a.y] as [number, number]);
       const pts = line.map(([x, y]) => this.host.screenOf(penPlane, { x, y })).filter((q): q is Pt => !!q);
-      if (!pen.auto && this.hover && pen.drag === null && !this.drag && pts.length && !this.mods.cmd && !this.mods.alt) pts.push(this.hover);
+      if (!pen.auto && this.hover && pen.drag === null && !this.drag && pts.length && !this.mods.cmd && !this.mods.alt) pts.push(this.hoverSnap ?? this.hover);
       st.lines.push(pts);
       const all = this.mods.cmd || this.mods.alt;
       pen.pts.forEach((a, i) => {
@@ -1864,6 +1984,7 @@ export class PathTools {
     }
     if (this.stroke) st.stroke = this.stroke.screen;
     if (this.region) st.region = regionRing(this.region.form, this.region.pts);
+    st.snap = this.drag || (this.pen && this.pen.drag !== null) ? this.snapMark : (this.hoverSnap ?? null);
     const bd = this.band;
     const bo = bd ? this.shapeOf(bd.shape) : null;
     if (bd && bo && bd.width > 0) {

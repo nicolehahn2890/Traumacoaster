@@ -129,6 +129,9 @@ export class PlaneEditor {
   private tool: Tool = 'select';
   private isolate: Isolate = 'off';
   private hold = true;
+  /** Einrasten an Ankern und Kanten im Bild; Raster der aktiven Ebene */
+  private snapOn = true;
+  private gridOn = false;
   building = true;
   private dirty = false;
   private meshDirty = true;
@@ -207,11 +210,15 @@ export class PlaneEditor {
       },
       fillFor: (plane) => placeholderFill(plane.z),
       hitRadius: () => this.overlay.handleSize + 6,
+      snapping: () => this.snapOn,
+      gridStep: (plane) => (this.gridOn ? this.gridStep(plane) : null),
+      visible: (plane) => this.planeShown(plane),
     });
     this.ui = new EditorUi(this.actions(), zone.name, this.overlay.el);
     this.ui.setTool(this.tool);
     this.ui.setView(this.viewChoice);
     this.ui.setHold(this.hold);
+    this.ui.setSnap(this.snapOn, this.gridOn);
     this.syncCameraUi();
     const s = host.surface;
     s.addEventListener('pointerdown', this.onDown, true);
@@ -409,15 +416,56 @@ export class PlaneEditor {
     }
   }
 
-  private rebuildMesh(): void {
+  /** wird die Ebene gerade gezeichnet? (ausgeblendet, isoliert) */
+  private planeShown(p: ZonePlane): boolean {
     const active = this.plane;
-    const show = (p: ZonePlane): boolean => {
-      if (this.building && this.isolate === 'only') return p.id === this.active;
-      if (planeHidden(this.nodes, p)) return false;
-      if (this.building && this.isolate === 'front' && active) return p.z >= active.z - 1e-6;
-      return true;
+    if (this.building && this.isolate === 'only') return p.id === this.active;
+    if (planeHidden(this.nodes, p)) return false;
+    if (this.building && this.isolate === 'front' && active) return p.z >= active.z - 1e-6;
+    return true;
+  }
+
+  /** Rasterweite der Ebene: die kleinste aus 0,25 · 2ⁿ bzw. 5er-Stufen, die im Bild mindestens 18 Bildpunkte weit ist */
+  private gridStep(plane: ZonePlane): number {
+    const c = { x: this.width / 2, y: this.height / 2 };
+    const q0 = this.planePoint(plane, c);
+    const q1 = this.planePoint(plane, { x: c.x + 10, y: c.y });
+    const mpp = q0 && q1 ? Math.hypot(q1.x - q0.x, q1.y - q0.y) / 10 : 0.1;
+    return [0.25, 0.5, 1, 2, 5, 10, 20, 50, 100].find((s) => s / mpp >= 18) ?? 100;
+  }
+
+  /** Rasterlinien der aktiven Ebene im sichtbaren Ausschnitt (Bildpunkte) */
+  private gridLines(): Array<[Pt, Pt]> {
+    const plane = this.plane;
+    if (!this.gridOn || !plane) return [];
+    const corners = [
+      { x: 0, y: 0 },
+      { x: this.width, y: 0 },
+      { x: this.width, y: this.height },
+      { x: 0, y: this.height },
+    ].map((q) => this.planePoint(plane, q));
+    if (corners.some((q) => !q)) return [];
+    const xs = corners.map((q) => q!.x);
+    const ys = corners.map((q) => q!.y);
+    const step = this.gridStep(plane);
+    const x0 = Math.floor(Math.min(...xs) / step) * step;
+    const x1 = Math.max(...xs);
+    const y0 = Math.floor(Math.min(...ys) / step) * step;
+    const y1 = Math.max(...ys);
+    if ((x1 - x0) / step > 400 || (y1 - y0) / step > 400) return [];
+    const out: Array<[Pt, Pt]> = [];
+    const seg = (a: Pt, b: Pt) => {
+      const sa = this.screenOf(plane, a);
+      const sb = this.screenOf(plane, b);
+      if (sa && sb) out.push([sa, sb]);
     };
-    this.host.world.planes.build(this.nodes, { showPlane: show });
+    for (let x = x0; x <= x1; x += step) seg({ x, y: y0 }, { x, y: y1 });
+    for (let y = y0; y <= y1; y += step) seg({ x: x0, y }, { x: x1, y });
+    return out;
+  }
+
+  private rebuildMesh(): void {
+    this.host.world.planes.build(this.nodes, { showPlane: (p) => this.planeShown(p) });
     // Kein Boden mehr (Befund 16): sobald die Zone Ebenen hat, verschwindet der flache Boden des Levels
     this.host.world.setLevelGroundVisible(!this.nodes.some(isPlane));
     this.drawOverlay();
@@ -549,6 +597,7 @@ export class PlaneEditor {
 
   private drawOverlay(): void {
     const st = emptyOverlay();
+    if (this.building) st.grid = this.gridLines();
     if (this.building && isPathTool(this.tool)) {
       this.paths.selectionChanged(this.selection);
       this.paths.overlay(st);
@@ -576,6 +625,7 @@ export class PlaneEditor {
       }
       const g = this.gesture;
       if (g?.kind === 'empty' && g.moved && !g.orbit) st.region = regionRing('rect', [g.start, g.last]);
+      if (g?.kind === 'create') st.snap = this.paths.snapAt;
       if (g?.kind === 'create') {
         const plane = findPlane(this.nodes, g.plane);
         if (plane) {
@@ -670,6 +720,16 @@ export class PlaneEditor {
         this.changed();
       },
       depthEnd: () => this.endDrag(),
+      toggleSnap: () => {
+        this.snapOn = !this.snapOn;
+        this.ui.setSnap(this.snapOn, this.gridOn);
+        this.ui.toast(this.snapOn ? 'Einrasten an: Punkte rasten an Ankern und Kanten ein, auch über Ebenen, so wie es im Bild aussieht' : 'Einrasten aus');
+      },
+      toggleGrid: () => {
+        this.gridOn = !this.gridOn;
+        this.ui.setSnap(this.snapOn, this.gridOn);
+        this.drawOverlay();
+      },
       toggleHold: () => {
         this.hold = !this.hold;
         this.ui.setHold(this.hold);
@@ -1420,7 +1480,7 @@ export class PlaneEditor {
           return;
         }
       }
-      const a = this.planePoint(plane, p);
+      const a = this.paths.snapPoint(plane, p);
       if (!a) {
         this.history.cancel();
         return;
@@ -1514,7 +1574,7 @@ export class PlaneEditor {
     }
     if (g.kind === 'create') {
       const plane = findPlane(this.nodes, g.plane);
-      const b = plane ? this.planePoint(plane, p) : null;
+      const b = plane ? this.paths.snapPoint(plane, p) : null;
       if (b) g.b = b;
       this.drawOverlay();
       return;
