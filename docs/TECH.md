@@ -793,6 +793,46 @@ Renderer `src/world/planeMesh.ts`; Oberfläche `src/zoneeditor/colorMenu.ts`, `s
   Browser). Für Pixelmessungen das Papierkorn ausblenden (`view.paper.visible = false`, es multipliziert das ganze
   Bild leicht).
 
+## 4k. Zonen-Editor, Stufe 4: Spiel im Editor
+
+Plan: `docs/ZONENEDITOR-PLAN.md`, Stufe 4 und 4.9. Ohne DOM: `src/zone/dock.ts`, `src/zone/planeStack.ts`; Anschluss in
+`src/app/scenes/level.ts` und `src/world/renderer.ts`.
+
+- **Material und Andockkanten** (`dock.ts`): `Material` steht an Form (`material`) und Füllpunkt (`ZoneRegion.material`);
+  `faceMaterial`/`setFaceMaterial` (eine Form aus einer Fläche trägt es selbst, `setFacePaint` behält es). `dockEdges`
+  geht je spielbarer, sichtbarer Ebene durch die festen und grabbaren Flächen (Umriss gegen, Löcher mit dem
+  Uhrzeigersinn in Ebenen-Koordinaten): eine Kante zählt, wenn ihre Außennormale höchstens 35° von oben abweicht und 5 cm
+  darüber keine feste Fläche der Ebene liegt; zusammenhängende Kanten werden ein Stück (`DockEdge`: Ebene, Form,
+  Polylinie, Mitte, aus). `toggleDock` legt einen Punkt in `shape.dockOff` (Pfad-Koordinaten; ein Stück näher als 0,6 m
+  ist aus); `flipShape`/`rotateShape` nehmen die Punkte mit. `groundAt(edges, x, maxY)` gibt die höchste eingeschaltete
+  Kante an x bis maxY. Der Editor speichert sie je Stand zwischen (`version`, `docks()`).
+- **Tiefe aus Ebenen** (`planeStack.ts`): `buildPlaneStack(nodes)` baut je sichtbarer Ebene (vorn nach hinten) die
+  festen und die gefüllten Flächen, die Umrisse von Formen mit Loch oder freier Fläche (Höhlenmund) und die
+  eingeschalteten Andockkanten; null ohne spielbare Ebene. Ein Strichpunkt wird über `rayToWorld(p, lane)` auf jede
+  Ebene gebracht (Spur = z / LANE_DEPTH, Ebenen-Koordinaten über Lage und Maßstab). `planeLanding` (wie `landingAt`):
+  erst Höhle (Öffnung in einer spielbaren Ebene, dahinter verdeckt eine spielbare den Punkt: Landung dort, `cave`), dann
+  von vorn nach hinten: in einer Fläche höchstens LAND_BELOW unter der Oberkante, darüber höchstens LAND_ABOVE über der
+  Hüllkurve der Kanten (±1,25 und ±2,5 m); Kulisse in der Fläche → null, Vordergrund und Luft übersprungen.
+  `planeGroundDepth` (wie `groundDepth`): Wunschtiefe dort, wo der Punkt GROUND_COMFORT über der höchsten Kante liegt.
+  `planeDeepestDock` für `zMax`. `PlaneFoundation.surfaceBelow` geht von hinten nach vorn durch die spielbaren Ebenen bis
+  1 m hinter der Stütze und nimmt die erste Kante unter dem Anschlusspunkt; `blocks()` ist false.
+- **Level:** `refreshPlaneStack` (beim Laden einer Zone mit Knoten und über `PlaneEditorHost.planesChanged` beim Wechsel
+  zum Spielen) baut Stapel, `WorldRenderer.setPlaneFoundation` (ersetzt Feld- und Terrain-Fundament, Sperren bleiben),
+  die Station (`stationOf`, Bahnhof als `station-ebene`, `resetStationPiece`) und wählt einmal `preferSliceBrush`.
+  `brushOptions` nimmt über `layerDepth()` Scheiben oder Ebenen; ohne Strich-Vorgeschichte gibt `planeStartDepth` die
+  Tiefe am ersten Punkt (der Pinsel nähme sonst die Bildhöhe über dem Boden). `earthAt` liefert mit Ebenen-Pinsel
+  NO_GROUND (−500 m), so hebt `worldPoints` die Bahn nicht über die alte Nulllinie; das Freiraumfeld des Pinsels bleibt in
+  Ebenen-Zonen aus (wie bei den Scheiben). Die Fahrt nutzt `depthPerspective` wie bei den Scheiben.
+- **Station** (`ZoneStationNode`, Kennung `station`): Ebene, x in Ebenen-Koordinaten, Richtung, Länge; `stationOf` gibt die
+  `ZoneStation` (x, Höhe der Kante + 1 m, Spur 1 m vor der Ebene) oder null ohne Kante. `zoneStation()` des Levels nimmt
+  sie vor den Stationen des Klötzchen-Editors.
+- **Editor:** Werkzeug D (`dockDown`, `dockOverlay`): Kante antippen schaltet, sonst die Fläche darunter (Material in der
+  Leiste); „Station setzen“ legt den Knoten auf die getroffene Kante. Überlagerung: `OverlayState.dock`, `hatch` (SVG-
+  Muster), `station`. Handy-Link: Dev-Server `/__lan` (IPv4 im WLAN), `ui.togglePhone`.
+- **Prüfungen:** `tests/dock.test.ts`, `tests/planeStack.test.ts`; Szenario 24 (Andockkanten, Material, Handy-Link),
+  25 (Station, Strich über der Kante: Tiefe der Ebene, Stützen auf Kanten, Fahrt), 26 (Höhle: Strich durch den Mund
+  landet auf der Rückwand, Stützen auf dem unteren Rand der Öffnung).
+
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).
 - g-Kräfte: f = v²·κ⃗ (Mindestradius 2,5 m; κ⃗ aus `sampleTrack` über ±1,2 m gemittelt, ein Wagen spürt keine kürzeren Spitzen) + a_tan·T + g·ŷ, wobei a_tan die echte Tangentialbeschleunigung des Zugs ist (Hangabtrieb minus Reibung, Kettenzug hält das Tempo, Launch, Booster, Bremse); zerlegt im Wagen-Rahmen (T, U, S) mit Schräglage. So drückt die Kette die Fahrgäste in die Lehne, der Launch in den Sitz, die Bremse nach vorn. Entgleisen bei seitlichem g über dem Limit des Schienentyps (`SKIN_PHYSICS`: Holz 2,0, Hybrid 2,4, Mine 2,2, Stahl 3,0, Gold 3,0, Neon 3,2, Eis 2,6, Geister 2,3, Lava 3,0, Space 3,5), Herausfallen bei kopfüber mit g_v < −0,15 über 0,12 s, Blackout über 7 g (nur ein Merker, kostet den dritten Stern). Entgleisen und Herausfallen übergeben den Zug in den Freiflug (unten), Rückroller und Wasser lassen ihn auf der Schiene ausrollen.

@@ -1031,6 +1031,32 @@ auf den neuen Ebenen, Stützen auf Kanten, Probebahn und Testfahrt im Editor, Sp
 Feldrahmen, Durchblick-Prüfung, Leistungsanzeige, Handy-Link. Platzhalter: Stützenformen, Figuren. **Tor S4:** Szene
 06 „Kathedrale im Fels“ aus dem Parallax-Baukasten in Formen nachgebaut, neben der gemalten Fassung (Zone `ebenen` aus
 Etappe 2); Bahn durch die Höhle gezeichnet und gefahren, Stützen auf Kanten; Replay grün; 60 fps am Handy.
+**Stand 27.10.2026: im Kern gebaut** (Technik in `docs/TECH.md` 4k):
+- *Material je Fläche* (fest, grabbar, luftig, frei; Vorgabe grabbar nach Florians Antwort zu B2) in den Leisten von Form
+  und Fläche. *Andockkanten:* Oberkanten fester und grabbarer Flächen spielbarer Ebenen bis 35° Neigung, über denen in
+  der Ebene nichts Festes liegt, auch der Boden eines Lochs (Höhle); je Kantenstück abschaltbar. Werkzeug D zeigt sie
+  grün und das Material als Schraffur (fest dicht, grabbar weit, luftig gepunktet).
+- *Tiefe aus Ebenen:* Im Modus „Ebenen: Bodenhöhe“ (wird in Ebenen-Zonen einmal vorgewählt) liest der Pinsel die Tiefe aus
+  den Ebenen mit den Regeln der Kamerasession: landen knapp an einer Andockkante, sonst Bodenhöhe 4 m über der Kante,
+  durch einen Höhlenmund gezeichnet die Ebene dahinter; Kulisse verdeckt, Vordergrund und Luft sind durchsichtig; die
+  Bahn liegt 1 m vor der Ebene. Ein neuer Strich beginnt in der Tiefe der Ebenen; den flachen Boden gibt es in
+  Ebenen-Zonen nicht mehr (die Bahn darf unter die alte Nulllinie).
+- *Stützen auf Kanten:* Fuß auf der Andockkante der Ebene, an der die Bahn andockt, oder der nächsten davor (im dünnen
+  Stapel des Editors fehlte sonst oft eine Ebene davor); kein unsichtbarer Boden.
+- *Station auf einer Andockkante* (Werkzeug D, „Station setzen“, Richtung, entfernen): ein Knoten der Zone; im Spiel
+  gibt sie den Bahnhof und das Vorgabestück, sie wandert mit ihrer Ebene.
+- *Probebahn und Testfahrt:* „Spielen“ (Tab) liest die Ebenen neu; dort zeichnet und fährt man wie im Spiel.
+  Geprüft mit Szenario 25 (Station, Strich 3 m über der Kante: Bahn in der Tiefe der Ebene, 22 Stützen auf Kanten, keine
+  auf unsichtbarem Boden, Fahrt läuft) und 26 (Höhle: ein Strich durch den Höhlenmund landet auf der Rückwand dahinter,
+  die Stützen stehen auf dem unteren Rand der Öffnung, ihr Fuß hinter der vorderen Ebene, wie in Szene 06).
+- *Handy-Link* („Handy“ oben links: Adresse im WLAN mit Bildrate), *Leistungsanzeige* (Bildrate, Draw Calls,
+  Dreiecke oben links, schon seit Stufe 1).
+**Noch offen aus Stufe 4:** Freiraumfeld aus Flächen (die Bahn darf noch durch feste Flächen anderer Ebenen fahren; der
+Pinsel nutzt das Feld in Ebenen-Zonen wie bei den Scheiben nicht), die übrigen Spielobjekte auf Kanten (Schlange,
+Felder mit Kamerabegrenzung und Rahmen, Ziele, Stufen, Schalter, Coins, Baustellen; bis dahin der Klötzchen-Editor),
+Feldrahmen, Durchblick-Prüfung. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
+lang, die Schraffuren. **Nicht geprüft:** Szene 06 in Formen (Tor S4), Stroke-Replay mit dem Ebenen-Pinsel (der Replay
+kennt den Modus nicht), 60 fps am Handy.
 
 **Stufe 5: Earle-Schichten (M).** Licht der Zone, Bänder, Innenschatten (Kantenabstand im Atlas), Textur aus Florians
 Scans, Pünktchen mit Rang-Kachel und Punktpinsel, Lichtkante, Kantenwelle, Farbnebel, Funkeln, Punktkronen für Bäume

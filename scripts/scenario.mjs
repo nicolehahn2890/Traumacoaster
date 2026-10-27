@@ -1993,6 +1993,72 @@ if (want('25')) {
   check(ride && (ride.t > 1 || ride.mode === 'result'), `Probefahrt im Spielen-Modus läuft (${ride?.mode}, ${Number(ride?.t ?? 0).toFixed(1)} s${ride?.fail ? `, ${ride.fail}` : ''})`);
 }
 
+// 26. Zonen-Editor, Stufe 4: Höhle. Vorn eine spielbare Ebene mit Loch (Höhlenmund), dahinter die Rückwand. Ein Strich
+// durch den Mund landet auf der Rückwand (Höhle geht vor), die Stützen stehen auf dem unteren Rand der Öffnung.
+if (want('26')) {
+  await page.goto(`${BASE}?zone=szenario-hoehle&editor=2&dev=1&fast=6`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const at = await page.evaluate(async () => {
+    const N = await import('/src/zone/nodes.ts');
+    const ed = window.tcGame.current.planeEditor;
+    let out = null;
+    ed.edit(() => {
+      const a = N.newPlane(ed.nodes, 8.4);
+      ed.nodes.push(a);
+      const b = N.newPlane(ed.nodes, 25.2);
+      ed.nodes.push(b);
+      const PA = (x, y) => ed.planePoint(a, { x, y });
+      const l = PA(220, 250);
+      const r = PA(1000, 250);
+      const bot = PA(640, 790);
+      const cx = (l.x + r.x) / 2;
+      const cy = (l.y + bot.y) / 2;
+      const sa = N.newShape(ed.nodes, a.id, N.rectPath(r.x - l.x, l.y - bot.y), cx, cy, '#d9c9a0');
+      // Höhlenmund: Ellipse in der Mitte, etwas tiefer
+      const m = PA(640, 520);
+      const mr = PA(840, 520);
+      const mt = PA(640, 400);
+      const rx = mr.x - m.x;
+      const ry = mt.y - m.y;
+      sa.holes = [N.ellipsePath(rx, ry).map((q) => ({ ...q, x: q.x + (m.x - cx), y: q.y + (m.y - cy) }))];
+      ed.nodes.push(sa);
+      const PB = (x, y) => ed.planePoint(b, { x, y });
+      const bl = PB(100, 200);
+      const br = PB(1180, 200);
+      const bb = PB(640, 795);
+      ed.nodes.push(N.newShape(ed.nodes, b.id, N.rectPath(br.x - bl.x, bl.y - bb.y), (bl.x + br.x) / 2, (bl.y + bb.y) / 2, '#2a4a7a'));
+      out = { a: a.id, b: b.id, mx: m.x, my: m.y, rx, ry, floor: m.y - ry, zb: b.z };
+    });
+    for (let i = 0; i < 3; i++) window.tcGame.app.ticker.update(performance.now());
+    return out;
+  });
+  await page.keyboard.press('Tab');
+  await sleep(400);
+  // waagrecht durch die Mitte des Munds, nur innerhalb der Öffnung
+  const pts = await page.evaluate(({ a, mx, my, rx }) => {
+    const ed = window.tcGame.current.planeEditor;
+    const plane = ed.nodes.find((n) => n.id === a);
+    const out = [];
+    for (let k = 0; k <= 10; k++) {
+      const q = ed.screenOf(plane, { x: mx - rx * 0.7 + (rx * 1.4 * k) / 10, y: my });
+      out.push([q.x, q.y]);
+    }
+    return out;
+  }, at);
+  await stroke(pts, 8);
+  await sleep(1500);
+  const res = await page.evaluate(() => {
+    const s = window.tcGame.current;
+    return { z: (s.path?.nodes ?? []).map((n) => n.z), supports: window.tcGame.world.supportStats };
+  });
+  const want = (at.zb - 1) / 8.4;
+  const deep = res.z.filter((z) => Math.abs(z - want) < 0.08).length;
+  check(res.z.length >= 2 && deep >= Math.ceil(res.z.length * 0.6), `Strich durch den Höhlenmund: ${deep} von ${res.z.length} Knoten auf der Rückwand (Spur ${want.toFixed(2)}; ${res.z.map((z) => z.toFixed(2)).join(' ')})`);
+  const sup = res.supports ?? { element: 0, ground: -1, floating: -1 };
+  check(sup.element > 0 && sup.ground === 0, `Stützen in der Höhle stehen auf Kanten (${sup.element}, schwebend ${sup.floating})`);
+  await page.screenshot({ path: 'screenshots/scenario-26-hoehle.png' });
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));
