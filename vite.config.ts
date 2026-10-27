@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 import type { Plugin } from 'vite';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
+import { networkInterfaces } from 'node:os';
 
 /** erster vorhandener Pfad `name` im Arbeitsordner oder darüber (Worktrees liegen im Haupt-Checkout unter .claude/worktrees) */
 function upwards(name: string): string | null {
@@ -94,6 +95,15 @@ function zoneStore(): Plugin {
           }
           res.end();
         });
+      });
+      // Adressen im WLAN für den Handy-Link des Zonen-Editors (Stufe 4): IPv4 der Netzwerkkarten, ohne interne
+      server.middlewares.use('/__lan', (_req, res) => {
+        const ips = Object.values(networkInterfaces())
+          .flat()
+          .filter((a) => !!a && a.family === 'IPv4' && !a.internal)
+          .map((a) => a!.address);
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ ips }));
       });
       // Bilder zur Zone (Skizzen des Zonen-Editors): POST /__zonefile/<zone>/skizze-<name>.<png|jpg|webp>, höchstens 25 MB
       server.middlewares.use('/__zonefile', (req, res) => {

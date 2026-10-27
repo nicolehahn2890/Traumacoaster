@@ -253,6 +253,11 @@ const CSS = `
 .ze-label{color:#8f8c86;font-size:11px;padding:0 6px 0 8px}
 .ze-toast{left:calc(env(safe-area-inset-left,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 66px);max-width:min(560px,calc(100vw - 32px));padding:9px 12px;opacity:0;transition:opacity .25s;pointer-events:none}
 .ze-toast.show{opacity:1}
+.ze-phone{left:calc(env(safe-area-inset-left,0px) + 12px);top:calc(env(safe-area-inset-top,0px) + 64px);width:min(460px,calc(100vw - 24px));padding:6px 8px 10px;display:none;z-index:4}
+.ze-phone.open{display:block}
+.ze-phrow{display:flex;align-items:center;gap:6px;padding:4px 2px 4px 8px}
+.ze-phrow code{flex:1;min-width:0;font:12px ui-monospace,Menlo,monospace;color:#e7e5e0;user-select:all;-webkit-user-select:all;word-break:break-all}
+.ze-phint{color:#8f8c86;font-size:11px;padding:4px 8px 0}
 .ze-banner{left:50%;top:calc(env(safe-area-inset-top,0px) + 64px);transform:translateX(-50%);display:none;align-items:center;gap:4px;padding:4px 4px 4px 12px}
 .ze-banner.show{display:flex}
 @media (max-width:820px){.ze-views{top:calc(env(safe-area-inset-top,0px) + 64px)}.ze-cam{top:calc(env(safe-area-inset-top,0px) + 116px)}.ze-layers{top:calc(env(safe-area-inset-top,0px) + 116px);width:min(264px,44vw)}.ze-layers.camopen{top:calc(env(safe-area-inset-top,0px) + 248px)}}
@@ -428,6 +433,9 @@ export class EditorUi {
   /** Farbknopf und Farbmenü, Füllstapel (Stufe 3) */
   private readonly colors: ColorMenu;
   private readonly stack: StackPanel;
+  /** Handy-Link (Stufe 4): Adresse der Zone im WLAN */
+  private readonly phone = el('div', 'ze-panel ze-phone');
+  private isDirty = false;
 
   constructor(
     private readonly a: UiActions,
@@ -451,7 +459,7 @@ export class EditorUi {
     name.append(this.dot, document.createTextNode(zoneName));
     this.snapBtn = button(MAGNET, 'Einrasten an Ankern und Kanten, auch über Ebenen so, wie es im Bild aussieht', () => a.toggleSnap());
     this.gridBtn = button(GRID, 'Raster der aktiven Ebene (Punkte rasten daran ein)', () => a.toggleGrid());
-    this.top.append(name, button('Sichern', 'Sichern (Cmd+S)', () => a.save()), el('span', 'ze-sep'), this.undoBtn, this.redoBtn, el('span', 'ze-sep'), this.snapBtn, this.gridBtn);
+    this.top.append(name, button('Sichern', 'Sichern (Cmd+S)', () => a.save()), el('span', 'ze-sep'), this.undoBtn, this.redoBtn, el('span', 'ze-sep'), this.snapBtn, this.gridBtn, el('span', 'ze-sep'), button('Handy', 'Am Handy spielen: Adresse im WLAN (mit Bildrate)', () => void this.togglePhone(zoneName)));
 
     // oben rechts: Ansichten, Kamera, Spielen
     for (const v of ['game', 'front', 'free', 'side'] as const) {
@@ -511,10 +519,51 @@ export class EditorUi {
     this.layers.append(head, this.list, foot);
 
     this.banner.append(this.bannerText, button('Wiederherstellen', '', () => a.restore()), button('Verwerfen', '', () => a.discardBackup()));
-    this.root.append(this.top, this.views, this.cam, this.colors.panel, this.tools, this.layers, this.stack.el, this.context, this.toastEl, this.banner, this.stats);
+    this.root.append(this.top, this.views, this.cam, this.colors.panel, this.phone, this.tools, this.layers, this.stack.el, this.context, this.toastEl, this.banner, this.stats);
     document.body.append(this.root);
     // Klicks auf die Bedienfelder gehen nicht ins Spiel
-    for (const p of [this.top, this.views, this.cam, this.tools, this.layers, this.context, this.banner]) p.addEventListener('pointerdown', (e) => e.stopPropagation());
+    for (const p of [this.top, this.views, this.cam, this.phone, this.tools, this.layers, this.context, this.banner]) p.addEventListener('pointerdown', (e) => e.stopPropagation());
+  }
+
+  /**
+   * Handy-Link: die Zone im Spiel (mit Bildrate, ?dev=1) unter der Adresse des Macs im WLAN; über HTTP mit der IP (der
+   * Dev-Server lässt den Rechnernamen dort nicht zu), über HTTPS mit dem Namen (das Zertifikat gilt für ihn)
+   */
+  private async togglePhone(zone: string): Promise<void> {
+    if (this.phone.classList.toggle('open') === false) return;
+    let ips: string[] = [];
+    try {
+      ips = ((await (await fetch('/__lan')).json()) as { ips?: string[] }).ips ?? [];
+    } catch {
+      /* gebaut oder ohne Dev-Server */
+    }
+    const host = location.protocol === 'https:' || !ips.length ? [location.hostname] : ips;
+    const urls = host.map((h) => `${location.protocol}//${h}${location.port ? `:${location.port}` : ''}${location.pathname}?zone=${encodeURIComponent(zone)}&dev=1`);
+    this.phone.replaceChildren();
+    const head = el('div', 'ze-shead');
+    head.append(el('span', 'ze-title', 'Am Handy spielen'), button('Schließen', '', () => this.phone.classList.remove('open')));
+    this.phone.append(head);
+    for (const u of urls) {
+      const row = el('div', 'ze-phrow');
+      const code = el('code', '', u);
+      row.append(
+        code,
+        button('Kopieren', 'Adresse kopieren', () => {
+          void navigator.clipboard?.writeText(u).then(
+            () => this.toast('Adresse kopiert'),
+            () => this.toast('Kopieren ging nicht; die Adresse markieren und kopieren'),
+          );
+        }),
+      );
+      this.phone.append(row);
+    }
+    this.phone.append(
+      el(
+        'div',
+        'ze-phint',
+        `${this.isDirty ? 'Erst sichern: das Handy lädt die Zonendatei, Ungesichertes sieht es nicht. ' : ''}Handy im selben WLAN; oben links zeigt das Spiel die Bildrate${location.protocol === 'https:' ? ' (über HTTPS braucht das Handy das Zertifikat-Profil wie das iPad)' : ''}.`,
+      ),
+    );
   }
 
   private toggleCam(): void {
@@ -580,6 +629,7 @@ export class EditorUi {
   }
 
   setTop(dirty: boolean, canUndo: boolean, canRedo: boolean, stats: string): void {
+    this.isDirty = dirty;
     this.dot.classList.toggle('dirty', dirty);
     this.dot.title = dirty ? 'Ungesicherte Änderungen' : 'Gesichert';
     this.undoBtn.disabled = !canUndo;

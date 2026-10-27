@@ -1889,6 +1889,12 @@ if (want('24')) {
   await page.click('.ze-context .ze-btn:text-is("fest")');
   const mat2 = await page.evaluate((id) => window.tcGame.current.planeEditor.nodes.find((n) => n.id === id).material, at.cave);
   check(mat2 === 'solid', 'Material der Höhle über die Leiste der Form: fest');
+  // Handy-Link: Adresse der Zone im WLAN mit Bildrate
+  await page.click('.ze-top .ze-btn:text-is("Handy")');
+  await sleep(300);
+  const url = await page.locator('.ze-phone.open code').first().textContent();
+  check(/\?zone=szenario-kanten&dev=1$/.test(url ?? ''), `Handy-Link: ${url}`);
+  await page.click('.ze-phone .ze-btn:text-is("Schließen")');
 }
 
 await browser.close();
