@@ -154,7 +154,21 @@ export interface ZoneShape {
   locked?: boolean;
 }
 
-export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup | ZoneSketch | ZoneSwatch | ZoneStyle | ZoneAir;
+/**
+ * Station auf einer Andockkante (Stufe 4, Plan 4.9 „Spielobjekte stehen auf Andockkanten einer Ebene statt auf einer
+ * Spur“): Ebene, Lage auf ihr (x in Ebenen-Koordinaten), Fahrtrichtung, Länge des Vorgabestücks. Höhe und Tiefe folgen
+ * aus der Kante und der Ebene (src/zone/dock.ts `stationOf`). Eine je Zone (Kennung station)
+ */
+export interface ZoneStationNode {
+  id: string;
+  kind: 'station';
+  parent: string;
+  x: number;
+  dir: 1 | -1;
+  length: number;
+}
+
+export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup | ZoneSketch | ZoneSwatch | ZoneStyle | ZoneAir | ZoneStationNode;
 
 export const isPlane = (n: ZoneNode): n is ZonePlane => n.kind === 'plane';
 export const isShape = (n: ZoneNode): n is ZoneShape => n.kind === 'shape';
@@ -163,6 +177,7 @@ export const isSketch = (n: ZoneNode): n is ZoneSketch => n.kind === 'sketch';
 export const isSwatch = (n: ZoneNode): n is ZoneSwatch => n.kind === 'swatch';
 export const isStyle = (n: ZoneNode): n is ZoneStyle => n.kind === 'style';
 export const isAir = (n: ZoneNode): n is ZoneAir => n.kind === 'air';
+export const isStationNode = (n: ZoneNode): n is ZoneStationNode => n.kind === 'station';
 
 /** Luftperspektive der Zone, falls gesetzt */
 export function airOf(nodes: readonly ZoneNode[]): ZoneAir | undefined {
@@ -904,6 +919,10 @@ export function parseNodes(v: unknown): ZoneNode[] {
       }
       out.push(c);
       ids.add(c.id);
+    } else if (o.kind === 'station' && !out.some(isStationNode) && typeof o.parent === 'string' && num(o.x)) {
+      const st: ZoneStationNode = { id: o.id, kind: 'station', parent: o.parent, x: o.x, dir: o.dir === -1 ? -1 : 1, length: num(o.length) && o.length >= 4 && o.length <= 60 ? o.length : 14 };
+      out.push(st);
+      ids.add(st.id);
     } else if (o.kind === 'air' && !out.some(isAir) && num(o.near) && num(o.far) && num(o.amount)) {
       const color = parseColor(o.color);
       if (!color) continue;
@@ -1072,6 +1091,7 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
       out.push(o);
     }
   }
+  for (const st of nodes.filter(isStationNode)) out.push({ id: st.id, kind: 'station', parent: st.parent, x: round(st.x, 3), dir: st.dir, length: round(st.length, 2) });
   for (const k of nodes.filter(isSketch)) {
     if (!k.src.startsWith('/zones/')) continue;
     const o: Record<string, unknown> = { id: k.id, kind: 'sketch', parent: k.parent, name: k.name, src: k.src, x: round(k.x, 3), y: round(k.y, 3), w: round(k.w, 3), h: round(k.h, 3), opacity: round(k.opacity, 2) };
@@ -1085,7 +1105,7 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
 /** tiefe Kopie (für den Arbeitsverlauf und das Sichern) */
 export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
   return nodes.map((n): ZoneNode => {
-    if (isGroup(n) || isSketch(n) || isAir(n)) return { ...n };
+    if (isGroup(n) || isSketch(n) || isAir(n) || isStationNode(n)) return { ...n };
     if (isPlane(n)) return { ...n, ...(n.fills ? { fills: cloneFills(n.fills) } : {}) };
     if (isSwatch(n)) return { ...n, ...(n.looks ? { looks: { ...n.looks } } : {}) };
     if (isStyle(n)) return { ...n, ...(n.fills ? { fills: cloneFills(n.fills) } : {}) };

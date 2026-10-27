@@ -95,6 +95,8 @@ export class WorldRenderer {
   private foundations: Foundation[] = [];
   /** Freiraumfeld der Zone als Fundament (Tor 2b): ersetzt Terrain und Element-Fundamente, Wasser sperrt weiter */
   private fieldFoundation: Foundation | null = null;
+  /** Andockkanten der Ebenen des Zonen-Editors als Fundament (Stufe 4): ersetzt Feld und Terrain */
+  private planeFoundation: Foundation | null = null;
   /** Zählung der letzten Stützenplanung (Dev-Anzeige, Replay) */
   supportStats: SupportStats | null = null;
   /** Ebenen und Formen des Zonen-Editors (docs/ZONENEDITOR-PLAN.md, Stufe 1) */
@@ -342,10 +344,17 @@ export class WorldRenderer {
     this.refreshFoundations();
   }
 
-  /** Fundamente: Terrain, Kulissen des Levels und Elemente der Zone (Höhlenböden tragen, Wasser sperrt); mit Freiraumfeld nur das Feld und die Sperren */
+  /**
+   * Fundamente: Terrain, Kulissen des Levels und Elemente der Zone (Höhlenböden tragen, Wasser sperrt); mit Freiraumfeld
+   * nur das Feld und die Sperren; mit Ebenen des Zonen-Editors nur ihre Andockkanten und die Sperren (kein flacher Boden)
+   */
   private refreshFoundations(): void {
     const fromElements = (list: Iterable<BuiltElement>): Foundation[] => [...list].flatMap((e) => (e.foundation ? [e.foundation] : []));
     const all = [...fromElements(this.elements), ...fromElements([...this.zone.values()].map((z) => z.built))];
+    if (this.planeFoundation) {
+      this.foundations = [this.planeFoundation, ...all.filter((f) => !!f.blocks && f !== this.planeFoundation)];
+      return;
+    }
     if (this.fieldFoundation) {
       this.foundations = [this.fieldFoundation, ...all.filter((f) => !!f.blocks)];
       return;
@@ -357,6 +366,12 @@ export class WorldRenderer {
   /** Freiraumfeld der Zone als Fundament setzen (null: Terrain und Elemente wie bisher) */
   setFieldFoundation(f: Foundation | null): void {
     this.fieldFoundation = f;
+    this.refreshFoundations();
+  }
+
+  /** Andockkanten der Ebenen als Fundament (Stufe 4); null: wie bisher */
+  setPlaneFoundation(f: Foundation | null): void {
+    this.planeFoundation = f;
     this.refreshFoundations();
   }
 

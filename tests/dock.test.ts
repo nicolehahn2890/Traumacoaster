@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { dockEdges, faceMaterial, groundAt, setFaceMaterial, toggleDock } from '@/zone/dock';
+import { dockEdges, faceMaterial, groundAt, setFaceMaterial, stationOf, toggleDock } from '@/zone/dock';
+import { LANE_DEPTH } from '@/track/stage';
 import { ellipsePath, flipShape, newPlane, newShape, parseNodes, rectPath, serializeNodes, setFacePaint, shapeFaces, type ZoneNode, type ZonePlane, type ZoneShape } from '@/zone/nodes';
 
 function plane(role: ZonePlane['role'] = 'play'): ZoneNode[] {
@@ -98,5 +99,24 @@ describe('Andockkanten', () => {
     toggleDock(s, dockEdges(nodes)[0]);
     expect(s.dockOff).toBeUndefined();
     expect(dockEdges(nodes)[0].off).toBe(false);
+  });
+
+  it('Station auf der Kante: Höhe von der Kante, Tiefe 1 m vor der Ebene; ohne Kante keine', () => {
+    const nodes = plane();
+    const p = nodes[0] as ZonePlane;
+    p.z = 8.4;
+    p.x = 2;
+    p.scale = 2;
+    const s = newShape(nodes, 'p1', rectPath(10, 4), 0, 0, '#445566');
+    nodes.push(s);
+    nodes.push({ id: 'station', kind: 'station', parent: 'p1', x: -2, dir: 1, length: 14 });
+    const st = stationOf(nodes)!;
+    expect(st.x).toBeCloseTo(2 + 2 * -2, 6);
+    expect(st.y).toBeCloseTo(2 * 2 + 1, 6);
+    expect(st.z).toBeCloseTo((8.4 - 1) / LANE_DEPTH, 6);
+    const back = parseNodes(JSON.parse(JSON.stringify(serializeNodes(nodes))));
+    expect(stationOf(back)?.x).toBeCloseTo(st.x, 6);
+    toggleDock(s, dockEdges(nodes)[0]);
+    expect(stationOf(nodes)).toBeNull();
   });
 });

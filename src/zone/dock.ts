@@ -8,7 +8,14 @@
  */
 import { faceBox, type Face } from './faces';
 import { insideWithHoles, type Poly } from './path';
-import { copyPaint, facePaint, MATERIALS, planeHidden, planesOf, shapeFaces, shapesOf, type Material, type ZoneNode, type ZonePlane, type ZoneRegion, type ZoneShape } from './nodes';
+import { copyPaint, facePaint, findPlane, isStationNode, MATERIALS, planeHidden, planesOf, shapeFaces, shapesOf, type Material, type ZoneNode, type ZonePlane, type ZoneRegion, type ZoneShape } from './nodes';
+import type { ZoneStation } from './types';
+import { LANE_DEPTH } from '@/track/stage';
+
+/** so weit (m) liegt die Bahn vor der Ebene, an der sie andockt (wie DOCK_GAP der Scheiben) */
+const STATION_GAP = 1;
+/** Schienen der Station über der Kante (m), wie die Stationen des Klötzchen-Editors über dem Boden */
+const STATION_RISE = 1;
 
 export { MATERIALS, type Material };
 export const MATERIAL_WORDS: Record<Material, string> = { solid: 'fest', dig: 'grabbar', airy: 'luftig', free: 'frei' };
@@ -203,6 +210,19 @@ export function toggleDock(shape: ZoneShape, edge: DockEdge): void {
     return;
   }
   shape.dockOff = [...(shape.dockOff ?? []), toPath(edge.mid)];
+}
+
+/**
+ * Station der Zone aus ihrem Knoten (Stufe 4): auf der eingeschalteten Andockkante ihrer Ebene an x, die Schienen
+ * STATION_RISE darüber, die Tiefe STATION_GAP vor der Ebene; null ohne Knoten oder ohne Kante an der Stelle
+ */
+export function stationOf(nodes: readonly ZoneNode[]): ZoneStation | null {
+  const n = nodes.find(isStationNode);
+  const plane = n ? findPlane(nodes, n.parent) : undefined;
+  if (!n || !plane || plane.role !== 'play') return null;
+  const y = groundAt(dockEdges(nodes, new Set([plane.id])), n.x);
+  if (y === null) return null;
+  return { id: 'station-ebene', x: plane.x + plane.scale * n.x, y: plane.y + plane.scale * y + STATION_RISE, z: (plane.z - STATION_GAP) / LANE_DEPTH, dir: n.dir, length: n.length };
 }
 
 /**

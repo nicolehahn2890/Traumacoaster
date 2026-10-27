@@ -46,7 +46,8 @@ import { cachedFreeLanes, FreeField, type FreeLanes } from '@/zone/field';
 import { SITE_OPENING_R, SITE_REACH, siteAnchor, siteTarget, siteWalls, withSiteOpenings } from '@/zone/sites';
 import { groundHoles, openRooms, roomAt, type Room } from '@/zone/underground';
 import type { LookName } from '@/world/looks';
-import { applyZoneExtras, stationPath, zoneCoins } from '@/zone/build';
+import { applyZoneExtras, buildZoneStation, itemPosition, stationPath, zoneCoins } from '@/zone/build';
+import { stationOf } from '@/zone/dock';
 import { ZoneEditor } from '@/app/zoneEditor';
 import { PlaneEditor } from '@/zoneeditor/planeEditor';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
@@ -57,9 +58,12 @@ import { captureLevel, type LevelLayers } from '../mapTransition';
 import type { SkyState } from '@/render/sky';
 import { brushHoldsLane, brushUsesSliceGround, brushUsesSlices, CameraTiltPanel, initialFov, initialTiltDeg, preferSliceBrush } from '@/ui/cameraTiltPanel';
 import { buildSliceStack, deepestDock, groundDepth, landingAt, type SliceStack } from '@/zone/slices';
+import { buildPlaneStack, PlaneFoundation, planeDeepestDock, planeGroundDepth, planeLanding, type PlaneStack } from '@/zone/planeStack';
 import { buildSliceElement } from '@/world/sliceMesh';
 /** Ebenen-Test: Bezugskamera der Fahrphysik (m), etwa die Kamera bei 10 px/m und 30° Bildwinkel im Querformat */
 const SLICE_PHYSICS_D = 70;
+/** Ebenen des Zonen-Editors: kein flacher Boden mehr (die Ebenen sind die Welt), die Erde liegt so tief */
+const NO_GROUND = -500;
 
 export interface SandboxConfig {
   world: number;
@@ -396,6 +400,10 @@ export class LevelScene implements Scene {
   private brushHoldZ = NaN;
   /** Ebenen-Test: Scheibenstapel der Zone „scheiben“ */
   private slices: SliceStack | null = null;
+  /** Ebenen des Zonen-Editors als Tiefe für den Pinsel und Fundament der Stützen (Stufe 4) */
+  private planeStack: PlaneStack | null = null;
+  /** Station auf einer Andockkante (Knoten des Zonen-Editors), geht der Station des Klötzchen-Editors vor */
+  private planeStation: ZoneStation | null = null;
   /** aktives Feld der Zone: Kamera bleibt darin (weich), Zoom höchstens „Feld passt ins Bild“, Absperrband an den Rändern */
   private activeField: ZoneField | null = null;
   /** Schalter, Gurt, Kettenzugstärke und Grenzen des aktiven Felds (Etappe 2, Schritt 1; ohne Feld: alles) */
@@ -488,10 +496,12 @@ export class LevelScene implements Scene {
           game.world.setLevelGroundVisible(false);
           preferSliceBrush();
         }
-        // Ebenen und Formen des Zonen-Editors (Stufe 1): ein Mesh; wo es Ebenen gibt, gibt es keinen flachen Boden mehr
+        // Ebenen und Formen des Zonen-Editors (Stufe 1): ein Mesh; wo es Ebenen gibt, gibt es keinen flachen Boden mehr.
+        // Stufe 4: Der Pinsel liest seine Tiefe aus ihnen (Modus „Ebenen: Bodenhöhe“), Stützen stehen auf ihren Kanten
         if (zone.nodes?.length) {
           game.world.planes.build(zone.nodes);
           game.world.setLevelGroundVisible(false);
+          this.refreshPlaneStack(false);
         }
         this.level.coins = zoneCoins(zone);
         this.refreshRock();
@@ -537,6 +547,8 @@ export class LevelScene implements Scene {
           view: this.view,
           cameraPanel: this.cameraPanel,
           surface: document.getElementById('app') ?? game.app.canvas,
+          // vom Bauen zum Spielen: Pinsel und Stützen lesen die Ebenen neu
+          planesChanged: () => this.refreshPlaneStack(),
           setGameUi: (on) => {
             this.hud.visible = on;
             this.laneHud.visible = on;
@@ -595,6 +607,8 @@ export class LevelScene implements Scene {
     this.planeEditor = null;
     this.game.world?.planes.clear();
     this.slices = null;
+    this.planeStack = null;
+    this.game.world?.setPlaneFoundation(null);
     this.game.world?.setLevelGroundVisible(true);
     setCameraTilt(DEFAULT_CAMERA_TILT);
     this.game.world?.clearLevel();
@@ -613,6 +627,7 @@ export class LevelScene implements Scene {
 
   /** Station der Zone für die Bahn: die im aktiven Feld, sonst die erste; null ohne Station */
   private zoneStation(): ZoneStation | null {
+    if (this.planeStation) return this.planeStation;
     const zone = this.sandbox?.zone;
     if (!zone || !zone.stations.length) return null;
     const f = this.activeField;
@@ -2116,13 +2131,54 @@ export class LevelScene implements Scene {
       tolerance: Math.max(0.4, 8 / this.view.camera.zoom),
       // Freiraumfeld der Zone (Tor 2b): freie Tiefen-Abschnitte je Linienpunkt am Strahl der Kamera, fester Weltpunkt
       // Ebenen-Test: Die Scheiben ersetzen das Freiraumfeld (das nur die fünf Spuren kennt)
-      field: field && free && !this.slices ? { free, solid: (x: number, y: number, lane: number) => field.solid(x, y, lane), floor: (x: number, y: number, lane: number) => field.floorBelow(x, y, lane, 40)?.y ?? null } : undefined,
+      field: field && free && !this.slices && !this.planeStack ? { free, solid: (x: number, y: number, lane: number) => field.solid(x, y, lane), floor: (x: number, y: number, lane: number) => field.floorBelow(x, y, lane, 40)?.y ?? null } : undefined,
       holdLane: brushHoldsLane(),
-      holdDepth: this.brushHoldZ,
-      depthAt: brushUsesSlices() && this.slices ? (p: StagePoint) => landingAt(this.slices!, p) : undefined,
-      zMax: brushUsesSlices() && this.slices ? deepestDock(this.slices) : undefined,
-      groundAt: brushUsesSliceGround() && this.slices ? (p: StagePoint) => groundDepth(this.slices!, p) : undefined,
+      holdDepth: Number.isFinite(this.brushHoldZ) ? this.brushHoldZ : this.planeStartDepth(),
+      ...this.layerDepth(),
     };
+  }
+
+  /**
+   * Ebenen des Zonen-Editors: Tiefe am Anfang eines neuen Strichs aus den Ebenen (Landung, sonst Bodenhöhe). Der
+   * Pinsel nähme sonst die Bildhöhe über dem Boden, und den flachen Boden gibt es dort nicht mehr
+   */
+  private planeStartDepth(): number {
+    const stack = this.planeStack;
+    const p = this.brush?.points[0];
+    if (!stack || !p || this.slices || !brushUsesSlices()) return NaN;
+    return planeLanding(stack, p)?.z ?? planeGroundDepth(stack, p);
+  }
+
+  /** Tiefe aus Ebenen: aus dem Scheibenstapel der Kamerasession oder aus den Ebenen des Zonen-Editors (Stufe 4) */
+  private layerDepth(): { depthAt?: (p: StagePoint) => ReturnType<typeof landingAt>; zMax?: number; groundAt?: (p: StagePoint) => number } {
+    if (!brushUsesSlices()) return {};
+    const slices = this.slices;
+    if (slices) return { depthAt: (p) => landingAt(slices, p), zMax: deepestDock(slices), groundAt: brushUsesSliceGround() ? (p) => groundDepth(slices, p) : undefined };
+    const stack = this.planeStack;
+    if (stack) return { depthAt: (p) => planeLanding(stack, p), zMax: planeDeepestDock(stack), groundAt: brushUsesSliceGround() ? (p) => planeGroundDepth(stack, p) : undefined };
+    return {};
+  }
+
+  /**
+   * Ebenen des Zonen-Editors neu lesen (beim Laden und nach dem Bauen, bevor gespielt wird): Stapel für den Pinsel,
+   * Andockkanten als Fundament der Stützen, Freiraumfeld ohne flachen Boden
+   */
+  private refreshPlaneStack(rock = true): void {
+    const nodes = this.sandbox?.zone?.nodes ?? [];
+    this.planeStack = nodes.length ? buildPlaneStack(nodes) : null;
+    this.game.world?.setPlaneFoundation(this.planeStack ? new PlaneFoundation(this.planeStack) : null);
+    // Ebenen-Zone: einmal auf „Ebenen: Bodenhöhe“ (eine eigene Wahl im Kamera-Panel bleibt)
+    if (this.planeStack) preferSliceBrush();
+    // Station auf einer Andockkante: ihr Bahnhof in die Welt, ihr Vorgabestück als Bahn, solange nichts gezeichnet ist
+    // (eine gezeichnete Bahn bleibt; der Mülleimer beginnt neu an der Station)
+    this.planeStation = stationOf(nodes);
+    const world = this.game.world;
+    if (world) {
+      world.removeZoneElement('station-ebene');
+      if (this.planeStation) world.addZoneBuilt('station-ebene', buildZoneStation(this.planeStation), itemPosition(this.planeStation));
+    }
+    if (this.planeStation) this.resetStationPiece();
+    if (rock) this.refreshRock();
   }
 
   /** Pinsel-Strich: gemalte Linie, das Gummiband zum Finger und der Tropfen unter dem Finger */
@@ -2428,7 +2484,7 @@ export class LevelScene implements Scene {
     this.brushPlanStamp = this.pathStamp(plan.path);
     const limit = (SKIN_PHYSICS[this.skin] ?? SKIN_PHYSICS.skinWood).lateralLimit;
     const probe = (path: TrackPath, samples: TrackSamples) =>
-      new TrainSim(samples, path, { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), lateralLimit: Infinity, checkCrossings: false, ...(this.slices ? { depthPerspective: SLICE_PHYSICS_D } : {}) });
+      new TrainSim(samples, path, { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), lateralLimit: Infinity, checkCrossings: false, ...(this.slices || this.planeStack ? { depthPerspective: SLICE_PHYSICS_D } : {}) });
     this.refiner = new BrushRefiner(plan, this.brushOptions(), probe, limit);
     this.refining = plan.path;
   }
@@ -2684,6 +2740,8 @@ export class LevelScene implements Scene {
   }
   /** Höhe, unter der die Erde fest ist: der Boden, mit den Bergen des Levels, wenn Tunnel nicht erlaubt sind */
   private earthAt(x: number, z: number): number {
+    // Ebenen-Zone mit dem Ebenen-Pinsel: kein flacher Boden (sonst hebt der Pinsel die Bahn über die alte Nulllinie)
+    if (this.planeStack && brushUsesSlices()) return NO_GROUND;
     return this.allowTunnels ? this.terrain.groundHeight(x, z) : this.terrain.surfaceHeight(x, z);
   }
   private moveNode(i: number, st: StagePoint): void {
@@ -2820,7 +2878,7 @@ export class LevelScene implements Scene {
     const field = this.field;
     const zone = this.sandbox?.zone;
     // Tunnel-Meter (Plan 5.1): unter einer Decke des Freiraumfelds (Innenraum eines Dreiteilers, Höhle)
-    return { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), ...(chain ? { chainHeight: chain } : {}), ...(field && !field.empty ? { insideRock: (x: number, y: number, z: number) => field.ceilingAbove(x, y, z) } : {}), ...(zone ? { walls: siteWalls(zone.sites, this.openedSites) } : {}), ...(this.slices ? { depthPerspective: SLICE_PHYSICS_D } : {}) };
+    return { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), ...(chain ? { chainHeight: chain } : {}), ...(field && !field.empty ? { insideRock: (x: number, y: number, z: number) => field.ceilingAbove(x, y, z) } : {}), ...(zone ? { walls: siteWalls(zone.sites, this.openedSites) } : {}), ...(this.slices || this.planeStack ? { depthPerspective: SLICE_PHYSICS_D } : {}) };
   }
 
   /** Startart im Feld (Etappe 2, Schritt 1): erlaubt die Stufe die gewählte nicht, nimmt die Bahn die erste erlaubte */

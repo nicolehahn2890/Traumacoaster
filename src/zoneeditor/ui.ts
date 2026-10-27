@@ -74,6 +74,10 @@ export interface UiActions extends StackActions {
   fillDone(): void;
   /** Material der Auswahl (Fläche oder Formen) oder der im Werkzeug Andockkanten angetippten Fläche */
   setMaterial(m: Material): void;
+  /** Station auf einer Andockkante: setzen (dann eine Kante antippen), Richtung wechseln, entfernen */
+  stationPlace(): void;
+  stationFlip(): void;
+  stationRemove(): void;
   /** Verlaufswerkzeug: Art (Farbe, Deckkraft), linear oder radial, umkehren, Deckkraft des Stopps, Stopp löschen, Verlauf entfernen */
   gradKind(kind: 'gradient' | 'fade'): void;
   gradRadial(radial: boolean): void;
@@ -133,7 +137,7 @@ export interface ContextExtra {
   /** Material der Auswahl (gemischt: null) */
   material?: Material | 'mixed' | null;
   /** Werkzeug Andockkanten: Zahl der Kanten, angetippte Fläche (Name, Material) */
-  dock?: { edges: number; off: number; face: { name: string; material: Material } | null } | null;
+  dock?: { edges: number; off: number; face: { name: string; material: Material } | null; station: { has: boolean; placing: boolean; ok: boolean } } | null;
 }
 
 export interface LayerRow {
@@ -169,6 +173,7 @@ const CSS = `
 .ze-dock{fill:none;stroke:#7fe08a;stroke-width:3.5;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 1px 1px rgba(0,0,0,.5))}
 .ze-dock.off{stroke:rgba(255,255,255,.55);stroke-width:2;stroke-dasharray:4 5}
 .ze-hatch{stroke:none}
+.ze-station{fill:rgba(255,170,70,.35);stroke:#ffaa46;stroke-width:2}
 .ze-gline-under{stroke:rgba(0,0,0,.55);stroke-width:4;stroke-linecap:round}
 .ze-gline{stroke:#ffffff;stroke-width:1.6;stroke-linecap:round}
 .ze-gcircle{fill:none;stroke:#ffffff;stroke-width:1;stroke-dasharray:4 4;opacity:.8}
@@ -1125,7 +1130,21 @@ export class EditorUi {
       );
     } else if (dock) {
       // Werkzeug Andockkanten: Zahlen, und für die angetippte Fläche ihr Material
+      if (dock.station.placing) {
+        this.context.append(el('span', 'ze-label', 'Station: eine Andockkante antippen, dort beginnt der Bahnsteig'), button('Abbrechen', 'Station nicht setzen', () => this.a.stationPlace(), 'on'));
+        this.context.classList.add('show');
+        return;
+      }
       this.context.append(el('span', 'ze-label', dock.edges ? `${dock.edges} Andockkanten${dock.off ? `, ${dock.off} aus` : ''}: antippen schaltet ein Stück aus und an` : 'Keine Andockkanten: Ebenen mit Rolle „spielbar“ und feste oder grabbare Flächen haben Oberkanten'));
+      this.context.append(el('span', 'ze-sep'));
+      if (dock.station.has) {
+        if (!dock.station.ok) this.context.append(el('span', 'ze-label', 'Station ohne Kante'));
+        this.context.append(
+          button('Station versetzen', 'Station auf eine andere Andockkante setzen', () => this.a.stationPlace()),
+          button('Richtung ⇄', 'Fahrtrichtung der Station wechseln', () => this.a.stationFlip()),
+          button('Station entfernen', 'Station aus der Zone nehmen', () => this.a.stationRemove()),
+        );
+      } else if (dock.edges) this.context.append(button('Station setzen', 'Bahnhof mit Vorgabestück auf eine Andockkante setzen (zum Spielen im Editor)', () => this.a.stationPlace()));
       if (dock.face) {
         this.context.append(el('span', 'ze-sep'), el('span', 'ze-label', dock.face.name));
         for (const m of MATERIALS) this.context.append(button(MATERIAL_WORDS[m], `Material: ${MATERIAL_WORDS[m]}`, () => this.a.setMaterial(m), dock.face.material === m ? 'on' : ''));

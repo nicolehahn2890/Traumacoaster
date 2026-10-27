@@ -1897,6 +1897,102 @@ if (want('24')) {
   await page.click('.ze-phone .ze-btn:text-is("Schließen")');
 }
 
+// 25. Zonen-Editor, Stufe 4: Spiel im Editor. Zwei spielbare Ebenen bauen, auf „Spielen“ schalten, mit dem Pinsel über
+// die Oberkante der vorderen zeichnen (3 m darüber): die Bahn liegt in ihrer Tiefe (1 m davor), die Stützen stehen auf Andockkanten
+// (kein flacher Boden mehr), die Fahrt läuft.
+if (want('25')) {
+  await page.goto(`${BASE}?zone=szenario-spiel&editor=2&dev=1&fast=6`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const at = await page.evaluate(async () => {
+    const N = await import('/src/zone/nodes.ts');
+    const ed = window.tcGame.current.planeEditor;
+    let out = null;
+    ed.edit(() => {
+      const a = N.newPlane(ed.nodes, 8.4);
+      ed.nodes.push(a);
+      const b = N.newPlane(ed.nodes, 25.2);
+      ed.nodes.push(b);
+      const PA = (x, y) => ed.planePoint(a, { x, y });
+      const left = PA(260, 470);
+      const right = PA(1000, 470);
+      const bottom = PA(640, 780);
+      const w = right.x - left.x;
+      const h = left.y - bottom.y;
+      const sa = N.newShape(ed.nodes, a.id, N.rectPath(w, h), (left.x + right.x) / 2, (left.y + bottom.y) / 2, '#8aa58c');
+      ed.nodes.push(sa);
+      const PB = (x, y) => ed.planePoint(b, { x, y });
+      const bl = PB(150, 300);
+      const br = PB(1100, 300);
+      const bb = PB(640, 790);
+      const sb = N.newShape(ed.nodes, b.id, N.rectPath(br.x - bl.x, bl.y - bb.y), (bl.x + br.x) / 2, (bl.y + bb.y) / 2, '#5b7f7a');
+      ed.nodes.push(sb);
+      out = { a: a.id, top: left.y, x0: left.x, x1: right.x, za: a.z };
+    });
+    for (let i = 0; i < 3; i++) window.tcGame.app.ticker.update(performance.now());
+    return out;
+  });
+  // Station auf die Kante der vorderen Ebene (Werkzeug D, „Station setzen“, links auf die Kante tippen)
+  await page.keyboard.press('d');
+  await page.click('.ze-context .ze-btn:text-is("Station setzen")');
+  const sAt = await page.evaluate(({ a, top, x0 }) => {
+    const ed = window.tcGame.current.planeEditor;
+    return ed.screenOf(ed.nodes.find((n) => n.id === a), { x: x0 + 4, y: top });
+  }, at);
+  await page.mouse.click(sAt.x, sAt.y);
+  await sleep(150);
+  const stNode = await page.evaluate(() => window.tcGame.current.planeEditor.nodes.find((n) => n.kind === 'station') ?? null);
+  check(!!stNode && stNode.parent === at.a, `Station auf die Andockkante gesetzt (Ebene ${stNode?.parent}, x ${stNode?.x?.toFixed(1)})`);
+  await page.keyboard.press('v');
+  // spielen: die Station steht mit Vorgabestück da
+  await page.keyboard.press('Tab');
+  await sleep(400);
+  const piece = await page.evaluate(() => {
+    const s = window.tcGame.current;
+    const n0 = s.path?.nodes?.[0];
+    return n0 ? { kind: n0.kind, y: n0.y, z: n0.z, nodes: s.path.nodes.length } : null;
+  });
+  check(piece?.kind === 'station' && Math.abs(piece.z - (at.za - 1) / 8.4) < 1e-6 && Math.abs(piece.y - (at.top + 1)) < 0.05, `Spielen: Vorgabestück der Station auf der Kante (Höhe ${piece?.y?.toFixed(2)}, Spur ${piece?.z?.toFixed(3)})`);
+  // ab dem Ende des Vorgabestücks weiterzeichnen
+  const pts = await page.evaluate(({ a, top, x0, x1 }) => {
+    const ed = window.tcGame.current.planeEditor;
+    const plane = ed.nodes.find((n) => n.id === a);
+    const out = [];
+    for (let k = 0; k <= 10; k++) {
+      const x = x0 + 18 + ((x1 - x0 - 22) * k) / 10;
+      // 3 m über der Kante: unter der Wunschhöhe (Bodenhöhe 4 m), also in ihrer Tiefe, und hoch genug für Stützen
+      const q = ed.screenOf(plane, { x, y: top + 3 });
+      out.push([q.x, q.y]);
+    }
+    return out;
+  }, at);
+  await stroke(pts, 8);
+  await sleep(1500);
+  const res = await page.evaluate(() => {
+    const s = window.tcGame.current;
+    const nodes = s.path?.nodes ?? [];
+    return { mode: s.mode, nodes: nodes.length, z: nodes.map((n) => n.z), supports: window.tcGame.world.supportStats, brush: localStorage.getItem('tc.kamerawinkel'), stack: s.planeStack ? s.planeStack.planes.map((p) => ({ lane: p.lane, role: p.role, docks: p.docks.length })) : null, opts: (() => { const o = s.brushOptions(); return { depthAt: !!o.depthAt, groundAt: !!o.groundAt, zMax: o.zMax, holdLane: o.holdLane, field: !!o.field }; })() };
+  });
+  if (process.env.TC_DEBUG) console.log('  spiel', JSON.stringify(res));
+  const want = (at.za - 1) / 8.4;
+  const near = res.z.filter((z) => Math.abs(z - want) < 0.08).length;
+  check(res.nodes >= 2 && near >= Math.ceil(res.z.length * 0.6), `Pinsel über der Oberkante: ${near} von ${res.z.length} Knoten in der Tiefe der Ebene (Spur ${want.toFixed(2)}; ${res.z.map((z) => z.toFixed(2)).join(' ')})`);
+  const sup = res.supports ?? { ground: -1, element: 0 };
+  check(sup.element > 0 && sup.ground === 0 && sup.rock === 0, `Stützen auf Andockkanten (${sup.element}), keine auf dem unsichtbaren Boden (${sup.ground})`);
+  await page.screenshot({ path: 'screenshots/scenario-25-spiel.png' });
+  // Probefahrt: die Bahn ist offen (keine Station), der Zug fährt bis zum Absperrband
+  await page.mouse.click(640, 800 - 56);
+  let ride = null;
+  for (let i = 0; i < 20; i++) {
+    await sleep(400);
+    ride = await page.evaluate(() => {
+      const s = window.tcGame.current;
+      return { mode: s.mode, t: s.sim ? s.sim.t : 0, phase: s.sim?.phase ?? null, fail: s.sim?.failReason ?? null };
+    });
+    if (ride.mode === 'result' || ride.t > 2) break;
+  }
+  check(ride && (ride.t > 1 || ride.mode === 'result'), `Probefahrt im Spielen-Modus läuft (${ride?.mode}, ${Number(ride?.t ?? 0).toFixed(1)} s${ride?.fail ? `, ${ride.fail}` : ''})`);
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));

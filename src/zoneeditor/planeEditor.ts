@@ -64,6 +64,7 @@ import {
   shapeToPlane,
   setFaceFill,
   slicesToNodes,
+  isStationNode,
   styleMap,
   stylesOf,
   swatchesOf,
@@ -84,7 +85,7 @@ import { evalLayers, gradientT, hexToRgb, isHex, MAX_LAYERS, paintLayers, rampOf
 import { addStop, lineT, moveStop, ownPaint, readGradient, removeGradient, removeStop, reverseStops, setMid, targetBox, topGradient, writeGradient, writePaint, type GradKind, type GradLine, type GradTarget } from '@/zone/gradients';
 import type { StackRow, StackView } from './stackPanel';
 import { bakeStyle, linkedStyle, linkStyle, paintToStyle, pasteStyle, styleFromClip, unlinkStyle, type StyleClip } from '@/zone/styles';
-import { DEFAULT_MATERIAL, dockEdges, faceMaterial, setFaceMaterial, toggleDock, type DockEdge } from '@/zone/dock';
+import { DEFAULT_MATERIAL, dockEdges, faceMaterial, setFaceMaterial, stationOf, toggleDock, type DockEdge } from '@/zone/dock';
 import { faceAt, faceBox, type Face } from '@/zone/faces';
 import type { ColorMenuHost, PickPhase } from './colorMenu';
 import { EditorUi, type Isolate, type LayerRow, type Tool } from './ui';
@@ -98,6 +99,8 @@ export interface PlaneEditorHost {
   surface: HTMLElement;
   /** Bedienung des Spiels (HUD, Overlays, Kamera-Panel) zeigen oder verbergen */
   setGameUi(on: boolean): void;
+  /** Ebenen haben sich geändert, gleich wird gespielt (Pinsel und Stützen lesen sie neu, Stufe 4) */
+  planesChanged?(): void;
 }
 
 interface Pt {
@@ -255,6 +258,8 @@ export class PlaneEditor {
   private dockCache: { version: number; edges: DockEdge[] } | null = null;
   /** im Werkzeug Andockkanten angetippte Fläche (Form, Punkt im Pfad) */
   private dockFace: { shape: string; at: Pt } | null = null;
+  /** Station setzen: die nächste angetippte Andockkante bekommt sie */
+  private stationPlacing = false;
   /** kopierter Anstrich (Cmd+Wahl+C, Pipette mit Wahltaste); mit Kennung, wenn er von einem Stil kam */
   private styleClip: StyleClip | null = null;
   /** Vorschaubilder der Stile (Daten-URL je Inhalt) */
@@ -507,6 +512,8 @@ export class PlaneEditor {
       this.gesture = null;
       this.nav = null;
       this.pointers.clear();
+      // Pinsel und Stützen lesen die Ebenen neu (Tiefe aus Ebenen, Andockkanten)
+      this.host.planesChanged?.();
     }
     this.uiDirty = true;
   }
@@ -973,6 +980,20 @@ export class PlaneEditor {
       deletePlane: () => this.deletePlane(),
       fillDone: () => this.endFill(),
       setMaterial: (m) => this.setMaterial(m),
+      stationPlace: () => {
+        this.stationPlacing = !this.stationPlacing;
+        this.uiDirty = true;
+      },
+      stationFlip: () => this.edit(() => {
+        const st = this.nodes.find(isStationNode);
+        if (st) st.dir = st.dir === 1 ? -1 : 1;
+      }),
+      stationRemove: () => {
+        this.edit(() => {
+          this.nodes = this.nodes.filter((n) => !isStationNode(n));
+          this.zone.nodes = this.nodes;
+        });
+      },
       gradKind: (kind) => {
         if (this.grad) {
           this.grad.kind = kind;
@@ -1119,6 +1140,7 @@ export class PlaneEditor {
     this.sketchEdit = null;
     if (this.fillMode) this.endFill();
     if (this.grad) this.grad.stop = null;
+    this.stationPlacing = false;
     this.paths.setTool(isPathTool(t) ? t : null);
     this.ui.setTool(t);
     this.updateCursor();
@@ -2834,7 +2856,8 @@ export class PlaneEditor {
   private dockInfo(): NonNullable<import('./ui').ContextExtra['dock']> {
     const e = this.docks();
     const t = this.dockTarget();
-    return { edges: e.length, off: e.filter((x) => x.off).length, face: t ? { name: t.shape.name, material: faceMaterial(t.shape, t.face) } : null };
+    const has = this.nodes.some(isStationNode);
+    return { edges: e.length, off: e.filter((x) => x.off).length, face: t ? { name: t.shape.name, material: faceMaterial(t.shape, t.face) } : null, station: { has, placing: this.stationPlacing, ok: !has || !!stationOf(this.nodes) } };
   }
 
   /** Andockkanten (grün, aus gestrichelt) und Material der Flächen spielbarer Ebenen als Schraffur */
@@ -2857,6 +2880,21 @@ export class PlaneEditor {
           st.hatch.push({ rings, material: m });
         }
       }
+    }
+    // Station: Bahnsteig von ihrem Punkt auf der Kante in Fahrtrichtung, 2 m hoch
+    const sn = this.nodes.find(isStationNode);
+    const sp = sn ? findPlane(this.nodes, sn.parent) : undefined;
+    const ws = sn ? stationOf(this.nodes) : null;
+    if (sn && sp && ws) {
+      const y0 = (ws.y - 1 - sp.y) / sp.scale;
+      const x1 = sn.x + (sn.dir * sn.length) / sp.scale;
+      const corners = [
+        { x: sn.x, y: y0 },
+        { x: x1, y: y0 },
+        { x: x1, y: y0 + 2 / sp.scale },
+        { x: sn.x, y: y0 + 2 / sp.scale },
+      ].map((q) => this.screenOf(sp, q));
+      if (corners.every(Boolean)) st.station = corners as Pt[];
     }
     const t = this.dockTarget();
     const tp = t ? findPlane(this.nodes, t.shape.parent) : undefined;
@@ -2881,6 +2919,26 @@ export class PlaneEditor {
         const d = Math.hypot(a.x + dx * t - p.x, a.y + dy * t - p.y);
         if (d <= r && (!best || d < best.d)) best = { e, d };
       }
+    }
+    // Station setzen: auf die getroffene Kante, an der Stelle unter dem Zeiger
+    if (this.stationPlacing) {
+      const plane = best ? findPlane(this.nodes, best.e.plane) : undefined;
+      const q = plane ? this.planePoint(plane, p) : null;
+      if (!best || !plane || !q) {
+        this.ui.toast('Eine grüne Andockkante antippen');
+        return;
+      }
+      const old = this.nodes.find(isStationNode);
+      this.edit(() => {
+        this.nodes = this.nodes.filter((n) => !isStationNode(n));
+        this.nodes.push({ id: 'station', kind: 'station', parent: plane.id, x: Math.round(q.x * 1000) / 1000, dir: old?.dir ?? 1, length: old?.length ?? 14 });
+        this.zone.nodes = this.nodes;
+      });
+      this.stationPlacing = false;
+      this.ui.toast('Station gesetzt: „Spielen“ zeigt sie mit Vorgabestück');
+      this.uiDirty = true;
+      this.drawOverlay();
+      return;
     }
     if (best) {
       const shape = findShape(this.nodes, best.e.shape);

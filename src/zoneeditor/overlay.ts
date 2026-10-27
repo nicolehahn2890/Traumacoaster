@@ -47,9 +47,11 @@ export interface OverlayState {
   /** Andockkanten (grün, abgeschaltet gestrichelt) und Material der Flächen (Schraffur), Stufe 4 */
   dock: Array<{ pts: Pt[]; off: boolean }>;
   hatch: Array<{ rings: Pt[][]; material: 'solid' | 'dig' | 'airy' }>;
+  /** Station auf ihrer Andockkante (Rahmen des Bahnsteigs) */
+  station: Pt[] | null;
 }
 
-export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [], target: null, loupe: null, gradient: null, dock: [], hatch: [] });
+export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [], target: null, loupe: null, gradient: null, dock: [], hatch: [], station: null });
 
 const ring = (pts: Pt[]): string => (pts.length ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z` : '');
 const open = (pts: Pt[]): string => (pts.length > 1 ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}` : '');
@@ -75,6 +77,7 @@ export class EditorOverlay {
   private readonly gradGroup = document.createElementNS(NS, 'g');
   private readonly hatchPaths = { solid: document.createElementNS(NS, 'path'), dig: document.createElementNS(NS, 'path'), airy: document.createElementNS(NS, 'path') };
   private readonly dockOn = document.createElementNS(NS, 'path');
+  private readonly stationPath = document.createElementNS(NS, 'path');
   private readonly dockOff = document.createElementNS(NS, 'path');
   /** Kantenlänge der Rahmen-Griffe (Pixel); auf Touch-Geräten größer */
   handleSize = 9;
@@ -111,7 +114,8 @@ export class EditorOverlay {
     }
     this.dockOn.setAttribute('class', 'ze-dock');
     this.dockOff.setAttribute('class', 'ze-dock off');
-    this.el.append(defs, this.hatchPaths.solid, this.hatchPaths.dig, this.hatchPaths.airy, this.dockOff, this.dockOn);
+    this.stationPath.setAttribute('class', 'ze-station');
+    this.el.append(defs, this.hatchPaths.solid, this.hatchPaths.dig, this.hatchPaths.airy, this.dockOff, this.dockOn, this.stationPath);
     this.el.append(this.targetPath, this.gradGroup, this.loupeRing, this.gridPath, this.groupPath, this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.regionPath, this.tangentPath, this.anchorGroup, this.knobGroup, this.handleGroup, this.snapRing);
   }
 
@@ -160,6 +164,7 @@ export class EditorOverlay {
     for (const k of ['solid', 'dig', 'airy'] as const) this.hatchPaths[k].setAttribute('d', s.hatch.filter((h) => h.material === k).map((h) => h.rings.map(ring).join('')).join(''));
     this.dockOn.setAttribute('d', s.dock.filter((d) => !d.off).map((d) => open(d.pts)).join(''));
     this.dockOff.setAttribute('d', s.dock.filter((d) => d.off).map((d) => open(d.pts)).join(''));
+    this.stationPath.setAttribute('d', s.station ? ring(s.station) : '');
     this.drawGradient(s.gradient);
     this.loupeRing.style.display = s.loupe ? '' : 'none';
     if (s.loupe) {
