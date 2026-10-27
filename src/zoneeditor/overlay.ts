@@ -42,9 +42,11 @@ export interface OverlayState {
   target: Pt[][] | null;
   /** Lupe der Pipette: Stelle und aufgenommene Farbe */
   loupe: (Pt & { color: string }) | null;
+  /** Verlaufsregler am Objekt (Bild 5): Anfang, Ende, Stopps mit ihrer Farbe, Mitten; radial mit Kreis */
+  gradient: { a: Pt; b: Pt; radial: boolean; stops: Array<Pt & { color: string; on: boolean; off: boolean }>; mids: Pt[] } | null;
 }
 
-export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [], target: null, loupe: null });
+export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [], target: null, loupe: null, gradient: null });
 
 const ring = (pts: Pt[]): string => (pts.length ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z` : '');
 const open = (pts: Pt[]): string => (pts.length > 1 ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}` : '');
@@ -67,6 +69,7 @@ export class EditorOverlay {
   private readonly handleGroup = document.createElementNS(NS, 'g');
   private readonly targetPath = document.createElementNS(NS, 'path');
   private readonly loupeRing = document.createElementNS(NS, 'circle');
+  private readonly gradGroup = document.createElementNS(NS, 'g');
   /** Kantenlänge der Rahmen-Griffe (Pixel); auf Touch-Geräten größer */
   handleSize = 9;
 
@@ -89,7 +92,7 @@ export class EditorOverlay {
     this.targetPath.setAttribute('fill-rule', 'evenodd');
     this.loupeRing.setAttribute('class', 'ze-loupe');
     this.loupeRing.setAttribute('r', '26');
-    this.el.append(this.targetPath, this.loupeRing, this.gridPath, this.groupPath, this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.regionPath, this.tangentPath, this.anchorGroup, this.knobGroup, this.handleGroup, this.snapRing);
+    this.el.append(this.targetPath, this.gradGroup, this.loupeRing, this.gridPath, this.groupPath, this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.regionPath, this.tangentPath, this.anchorGroup, this.knobGroup, this.handleGroup, this.snapRing);
   }
 
   set visible(on: boolean) {
@@ -106,9 +109,35 @@ export class EditorOverlay {
     }
   }
 
+  /** Verlaufsregler: Linie doppelt (dunkel unter hell), Anfang als offener Kreis, Ende als Punkt, Stopps als Farbfelder */
+  private drawGradient(g: OverlayState['gradient']): void {
+    this.gradGroup.replaceChildren();
+    if (!g) return;
+    const add = (tag: string, attrs: Record<string, string | number>, cls: string) => {
+      const e = document.createElementNS(NS, tag);
+      for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, typeof v === 'number' ? v.toFixed(1) : v);
+      e.setAttribute('class', cls);
+      this.gradGroup.append(e);
+      return e;
+    };
+    if (g.radial) add('circle', { cx: g.a.x, cy: g.a.y, r: Math.hypot(g.b.x - g.a.x, g.b.y - g.a.y) }, 'ze-gcircle');
+    add('line', { x1: g.a.x, y1: g.a.y, x2: g.b.x, y2: g.b.y }, 'ze-gline-under');
+    add('line', { x1: g.a.x, y1: g.a.y, x2: g.b.x, y2: g.b.y }, 'ze-gline');
+    for (const m of g.mids) add('rect', { x: m.x - 3.5, y: m.y - 3.5, width: 7, height: 7, transform: `rotate(45 ${m.x.toFixed(1)} ${m.y.toFixed(1)})` }, 'ze-gmid');
+    add('circle', { cx: g.a.x, cy: g.a.y, r: 6 }, 'ze-gstart');
+    add('circle', { cx: g.b.x, cy: g.b.y, r: 6 }, 'ze-gend');
+    for (const st of g.stops) {
+      const r = st.on ? 9 : 7;
+      const e = add('rect', { x: st.x - r, y: st.y - r, width: r * 2, height: r * 2, rx: 3 }, st.on ? 'ze-gstop on' : 'ze-gstop');
+      e.style.fill = st.color;
+      if (st.off) e.style.opacity = '0.35';
+    }
+  }
+
   draw(s: OverlayState): void {
     this.facePath.setAttribute('d', s.face ? s.face.map(ring).join('') : '');
     this.targetPath.setAttribute('d', s.target ? s.target.map(ring).join('') : '');
+    this.drawGradient(s.gradient);
     this.loupeRing.style.display = s.loupe ? '' : 'none';
     if (s.loupe) {
       // über dem Finger, damit er die Farbe nicht verdeckt

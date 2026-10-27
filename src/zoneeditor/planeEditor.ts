@@ -78,7 +78,8 @@ import { EditorOverlay, emptyOverlay } from './overlay';
 import { SketchLayer } from './sketches';
 import { constrain45, NO_MODS, PathTools, regionRing, regionTest, simplifyShape, type Mods, type PathTool } from './pathTools';
 import { booleanShapes, type BoolOp } from '@/zone/pathfinder';
-import { evalLayers, isHex, paintLayers, resolveColor, rgbToHex, type PaintColor } from '@/zone/paint';
+import { evalLayers, gradientT, hexToRgb, isHex, paintLayers, resolveColor, rgbToHex, type GradientFill, type GradientStop, type PaintColor } from '@/zone/paint';
+import { addStop, lineT, moveStop, readGradient, removeGradient, removeStop, reverseStops, setMid, topGradient, writeGradient, type GradKind, type GradLine, type GradTarget } from '@/zone/gradients';
 import { faceAt, faceBox, type Face } from '@/zone/faces';
 import type { ColorMenuHost, PickPhase } from './colorMenu';
 import { EditorUi, type Isolate, type LayerRow, type Tool } from './ui';
@@ -121,7 +122,12 @@ type Gesture =
   /** ins Leere: ziehen wählt im Rechteck (in der freien Ansicht: umkreisen), tippen hebt die Auswahl auf */
   | { kind: 'empty'; pointerId: number; start: Pt; last: Pt; orbit: boolean; moved: boolean; add: boolean }
   /** „Weiter füllen“: jede Fläche unter dem Zeiger bekommt die Farbe (Figma: über mehrere Flächen ziehen) */
-  | { kind: 'fill'; pointerId: number; done: Set<string> };
+  | { kind: 'fill'; pointerId: number; done: Set<string> }
+  /** Verlauf: neu aufziehen (von a), ein Ende ziehen, einen Stopp schieben (weg von der Linie: löschen), eine Mitte schieben */
+  | { kind: 'gradNew'; pointerId: number; plane: string; a: Pt; start: Pt; moved: boolean }
+  | { kind: 'gradEnd'; pointerId: number; end: 'a' | 'b' }
+  | { kind: 'gradStop'; pointerId: number; index: number; off: boolean }
+  | { kind: 'gradMid'; pointerId: number; index: number };
 
 type Nav = { kind: 'touch'; ids: [number, number]; center: Pt; dist: number; count: number; t: number; moved: boolean } | { kind: 'mouse'; pointerId: number; last: Pt; orbit: boolean };
 
@@ -224,6 +230,10 @@ export class PlaneEditor {
   /** Pipette mit dem Finger: Zeiger, Zeitgeber, ob sie schon greift; Lupe */
   private fingerHold: { id: number; timer: number; on: boolean } | null = null;
   private loupe: (Pt & { color: string }) | null = null;
+  /** Verlaufswerkzeug: Ziele (Formen; eine Fläche über einen Punkt im Pfad), bearbeitete Art, gewählter Stopp */
+  private grad: { targets: Array<{ shape: string; at: Pt | null }>; kind: GradKind; stop: number | null } | null = null;
+  /** Farbe fiel auf eine Fläche mit Verlauf: Grundfarbe oder Verlaufsstopp? (Plan 4.6) */
+  private dropChoice: { color: PaintColor; shape: string; at: Pt | null; t: number } | null = null;
   private width = 800;
   private height = 600;
 
@@ -588,6 +598,8 @@ export class PlaneEditor {
       units: this.building ? this.groupInfo() : null,
       nums: b && !box.locked ? { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2, w: b.maxX - b.minX, h: b.maxY - b.minY } : null,
       filling: this.building && this.fillMode ? this.resolve(this.fillMode) : null,
+      grad: this.building && this.tool === 'gradient' && !this.fillMode ? this.gradInfo() : null,
+      dropChoice: this.building && this.dropChoice ? this.resolve(this.dropChoice.color) : null,
     });
     this.syncColorFromSelection();
     this.ui.colorRefresh();
@@ -714,6 +726,7 @@ export class PlaneEditor {
     const st = emptyOverlay();
     if (this.building) st.grid = this.gridLines();
     st.loupe = this.loupe;
+    if (this.building && this.tool === 'gradient') this.gradOverlay(st);
     const tf = this.dropAt ? this.faceAtScreen(this.dropAt) : null;
     if (tf) st.target = [tf.face.outline, ...tf.face.holes].map((r) => r.map(([x, y]) => this.screenOf(tf.plane, shapeToPlane(tf.shape, x, y), tf.shape)).filter((q): q is Pt => !!q));
     const sk = this.adjusting();
@@ -753,7 +766,8 @@ export class PlaneEditor {
         // Teilungslinien zeigen, wie die Form in Flächen zerfällt
         for (const c of s.cuts ?? []) st.lines.push(flattenPath(c.path, 0.3, c.closed).map(([x, y]) => this.screenOf(p, shapeToPlane(s, x, y), s)).filter((q): q is Pt => !!q));
       }
-      const box = this.selectionBox();
+      // Rahmen mit Griffen nur dort, wo man ihn greifen kann (nicht beim Verlauf und bei der Pipette)
+      const box = this.tool === 'gradient' || this.tool === 'pipette' ? null : this.selectionBox();
       if (box) {
         const hp = this.handlePoints(box.bounds).map((q) => this.screenOf(box.plane, q));
         if (hp.every((q) => !!q)) {
@@ -926,6 +940,43 @@ export class PlaneEditor {
       },
       deletePlane: () => this.deletePlane(),
       fillDone: () => this.endFill(),
+      gradKind: (kind) => {
+        if (this.grad) {
+          this.grad.kind = kind;
+          this.grad.stop = null;
+        }
+        this.gradKind = kind;
+        this.uiDirty = true;
+        this.drawOverlay();
+      },
+      gradRadial: (radial) => this.gradEdit((g) => ({ radial: radial && !g.radial ? true : radial ? undefined : false })),
+      gradReverse: () => this.gradEdit((g) => ({ stops: reverseStops(g.stops) })),
+      gradStopAlpha: () =>
+        this.gradEdit((g) => {
+          const i = this.grad?.stop ?? -1;
+          if (!g.stops[i]) return {};
+          const steps = [1, 0.75, 0.5, 0.25, 0];
+          const k = steps.findIndex((v) => Math.abs(v - g.stops[i].a) < 0.01);
+          const stops = g.stops.map((x) => ({ ...x }));
+          stops[i].a = steps[(k + 1) % steps.length];
+          return { stops };
+        }),
+      gradStopDelete: () => {
+        const i = this.grad?.stop ?? -1;
+        this.gradEdit((g) => (g.stops.length > 2 && g.stops[i] ? { stops: removeStop(g.stops, i) } : {}));
+        if (this.grad) this.grad.stop = null;
+      },
+      gradRemove: () => {
+        const kind = this.grad?.kind ?? 'gradient';
+        const ts = this.gradTargets();
+        if (!ts.length) return;
+        this.edit(() => {
+          const styles = styleMap(this.nodes);
+          for (const t of ts) removeGradient(t, kind, styles);
+        });
+        if (this.grad) this.grad.stop = null;
+      },
+      dropChoice: (which) => this.resolveDropChoice(which),
       duplicate: () => this.duplicate(),
       orderShape: (dir) => this.orderShape(dir),
       deleteShape: () => this.deleteShape(),
@@ -975,6 +1026,7 @@ export class PlaneEditor {
     this.tool = t;
     this.sketchEdit = null;
     if (this.fillMode) this.endFill();
+    if (this.grad) this.grad.stop = null;
     this.paths.setTool(isPathTool(t) ? t : null);
     this.ui.setTool(t);
     this.updateCursor();
@@ -1853,6 +1905,10 @@ export class PlaneEditor {
       this.fillAt(this.gesture, p);
       return;
     }
+    if (this.tool === 'gradient') {
+      this.gradDown(pointerId, p);
+      return;
+    }
     if (this.tool === 'pipette') {
       const c = this.sampleColor(p);
       if (c) {
@@ -2007,6 +2063,10 @@ export class PlaneEditor {
       this.fillAt(g, p);
       return;
     }
+    if (g.kind === 'gradNew' || g.kind === 'gradEnd' || g.kind === 'gradStop' || g.kind === 'gradMid') {
+      this.gradMove(g, p);
+      return;
+    }
     if (g.kind === 'empty') {
       if (g.orbit) this.views.orbit(p.x - g.last.x, p.y - g.last.y);
       if (Math.hypot(p.x - g.start.x, p.y - g.start.y) > TAP_DIST) g.moved = true;
@@ -2103,6 +2163,10 @@ export class PlaneEditor {
     this.gesture = null;
     if (g.kind === 'fill') {
       if (this.history.commit(this.nodes)) this.changed();
+      return;
+    }
+    if (g.kind === 'gradNew' || g.kind === 'gradEnd' || g.kind === 'gradStop' || g.kind === 'gradMid') {
+      this.gradUp(g);
       return;
     }
     if (g.kind === 'empty') {
@@ -2248,6 +2312,21 @@ export class PlaneEditor {
    */
   private pickColor(c: PaintColor, phase: PickPhase): void {
     this.color = c;
+    // Verlaufswerkzeug mit gewähltem Stopp: die Farbe geht an den Stopp (aller Ziele)
+    const gs = this.gradStop();
+    if (gs) {
+      if (phase === 'start' || phase === 'tap') this.history.begin(this.nodes);
+      const stops = gs.stops.map((x) => ({ ...x }));
+      stops[gs.index].color = c;
+      this.gradApply({ stops });
+      if (phase === 'end' || phase === 'tap') {
+        if (this.history.commit(this.nodes)) this.changed();
+        this.pushRecent(c);
+      } else this.changed();
+      this.colorSel = this.selectionColorKey();
+      this.uiDirty = true;
+      return;
+    }
     const face = isPathTool(this.tool) ? this.paths.selectedFace() : null;
     const free = (s: ZoneShape) => {
       const pl = findPlane(this.nodes, s.parent);
@@ -2286,8 +2365,16 @@ export class PlaneEditor {
     } else this.changed();
   }
 
-  /** Schlüssel der Auswahl, deren Farbe der Farbknopf zeigt (gewählte Fläche oder Formen) */
+  /** gewählter Stopp des Verlaufswerkzeugs mit den Stopps des bearbeiteten Verlaufs */
+  private gradStop(): { stops: GradientStop[]; index: number } | null {
+    if (this.tool !== 'gradient' || this.grad?.stop === null || this.grad?.stop === undefined) return null;
+    const st = this.gradState();
+    return st && st.g.stops[this.grad.stop] ? { stops: st.g.stops, index: this.grad.stop } : null;
+  }
+
+  /** Schlüssel der Auswahl, deren Farbe der Farbknopf zeigt (gewählter Stopp, gewählte Fläche oder Formen) */
   private selectionColorKey(): string {
+    if (this.tool === 'gradient' && this.grad?.stop !== null && this.grad?.stop !== undefined) return `g|${JSON.stringify(this.grad.targets)}|${this.grad.stop}`;
     const face = isPathTool(this.tool) ? this.paths.selectedFace() : null;
     return face ? `f|${face.shape.id}|${face.face.inner.join(',')}` : this.selection.join(',');
   }
@@ -2297,6 +2384,11 @@ export class PlaneEditor {
     const key = this.selectionColorKey();
     if (key === this.colorSel) return;
     this.colorSel = key;
+    const gs = this.gradStop();
+    if (gs) {
+      this.color = gs.stops[gs.index].color;
+      return;
+    }
     const face = isPathTool(this.tool) ? this.paths.selectedFace() : null;
     const c = face ? facePaint(face.shape, face.face).fill : this.shape?.fill;
     if (c) this.color = c;
@@ -2328,13 +2420,46 @@ export class PlaneEditor {
     return rgbToHex(...c.rgb);
   }
 
-  /** Farbe fallen lassen (ColorDrop): füllt die Fläche darunter, danach „Weiter füllen“ */
+  /**
+   * Farbe fallen lassen (ColorDrop): mit dem Verlaufswerkzeug auf einen Stopp färbt ihn, auf die Linie gibt einen neuen;
+   * auf eine Fläche mit Verlauf fragt die Leiste (Grundfarbe oder Verlaufsstopp); sonst füllt sie die Fläche, danach
+   * „Weiter füllen“
+   */
   private dropColor(c: PaintColor, x: number, y: number): void {
     const r = this.host.surface.getBoundingClientRect();
-    const f = this.faceAtScreen({ x: x - r.left, y: y - r.top });
+    const at = { x: x - r.left, y: y - r.top };
     this.dropAt = null;
+    const hit = this.tool === 'gradient' ? this.gradHit(at) : null;
+    const st = hit ? this.gradState() : null;
+    if (hit && st && (hit.kind === 'stop' || hit.kind === 'line')) {
+      let stops: GradientStop[];
+      if (hit.kind === 'stop') {
+        stops = st.g.stops.map((s) => ({ ...s }));
+        stops[hit.index].color = c;
+        if (this.grad) this.grad.stop = hit.index;
+      } else {
+        const added = addStop(st.g.stops, hit.t, swatchMap(this.nodes), this.host.world.currentLook, c);
+        stops = added.stops;
+        if (this.grad) this.grad.stop = added.index;
+      }
+      this.edit(() => this.gradApply({ stops }));
+      this.pushRecent(c);
+      this.drawOverlay();
+      return;
+    }
+    const f = this.faceAtScreen(at);
     if (!f) {
       this.ui.toast('Dort liegt keine Fläche (gesperrte Ebenen und Formen nehmen keine Farbe)');
+      this.drawOverlay();
+      return;
+    }
+    const paint = facePaint(f.shape, f.face);
+    const gi = this.tool === 'gradient' || paint.style ? -1 : topGradient(paint.fills, 'gradient');
+    if (gi >= 0) {
+      const gf = paint.fills![gi] as GradientFill;
+      this.dropChoice = { color: c, shape: f.shape.id, at: shapeFaces(f.shape).length > 1 ? { ...f.local } : null, t: gradientT(gf, f.local.x, f.local.y) };
+      this.pushRecent(c);
+      this.uiDirty = true;
       this.drawOverlay();
       return;
     }
@@ -2399,6 +2524,288 @@ export class PlaneEditor {
     }
   }
 
+  // ------------------------------------------------------------------ Verlauf (Stufe 3)
+
+  /** Art, die das Verlaufswerkzeug ohne Ziel anlegt */
+  private gradKind: GradKind = 'gradient';
+
+  /** Ziele des Verlaufswerkzeugs, aufgelöst (eine Fläche über ihren Punkt im Pfad) */
+  private gradTargets(): GradTarget[] {
+    const out: GradTarget[] = [];
+    for (const r of this.grad?.targets ?? []) {
+      const shape = findShape(this.nodes, r.shape);
+      if (!shape) continue;
+      if (!r.at) {
+        out.push({ shape, face: null });
+        continue;
+      }
+      const faces = shapeFaces(shape);
+      const i = faceAt(faces, r.at.x, r.at.y);
+      if (i >= 0) out.push({ shape, face: faces[i] });
+    }
+    return out;
+  }
+
+  /** bearbeiteter Verlauf (vom ersten Ziel) mit Linie in Ebenen-Koordinaten, dazu Ebene und Form */
+  private gradState(): { g: GradientFill & { line: GradLine }; plane: ZonePlane; shape: ZoneShape; targets: GradTarget[] } | null {
+    const targets = this.gradTargets();
+    const t = targets[0];
+    const plane = t ? findPlane(this.nodes, t.shape.parent) : undefined;
+    const g = t && this.grad ? readGradient(t, this.grad.kind, styleMap(this.nodes)) : null;
+    return g && plane ? { g, plane, shape: t.shape, targets } : null;
+  }
+
+  /**
+   * Bildpunkte des Reglers: Anfang und Ende auf der Linie, Stopps und Mitten in einer Reihe daneben (wie Illustrators
+   * Verlaufsregler), damit die Stopps an den Enden nicht auf den Endgriffen liegen
+   */
+  private gradScreen(st: NonNullable<ReturnType<PlaneEditor['gradState']>>): { a: Pt; b: Pt; stops: Pt[]; mids: Pt[] } | null {
+    const l = st.g.line;
+    const at = (t: number) => this.screenOf(st.plane, { x: l.x0 + (l.x1 - l.x0) * t, y: l.y0 + (l.y1 - l.y0) * t }, st.shape);
+    const a = at(0);
+    const b = at(1);
+    if (!a || !b) return null;
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const off = this.overlay.handleSize + 9;
+    const nx = (-(b.y - a.y) / len) * off;
+    const ny = ((b.x - a.x) / len) * off;
+    const row = (t: number) => {
+      const q = at(t);
+      return q ? { x: q.x + nx, y: q.y + ny } : null;
+    };
+    const stops = st.g.stops.map((s) => row(s.t)).filter((q): q is Pt => !!q);
+    const mids = st.g.stops.slice(0, -1).map((s, i) => row(s.t + (st.g.stops[i + 1].t - s.t) * (s.mid ?? 0.5))).filter((q): q is Pt => !!q);
+    return { a, b, stops, mids };
+  }
+
+  /** was am Bildpunkt vom Regler liegt: ein Stopp, eine Mitte, ein Ende oder die Linie */
+  private gradHit(p: Pt): { kind: 'stop'; index: number } | { kind: 'mid'; index: number } | { kind: 'end'; end: 'a' | 'b' } | { kind: 'line'; t: number } | null {
+    const st = this.gradState();
+    const sc = st ? this.gradScreen(st) : null;
+    if (!st || !sc) return null;
+    const r = this.overlay.handleSize + 6;
+    const near = (q: Pt) => Math.hypot(q.x - p.x, q.y - p.y) <= r;
+    const si = sc.stops.findIndex(near);
+    if (si >= 0) return { kind: 'stop', index: si };
+    if (near(sc.b)) return { kind: 'end', end: 'b' };
+    if (near(sc.a)) return { kind: 'end', end: 'a' };
+    const mi = sc.mids.findIndex(near);
+    if (mi >= 0) return { kind: 'mid', index: mi };
+    const dx = sc.b.x - sc.a.x;
+    const dy = sc.b.y - sc.a.y;
+    const len2 = dx * dx + dy * dy;
+    const u = len2 > 1 ? ((p.x - sc.a.x) * dx + (p.y - sc.a.y) * dy) / len2 : -1;
+    if (u > 0 && u < 1 && Math.hypot(sc.a.x + dx * u - p.x, sc.a.y + dy * u - p.y) <= 8) {
+      const q = this.planePoint(st.plane, p);
+      return { kind: 'line', t: q ? Math.max(0, Math.min(1, lineT(st.g.line, q.x, q.y))) : u };
+    }
+    return null;
+  }
+
+  /** Stopps eines neuen Verlaufs: von der aktuellen Farbe zur Grundfarbe der Fläche (gleich: dunkler); Deckkraft 1 → 0 */
+  private freshStops(t: GradTarget, kind: GradKind): GradientStop[] {
+    if (kind === 'fade')
+      return [
+        { t: 0, color: '#000000', a: 1 },
+        { t: 1, color: '#000000', a: 0 },
+      ];
+    const base = (t.face ? facePaint(t.shape, t.face) : t.shape).fill ?? '#808080';
+    const from = this.color ?? base;
+    let to: PaintColor = base;
+    if (this.resolve(from) === this.resolve(to)) {
+      const [r, g, b] = hexToRgb(this.resolve(from));
+      to = rgbToHex(r * 0.55, g * 0.55, b * 0.55);
+    }
+    return [
+      { t: 0, color: from, a: 1 },
+      { t: 1, color: to, a: 1 },
+    ];
+  }
+
+  /** Verlauf aller Ziele ändern (ein Schritt im Arbeitsverlauf); fn bekommt den Verlauf des ersten */
+  private gradEdit(fn: (g: GradientFill) => { line?: GradLine; stops?: GradientStop[]; radial?: boolean }): void {
+    const st = this.gradState();
+    if (!st || !this.grad) return;
+    const patch = fn(st.g);
+    if (!Object.keys(patch).length) return;
+    const kind = this.grad.kind;
+    this.edit(() => {
+      const styles = styleMap(this.nodes);
+      for (const t of this.gradTargets()) writeGradient(t, kind, styles, patch, () => this.freshStops(t, kind));
+    });
+  }
+
+  /** Verlauf aller Ziele während einer Geste ändern (ohne eigenen Schritt) */
+  private gradApply(patch: { line?: GradLine; stops?: GradientStop[]; radial?: boolean }): boolean {
+    if (!this.grad) return false;
+    const kind = this.grad.kind;
+    const styles = styleMap(this.nodes);
+    let ok = true;
+    for (const t of this.gradTargets()) ok = writeGradient(t, kind, styles, patch, () => this.freshStops(t, kind)) && ok;
+    this.meshDirty = true;
+    this.uiDirty = true;
+    return ok;
+  }
+
+  private gradInfo(): NonNullable<import('./ui').ContextExtra['grad']> {
+    const st = this.gradState();
+    const kind = this.grad?.kind ?? this.gradKind;
+    const stop = st && this.grad?.stop !== null && this.grad?.stop !== undefined ? st.g.stops[this.grad.stop] : undefined;
+    return { kind, has: !!st, radial: !!st?.g.radial, stop: stop ? { a: stop.a } : null, stops: st?.g.stops.length ?? 0, targets: this.gradTargets().length };
+  }
+
+  /** Regler und Ziele zeichnen */
+  private gradOverlay(st: ReturnType<typeof emptyOverlay>): void {
+    for (const t of this.gradTargets()) {
+      const plane = findPlane(this.nodes, t.shape.parent);
+      if (!plane) continue;
+      const rings = t.face ? [t.face.outline, ...t.face.holes] : [shapeLocalPolys(t.shape).outline];
+      const pts = rings.map((r) => r.map(([x, y]) => this.screenOf(plane, shapeToPlane(t.shape, x, y), t.shape)).filter((q): q is Pt => !!q));
+      if (t.face) st.face = pts;
+      else st.outlines.push(...pts);
+    }
+    const gs = this.gradState();
+    const sc = gs ? this.gradScreen(gs) : null;
+    if (!gs || !sc) return;
+    const g = this.gesture;
+    const sw = swatchMap(this.nodes);
+    const look = this.host.world.currentLook;
+    st.gradient = {
+      a: sc.a,
+      b: sc.b,
+      radial: !!gs.g.radial,
+      stops: sc.stops.map((q, i) => ({ ...q, color: gs.g.type === 'fade' ? `rgba(255,255,255,${gs.g.stops[i].a})` : resolveColor(gs.g.stops[i].color, sw, look), on: this.grad?.stop === i, off: g?.kind === 'gradStop' && g.index === i && g.off })),
+      mids: sc.mids,
+    };
+  }
+
+  /** Verlaufswerkzeug: am Regler greifen, sonst einen neuen Verlauf über die Fläche (oder die gewählten Formen) ziehen */
+  private gradDown(pointerId: number, p: Pt): void {
+    const hit = this.gradHit(p);
+    const st = this.gradState();
+    if (hit && st && this.grad) {
+      this.history.begin(this.nodes);
+      if (hit.kind === 'end') this.gesture = { kind: 'gradEnd', pointerId, end: hit.end };
+      else if (hit.kind === 'mid') this.gesture = { kind: 'gradMid', pointerId, index: hit.index };
+      else if (hit.kind === 'stop') {
+        this.grad.stop = hit.index;
+        this.gesture = { kind: 'gradStop', pointerId, index: hit.index, off: false };
+      } else {
+        const { stops, index } = addStop(st.g.stops, hit.t, swatchMap(this.nodes), this.host.world.currentLook);
+        if (index < 0) {
+          this.history.cancel();
+          this.ui.toast('Höchstens 16 Stopps');
+          return;
+        }
+        this.gradApply({ stops });
+        this.grad.stop = index;
+        this.gesture = { kind: 'gradStop', pointerId, index, off: false };
+      }
+      this.uiDirty = true;
+      this.drawOverlay();
+      return;
+    }
+    const f = this.faceAtScreen(p);
+    if (!f) {
+      this.grad = null;
+      this.uiDirty = true;
+      this.drawOverlay();
+      return;
+    }
+    const free = (s: ZoneShape) => s.parent === f.shape.parent && !s.locked;
+    const sel = this.selectedShapes().filter(free);
+    const many = sel.some((s) => s.id === f.shape.id) && sel.length > 1;
+    const targets = many ? sel.map((s) => ({ shape: s.id, at: null })) : [{ shape: f.shape.id, at: shapeFaces(f.shape).length > 1 ? { ...f.local } : null }];
+    this.grad = { targets, kind: this.grad?.kind ?? this.gradKind, stop: null };
+    this.history.begin(this.nodes);
+    this.gesture = { kind: 'gradNew', pointerId, plane: f.plane.id, a: f.q, start: p, moved: false };
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
+  /** Richtung rastet nahe an 45°-Schritten ein (Umschalt: immer) */
+  private snapDir(a: Pt, q: Pt): Pt {
+    const c = constrain45(a, q);
+    if (this.shiftDown) return c;
+    const t1 = Math.atan2(q.y - a.y, q.x - a.x);
+    const t2 = Math.atan2(c.y - a.y, c.x - a.x);
+    const d = Math.abs(((t1 - t2 + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+    return d < (7 * Math.PI) / 180 ? c : q;
+  }
+
+  private gradMove(g: Extract<Gesture, { kind: 'gradNew' | 'gradEnd' | 'gradStop' | 'gradMid' }>, p: Pt): void {
+    if (g.kind === 'gradNew') {
+      const plane = findPlane(this.nodes, g.plane);
+      const q0 = plane ? this.planePoint(plane, p) : null;
+      if (!q0 || (!g.moved && Math.hypot(p.x - g.start.x, p.y - g.start.y) < TAP_DIST)) return;
+      g.moved = true;
+      const q = this.snapDir(g.a, q0);
+      if (!this.gradApply({ line: { x0: g.a.x, y0: g.a.y, x1: q.x, y1: q.y } })) this.ui.toast('Der Füllstapel ist voll (höchstens 8 Schichten)');
+      this.drawOverlay();
+      return;
+    }
+    const st = this.gradState();
+    if (!st) return;
+    const q = this.planePoint(st.plane, p);
+    if (!q) return;
+    const l = st.g.line;
+    if (g.kind === 'gradEnd') {
+      const fixed = g.end === 'a' ? { x: l.x1, y: l.y1 } : { x: l.x0, y: l.y0 };
+      const m = this.snapDir(fixed, q);
+      this.gradApply({ line: g.end === 'a' ? { x0: m.x, y0: m.y, x1: l.x1, y1: l.y1 } : { x0: l.x0, y0: l.y0, x1: m.x, y1: m.y } });
+    } else if (g.kind === 'gradMid') this.gradApply({ stops: setMid(st.g.stops, g.index, lineT(l, q.x, q.y)) });
+    else {
+      // weit weg von der Linie gezogen: der Stopp wird beim Loslassen entfernt (mindestens zwei bleiben)
+      const sc = this.gradScreen(st);
+      if (sc) {
+        const dx = sc.b.x - sc.a.x;
+        const dy = sc.b.y - sc.a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        g.off = st.g.stops.length > 2 && Math.abs((p.x - sc.a.x) * dy - (p.y - sc.a.y) * dx) / len > 40;
+      }
+      if (!g.off) this.gradApply({ stops: moveStop(st.g.stops, g.index, lineT(l, q.x, q.y)) });
+    }
+    this.drawOverlay();
+  }
+
+  private gradUp(g: Extract<Gesture, { kind: 'gradNew' | 'gradEnd' | 'gradStop' | 'gradMid' }>): void {
+    if (g.kind === 'gradStop' && g.off) {
+      const st = this.gradState();
+      if (st) this.gradApply({ stops: removeStop(st.g.stops, g.index) });
+      if (this.grad) this.grad.stop = null;
+    }
+    if (g.kind === 'gradNew' && !g.moved) this.history.cancel();
+    else if (this.history.commit(this.nodes)) this.changed();
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
+  /** Antwort auf „Grundfarbe oder Verlaufsstopp?“ */
+  private resolveDropChoice(which: 'base' | 'stop' | 'cancel'): void {
+    const d = this.dropChoice;
+    this.dropChoice = null;
+    this.uiDirty = true;
+    const shape = d ? findShape(this.nodes, d.shape) : undefined;
+    if (!d || !shape || which === 'cancel') return;
+    const faces = shapeFaces(shape);
+    const fi = d.at ? faceAt(faces, d.at.x, d.at.y) : 0;
+    const face = faces[fi];
+    if (!face) return;
+    if (which === 'base') {
+      this.edit(() => setFaceFill(shape, face, d.color));
+      return;
+    }
+    // Stopp in den Verlauf, der die Fläche färbt (der Fläche oder der ganzen Form)
+    const own = facePaint(shape, face) !== shape;
+    const t: GradTarget = { shape, face: own ? face : null };
+    const g = readGradient(t, 'gradient', styleMap(this.nodes));
+    if (!g) return;
+    const { stops, index } = addStop(g.stops, d.t, swatchMap(this.nodes), this.host.world.currentLook, d.color);
+    if (index < 0) return;
+    this.edit(() => writeGradient(t, 'gradient', styleMap(this.nodes), { stops }, () => stops));
+    this.ui.toast('Stopp in den Verlauf gesetzt (mit dem Verlaufswerkzeug G verschieben)');
+  }
+
   // ------------------------------------------------------------------ Tasten
 
   private onKeyDown = (e: KeyboardEvent): void => {
@@ -2442,6 +2849,7 @@ export class PlaneEditor {
     else if (k === 'l') this.setTool('ellipse');
     else if (k === 'u') this.setTool(this.tool === 'rect' ? 'ellipse' : this.tool === 'ellipse' ? 'arch' : 'rect');
     else if (k === 'i') this.setTool('pipette');
+    else if (k === 'g') this.setTool('gradient');
     else if (k === '1') this.setView('game');
     else if (k === '2') this.setView('front');
     else if (k === '3') this.setView('free');
@@ -2449,7 +2857,14 @@ export class PlaneEditor {
     else if (k === 'tab') this.setBuilding(false);
     else if (k === ' ') this.spaceDown = true;
     else if (k === 'escape') {
-      if (this.fillMode) this.endFill();
+      if (this.dropChoice) this.resolveDropChoice('cancel');
+      else if (this.fillMode) this.endFill();
+      else if (this.tool === 'gradient' && this.grad) {
+        if (this.grad.stop !== null) this.grad.stop = null;
+        else this.grad = null;
+        this.uiDirty = true;
+        this.drawOverlay();
+      }
       else if (this.ui.colorOpen) this.ui.closeColor();
       else this.escape();
     }

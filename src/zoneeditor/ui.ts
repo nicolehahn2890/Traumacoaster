@@ -11,7 +11,7 @@ import type { PathContext } from './pathTools';
 import { VIEW_WORDS, type ViewMode } from './views';
 import { COLOR_CSS, ColorMenu, type ColorMenuHost } from './colorMenu';
 
-export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch' | 'pipette';
+export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch' | 'gradient' | 'pipette';
 export type Isolate = 'off' | 'front' | 'only';
 export const ISOLATE_WORDS: Record<Isolate, string> = { off: 'alle Ebenen', front: 'davor ausgeblendet', only: 'nur diese' };
 
@@ -68,6 +68,15 @@ export interface UiActions {
   deletePlane(): void;
   /** „Weiter füllen“ nach dem Fallenlassen einer Farbe beenden */
   fillDone(): void;
+  /** Verlaufswerkzeug: Art (Farbe, Deckkraft), linear oder radial, umkehren, Deckkraft des Stopps, Stopp löschen, Verlauf entfernen */
+  gradKind(kind: 'gradient' | 'fade'): void;
+  gradRadial(radial: boolean): void;
+  gradReverse(): void;
+  gradStopAlpha(): void;
+  gradStopDelete(): void;
+  gradRemove(): void;
+  /** Farbe fiel auf eine Fläche mit Verlauf: als Grundfarbe, als Verlaufsstopp oder doch nicht */
+  dropChoice(which: 'base' | 'stop' | 'cancel'): void;
   duplicate(): void;
   orderShape(dir: 1 | -1): void;
   deleteShape(): void;
@@ -111,6 +120,10 @@ export interface ContextExtra {
   nums?: { x: number; y: number; w: number; h: number } | null;
   /** „Weiter füllen“ läuft (Farbe aufgelöst) */
   filling?: string | null;
+  /** Verlaufswerkzeug: bearbeitete Art, ob es einen Verlauf gibt, radial, gewählter Stopp (Deckkraft), Stopps, Ziele */
+  grad?: { kind: 'gradient' | 'fade'; has: boolean; radial: boolean; stop: { a: number } | null; stops: number; targets: number } | null;
+  /** Farbe fiel auf eine Fläche mit Verlauf (Farbe aufgelöst) */
+  dropChoice?: string | null;
 }
 
 export interface LayerRow {
@@ -143,6 +156,14 @@ const CSS = `
 .ze-groupbox{fill:none;stroke:rgba(255,255,255,.7);stroke-width:1;stroke-dasharray:2 4}
 .ze-target{fill:rgba(255,255,255,.14);stroke:#ffffff;stroke-width:2;stroke-dasharray:5 4}
 .ze-loupe{stroke:#ffffff;stroke-width:4;filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))}
+.ze-gline-under{stroke:rgba(0,0,0,.55);stroke-width:4;stroke-linecap:round}
+.ze-gline{stroke:#ffffff;stroke-width:1.6;stroke-linecap:round}
+.ze-gcircle{fill:none;stroke:#ffffff;stroke-width:1;stroke-dasharray:4 4;opacity:.8}
+.ze-gstart{fill:#ffffff;stroke:#16181c;stroke-width:2}
+.ze-gend{fill:#16181c;stroke:#ffffff;stroke-width:2}
+.ze-gmid{fill:#ffffff;stroke:#16181c;stroke-width:1}
+.ze-gstop{stroke:#ffffff;stroke-width:2;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
+.ze-gstop.on{stroke:#8db4ff;stroke-width:3}
 .ze-panel{position:absolute;pointer-events:auto;background:rgba(22,24,28,.82);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.07);border-radius:12px;touch-action:none;user-select:none;-webkit-user-select:none}
 .ze-btn{appearance:none;border:0;background:transparent;color:inherit;font:inherit;min-width:36px;height:36px;padding:0 10px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
 .ze-btn:hover{background:rgba(255,255,255,.06)}
@@ -239,6 +260,7 @@ const ICONS: Record<Tool, string> = {
   rect: '<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>',
   ellipse: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6"/></svg>',
   arch: '<svg viewBox="0 0 24 24"><path d="M5.5 20v-8.5a6.5 6.5 0 0 1 13 0V20z"/></svg>',
+  gradient: '<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M7 15l10-6"/><circle cx="7" cy="15" r="1.8" fill="#16181c"/><circle cx="17" cy="9" r="1.8" fill="currentColor"/></svg>',
   pipette: '<svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5M13 6l5 5-9 9H4v-5z"/><path d="M16.5 2.5a2.1 2.1 0 0 1 3 0l2 2a2.1 2.1 0 0 1 0 3L19 10"/></svg>',
 };
 const EYE = '<svg viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>';
@@ -284,9 +306,10 @@ const TOOL_TITLES: Record<Tool, string> = {
   rect: 'Rechteck (M)',
   ellipse: 'Ellipse (L)',
   arch: 'Bogen (U wechselt Rechteck, Ellipse, Bogen): Portalform, unten gerade, oben rund',
+  gradient: 'Verlauf (G): über eine Fläche ziehen; Enden, Stopps und Mitten am Objekt ziehen, auf die Linie tippen gibt einen Stopp',
   pipette: 'Pipette (I): Farbe aus dem Bild aufnehmen; am iPad auch mit dem Finger lange halten',
 };
-const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse', 'arch', 'pipette'];
+const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse', 'arch', 'gradient', 'pipette'];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -991,14 +1014,14 @@ export class EditorUi {
    * gewählte Formen Farbe und Reihenfolge, sonst für die gewählten Ebenen Rolle und Isolieren
    */
   setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false, extra: ContextExtra = {}): void {
-    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null, filling = null } = extra;
+    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null, filling = null, grad = null, dropChoice = null } = extra;
     const plane = planes.at(-1) ?? null;
     const shape = shapes.at(-1) ?? null;
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
     const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : path.kind === 'band' ? `b|${path.shape}` : `l|${path.form}|${path.count}|${path.smooth}`;
     const gi = units ?? { units: shapes.length, groups: 0, inside: false };
     const numKey = this.sub === 'numbers' && nums ? `${[nums.x, nums.y, nums.w, nums.h].map((v) => v.toFixed(2)).join(',')}|${this.keepRatio}` : `${!!nums}`;
-    const key = filling ? `fill|${filling}` : path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
+    const key = dropChoice ? `drop|${dropChoice}` : filling ? `fill|${filling}` : grad ? `grad|${JSON.stringify(grad)}` : path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
     this.context.replaceChildren();
@@ -1010,7 +1033,38 @@ export class EditorUi {
         button(count > 1 ? 'Punkte löschen' : 'Punkt löschen', 'Löschen (Entf)', () => this.a.anchorDelete()),
       );
     };
-    if (filling) {
+    if (dropChoice) {
+      const dot = el('span', 'ze-swatch');
+      dot.style.background = dropChoice;
+      this.context.append(
+        dot,
+        el('span', 'ze-label', 'Die Fläche hat einen Verlauf:'),
+        button('Grundfarbe', 'Die Grundfarbe unter dem Verlauf ersetzen', () => this.a.dropChoice('base')),
+        button('Als Verlaufsstopp', 'Dort, wo die Farbe fiel, einen Stopp mit dieser Farbe in den Verlauf setzen', () => this.a.dropChoice('stop')),
+        button('Abbrechen', 'Nichts ändern (Esc)', () => this.a.dropChoice('cancel')),
+      );
+    } else if (grad) {
+      const word = grad.kind === 'fade' ? 'Deckkraftverlauf' : 'Verlauf';
+      if (!grad.targets) this.context.append(el('span', 'ze-label', 'Verlauf: über eine Fläche ziehen; über gewählte Formen gezogen bekommen alle einen gemeinsamen'));
+      else this.context.append(el('span', 'ze-label', grad.has ? `${word}${grad.targets > 1 ? ` · ${grad.targets} Formen` : ''}` : `${word}: über die Fläche ziehen`));
+      this.context.append(
+        button('Farbe', 'Farbverlauf bearbeiten', () => this.a.gradKind('gradient'), grad.kind === 'gradient' ? 'on' : ''),
+        button('Deckkraft', 'Deckkraftverlauf: die Fläche läuft durchsichtig aus (Nebel, Licht, weiche Übergänge)', () => this.a.gradKind('fade'), grad.kind === 'fade' ? 'on' : ''),
+      );
+      if (grad.has) {
+        this.context.append(
+          el('span', 'ze-sep'),
+          button('Linear', 'Linearer Verlauf', () => this.a.gradRadial(false), grad.radial ? '' : 'on'),
+          button('Radial', 'Kreisförmig um den Anfang', () => this.a.gradRadial(true), grad.radial ? 'on' : ''),
+          button('Umkehren', 'Stopps in umgekehrter Reihenfolge', () => this.a.gradReverse()),
+        );
+        if (grad.stop) {
+          this.context.append(el('span', 'ze-sep'), button(`Stopp ${Math.round(grad.stop.a * 100)} %`, 'Deckkraft des gewählten Stopps weiterschalten (100, 75, 50, 25, 0 %); seine Farbe kommt aus dem Farbmenü', () => this.a.gradStopAlpha()));
+          if (grad.stops > 2) this.context.append(button('Stopp löschen', 'Gewählten Stopp entfernen (oder von der Linie wegziehen)', () => this.a.gradStopDelete()));
+        }
+        this.context.append(el('span', 'ze-sep'), button('Entfernen', `${word} von der Fläche nehmen`, () => this.a.gradRemove()));
+      }
+    } else if (filling) {
       const dot = el('span', 'ze-swatch');
       dot.style.background = filling;
       this.context.append(
@@ -1193,7 +1247,7 @@ export class EditorUi {
           : button(many ? 'Ebenen löschen' : 'Ebene löschen', many ? 'Die gewählten Ebenen mit allen Formen löschen' : 'Ebene mit allen Formen löschen', () => this.a.deletePlane()),
       );
     }
-    this.context.classList.toggle('show', !!(filling || path || shape || plane));
+    this.context.classList.toggle('show', !!(dropChoice || filling || grad || path || shape || plane));
     if (this.toastEl.classList.contains('show')) this.placeToast();
   }
 

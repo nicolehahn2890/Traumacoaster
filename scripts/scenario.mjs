@@ -1388,6 +1388,143 @@ if (want('19')) {
   });
 }
 
+// 20. Zonen-Editor, Stufe 3: Verlaufswerkzeug (G). Über eine Fläche ziehen (rastet nahe 45° ein), Stopp auf die Linie
+// tippen und färben, Stopp wegziehen löscht ihn, radial, umkehren, Deckkraftverlauf (durchsichtiges Mesh), Farbe auf
+// eine Fläche mit Verlauf fallen lassen und als Stopp einsetzen, gemeinsamer Verlauf über zwei gewählte Formen.
+if (want('20')) {
+  await page.goto(`${BASE}?zone=szenario-verlauf&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const at = await page.evaluate(async () => {
+    const N = await import('/src/zone/nodes.ts');
+    const ed = window.tcGame.current.planeEditor;
+    let out = null;
+    ed.edit(() => {
+      const p = N.newPlane(ed.nodes, 0);
+      ed.nodes.push(p);
+      const P = (x, y) => ed.planePoint(p, { x, y });
+      const m = (P(460, 400).x - P(400, 400).x) / 60;
+      const a = P(400, 420);
+      const b = P(660, 420);
+      const r = N.newShape(ed.nodes, p.id, N.rectPath(200 * m, 140 * m), a.x, a.y, '#3d5a63');
+      r.cuts = [{ path: [{ x: -100 * m, y: 0 }, { x: 100 * m, y: 0 }], closed: false }];
+      ed.nodes.push(r);
+      const e = N.newShape(ed.nodes, p.id, N.ellipsePath(80 * m, 60 * m), b.x, b.y, '#c9c09a');
+      ed.nodes.push(e);
+      out = { rect: r.id, ellipse: e.id };
+    });
+    for (let i = 0; i < 3; i++) window.tcGame.app.ticker.update(performance.now());
+    return out;
+  });
+  const grads = (id) => page.evaluate((id) => {
+    const s = window.tcGame.current.planeEditor.nodes.find((n) => n.id === id);
+    const pick = (fills) => (fills ?? []).filter((f) => f.type !== 'color').map((f) => ({ type: f.type, radial: !!f.radial, x0: f.x0, y0: f.y0, x1: f.x1, y1: f.y1, stops: f.stops.map((st) => [st.t, st.color, st.a]) }));
+    return { shape: pick(s.fills), regions: (s.regions ?? []).map((r) => ({ y: r.y, fill: r.fill, grads: pick(r.fills) })) };
+  }, id);
+  const bar = () => page.evaluate(() => document.querySelector('.ze-context')?.textContent ?? '');
+  await page.keyboard.press('g');
+  // obere Fläche: von links nach rechts, 5 px schief (rastet waagrecht ein)
+  await page.mouse.move(320, 385);
+  await page.mouse.down();
+  await page.mouse.move(400, 388, { steps: 5 });
+  await page.mouse.move(480, 390, { steps: 5 });
+  await page.mouse.up();
+  await sleep(150);
+  let g = await grads(at.rect);
+  const up = g.regions.find((r) => r.y > 0);
+  check(up?.grads.length === 1 && up.grads[0].type === 'gradient' && Math.abs(up.grads[0].y0 - up.grads[0].y1) < 1e-6 && up.grads[0].x1 > up.grads[0].x0, `Verlauf über die obere Fläche gezogen, nahe waagrecht rastet waagrecht ein (${up ? up.grads[0].stops.length : 0} Stopps)`);
+  check(/Verlauf/.test(await bar()) && /Radial/.test(await bar()), 'Leiste des Verlaufswerkzeugs mit Linear, Radial, Umkehren, Entfernen');
+  // Mitte der Linie antippen: neuer Stopp, im Farbmenü färben
+  await page.mouse.click(400, 385);
+  await sleep(100);
+  await page.click('.ze-colorbtn');
+  await page.click('.ze-ctabs .ze-btn:text-is("Werte")');
+  const hex = page.locator('.ze-color .ze-hex input');
+  await hex.fill('#ffcc00');
+  await hex.press('Enter');
+  await page.click('.ze-colorbtn');
+  await sleep(100);
+  g = await grads(at.rect);
+  let st = g.regions.find((r) => r.y > 0)?.grads[0].stops ?? [];
+  check(st.length === 3 && Math.abs(st[1][0] - 0.5) < 0.05 && st[1][1] === '#ffcc00', `Stopp auf der Linie eingesetzt (bei ${st[1]?.[0].toFixed(2)}) und im Farbmenü gelb gefärbt`);
+  // den mittleren Stopp weit von der Linie wegziehen: weg
+  const stopPt = await page.evaluate(() => {
+    const ed = window.tcGame.current.planeEditor;
+    const s = ed.gradState();
+    return ed.gradScreen(s).stops[1];
+  });
+  await page.mouse.move(stopPt.x, stopPt.y);
+  await page.mouse.down();
+  await page.mouse.move(stopPt.x + 5, stopPt.y + 40, { steps: 3 });
+  await page.mouse.move(stopPt.x + 5, stopPt.y + 90, { steps: 3 });
+  await page.mouse.up();
+  await sleep(100);
+  g = await grads(at.rect);
+  st = g.regions.find((r) => r.y > 0)?.grads[0].stops ?? [];
+  check(st.length === 2, `Stopp von der Linie weggezogen: entfernt (${st.length} Stopps)`);
+  // radial und umkehren
+  await page.click('.ze-context .ze-btn:text-is("Radial")');
+  await page.click('.ze-context .ze-btn:text-is("Umkehren")');
+  g = await grads(at.rect);
+  const gr = g.regions.find((r) => r.y > 0)?.grads[0];
+  check(gr?.radial && gr.stops[0][1] === st[1][1] && gr.stops[1][1] === st[0][1], 'radial geschaltet und umgekehrt');
+  // Farbe der oberen Fläche messen: links (Anfang) und rechts unterscheiden sich
+  // Deckkraftverlauf über die Ellipse: durchsichtiges Mesh
+  await page.click('.ze-context .ze-btn:text-is("Deckkraft")');
+  await page.mouse.move(600, 420);
+  await page.mouse.down();
+  await page.mouse.move(720, 420, { steps: 8 });
+  await page.mouse.up();
+  await sleep(150);
+  const ge = await grads(at.ellipse);
+  const clear = await page.evaluate(() => window.tcGame.world.planes.stats.clear);
+  check(ge.shape.length === 1 && ge.shape[0].type === 'fade' && clear === 1, `Deckkraftverlauf über die Ellipse, die Fläche liegt im durchsichtigen Mesh (${clear})`);
+  await page.click('.ze-context .ze-btn:text-is("Entfernen")');
+  const ge2 = await grads(at.ellipse);
+  check(ge2.shape.length === 0, 'Deckkraftverlauf entfernt');
+  await page.click('.ze-context .ze-btn:text-is("Farbe")');
+  // Farbe auf die Fläche mit Verlauf fallen lassen (Auswahlwerkzeug): die Leiste fragt, als Stopp einsetzen
+  await page.keyboard.press('v');
+  await page.click('.ze-colorbtn');
+  await page.click('.ze-ctabs .ze-btn:text-is("Paletten")');
+  const chip = await page.locator('.ze-color .ze-chips').nth(1).locator('.ze-chip').nth(4).boundingBox();
+  await page.mouse.move(chip.x + chip.width / 2, chip.y + chip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(chip.x - 40, chip.y + 30, { steps: 4 });
+  await page.mouse.move(400, 380, { steps: 10 });
+  await page.mouse.up();
+  await sleep(150);
+  const asked = await bar();
+  await page.click('.ze-context .ze-btn:text-is("Als Verlaufsstopp")');
+  g = await grads(at.rect);
+  st = g.regions.find((r) => r.y > 0)?.grads[0].stops ?? [];
+  check(/Verlauf/.test(asked) && st.length === 3 && st.some((x) => x[1] === '#d9a07a'), `Farbe auf eine Fläche mit Verlauf: die Leiste fragt, als Stopp eingesetzt (${st.length} Stopps)`);
+  await page.click('.ze-colorbtn');
+  // zwei Formen wählen, gemeinsamer Verlauf über beide
+  await page.mouse.click(400, 460);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(660, 420);
+  await page.keyboard.up('Shift');
+  await page.keyboard.press('g');
+  await page.mouse.move(330, 470);
+  await page.mouse.down();
+  await page.mouse.move(500, 460, { steps: 6 });
+  await page.mouse.move(720, 450, { steps: 6 });
+  await page.mouse.up();
+  await sleep(150);
+  const both = await page.evaluate(({ a, b }) => {
+    const ed = window.tcGame.current.planeEditor;
+    const plane = (id) => {
+      const s = ed.nodes.find((n) => n.id === id);
+      const f = (s.fills ?? []).find((x) => x.type === 'gradient');
+      return f ? [s.x + s.sx * f.x0, s.y + s.sy * f.y0, s.x + s.sx * f.x1, s.y + s.sy * f.y1] : null;
+    };
+    return { a: plane(a), b: plane(b) };
+  }, { a: at.rect, b: at.ellipse });
+  const same = both.a && both.b && both.a.every((v, i) => Math.abs(v - both.b[i]) < 1e-3);
+  check(!!same, 'zwei gewählte Formen: ein gemeinsamer Verlauf, in beiden an derselben Stelle der Ebene');
+  await page.screenshot({ path: 'screenshots/scenario-20-verlauf.png' });
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));
