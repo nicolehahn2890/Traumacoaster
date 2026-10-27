@@ -114,7 +114,7 @@ const BACKUP_KEY = (zone: string) => `tc.zoneeditor.${zone}`;
 const DEG = Math.PI / 180;
 const TAP_TIME = 260;
 const TAP_DIST = 12;
-const PATH_TOOLS: readonly Tool[] = ['direct', 'lasso', 'pen', 'brush', 'knife'];
+const PATH_TOOLS: readonly Tool[] = ['direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife'];
 const isPathTool = (t: Tool): t is PathTool => PATH_TOOLS.includes(t);
 
 export class PlaneEditor {
@@ -1283,7 +1283,7 @@ export class PlaneEditor {
     const ptr = this.pointers.get(e.pointerId);
     if (!ptr) {
       // ohne Druck: Gummiband des Zeichenstifts (Maus, schwebender Pencil)
-      if (this.tool === 'pen' && e.pointerType !== 'touch') this.paths.hoverAt(this.local(e));
+      if ((this.tool === 'pen' || this.tool === 'curve') && e.pointerType !== 'touch') this.paths.hoverAt(this.local(e));
       return;
     }
     e.stopPropagation();
@@ -1665,7 +1665,8 @@ export class PlaneEditor {
     else if (k === 'v') this.setTool('select');
     else if (k === 'a') this.setTool('direct');
     else if (k === 'q') this.setTool('lasso');
-    else if (k === 'p') this.setTool('pen');
+    else if (k === 'p') this.setTool(e.shiftKey ? 'curve' : 'pen');
+    else if (k === 'o') this.setTool('band');
     else if (k === 'b') this.setTool('brush');
     else if (k === 'k') this.setTool('knife');
     else if (k === 'm') this.setTool('rect');

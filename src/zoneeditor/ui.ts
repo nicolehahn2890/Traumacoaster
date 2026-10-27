@@ -10,7 +10,7 @@ import { PLANE_ROLE_WORDS, PLANE_ROLES, type PlaneRole, type ZoneGroup, type Zon
 import type { PathContext } from './pathTools';
 import { VIEW_WORDS, type ViewMode } from './views';
 
-export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'brush' | 'knife' | 'rect' | 'ellipse';
+export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse';
 export type Isolate = 'off' | 'front' | 'only';
 export const ISOLATE_WORDS: Record<Isolate, string> = { off: 'alle Ebenen', front: 'davor ausgeblendet', only: 'nur diese' };
 
@@ -194,6 +194,8 @@ const ICONS: Record<Tool, string> = {
   direct: '<svg viewBox="0 0 24 24"><path d="M6 3l12 9-5.5 1.2L15 20l-2.6 1-2.6-6.6L6 18z"/></svg>',
   lasso: '<svg viewBox="0 0 24 24"><path d="M7 16c-3-1.5-4-4-2.5-6.5C7 5 15 4 18.5 7s1 8-5 9c-2 .3-4 .2-5.5-.3" stroke-dasharray="2.5 2"/><path d="M7 16c-1 1.5-.5 3 1 4"/></svg>',
   pen: '<svg viewBox="0 0 24 24"><path d="M12 3l6 9-6 9-6-9z"/><path d="M12 3v7"/><circle cx="12" cy="12" r="1.6"/></svg>',
+  curve: '<svg viewBox="0 0 24 24"><path d="M3 17c4-10 8 4 12-6 1.5-3.5 4-4 6-4"/><circle cx="3" cy="17" r="1.6"/><circle cx="12" cy="11" r="1.6"/><circle cx="21" cy="7" r="1.6"/></svg>',
+  band: '<svg viewBox="0 0 24 24"><path d="M3 18C6 8 18 8 21 18"/><path d="M6.5 18C9 12 15 12 17.5 18" stroke-dasharray="2 2"/></svg>',
   brush: '<svg viewBox="0 0 24 24"><path d="M4 17c2-6 6-1 8-6s6-6 8-4"/><path d="M4 20h7"/></svg>',
   knife: '<svg viewBox="0 0 24 24"><path d="M4 20L18 4c1.5 2 1.5 5-1 8l-6 6"/><path d="M11 13l2 2"/></svg>',
   rect: '<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>',
@@ -229,13 +231,15 @@ const TOOL_TITLES: Record<Tool, string> = {
   select: 'Auswahl (V)',
   direct: 'Direktauswahl (A): Punkte, Griffe und Flächen; Umschalt nimmt dazu, aus dem Leeren ziehen wählt im Rechteck',
   lasso: 'Lasso (Q): freihand oder als Rechteck überall im Bild, wählt Punkte in den gewählten Ebenen',
-  pen: 'Zeichenstift (P): tippen gibt eine Ecke, ziehen eine Kurve',
+  pen: 'Zeichenstift (P): tippen gibt eine Ecke, ziehen eine Kurve; Befehlstaste verschiebt, Wahltaste: Ankerpunkt-Werkzeug',
+  curve: 'Kurvenstift (Shift+P): jedes Tippen ein Punkt, die Kurve läuft glatt hindurch; doppelt tippen: Ecke oder Rund',
+  band: 'Band (O): auf eine Kante der Form drücken und nach innen ziehen, gibt ein Band als eigene Fläche',
   brush: 'Formpinsel (B): freihand, wird eine glatte Kurve',
   knife: 'Messer (K): quer durch eine Form ziehen',
   rect: 'Rechteck (M)',
   ellipse: 'Ellipse (L)',
 };
-const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'brush', 'knife', 'rect', 'ellipse'];
+const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse'];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -899,7 +903,7 @@ export class EditorUi {
     const plane = planes.at(-1) ?? null;
     const shape = shapes.at(-1) ?? null;
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
-    const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : `l|${path.form}|${path.count}|${path.smooth}`;
+    const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : path.kind === 'band' ? `b|${path.shape}` : `l|${path.form}|${path.count}|${path.smooth}`;
     const key = path ? pk : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${this.sub}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
@@ -933,6 +937,8 @@ export class EditorUi {
         this.context.append(el('span', 'ze-sep'), el('span', 'ze-label', `${path.count} ${path.count === 1 ? 'Punkt' : 'Punkte'}`));
         anchorButtons(path.smooth, path.count);
       }
+    } else if (path?.kind === 'band') {
+      this.context.append(el('span', 'ze-label', path.shape ? `Band in ${path.shape}: auf eine Kante drücken und nach innen ziehen` : 'Band: erst eine Form wählen, dann auf ihre Kante drücken und nach innen ziehen'));
     } else if (path?.kind === 'face') {
       this.context.append(el('span', 'ze-label', `${path.shape.name} · Fläche`));
       this.swatches(path.fill, (c) => this.a.faceFill(c));

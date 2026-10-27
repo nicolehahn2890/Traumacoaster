@@ -406,3 +406,65 @@ describe('Vereinfachen', () => {
     expect(r.path.length).toBe(4);
   });
 });
+
+describe('Kurvenstift und Band', () => {
+  it('Kurvenstift: drei Tipps und der erste schließen eine glatte Form; doppelt tippen macht eine Ecke', () => {
+    const t = setup();
+    t.tools.setTool('curve');
+    for (const [x, y] of [[300, 300], [400, 200], [500, 300], [400, 400]]) tap(t.tools, x, y);
+    // den zweiten Punkt doppelt antippen: Ecke
+    tap(t.tools, 400, 200);
+    tap(t.tools, 400, 200);
+    tap(t.tools, 300, 300);
+    const s = t.selected()!;
+    expect(s.path.length).toBe(4);
+    const top = s.path.find((p) => p.y + s.y > 9)!;
+    expect(top.inX ?? 0).toBe(0);
+    expect(s.path.filter((p) => p.outX || p.outY || p.inX || p.inY).length).toBe(3);
+  });
+
+  it('Band: an der Oberkante eines Rechtecks nach innen ziehen gibt eine Teilungslinie von Kante zu Kante und eine eigene Fläche', () => {
+    const t = setup();
+    const s = square(t);
+    t.tools.setTool('band');
+    t.tools.down(1, { x: 400, y: 200 }, M);
+    t.tools.move(1, { x: 400, y: 220 }, M);
+    t.tools.move(1, { x: 400, y: 230 }, M);
+    t.tools.up(1);
+    expect(s.cuts?.length).toBe(1);
+    const cut = s.cuts![0].path;
+    // drei Meter unter der Oberkante, von der linken bis zur rechten Kante
+    expect(Math.min(...cut.map((p) => p.x))).toBeCloseTo(-10, 1);
+    expect(Math.max(...cut.map((p) => p.x))).toBeCloseTo(10, 1);
+    expect(cut.every((p) => Math.abs(p.y - 7) < 0.05)).toBe(true);
+    expect(shapeFaces(s).length).toBe(2);
+    expect(t.tools.context()?.kind).toBe('face');
+  });
+
+  it('Band an einer Ellipse: am Umriss ein Bogen (nicht ringsum), an einem Loch der ganze Rand', async () => {
+    const t = setup();
+    const { ellipsePath: ep, newShape: ns } = await import('@/zone/nodes');
+    const p = newPlane(t.nodes, 0);
+    t.nodes.push(p);
+    const e = ns(t.nodes, p.id, ep(10, 6), 0, 0, '#445566');
+    t.nodes.push(e);
+    t.select(e.id);
+    t.tools.setTool('band');
+    // rechts außen nach innen ziehen
+    t.tools.down(1, { x: 500, y: 300 }, M);
+    t.tools.move(1, { x: 480, y: 300 }, M);
+    t.tools.up(1);
+    expect(e.cuts?.[0]?.closed).toBe(false);
+    expect(shapeFaces(e).length).toBe(2);
+    // Form mit einem Loch: am Lochrand nach außen ziehen gibt einen Ring um das Loch
+    const h = ns(t.nodes, p.id, ep(20, 12), 0, 0, '#445566');
+    h.holes = [ep(4, 3)];
+    t.nodes.push(h);
+    t.select(h.id);
+    t.tools.down(1, { x: 440, y: 300 }, M);
+    t.tools.move(1, { x: 460, y: 300 }, M);
+    t.tools.up(1);
+    expect(h.cuts?.[0]?.closed).toBe(true);
+    expect(shapeFaces(h).length).toBe(2);
+  });
+});

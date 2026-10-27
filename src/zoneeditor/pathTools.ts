@@ -46,7 +46,7 @@ import {
 } from '@/zone/nodes';
 import type { OverlayState, Pt } from './overlay';
 
-export type PathTool = 'direct' | 'pen' | 'brush' | 'knife' | 'lasso';
+export type PathTool = 'direct' | 'pen' | 'curve' | 'brush' | 'knife' | 'lasso' | 'band';
 export type RegionForm = 'lasso' | 'rect';
 
 /** gedrückte Tasten beim Zeigen: Befehl (Cmd, Strg), Wahl (Alt), Umschalt */
@@ -91,7 +91,8 @@ export type PathContext =
   | { kind: 'pen'; count: number; into: string | null }
   | { kind: 'anchor'; shape: ZoneShape; count: number; smooth: boolean; line: PathRef['kind'] }
   | { kind: 'face'; shape: ZoneShape; fill: string | null }
-  | { kind: 'lasso'; form: RegionForm; count: number; smooth: boolean };
+  | { kind: 'lasso'; form: RegionForm; count: number; smooth: boolean }
+  | { kind: 'band'; shape: string | null };
 
 interface AnchorSel {
   shape: string;
@@ -125,8 +126,29 @@ interface Pen {
   drag: number | null;
   /** beim Schließen mit Ziehen: der erste Anker, wie er vorher war */
   closing: PathPoint | null;
+  /** Kurvenstift: je Anker rund (die Griffe ergeben sich aus den Nachbarn) oder Ecke; beim Zeichenstift null */
+  auto: boolean[] | null;
   pointerId: number;
   start: Pt;
+}
+
+/** Band (O): ein Kantenstück der Form, das beim Ziehen nach innen versetzt wird */
+interface Band {
+  pointerId: number;
+  shape: string;
+  /** Abtastung des Kantenstücks in Pfad-Koordinaten der Form, mit Normalen (links der Laufrichtung) */
+  pts: Pt[];
+  normals: Pt[];
+  /** das ganze Kantenstück ist ein Ring (keine Ecke im Pfad) */
+  ring: boolean;
+  /** Anfangs- und Endanker des Stücks (Pfad-Koordinaten), falls die versetzte Linie dort enden muss */
+  ends: [Pt, Pt];
+  /** Druckpunkt auf der Kante und seine Normale */
+  at: Pt;
+  n: Pt;
+  /** versetzt um width (Pfad-Koordinaten) zur Seite side (±1 bezogen auf n) */
+  width: number;
+  side: number;
 }
 
 interface Stroke {
@@ -452,6 +474,9 @@ export class PathTools {
   private face: { shape: string; x: number; y: number } | null = null;
   private drag: Drag | null = null;
   private region: Region | null = null;
+  private band: Band | null = null;
+  /** Kurvenstift: getippter Anker (Antippen des ersten schließt) */
+  private curveTap: { i: number; moved: boolean } | null = null;
   private hover: Pt | null = null;
   private mods: Mods = NO_MODS;
   private lastTap = { x: 0, y: 0, t: 0 };
@@ -462,7 +487,8 @@ export class PathTools {
   setTool(t: PathTool | null): void {
     if (this.pen) this.finishPen(false);
     if (this.stroke || this.drag || this.region) this.cancelActive();
-    if (t !== 'direct' && t !== 'lasso') {
+    this.band = null;
+    if (t !== 'direct' && t !== 'lasso' && t !== 'band') {
       this.anchors = [];
       this.face = null;
     }
@@ -494,7 +520,7 @@ export class PathTools {
   }
 
   get busy(): boolean {
-    return !!(this.pen || this.stroke || this.drag || this.region);
+    return !!(this.pen || this.stroke || this.drag || this.region || this.band);
   }
 
   // ------------------------------------------------------------------ Hilfen
@@ -654,8 +680,10 @@ export class PathTools {
       if (mods.alt && this.convertDown(pointerId, p)) return;
       return this.penDown(pointerId, p);
     }
+    if (this.tool === 'curve') return this.curveDown(pointerId, p);
     if (this.tool === 'brush' || this.tool === 'knife') return this.strokeDown(pointerId, p);
     if (this.tool === 'lasso') return this.lassoDown(pointerId, p, mods);
+    if (this.tool === 'band') return this.bandDown(pointerId, p);
     this.directDown(pointerId, p, mods);
   }
 
@@ -664,6 +692,8 @@ export class PathTools {
     this.mods = mods;
     const pen = this.pen;
     if (pen && pen.drag !== null && pen.pointerId === pointerId) return this.penDragMove(pen, p, mods);
+    const bd = this.band;
+    if (bd && bd.pointerId === pointerId) return this.bandMove(bd, p);
     const st = this.stroke;
     if (st && st.pointerId === pointerId) {
       if (dist(p, st.screen[st.screen.length - 1]) < 2) return;
@@ -754,6 +784,15 @@ export class PathTools {
     const q = plane ? this.host.planePoint(plane, p) : null;
     if (!q || pen.drag === null) return;
     const near = dist(p, pen.start) < DRAG_DIST;
+    if (pen.auto) {
+      // Kurvenstift: Ziehen verschiebt den Anker, die Kurve läuft weiter glatt hindurch
+      if (this.curveTap && near && !this.curveTap.moved) return;
+      if (this.curveTap) this.curveTap.moved = true;
+      pen.pts[pen.drag] = { x: q.x, y: q.y };
+      this.autoHandles(pen, false);
+      this.host.redraw();
+      return;
+    }
     if (pen.closing) {
       const o = pen.closing;
       const dx = q.x - o.x;
@@ -792,6 +831,19 @@ export class PathTools {
 
   up(pointerId: number): void {
     const pen = this.pen;
+    if (pen && pen.auto && pen.drag !== null && pen.pointerId === pointerId) {
+      // Kurvenstift: den ersten Anker nur angetippt (ab drei): schließen
+      const tap = this.curveTap;
+      this.curveTap = null;
+      pen.drag = null;
+      if (tap && !tap.moved && tap.i === 0 && pen.pts.length >= 3) this.finishPen(true);
+      else this.host.redraw();
+      return;
+    }
+    if (this.band && this.band.pointerId === pointerId) {
+      this.bandUp();
+      return;
+    }
     if (pen && pen.drag !== null && pen.pointerId === pointerId) {
       if (pen.closing) {
         pen.closing = null;
@@ -1122,7 +1174,7 @@ export class PathTools {
         this.host.toast('Die aktive Ebene ist gesperrt');
         return;
       }
-      this.pen = { plane: plane.id, into: sel && selPlane === plane ? sel.id : null, pts: [], drag: null, closing: null, pointerId, start: p };
+      this.pen = { plane: plane.id, into: sel && selPlane === plane ? sel.id : null, pts: [], drag: null, closing: null, auto: null, pointerId, start: p };
     }
     const pen = this.pen;
     const plane = findPlane(this.host.nodes(), pen.plane);
@@ -1218,6 +1270,249 @@ export class PathTools {
     return false;
   }
 
+  /**
+   * Kurvenstift (Shift+P, wie Illustrators Kurvenzeichner): jedes Tippen setzt einen Anker, die Kurve läuft glatt durch
+   * alle; Ziehen verschiebt einen Anker, Doppeltippen wechselt Ecke und Rund, Tippen auf den ersten schließt, Eingabe
+   * oder „Fertig“ beendet
+   */
+  private curveDown(pointerId: number, p: Pt): void {
+    const r = this.host.hitRadius();
+    if (!this.pen) {
+      const sel = this.host.selectedShapes().at(-1);
+      const selPlane = sel ? findPlane(this.host.nodes(), sel.parent) : undefined;
+      this.host.begin();
+      const plane = sel && selPlane && !planeLocked(this.host.nodes(), selPlane) && !sel.locked ? selPlane : this.host.ensurePlane();
+      if (planeLocked(this.host.nodes(), plane)) {
+        this.host.cancel();
+        this.host.toast('Die aktive Ebene ist gesperrt');
+        return;
+      }
+      this.pen = { plane: plane.id, into: sel && selPlane === plane ? sel.id : null, pts: [], drag: null, closing: null, auto: [], pointerId, start: p };
+    }
+    const pen = this.pen;
+    const plane = findPlane(this.host.nodes(), pen.plane);
+    if (!plane || !pen.auto) return;
+    let hit = -1;
+    let hitD = r;
+    pen.pts.forEach((a, i) => {
+      const s = this.host.screenOf(plane, a);
+      const d = s ? dist(s, p) : Infinity;
+      if (d <= hitD) {
+        hitD = d;
+        hit = i;
+      }
+    });
+    const now = performance.now();
+    if (hit >= 0) {
+      const twice = now - this.lastTap.t < DOUBLE_TAP && Math.hypot(p.x - this.lastTap.x, p.y - this.lastTap.y) < 20;
+      this.lastTap = { x: p.x, y: p.y, t: twice ? 0 : now };
+      if (twice) {
+        pen.auto[hit] = !pen.auto[hit];
+        this.autoHandles(pen, false);
+        this.host.redraw();
+        return;
+      }
+      pen.drag = hit;
+      pen.pointerId = pointerId;
+      pen.start = p;
+      this.curveTap = { i: hit, moved: false };
+      this.host.redraw();
+      return;
+    }
+    const into = pen.into ? (this.shapeOf(pen.into)?.shape ?? null) : null;
+    const q = this.snapped(plane, into, p);
+    if (!q) return;
+    pen.pts.push({ x: q.x, y: q.y });
+    pen.auto.push(true);
+    this.autoHandles(pen, false);
+    pen.drag = pen.pts.length - 1;
+    pen.pointerId = pointerId;
+    pen.start = p;
+    this.curveTap = null;
+    this.lastTap = { x: p.x, y: p.y, t: now };
+    this.host.redraw();
+  }
+
+  /** Griffe des Kurvenstifts aus den Nachbarn (wie Catmull-Rom, gekappt wie smoothPath); Ecken und offene Enden ohne */
+  private autoHandles(pen: Pen, closed: boolean): void {
+    const pts = pen.pts.map((a) => ({ x: a.x, y: a.y }));
+    const n = pts.length;
+    pen.pts = pts.map((a, i) => {
+      if (!pen.auto?.[i] || (!closed && (i === 0 || i === n - 1)) || n < 3) return a;
+      const prev = pts[(i - 1 + n) % n];
+      const next = pts[(i + 1) % n];
+      let tx = (next.x - prev.x) / 6;
+      let ty = (next.y - prev.y) / 6;
+      const len = Math.hypot(tx, ty);
+      const cap = 0.4 * Math.min(dist(prev, a), dist(a, next));
+      if (len > cap && len > 0) {
+        tx *= cap / len;
+        ty *= cap / len;
+      }
+      return { x: a.x, y: a.y, inX: -tx, inY: -ty, outX: tx, outY: ty };
+    });
+  }
+
+  /**
+   * Band (O; Plan 4.3): auf eine Kante der gewählten Form drücken und nach innen ziehen. Das Kantenstück zwischen den
+   * nächsten Ecken (ohne Ecken der ganze Rand) wird um die gezogene Weite versetzt und eine Teilungslinie; so entsteht
+   * eine eigene Fläche, etwa das helle Randband oder ein Höhlenrand (an einem Loch nach außen ziehen)
+   */
+  private bandDown(pointerId: number, p: Pt): void {
+    const o = this.editable().at(-1);
+    if (!o) {
+      const pick = this.host.pick(p);
+      if (pick) this.host.setSelection([pick.id]);
+      this.host.toast('Auf eine Kante der gewählten Form drücken und nach innen ziehen');
+      return;
+    }
+    const seg = this.segmentAt([o], p);
+    if (!seg || seg.ref.kind === 'cut') {
+      this.host.toast('Auf eine Kante (Umriss oder Loch) der gewählten Form drücken und nach innen ziehen');
+      return;
+    }
+    const path = seg.path;
+    const n = path.length;
+    const corners = path.map((a) => !isSmooth(a));
+    // ein Loch bekommt den ganzen Rand; am Umriss das Stück zwischen den nächsten Ecken
+    const ring = seg.ref.kind === 'hole' && !corners.some(Boolean);
+    let from = seg.i;
+    let to = (seg.i + 1) % n;
+    if (!ring) {
+      for (let k = 0; k < n && !corners[from]; k++) from = (from - 1 + n) % n;
+      for (let k = 0; k < n && !corners[to]; k++) to = (to + 1) % n;
+    }
+    // Stücke from … to (ringsum: alle), fein abgetastet, mit Richtung
+    const segs: number[] = [];
+    if (ring || from === to) for (let k = 0; k < n; k++) segs.push((from + k) % n);
+    else for (let k = from; k !== to; k = (k + 1) % n) segs.push(k);
+    let pts: Pt[] = [];
+    let normals: Pt[] = [];
+    let angles: number[] = [];
+    let press = 0;
+    let pressD = Infinity;
+    const at = segmentPoint(path, seg.i, seg.t);
+    const N = 24;
+    segs.forEach((k, si) => {
+      for (let j = si === 0 ? 0 : 1; j <= N; j++) {
+        if (ring && si === segs.length - 1 && j === N) continue;
+        const t = j / N;
+        const a = segmentPoint(path, k, Math.max(0, t - 0.01));
+        const b = segmentPoint(path, k, Math.min(1, t + 0.01));
+        const q = segmentPoint(path, k, t);
+        const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        const d = Math.hypot(q.x - at.x, q.y - at.y);
+        if (d < pressD) {
+          pressD = d;
+          press = pts.length;
+        }
+        pts.push(q);
+        normals.push({ x: -(b.y - a.y) / l, y: (b.x - a.x) / l });
+        angles.push(Math.atan2(b.y - a.y, b.x - a.x));
+      }
+    });
+    let ends: [Pt, Pt] = [{ x: path[from].x, y: path[from].y }, { x: path[to].x, y: path[to].y }];
+    if (!ring) {
+      // nur so weit, wie die Kante ungefähr in die Richtung am Druckpunkt läuft (höchstens 80° Drehung)
+      const unwrap = angles.map((v) => v);
+      for (let i = 1; i < unwrap.length; i++) {
+        let d = unwrap[i] - unwrap[i - 1];
+        while (d > Math.PI) d -= 2 * Math.PI;
+        while (d < -Math.PI) d += 2 * Math.PI;
+        unwrap[i] = unwrap[i - 1] + d;
+      }
+      const LIMIT = (80 * Math.PI) / 180;
+      let lo = press;
+      let hi = press;
+      while (lo > 0 && Math.abs(unwrap[lo - 1] - unwrap[press]) <= LIMIT) lo--;
+      while (hi < pts.length - 1 && Math.abs(unwrap[hi + 1] - unwrap[press]) <= LIMIT) hi++;
+      if (lo > 0 || hi < pts.length - 1) {
+        ends = [pts[lo], pts[hi]];
+        pts = pts.slice(lo, hi + 1);
+        normals = normals.slice(lo, hi + 1);
+        angles = angles.slice(lo, hi + 1);
+      }
+    }
+    const a = segmentPoint(path, seg.i, Math.max(0, seg.t - 0.01));
+    const b = segmentPoint(path, seg.i, Math.min(1, seg.t + 0.01));
+    const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    this.anchors = [];
+    this.face = null;
+    this.band = { pointerId, shape: o.shape.id, pts, normals, ring, ends, at, n: { x: -(b.y - a.y) / l, y: (b.x - a.x) / l }, width: 0, side: 1 };
+    this.host.redraw();
+  }
+
+  private bandMove(bd: Band, p: Pt): void {
+    const o = this.shapeOf(bd.shape);
+    const q = o ? this.local(o.shape, o.plane, p) : null;
+    if (!q) return;
+    const d = (q.x - bd.at.x) * bd.n.x + (q.y - bd.at.y) * bd.n.y;
+    bd.side = d >= 0 ? 1 : -1;
+    bd.width = Math.abs(d);
+    this.host.redraw();
+  }
+
+  /** versetzte Linie des Bands (Pfad-Koordinaten); offen um das Dreifache der Weite verlängert, damit sie die Kanten trifft */
+  private bandLine(bd: Band): Poly {
+    const w = bd.width * bd.side;
+    const line: Poly = bd.pts.map((q, i) => [q.x + bd.normals[i].x * w, q.y + bd.normals[i].y * w]);
+    if (bd.ring || line.length < 2) return line;
+    const ext = (a: [number, number], b: [number, number]): [number, number] => {
+      const l = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1;
+      return [a[0] + ((a[0] - b[0]) / l) * bd.width * 3, a[1] + ((a[1] - b[1]) / l) * bd.width * 3];
+    };
+    return [ext(line[0], line[1]), ...line, ext(line[line.length - 1], line[line.length - 2])];
+  }
+
+  private bandUp(): void {
+    const bd = this.band!;
+    this.band = null;
+    const o = this.shapeOf(bd.shape);
+    if (!o) return;
+    const { shape, plane } = o;
+    const scr0 = this.scr(shape, plane, bd.at.x, bd.at.y);
+    const scr1 = this.scr(shape, plane, bd.at.x + bd.n.x * bd.width, bd.at.y + bd.n.y * bd.width);
+    if (!scr0 || !scr1 || dist(scr0, scr1) < 3) {
+      this.host.redraw();
+      return;
+    }
+    const k = Math.max(Math.abs(shape.sx), Math.abs(shape.sy)) || 1;
+    const tol = (this.metersPerPx(plane, scr0) / k) * 1.5;
+    let path: ZonePath;
+    if (bd.ring) path = fitCurve(this.bandLine(bd), tol, true).map(roundPoint);
+    else {
+      // in Ebenen-Koordinaten auf die Kanten kürzen; ein Ende, das in der Form bleibt (an einer nach innen gehenden Ecke),
+      // geht zum Eckanker
+      const toPlane = ([x, y]: [number, number]): [number, number] => [shape.x + shape.sx * x, shape.y + shape.sy * y];
+      const trimmed = this.trimToShape(shape, this.bandLine(bd).map(toPlane)).map(([x, y]) => [(x - shape.x) / shape.sx, (y - shape.y) / shape.sy] as [number, number]);
+      const onEdge = ([x, y]: [number, number]): boolean => shapePaths(shape).some(({ path: pp, closed }) => {
+        const poly = flattenPath(pp, 0.05, closed);
+        const m = closed ? poly.length : poly.length - 1;
+        for (let i = 0; i < m; i++) {
+          const a = poly[i];
+          const b = poly[(i + 1) % poly.length];
+          if (segDist({ x, y }, { x: a[0], y: a[1] }, { x: b[0], y: b[1] }).d < 0.02) return true;
+        }
+        return false;
+      });
+      const line = [...trimmed];
+      if (!onEdge(line[0])) line.unshift([bd.ends[0].x, bd.ends[0].y]);
+      if (!onEdge(line[line.length - 1])) line.push([bd.ends[1].x, bd.ends[1].y]);
+      path = fitCurve(line, tol, false).map(roundPoint);
+    }
+    if (path.length < (bd.ring ? 3 : 2)) {
+      this.host.redraw();
+      return;
+    }
+    this.host.begin();
+    shape.cuts = [...(shape.cuts ?? []), { path, closed: bd.ring }];
+    // die neue Fläche gleich wählen: eine Farbe tippen färbt das Band
+    const mid = { x: bd.at.x + bd.n.x * bd.side * bd.width * 0.5, y: bd.at.y + bd.n.y * bd.side * bd.width * 0.5 };
+    this.face = { shape: shape.id, x: mid.x, y: mid.y };
+    this.host.commit();
+    this.host.toast('Band als eigene Fläche: eine Farbe tippen färbt es, „Loch“ macht es frei');
+  }
+
   /** Zeichenstift beenden: geschlossen oder offen; ohne genug Anker verworfen */
   finishPen(closed: boolean): void {
     const pen = this.pen;
@@ -1225,11 +1520,12 @@ export class PathTools {
     if (!pen) return;
     if (this.drag && (this.drag.kind === 'penAnchor' || this.drag.kind === 'penKnob' || this.drag.kind === 'penPull')) this.drag = null;
     const plane = findPlane(this.host.nodes(), pen.plane);
-    const pts = pen.pts;
     let into = pen.into ? (this.shapeOf(pen.into)?.shape ?? null) : null;
-    if (into && pts.length >= 2 && !this.touches(into, pts, closed)) into = null;
+    if (into && pen.pts.length >= 2 && !this.touches(into, pen.pts, closed)) into = null;
     // ohne Form zum Teilen ergibt eine offene Linie mit drei Ankern oder mehr eine geschlossene Form
-    const close = closed || (!into && pts.length >= 3);
+    const close = closed || (!into && pen.pts.length >= 3);
+    if (pen.auto) this.autoHandles(pen, close);
+    const pts = pen.pts;
     if (!plane || pts.length < (close ? 3 : 2)) {
       this.host.cancel();
       if (pts.length >= 2 && !into) this.host.toast('Eine offene Linie teilt eine Form: erst die Form wählen, dann hineinzeichnen');
@@ -1484,6 +1780,7 @@ export class PathTools {
     if (this.pen) return { kind: 'pen', count: this.pen.pts.length, into: this.pen.into ? (this.shapeOf(this.pen.into)?.shape.name ?? null) : null };
     const main = this.mainAnchor();
     if (this.tool === 'lasso') return { kind: 'lasso', form: this.lassoForm, count: main ? this.anchors.length : 0, smooth: main?.smooth ?? false };
+    if (this.tool === 'band' && !this.currentFace()) return { kind: 'band', shape: this.host.selectedShapes().at(-1)?.name ?? null };
     if (main) return { kind: 'anchor', shape: main.shape, count: this.anchors.length, smooth: main.smooth, line: main.line };
     const f = this.currentFace();
     if (f) return { kind: 'face', shape: f.shape, fill: faceFill(f.shape, f.face) };
@@ -1527,16 +1824,24 @@ export class PathTools {
           }
         });
       }
-      const f = this.tool === 'direct' || this.tool === 'lasso' ? this.currentFace() : null;
+      const f = this.tool === 'direct' || this.tool === 'lasso' || this.tool === 'band' ? this.currentFace() : null;
       if (f && f.shape.id === sel.id) st.face = [f.face.outline, ...f.face.holes].map((ring) => ring.map(([x, y]) => this.scr(sel, plane, x, y)).filter((q): q is Pt => !!q));
     }
     // laufender Zeichenstift mit Gummiband; Griffe am letzten Anker, mit Befehls- oder Wahltaste an allen
     const pen = this.pen;
     const penPlane = pen ? findPlane(nodes, pen.plane) : undefined;
     if (pen && penPlane) {
-      const line = pen.pts.length >= 2 ? flattenPath(pen.pts, 0.3, false) : pen.pts.map((a) => [a.x, a.y] as [number, number]);
+      // Kurvenstift: die Kurve, wie sie mit dem nächsten Anker unter dem Zeiger liefe
+      let shown = pen.pts;
+      const hq = pen.auto && this.hover && pen.drag === null ? this.host.planePoint(penPlane, this.hover) : null;
+      if (pen.auto && hq) {
+        const probe: Pen = { ...pen, pts: [...pen.pts, { x: hq.x, y: hq.y }], auto: [...pen.auto, true] };
+        this.autoHandles(probe, false);
+        shown = probe.pts;
+      }
+      const line = shown.length >= 2 ? flattenPath(shown, 0.3, false) : shown.map((a) => [a.x, a.y] as [number, number]);
       const pts = line.map(([x, y]) => this.host.screenOf(penPlane, { x, y })).filter((q): q is Pt => !!q);
-      if (this.hover && pen.drag === null && !this.drag && pts.length && !this.mods.cmd && !this.mods.alt) pts.push(this.hover);
+      if (!pen.auto && this.hover && pen.drag === null && !this.drag && pts.length && !this.mods.cmd && !this.mods.alt) pts.push(this.hover);
       st.lines.push(pts);
       const all = this.mods.cmd || this.mods.alt;
       pen.pts.forEach((a, i) => {
@@ -1559,5 +1864,12 @@ export class PathTools {
     }
     if (this.stroke) st.stroke = this.stroke.screen;
     if (this.region) st.region = regionRing(this.region.form, this.region.pts);
+    const bd = this.band;
+    const bo = bd ? this.shapeOf(bd.shape) : null;
+    if (bd && bo && bd.width > 0) {
+      const line = this.bandLine(bd).map(([x, y]) => this.scr(bo.shape, bo.plane, x, y)).filter((q): q is Pt => !!q);
+      if (bd.ring && line.length) line.push(line[0]);
+      st.stroke = line;
+    }
   }
 }
