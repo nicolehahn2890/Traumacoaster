@@ -31,6 +31,7 @@ import { strokeToTrack, closePath, extendTrack, interpretStroke, lanesTrack, typ
 import { bendSegment } from '@/track/edit';
 import { RubberBrush, chaikin, resamplePolyline } from '@/track/brush';
 import { BrushRefiner, joinLines, lineLength, planBrushTrack, previewBrushTrack, spliceLine, swapCrossing, trackLine, trackLineWithDepth, type BrushPlan, type BrushPreview } from '@/track/brushTrack';
+import { Strich2 } from '@/track/strich2';
 import { TrackInspector, type WeakSpot } from '@/track/inspect';
 import { findCrossings } from '@/track/crossings';
 import { MeasureOverlay } from '@/render/measureOverlay';
@@ -178,6 +179,12 @@ const EDITOR_URL = typeof location !== 'undefined' && new URLSearchParams(locati
 const EDITOR2_URL = typeof location !== 'undefined' && new URLSearchParams(location.search).get('editor') === '2';
 /** ?scroll=0: kein Autoscroll beim Zeichnen (automatische Tests zeichnen in festen Bildschirmkoordinaten) */
 const AUTOSCROLL = typeof location === 'undefined' || new URLSearchParams(location.search).get('scroll') !== '0';
+/**
+ * Pinsel-Studie (28.10.2026, docs/PINSEL-STUDIE.md): Prototyp „Strich 2“ (kausal, fester Vorlauf, konstante Arbeit je
+ * Vorschau) hinter &strich=2; mit &vorlauf=1 bleibt der noch unentschiedene Teil hinter der Spitze Tinte statt Schienen
+ */
+const STRICH_URL = urlNum('strich', 1);
+const VORLAUF_URL = urlNum('vorlauf', 0);
 /** Zeichen-Zoom auf dem Handy: mindestens so viele Pixel pro Bühnen-Meter (eine Spur rund 5 mm); der Rest des Levels
  *  über Autoscroll am Rand oder Wischen, Doppeltipp auf freie Fläche wechselt zur Übersicht */
 const DRAW_ZOOM_MIN = urlNum('dzoom', 7);
@@ -254,6 +261,8 @@ export class LevelScene implements Scene {
   /** so weit (Bühnen-Meter entlang der Linie) zeigt die letzte Vorschau die Bahn schon als Schienen */
   private brushPreviewedLen = 0;
   private brushBase: { line: StagePoint[]; z: Float64Array } | null = null;
+  /** Pinsel-Studie: Strich 2 für den laufenden Strich (&strich=2), sonst null */
+  private strich2: Strich2 | null = null;
   /** Plan der aktuellen Pinsel-Bahn (Kreuzungen zum Tauschen) und der Stand der Bahn, zu dem er passt */
   private brushPlan: BrushPlan | null = null;
   private brushPlanStamp = 0;
@@ -2335,6 +2344,7 @@ export class LevelScene implements Scene {
     this.brushBase = this.strokeKind === 'extend' && this.samples ? trackLineWithDepth(this.samples) : null;
     // Pinsel „Spur halten“ (Kamerawinkel-Test): hält die Tiefe am Ende der alten Bahn, ein neuer Strich die Spur unter dem Anfang
     this.brushHoldZ = this.brushBase?.z.length ? this.brushBase.z[this.brushBase.z.length - 1] : NaN;
+    this.strich2 = STRICH_URL >= 2 && this.strokeKind !== 'overdraw' ? new Strich2(() => this.brushOptions(), this.brushBase, this.planeStartDepth(), Math.max(8, 60 / this.view.camera.zoom)) : null;
     this.previewTimer = 0;
     this.setDrawCursor(true);
   }
@@ -2364,6 +2374,20 @@ export class LevelScene implements Scene {
    */
   private previewBrush(): void {
     if (this.strokeKind === 'overdraw' || this.strokeKind === 'terrain') return;
+    if (this.strich2) {
+      // Strich 2: der Läufer nimmt die ganze Pinsellinie; hinter dem Vorlauf sind die Schienen endgültig
+      const pv = this.strich2.update(this.brush!.points);
+      if (!pv || pv.path.nodes.length < 2) return;
+      pv.path.startType = this.path?.startType ?? 'chainlift';
+      this.brushPreview = pv;
+      this.brushPreviewedLen = VORLAUF_URL === 1 ? this.strich2.frozenLength : this.brush!.drawnLength;
+      const sm = sampleTrack(pv.path, 0.5);
+      this.liveLength = sm.length;
+      this.view.setTrack(pv.path, sm, this.skin, this.terrain, this.allowTunnels, true);
+      this.drawGhost(pv.path);
+      this.liveFeedback(pv.path, sm, trackStats(pv.path, sm));
+      return;
+    }
     const solid = this.brushSolidLine();
     let line = solid;
     let keep: ArrayLike<number> | undefined;
@@ -2389,6 +2413,12 @@ export class LevelScene implements Scene {
   private advanceBrush(dt: number): void {
     const b = this.brush!;
     const total = b.drawnLength;
+    if (this.strich2) {
+      // Strich 2: keine Schleppe, die Schienen reichen bis zur Pinselspitze (der Vorlauf ist die Entscheidungszeit)
+      this.brushShown = total;
+      this.drawInk();
+      return;
+    }
     const k = 1 - Math.exp(-dt / BRUSH_LAG);
     let shown = this.brushShown + (total - this.brushShown) * k;
     shown = Math.max(shown, total - BRUSH_TAIL_PX / this.view.camera.zoom);
@@ -2444,6 +2474,26 @@ export class LevelScene implements Scene {
     const shown = this.brushPreview;
     this.brushBase = null;
     this.brushPreview = null;
+    const s2 = this.strich2;
+    this.strich2 = null;
+    if (s2 && kind !== 'overdraw') {
+      // Strich 2: was fest war, bleibt genau so; nur das freie Ende wird gelöst, ein Rundenschluss ist ein neuer Weg
+      const r = s2.finish(drawn);
+      if (!r || r.path.nodes.length < 2) {
+        this.redrawTrack();
+        return;
+      }
+      this.pushHistory();
+      r.path.startType = this.path?.startType ?? 'chainlift';
+      this.setPath(r.path, true);
+      this.scheduleInspect();
+      if (!r.closed) {
+        const a = r.line[0];
+        const b = r.line[r.line.length - 1];
+        if (Math.hypot(a.X - b.X, a.Y - b.Y) <= this.closeReach()) this.toast.show(t('closeOffer'), 2.2);
+      }
+      return;
+    }
     if (kind === 'extend' && base) {
       // Fortsetzen: die alte Bahn behält ihre Tiefe, nur das neue Stück wählt sie
       line = joinLines(base.line, drawn);
