@@ -31,7 +31,7 @@ import { strokeToTrack, closePath, extendTrack, interpretStroke, lanesTrack, typ
 import { bendSegment } from '@/track/edit';
 import { RubberBrush, chaikin, resamplePolyline } from '@/track/brush';
 import { BrushRefiner, joinLines, lineLength, planBrushTrack, previewBrushTrack, spliceLine, swapCrossing, trackLine, trackLineWithDepth, type BrushPlan, type BrushPreview } from '@/track/brushTrack';
-import { Strich2, type Strich2Preview } from '@/track/strich2';
+import { FIX_BEHIND, Strich2, type Strich2Preview } from '@/track/strich2';
 import { TrackInspector, type WeakSpot } from '@/track/inspect';
 import { findCrossings } from '@/track/crossings';
 import { MeasureOverlay } from '@/render/measureOverlay';
@@ -189,6 +189,8 @@ const STRICH_URL = urlNum('strich', 1);
  * nach, sobald die Tiefe entschieden ist; 2 zeigt den Vorlauf vorläufig als Schienen bis zur Spitze
  */
 const VORLAUF_URL = urlNum('vorlauf', 1);
+/** Strich 2: so viele Meter hinter dem festen Ende wird ein Bahn-Segment fest (siehe FIX_BEHIND) */
+const FEST_URL = urlNum('fest', FIX_BEHIND);
 /** Zeichen-Zoom auf dem Handy: mindestens so viele Pixel pro Bühnen-Meter (eine Spur rund 5 mm); der Rest des Levels
  *  über Autoscroll am Rand oder Wischen, Doppeltipp auf freie Fläche wechselt zur Übersicht */
 const DRAW_ZOOM_MIN = urlNum('dzoom', 7);
@@ -2284,7 +2286,7 @@ export class LevelScene implements Scene {
     let shift = { X: 0, Y: 0 };
     if (viewState().persp && (endNode || s2?.frozenWorld)) {
       const v = endNode ? toView(endNode.x, endNode.y, endNode.z) : toView(s2!.frozenWorld!.x, s2!.frozenWorld!.y, s2!.frozenWorld!.z / LANE_DEPTH);
-      const anchor = s2 ? at(Math.min(this.brushPreviewedLen, this.brushShown)).p : from.p;
+      const anchor = s2 ? at(this.brushPreviewedLen).p : from.p;
       shift = { X: v.X - anchor.X, Y: v.Y - anchor.Y };
     }
     const fingerNow = this.brushFinger();
@@ -2355,7 +2357,7 @@ export class LevelScene implements Scene {
     this.brushBase = this.strokeKind === 'extend' && this.samples ? trackLineWithDepth(this.samples) : null;
     // Pinsel „Spur halten“ (Kamerawinkel-Test): hält die Tiefe am Ende der alten Bahn, ein neuer Strich die Spur unter dem Anfang
     this.brushHoldZ = this.brushBase?.z.length ? this.brushBase.z[this.brushBase.z.length - 1] : NaN;
-    this.strich2 = STRICH_URL >= 2 && this.strokeKind !== 'overdraw' ? new Strich2(() => this.brushOptions(), this.brushBase, this.planeStartDepth(), Math.max(8, 60 / this.view.camera.zoom)) : null;
+    this.strich2 = STRICH_URL >= 2 && this.strokeKind !== 'overdraw' ? new Strich2(() => this.brushOptions(), this.brushBase, this.planeStartDepth(), Math.max(8, 60 / this.view.camera.zoom), FEST_URL) : null;
     this.previewTimer = 0;
     this.setDrawCursor(true);
   }
@@ -2443,12 +2445,13 @@ export class LevelScene implements Scene {
     const b = this.brush!;
     const total = b.drawnLength;
     if (this.strich2) {
-      // Strich 2: keine Schleppe, die Tinte reicht vom festen Bahnende bis zur Spitze (der Vorlauf ist die
-      // Entscheidungszeit). Das Bahnende rückt je Vorschau in Schritten vor; die Tinte gibt es weich frei (Zeitkonstante
+      // Strich 2: die Schleppe ist der ganze Vorlauf (die Entscheidungszeit der Tiefe), vom festen Bahnende bis zur
+      // Spitze, wie beim heutigen Pinsel das Gummiband (Florian 28.10.: „zieht zäh hinterher und glättet den Strich“).
+      // Das Bahnende rückt je Vorschau in Schritten vor; der Anfang der Schleppe folgt ihm weich (Zeitkonstante
       // BRUSH_LAG), nie weiter, als die Schienen schon reichen
-      this.brushShown = total;
       const k = 1 - Math.exp(-dt / BRUSH_LAG);
       this.brushInkFrom = Math.min(this.brushPreviewedLen, this.brushInkFrom + (this.brushPreviewedLen - this.brushInkFrom) * k);
+      this.brushShown = Math.min(total, this.brushInkFrom);
       this.drawInk();
       return;
     }

@@ -12,7 +12,7 @@
  *     Vorschau.
  *  d) Fertige Bahn: Knicke, Rollrate, Tiefenwechsel, Fahrt, Stützen ohne Fuß.
  *
- *   npx tsx scripts/pinsel-messung.ts <strokes.jsonl> [--heute] [--alt] [--last N] [--json datei] [--strich 2]
+ *   npx tsx scripts/pinsel-messung.ts <strokes.jsonl> [--heute] [--alt] [--last N] [--skip N] [--json datei] [--strich 2] [--fest N]
  *
  * Nur lesend auf der Aufnahme. Zonen aus public/zones/<zone>/zone.json; Striche in test-boegen mit Feld f2 laufen in der
  * Kopie von Florians geändertem Bogenland (test-boegen-f2).
@@ -27,7 +27,7 @@ import { SKIN_PHYSICS, TrainSim, simOptionsForLevel } from '../src/physics/train
 import { railBanksFor, sampleTrack, trackStats, type TrackPath, type TrackSamples } from '../src/track/model';
 import type { Vec3 } from '../src/core/math3';
 import { RubberBrush } from '../src/track/brush';
-import { BrushRefiner, findLineCrossings, joinLines, lineLength, planBrushTrack, prepareBrushLine, previewBrushTrack, trackLineWithDepth, type BrushField, type BrushOptions, type BrushPreview } from '../src/track/brushTrack';
+import { BrushRefiner, findLineCrossings, joinLines, lineLength, pathFromPoints, planBrushTrack, prepareBrushLine, previewBrushTrack, trackLineWithDepth, type BrushField, type BrushOptions, type BrushPreview } from '../src/track/brushTrack';
 import { LANE_DEPTH, rayToWorld, setPerspective, setView, toView, viewDistance, type StagePoint } from '../src/track/stage';
 import { parseZone, type ZoneFile } from '../src/zone/types';
 import { cachedFreeLanes } from '../src/zone/field';
@@ -36,7 +36,7 @@ import { trackFrames } from '../src/world/trackMesh';
 import { buildTrack } from '../src/world/trackBuilder';
 import { planWorldSupports } from '../src/world/supports';
 import { trackTypeForSkin } from '../src/world/trackTypes';
-import { Strich2 } from '../src/track/strich2';
+import { FIX_BEHIND, Strich2, type Strich2Preview } from '../src/track/strich2';
 
 interface Rec {
   at: string;
@@ -60,12 +60,16 @@ const opt = (f: string): string | null => {
   const i = args.indexOf(f);
   return i >= 0 ? args[i + 1] : null;
 };
-const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
+const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
 const LAST = Number(opt('--last') ?? 0);
+/** so viele der jüngsten Striche weglassen (ein älterer Satz bleibt vergleichbar, wenn neue dazukamen) */
+const SKIP = Number(opt('--skip') ?? 0);
 const JSON_OUT = opt('--json');
 const STRICH = Number(opt('--strich') ?? 1);
 const NUR = opt('--nur');
 const DEBUG = Number(opt('--debug') ?? -1);
+/** Strich 2: Meter hinter dem festen Ende, ab denen ein Bahn-Segment fest wird (FIX_BEHIND) */
+const FEST = Number(opt('--fest') ?? FIX_BEHIND);
 /** wie in der Level-Szene: Band 22 px, Vorschau höchstens alle 50 ms, sonst nach dem 1,5-Fachen ihrer Dauer */
 const BAND_PX = 22;
 const PREVIEW_MIN_S = 0.05;
@@ -88,6 +92,7 @@ let recs: Rec[] = readFileSync(file, 'utf8')
   .map((l) => JSON.parse(l) as Rec);
 recs = recs.filter((r) => r.reading === 'brush' && r.kind !== 'overdraw');
 if (flag('--heute')) recs = recs.filter((r) => r.at.startsWith('2026-10-28') && r.zone);
+if (SKIP) recs = recs.slice(0, Math.max(0, recs.length - SKIP));
 if (flag('--alt')) recs = recs.filter((r) => !r.zone && r.at < '2026-10-28' && r.at >= '2026-10-23');
 if (NUR) recs = recs.filter((r) => r.zone === NUR);
 if (LAST > 0) recs = recs.slice(-LAST);
@@ -270,6 +275,8 @@ interface PreviewRow {
   tailZ: number[];
   /** Rückstand des gezeigten Bahnendes hinter dem Finger (px) */
   tipLagPx: number;
+  /** Atmen: größte Bewegung (px) der schon gezeigten Schienen (bis zum festen Ende) gegenüber der letzten Vorschau; NaN ohne Vergleich */
+  breathPx: number;
 }
 
 interface StrokeResult {
@@ -297,6 +304,10 @@ interface StrokeResult {
     supports: number;
     floating: number;
     nodes: number;
+    /** Knoten eines Fits über die ganze fertige Linie ohne Kreuzungs-Toleranz (Vergleich: was das stückweise Festwerden kostet) */
+    nodesGlobal: number;
+    /** Strich 2: Linienpunkte mit Kreuzungsschranke (dort gilt die enge Knoten-Toleranz) */
+    nearPts: number;
     lengthM: number;
     closed: boolean;
     /** Sprung letzte Vorschau → Plan und → nach Probefahrten */
@@ -492,11 +503,13 @@ function replay(rec: Rec, idx: number): StrokeResult {
   const holdZ = base?.z.length ? base.z[base.z.length - 1] : z ? (planeLanding(z.stack, stage(0))?.z ?? planeGroundDepth(z.stack, stage(0))) : NaN;
   const opts = brushOptionsFor(rec, z, terrain, holdZ, counters);
   // Strich 2: eigener Läufer mit festem Vorlauf; der nimmt die ganze Pinsellinie (keine Schleppe)
-  const s2 = STRICH >= 2 ? new Strich2(() => opts, base, holdZ, Math.max(8, 60 / rec.zoom)) : null;
+  const s2 = STRICH >= 2 ? new Strich2(() => opts, base, holdZ, Math.max(8, 60 / rec.zoom), FEST) : null;
   const brush = new RubberBrush(stage(0), BAND_PX / rec.zoom);
   const previews: PreviewRow[] = [];
   let pv: BrushPreview | null = null;
   let pvPts: { x: number; y: number; z: number }[] = [];
+  /** Abtastung der letzten Vorschau bis zu ihrem festen Ende (Welt), für das Atmen der Schienen */
+  let pvShown: { x: number; y: number; z: number }[] = [];
   let lastPreviewT = -Infinity;
   let cost = 0;
   let shown = 0;
@@ -614,10 +627,57 @@ function replay(rec: Rec, idx: number): StrokeResult {
         movePx.push(Math.hypot(a.x - b.x, a.y - b.y));
       }
     }
-    previews.push({ t, n: next.z.length, lineM: tipLen, ms, calls, prepareMs, crossingsMs, sampleMs, meshMs, statsMs, devAll, devTouched, devFree, devTipFar, moveZ, movePx, tailZ, tipLagPx });
+    // Atmen der Schienen: die Abtastung der letzten Vorschau bis zu deren festem Ende gegen die Abtastung jetzt (nächster
+    // Punkt im Fenster ±40 Proben), in px der Kamera jetzt. Strich 2: nur der Fit des letzten, noch nicht festen Stücks
+    // bewegt sich; heutiger Pinsel: alles (Tiefe und Fit neu). Für den heutigen Pinsel gilt als „gezeigt“ alles bis 15 m
+    // vor der Spitze
+    let breathPx = NaN;
+    const shownNow: { x: number; y: number; z: number }[] = [];
+    {
+      const fw = s2 ? (next as Strich2Preview).frozenWorld : null;
+      let cut = sm.count;
+      if (s2) {
+        cut = 0;
+        if (fw) {
+          let bestD = Infinity;
+          for (let k = 0; k < sm.count; k++) {
+            const d = Math.hypot(sm.x[k] - fw.x, sm.y[k] - fw.y, sm.z[k] * LANE_DEPTH - fw.z);
+            if (d < bestD) {
+              bestD = d;
+              cut = k + 1;
+            }
+          }
+        }
+      } else cut = Math.max(0, sm.count - Math.round(15 / sm.step));
+      for (let k = 0; k < cut; k++) shownNow.push({ x: sm.x[k], y: sm.y[k], z: sm.z[k] * LANE_DEPTH });
+      if (pvShown.length && shownNow.length) {
+        const cam = camAt(i);
+        breathPx = 0;
+        for (let k = 0; k < pvShown.length; k++) {
+          const a = pvShown[k];
+          // in px: Punkt und Bild des nächsten Punkts
+          const sa = screenOf(a.x, a.y, a.z, cam, rec.zoom, rec.screen);
+          let mBest = Math.min(shownNow.length - 1, k);
+          let dBest = Infinity;
+          for (let m = Math.max(0, k - 40); m < Math.min(shownNow.length, k + 40); m++) {
+            const b = shownNow[m];
+            const d = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+            if (d < dBest) {
+              dBest = d;
+              mBest = m;
+            }
+          }
+          const b = shownNow[mBest];
+          const sb = screenOf(b.x, b.y, b.z, cam, rec.zoom, rec.screen);
+          breathPx = Math.max(breathPx, Math.hypot(sa.x - sb.x, sa.y - sb.y));
+        }
+      }
+    }
+    previews.push({ t, n: next.z.length, lineM: tipLen, ms, calls, prepareMs, crossingsMs, sampleMs, meshMs, statsMs, devAll, devTouched, devFree, devTipFar, moveZ, movePx, tailZ, tipLagPx, breathPx });
     lastDebug = debugLines;
     pv = next;
     pvPts = nPts;
+    pvShown = shownNow;
   }
   if (DEBUG === idx) console.log(`   Abweichungen über 10 px in der letzten Vorschau (${lastDebug.length}):\n${lastDebug.slice(0, 40).join('\n')}`);
   const result: StrokeResult = { idx, at: rec.at, zone: rec.zone ?? null, field: rec.field ?? null, device: rec.screen[0] < 700 ? 'Handy' : 'Mac', zoom: rec.zoom, fov, points: pts.length, seconds: pts[pts.length - 1][2] / 1000, drawnM: brush.drawnLength, camMove, fingerPx: q(speeds, 0.9), previews, release: null };
@@ -701,6 +761,8 @@ function replay(rec: Rec, idx: number): StrokeResult {
     supports: plans.length,
     floating: stats.floating,
     nodes: best.nodes.length,
+    nodesGlobal: pathFromPoints(bestPts, !!best.closed).nodes.length,
+    nearPts: s2 ? ((s2 as unknown as { pts: Array<{ near: boolean }> }).pts.filter((q) => q.near).length) : NaN,
     lengthM: bestSamples.length,
     closed: !!best.closed,
     jumpPlan,

@@ -51,6 +51,12 @@ export interface ReduceOptions {
   even?: boolean;
   /** geschlossene Runde (erster und letzter Punkt gleich): Die Tangente an der Naht reicht über sie hinweg */
   closed?: boolean;
+  /**
+   * Einheitstangente am ersten bzw. letzten Punkt vorgegeben (Anschluss an ein schon festes Segment, Strich 2: der
+   * feste Teil der Bahn wird nicht neu gefittet, das nächste Segment muss G1 an ihm ansetzen)
+   */
+  startTangent?: Vec3;
+  endTangent?: Vec3;
   /** Diagnose: je Abschnitt Fehler, Toleranz und Entscheidung */
   trace?: (msg: string) => void;
 }
@@ -270,7 +276,9 @@ export function reduceNodes(pts: Vec3[], hints: ApexHint[] = [], opts: ReduceOpt
   const T = (i: number): Vec3 => {
     let t = tangents.get(i);
     if (!t) {
-      t = opts.closed && (i === 0 || i === n - 1) ? seamTangent(pts, cum) : tangentAt(pts, i, cum);
+      if (i === 0 && opts.startTangent) t = opts.startTangent;
+      else if (i === n - 1 && opts.endTangent) t = opts.endTangent;
+      else t = opts.closed && (i === 0 || i === n - 1) ? seamTangent(pts, cum) : tangentAt(pts, i, cum);
       tangents.set(i, t);
     }
     return t;

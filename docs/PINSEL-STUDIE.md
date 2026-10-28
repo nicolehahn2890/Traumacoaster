@@ -36,6 +36,13 @@ nach hinten in Metern (eine Spur = 8,4 m). **Loslassen** = der Finger geht hoch,
    jetzt „Ebenen: Bodenhöhe“ wie beim heutigen Pinsel. Auf seinen 31 Strichen von 18:39–18:55 ist die Form in derselben
    Liga wie heute, Leistung und Sprung bleiben gelöst; fahrbar ist bei beiden keiner, und die meisten „Knicke“ sind die
    Schleifen des Strichs selbst (bei zoom 14,8 ist ein Radius von 59 px schon die 4-m-Grenze).
+8. Zweiter Nachtrag (Abschnitt 10): Florians zweiter Test (27 Striche, „fühlt sich deutlich besser an“) wünschte
+   weniger Bearbeitungspunkte und das Gummiband des heutigen Pinsels. Strich 2 setzte alle 3 m einen Knoten ohne Fit
+   (186 je Strich); jetzt fittet er die Knoten wie der heutige Pinsel, stückweise und ohne das Feste anzurühren
+   (99 je Strich gegen 59–64 heute auf den 31 Strichen von 18:39, 71 gegen 54 auf den 27 neuen; der Rest sind die
+   engen Knoten an Kreuzungen, weil Strich 2 Stränge nur um den Mindestabstand trennt, und die kürzere Tiefenglättung), und der ganze Vorlauf ist das pinke
+   Band statt schwarzer Tinte. Das Band ist mit 12 m (178 px) länger als beim heutigen Pinsel (41–109 px) und holt beim
+   Anhalten nicht auf: Das ist die Entscheidungszeit, als Entscheidung in Abschnitt 8 und 10 festgehalten.
 
 ## 2. Befund am heutigen Pinsel
 
@@ -238,7 +245,7 @@ verlangt anderes), und den Rundenschluss als neuen Weg ab dem festen Ende.
 
 ## 6. Prototyp: Strich 2
 
-**Gebaut** (`src/track/strich2.ts`, 9 Tests in `tests/strich2.test.ts`, Level-Szene `src/app/scenes/level.ts`):
+**Gebaut** (`src/track/strich2.ts`, 10 Tests in `tests/strich2.test.ts`, Level-Szene `src/app/scenes/level.ts`):
 - Linie wächst nur am Ende (Abtastung 0,25 m, Gauß 0,5 m, 1-m-Punkte); Abfragen je Punkt gemerkt.
 - Löser auf dem freien Ende: min Σ w·(z − Ziel)² + μ·Σ(Δz)² + λ·Σ(Δ²z)² + Wenden-Term, dichtes System mit Cholesky und
   aktiver Menge; Schranken aus Freiraum (Flächen) und Kreuzungen mit festen und freien Punkten; Station hält 12 m.
@@ -406,3 +413,112 @@ und im Nachspiel aller 31 Striche, `--heute --last 31`):
 
 **Absicherung:** 455 Tests und `npm run build` grün, Szenarien 1–28 gegen den Messserver :5188 alle bestanden (Stand
 nach der Änderung); der heutige Pinsel ist ohne `&strich=2` weiterhin unverändert.
+
+## 10. Nachtrag 28.10. spät: Knoten und Gummiband (Florians zweiter Test)
+
+Florian hat mit dem Stand aus Abschnitt 9 weitere 27 Striche in `test-huegel` gezeichnet (21:34–21:48, Mac, zoom 14,8,
+alle mit Strich 2) und gemeldet: Es fühlt sich deutlich besser an. Aber es werden sehr viele Bearbeitungspunkte
+gezeichnet, es sollten nur die allernötigsten sein; der Strich wird bei Strich 1 deutlich mehr und besser geglättet; und
+ihm gefällt, wie beim heutigen Pinsel das pinke Band „wie Gummi zäh hinterherzieht und den Strich glättet“: ob Strich 2
+das genauso kann.
+
+**Ursachen** (im Code nachgelesen und am Nachspiel der 31 Striche aus Abschnitt 9 gemessen):
+
+1. **Knoten alle 3 m ohne Fit** (Vereinfachung des Prototyps): Strich 2 setzte alle drei Linienmeter einen Knoten mit
+   Catmull-Rom-Tangenten, 186 Knoten je Strich im Median (3,5 Bahnmeter je Knoten). Der heutige Pinsel fittet kubische
+   Segmente in einer Toleranz (`reduceNodes`: 0,3 m in Kurven unter 25 m Radius, 1,2 m auf Geraden, 0,12 m an
+   Kreuzungen) und verteilt sie gleichmäßig: 64 Knoten (11,2 m je Knoten). Derselbe Fit ist auch die „bessere Glättung“:
+   Er bügelt Wellen bis zur Toleranz weg, während Catmull-Rom durch 3-m-Punkte jede Welle ab 6 m Länge nachzeichnet und
+   kürzere faltet. Die Glättung der Linie davor (Gauß 0,5 m auf 0,25-m-Punkten) ist bei beiden Pinseln dieselbe.
+2. **Tinte statt Band** (Entscheidung aus Abschnitt 9): Beim heutigen Pinsel liegt zwischen Schienen und Finger nur die
+   pinke Schleppe (Chaikin-geglättet, zum Finger hin breit), und die Schienen holen mit Zeitkonstante 0,14 s auf, das
+   Band ist also etwa Tempo mal 0,14 s: bei Florians Zeichentempo (Median 19,5 m/s, 90 % 52 m/s, aus den Aufnahmen)
+   41 px, bei schnellen Zügen 109 px, Deckel 200 px. Strich 2 zeigte den Vorlauf als schwarze Linie genau auf den
+   Pinselpunkten (12 m = 178 px) und nur die Spitze als Band. Das Gummiband des Pinsels selbst (`RubberBrush`: die Spitze
+   hängt am Band, Zittern innerhalb der Bandlänge malt nichts) ist bei beiden gleich; der Unterschied war die Darstellung.
+
+**Geändert** (Commit siehe git log, Worktree `pinsel-studie-8f0777`):
+
+- Strich 2 baut die Knoten mit demselben `reduceNodes` wie der heutige Pinsel (gleichmäßige Verteilung, Toleranz
+  0,3–1,2 m, 0,12 m an Linienpunkten mit Kreuzungsschranke), aber stückweise: Segmente, deren Punkte fest sind (dazu
+  `fest` Meter dahinter, Vorgabe 2 m), werden fest und bleiben samt Knoten; je Vorschau wird nur ab dem letzten festen
+  Segment neu gefittet. Das kostet 1–3 ms selbst für 800 Punkte (gemessen in Node), passt also in die 5–7 ms je Vorschau.
+  Das erste neue Segment setzt G1 am festen an: `reduceNodes` kann dafür jetzt eine Anfangs- und Endtangente vorgegeben
+  bekommen (`startTangent`, `endTangent`; der heutige Pinsel nutzt das nicht, sein Verhalten ist unverändert). Beim
+  Rundenschluss endet das letzte Segment in der Station mit deren Richtung.
+- Die Schleppe ist der ganze Vorlauf: pinkes Band vom festen Bahnende bis zum Finger, am Bahnende dünn, am Tropfen breit;
+  der Anfang des Bands folgt dem festen Ende weich (0,14 s). Beim Malen gibt es keine schwarze Tinte mehr. `&vorlauf=2`
+  zeigt weiter den Vorlauf als Schienen.
+- Schalter `&fest=N`: so viele Meter hinter dem festen Ende wird ein Segment fest (siehe Tabelle); `pinsel-messung.ts`
+  hat dafür `--fest N`, dazu `--skip N` (ältere Striche vergleichbar halten) und die Maße „Knoten bei globalem Fit“
+  und „Atmen der gezeigten Schienen“ (größte Bewegung der schon gezeigten Schienen je Vorschau, px).
+
+**Nachspiel der 31 Striche von 18:39–18:55** (Median je Strich; der heutige Pinsel in zwei Läufen, siehe Lesart):
+
+| Maß | heutiger Pinsel (Lauf 1 / Lauf 2) | Strich 2 vorher (Knoten alle 3 m) | Strich 2 neu (Fit, gestufte Toleranz) |
+|---|---|---|---|
+| Knoten je Strich | 64 / 59 | 186 | 99 |
+| Bahnmeter je Knoten | 11,2 / 11,3 | 3,5 | 6,7 |
+| Knoten bei globalem Fit derselben Bahn ohne Kreuzungs-Toleranz | – / 57 | – | 77 |
+| Linienpunkte mit Kreuzungsschranke | – | – | 228 (32 % der Linie) |
+| Knicke (Radius unter 4 m, 0,25-m-Proben) | 226 / 187 | 251 | 249 |
+| Rollen je 100 m | 142° / 149° | 121° | 125° |
+| Tiefenspanne / Tiefenumkehrungen | 40 m / 19 | 26,5 m / 24 | 26,5 m / 25 |
+| Sprung beim Loslassen, Bild max | 12,7 / 15,7 px | 0,1 px | 0,1 px |
+| Atmen der gezeigten Schienen je Vorschau, 90 % / 99 % | 0,0 / 26 px | – | 1,6 / 3,4 px |
+| Vorschau je Aufruf, Median / 90 % (Node) | 34,7 / 114 ms | 9,7 / 27,9 ms (unter Last) | 5,2 / 12,4 ms |
+| Fahrt geschafft (davon Abbruch an Kreuzung) | 0 von 31 (15 / 10) | 0 von 30 (19) | 0 von 30 (18) |
+
+Festwerden (`&fest=N`, Strich 2 mit Toleranz 0,12 m an allen Kreuzungspunkten): fest 2 / 15 / 30 / 60 m → 111 / 109 /
+109 / 108 Knoten, Atmen 90 % 1,4 / 2,3 / 2,8 / 3,1 px. Ohne Kreuzungs-Toleranz 79 Knoten; mit Tiefenglättung 40 m
+statt 20 m (wie heute) 108 Knoten und 247 statt 285 Knicke.
+
+**Nachspiel der 27 neuen Striche von 21:34–21:48** (Median je Strich):
+
+| Maß | heutiger Pinsel | Strich 2 (Fit, Toleranz 0,12 an Kreuzungen) | Strich 2 neu (gestuft) |
+|---|---|---|---|
+| Knoten je Strich / Bahnmeter je Knoten | 54 / 10,0 | 76 / 6,9 | 71 / 6,8 |
+| Knicke | 229 | 177 | 188 |
+| Rollen je 100 m | 142° | 113° | 112° |
+| Tiefenspanne / Umkehrungen | 30,5 m / 16 | 17,3 m / 21 | 17,8 m / 21 |
+| Vorschau Median / 90 % | 22,9 / 61 ms | 5,7 / 12,1 ms | 5,6 / 12,0 ms |
+| Fahrt geschafft (Abbruch an Kreuzung) | 4 von 27 (7) | 0 von 27 (13) | 0 von 27 (13) |
+
+**Lesart, ehrlich:**
+
+- **Knoten:** 186 → 99 je Strich auf den alten 31; auf den neuen 27 (gezeichnet mit den 3-m-Knoten) 71, der
+  Zwischenstand mit Toleranz 0,12 m an allen Kreuzungspunkten hatte 76. Das ist die Hälfte, aber noch das 1,6-Fache des
+  heutigen Pinsels. Woher der Rest kommt, zeigen die Experimente: Ein
+  Drittel aller Linienpunkte hat eine Kreuzungsschranke (so dicht sind die Schleifen), und dort muss der Fit eng
+  bleiben, weil Strich 2 kreuzende Stränge nur um den Mindestabstand 2,2 m trennt; ohne diese Toleranz wären es 79. Der
+  heutige Pinsel braucht fast nie enge Knoten (57 ohne, 59 mit), weil seine Tiefe kreuzende Stränge um ganze Spuren
+  trennt (Einrasten auf Spuren). Die zweite Hälfte des Rests ist die Tiefe selbst: Strich 2 glättet sie mit 20 m statt
+  40 m Grenzwellenlänge und kehrt öfter um (25 gegen 19), mehr Krümmung in 3D heißt mehr Segmente. Beides sind
+  Entscheidungen für Stufe P1 (Kreuzungen: Stränge um Spuren trennen, wo Platz ist) und eine Einstellung (Glättung), nicht
+  der Fit.
+- **Festwerden kostet keine Knoten:** fest 2 bis 60 m gibt 111 bis 108 Knoten, das Atmen der Schienen steigt dabei von
+  1,4 auf 3,1 px (90 %). Vorgabe bleibt 2 m: Die gezeigten Schienen stehen still (1,6 px sind der Fit des letzten,
+  noch nicht festen Segments).
+- **Gestufte Toleranz:** Statt überall 0,12 m, wo eine Kreuzungsschranke war, jetzt je Paar die Hälfte des Spielraums
+  nach der Lösung (0,12 m am Mindestabstand, normal ab 2,4 m Spielraum). Dazu misst der spätere Strang seinen Abstand an
+  den festen Schienen des früheren: Ein früher gefittetes Segment darf bis 1,2 m von seiner Linie abliegen, vorher galt
+  der Abstand nur für die Linienpunkte. Abbrüche an Kreuzungen 18 statt 19, also kein messbarer Unterschied in der Fahrt.
+- **Form:** Knicke 249 gegen 226/187 (alte 31) und 188 gegen 229 (neue 27), Rollen 125° gegen 142–149° je 100 m, gleiche
+  Liga; die Knicke sind weiter überwiegend die Schleifen des Strichs (Abschnitt 9).
+- **Der heutige Pinsel misst sich nicht gleich:** Seine Probefahrten laufen im Zeitbudget, zwei Läufe derselben 31 Striche
+  gaben 64 / 226 und 59 / 187 (Knoten / Knicke), bei 23 von 31 Strichen eine andere Knotenzahl, einmal 216 gegen 179.
+  Strich 2 ist deterministisch. Vergleiche mit dem heutigen Pinsel tragen daher rund ±10 %.
+- **Band:** Das pinke Band ist bei Strich 2 der Vorlauf, 12 m (178 px bei zoom 14,8), beim heutigen Pinsel Tempo mal
+  0,14 s (41 px im Median, 109 px bei schnellen Zügen) mit Deckel 200 px, und es holt beim Anhalten nicht auf, weil der
+  Vorlauf Entscheidungszeit ist, keine Verzögerung: Die Schienen erreichen eine Stelle rund 0,6 s, nachdem der Finger dort
+  war. Kürzer geht (FREEZE 6–8 m), die Wirkung auf Hügel und Kehren ist dann ungemessen; das ist Entscheidung 1 aus
+  Abschnitt 8 in Zahlen.
+- **Fahrbar:** auf den neuen 27 Strichen schafft der heutige Pinsel 4, Strich 2 keinen (13 Abbrüche an Kreuzungen, 5
+  Entgleisen, 5 Fall). Das ist Stufe P1/P4, unverändert.
+- Nicht geprüft: das Gefühl des Bands und der Knoten am Mac (nur Standbilder: Strich 47 bei 7 s und nach dem Loslassen,
+  89 Knoten auf 544 m), die Bildrate am Mac, das Handy.
+
+**Absicherung:** 456 Tests (einer neu: Knoten nur wo nötig, feste Knoten stehen still, G1 am Anschluss) und
+`npm run build` grün, Szenarien 1–28 gegen den Messserver :5188 alle bestanden (Stand nach allen Änderungen dieses
+Abschnitts); der heutige Pinsel ist ohne `&strich=2` unverändert, `reduceNodes` hat nur die optionale Vorgabe der
+Anfangs- und Endtangente dazubekommen, die er nicht nutzt.

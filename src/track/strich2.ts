@@ -22,7 +22,10 @@
  *    damit die Bahn dort flach bleibt. Der freie Abschnitt je Punkt ist der dem Ziel nächste (mit Vorzug für den, in dem
  *    die Tiefe schon ist), nicht der, der am vorigen anschließt: Sonst sperrte jede Kante, unter die der Strich läuft,
  *    als „Fels“ die Tiefe, statt dass die Bahn vor die Ebene kommt.
- *  - **Knoten ohne Fit:** alle NODE_STEP Linienpunkte ein Knoten mit Catmull-Rom-Tangenten, feste Knoten bleiben.
+ *  - **Knoten so wenige wie nötig** (reduceNodes wie beim heutigen Pinsel: kubische Segmente in der Toleranz 0,3–1,2 m,
+ *    gleichmäßig verteilt; eng an Kreuzungen). Segmente, deren Punkte fest sind, bleiben samt Knoten; je Vorschau wird
+ *    nur das Stück ab dem letzten festen Segment neu gefittet (Florian 28.10.: „nur die allernötigsten Punkte“, „wie
+ *    bei Strich 1 geglättet“).
  *  - **Rundenschluss** nur als neuer Weg ab dem festen Ende (Dubins-Bögen aus brushTrack), der gezeichnete Teil bleibt.
  *
  * Platzhalter (nur im Bericht als Entwurf): Tunnel-Lippen, Höhlenmeter, Markierungen im Editor, Stützenvarianten,
@@ -38,8 +41,10 @@ import { dubinsPaths, type BrushOptions, type BrushPreview, type Landing } from 
  * (dort setzt die Tinte an)
  */
 export type Strich2Preview = BrushPreview & { line: StagePoint[]; frozen: number; frozenWorld: Vec3 | null };
+import type { CubicSegment3 } from '@/core/bezierFit3';
 import { createNode, emptyPath, type TrackNode, type TrackPath } from './model';
-import { LANE_DEPTH, LANE_MAX, LANE_MIN, TILT_TAN, mixPoint, rayToWorld, type StagePoint } from './stage';
+import { reduceNodes } from './reduceNodes';
+import { LANE_DEPTH, LANE_MAX, LANE_MIN, TILT_TAN, mixPoint, rayToWorld, toView, type StagePoint } from './stage';
 
 /** so weit (m) hinter der Spitze ist die Tiefe noch frei; davor fest */
 export const FREEZE = 12;
@@ -50,8 +55,21 @@ const FINE = 0.25;
 const SIGMA = 0.5;
 /** Glättungsfenster der Linie in feinen Punkten (3σ) */
 const SMOOTH_R = Math.ceil((3 * SIGMA) / FINE);
-/** alle so viele Linienpunkte ein Knoten */
-const NODE_STEP = 3;
+/**
+ * Knoten-Toleranz an Kreuzungen: Zwei Stränge dürfen sich durch den Fit nicht näher kommen als die Kreuzungsregel
+ * erlaubt. Je Paar ist der Spielraum max(seitlich − PASS_SIDE, in der Höhe − PASS_OVER); die Toleranz beider Stellen ist
+ * die Hälfte davon, mindestens TOL_NEAR (wie TIGHT_TOL im heutigen Pinsel), ab 2·TOL_LOOSE Spielraum gilt die normale
+ * Toleranz. Der spätere Strang misst dabei an den festen Schienen des früheren (sein Fit darf bis TOL_LOOSE von der
+ * Linie abliegen), nicht an dessen Linienpunkten.
+ */
+const TOL_NEAR = 0.12;
+const TOL_LOOSE = 1.2;
+/**
+ * Vorgabe: ein Segment wird fest, wenn so viele Linienpunkte (m) hinter seinem Ende schon fest sind. Mindestens 2 (die
+ * Tangente ±1 m bleibt gleich); je größer, desto länger darf das Stück davor noch neu gefittet werden (weniger Knoten,
+ * dafür „atmen“ die Schienen in diesem Stück noch in der Toleranz). Schalter &fest=N
+ */
+export const FIX_BEHIND = 2;
 /** Grenzwellenlänge (m) der Tiefenglättung; kürzer als beim heutigen Pinsel (40 m), weil die Ebenen Terrassen von 10–20 m haben */
 const CUTOFF = 20;
 const LAMBDA = (CUTOFF / (2 * Math.PI)) ** 4;
@@ -140,6 +158,10 @@ interface Pt {
   frozen: boolean;
   blocked: boolean;
   cave: boolean;
+  /** hat eine Kreuzungsschranke bekommen: Knoten dort eng (die Bahn darf den Abstand nicht auffressen) */
+  near: boolean;
+  /** Schienenpunkt (Welt) des festen Segments an dieser Stelle; null: Linienpunkt gilt */
+  rail: Vec3 | null;
   /** Weltpunkt mit Hub über die tragende Fläche (gilt für die Tiefe wpLane) */
   wp: Vec3 | null;
   wpLane: number;
@@ -175,6 +197,16 @@ function solveSym(A: Float64Array, k: number, b: Float64Array): Float64Array<Arr
   return x;
 }
 
+/** Punkt der kubischen Bezier-Kurve bei u */
+function bezierAt(seg: CubicSegment3, u: number): Vec3 {
+  const v = 1 - u;
+  const a = v * v * v;
+  const b = 3 * v * v * u;
+  const c = 3 * v * u * u;
+  const d = u * u * u;
+  return { x: a * seg.p0.x + b * seg.p1.x + c * seg.p2.x + d * seg.p3.x, y: a * seg.p0.y + b * seg.p1.y + c * seg.p2.y + d * seg.p3.y, z: a * seg.p0.z + b * seg.p1.z + c * seg.p2.z + d * seg.p3.z };
+}
+
 export class Strich2 {
   /** Pinselpunkte, wie zuletzt übergeben (nach dem Anschluss an die alte Bahn verschoben) und unverschoben zum Vergleich */
   private raw: StagePoint[] = [];
@@ -194,9 +226,14 @@ export class Strich2 {
   private pts: Pt[] = [];
   private lineFinal = 0;
   private readonly baseLen: number;
-  /** Knoten je Linienpunkt-Index (alle NODE_STEP), feste gemerkt */
-  private nodes: TrackNode[] = [];
-  private nodesFrozen = 0;
+  /**
+   * feste Segmente der Bahn (alle ihre Punkte sind fest, dazu fixBehind dahinter) mit dem Linienpunkt, an dem jedes
+   * endet, und ihren Knoten (dieselben Objekte von Vorschau zu Vorschau); fitFrom: ab hier wird neu gefittet
+   */
+  private fixedSegs: CubicSegment3[] = [];
+  private fixedEnd: number[] = [];
+  private fixedNodes: TrackNode[] = [];
+  private fitFrom = 0;
   /** Seite je Kreuzung (Schlüssel: Bündel des späteren und des früheren Punkts), bleibt */
   private sides = new Map<string, number>();
   /** feste Punkte nach x-Zelle für die Kreuzungssuche */
@@ -216,6 +253,7 @@ export class Strich2 {
     base: { line: StagePoint[]; z: Float64Array } | null,
     startZ: number,
     private readonly closeSnap: number,
+    private readonly fixBehind = FIX_BEHIND,
   ) {
     if (base && base.line.length >= 2) {
       base.line.forEach((p, i) => this.pts.push(this.newPt({ ...p }, base.z[i])));
@@ -237,7 +275,7 @@ export class Strich2 {
   }
 
   private newPt(p: StagePoint, z: number): Pt {
-    return { p, land: null, ground: NaN, lanes: null, flat: true, wh: 1, run: 0, dirX: 0, z, frozen: false, blocked: false, cave: false, wp: null, wpLane: NaN };
+    return { p, land: null, ground: NaN, lanes: null, flat: true, wh: 1, run: 0, dirX: 0, z, frozen: false, blocked: false, cave: false, near: false, rail: null, wp: null, wpLane: NaN };
   }
 
   private indexX(i: number): void {
@@ -316,9 +354,15 @@ export class Strich2 {
     this.lineFinal = Math.min(this.lineFinal, from);
     this.xCells = new Map();
     for (let i = 0; i < from; i++) if (this.pts[i].frozen) this.indexX(i);
-    const nodesKeep = Math.max(0, Math.floor((from - 1) / NODE_STEP) - 1);
-    this.nodes.length = Math.min(this.nodes.length, nodesKeep);
-    this.nodesFrozen = Math.min(this.nodesFrozen, nodesKeep);
+    // feste Segmente, deren Ende (samt Tangenten-Nachbarn) noch da ist, bleiben
+    while (this.fixedEnd.length && this.fixedEnd[this.fixedEnd.length - 1] + Math.max(2, this.fixBehind) >= from) {
+      const b = this.fixedEnd.pop()!;
+      const a = this.fixedEnd.length ? this.fixedEnd[this.fixedEnd.length - 1] : 0;
+      for (let i = a; i <= Math.min(b, this.pts.length - 1); i++) this.pts[i].rail = null;
+      this.fixedSegs.pop();
+      this.fixedNodes.pop();
+    }
+    this.fitFrom = this.fixedEnd.length ? this.fixedEnd[this.fixedEnd.length - 1] : 0;
   }
 
   /** feine Punkte an Vielfachen von FINE entlang des Pinsels nachziehen (der Cursor läuft nur vorwärts) */
@@ -489,6 +533,15 @@ export class Strich2 {
     return { lo: Math.max(zMin, lo), hi: Math.min(zMax, hi), mid: (iv[best].a + iv[best].b) / 2, cave: iv[best].cave, blocked: false };
   }
 
+  /** Lage eines früheren Punkts für die Kreuzungsregel: seine festen Schienen (Bühne), sonst sein Linienpunkt */
+  private stageOf(r: Pt): StagePoint {
+    return r.rail ? toView(r.rail.x, r.rail.y, r.rail.z / LANE_DEPTH) : r.p;
+  }
+
+  private zOf(r: Pt): number {
+    return r.rail ? r.rail.z : r.z;
+  }
+
   /**
    * Kreuzung mit einem früheren Punkt (fest, oder frei mit der Tiefe der letzten Lösung): verbotener Tiefenunterschied,
    * die Seite bleibt je Kreuzung
@@ -505,9 +558,11 @@ export class Strich2 {
         // Rundenschluss: die Naht an der Station ist keine Kreuzung
         if (closing && n - i + j < NEIGHBOR + 3) continue;
         const r = this.pts[j];
-        const dX = q.p.X - r.p.X;
+        const rp = this.stageOf(r);
+        const rz = this.zOf(r);
+        const dX = q.p.X - rp.X;
         if (Math.abs(dX) >= PASS_SIDE) continue;
-        const dY = q.p.Y - r.p.Y;
+        const dY = q.p.Y - rp.Y;
         const w = Math.sqrt(PASS_SIDE * PASS_SIDE - dX * dX);
         const fLo = Math.max(-w, (dY - PASS_OVER) / TILT_TAN);
         const fHi = Math.min(w, (dY + PASS_OVER) / TILT_TAN);
@@ -516,13 +571,14 @@ export class Strich2 {
         let side = this.sides.get(key) ?? 0;
         if (!side) {
           // nahe am Ziel; sonst später Gezeichnetes vorne
-          side = t - r.z >= (fLo + fHi) / 2 ? 1 : -1;
-          const fits = (s: number) => (s > 0 ? hi >= r.z + fHi : lo <= r.z + fLo);
+          side = t - rz >= (fLo + fHi) / 2 ? 1 : -1;
+          const fits = (s: number) => (s > 0 ? hi >= rz + fHi : lo <= rz + fLo);
           if (!fits(side) && fits(-side)) side = -side;
           this.sides.set(key, side);
         }
-        if (side > 0) lo = Math.max(lo, r.z + fHi);
-        else hi = Math.min(hi, r.z + fLo);
+        if (side > 0) lo = Math.max(lo, rz + fHi);
+        else hi = Math.min(hi, rz + fLo);
+        q.near = true;
       }
     }
     return { lo, hi };
@@ -808,57 +864,105 @@ export class Strich2 {
     return q.wp;
   }
 
-  /** Knoten alle NODE_STEP Linienpunkte bis end (ausschließlich; Catmull-Rom-Tangenten); feste bleiben, das Ende wird neu gesetzt */
+  /**
+   * Knoten der Bahn bis end (ausschließlich): die festen Segmente, dahinter neu gefittete (reduceNodes, gleichmäßig, so
+   * wenige wie die Toleranz erlaubt; eng, wo eine Kreuzungsschranke gilt). Das erste neue Segment setzt G1 am letzten
+   * festen an (dessen Endtangente wird vorgegeben). Segmente, deren Punkte samt fixBehind dahinter fest sind, werden
+   * fest. Geschlossen: das letzte Segment endet in der Station mit deren Richtung, kein Endknoten.
+   */
   private buildNodes(o: BrushOptions, closed: boolean, end = this.pts.length): TrackNode[] {
-    const n = this.pts.length;
-    const idx: number[] = [];
-    for (let i = 0; i < end; i += NODE_STEP) idx.push(i);
-    if (idx[idx.length - 1] !== end - 1) {
-      if (end - 1 - idx[idx.length - 1] < NODE_STEP * 0.4 && idx.length > 1) idx.pop();
-      idx.push(end - 1);
-    }
-    const pos = (i: number) => this.worldPoint(o, this.pts[i]);
-    const nodes: TrackNode[] = [];
-    for (let k = 0; k < idx.length; k++) {
-      const i = idx[k];
-      // feste Knoten (ihre Nachbarn sind auch fest) bleiben dieselben Objekte
-      if (k < this.nodesFrozen && this.nodes[k]) {
-        nodes.push(this.nodes[k]);
-        continue;
+    const from = this.fitFrom;
+    const pts: Vec3[] = [];
+    for (let i = from; i < end; i++) pts.push(this.worldPoint(o, this.pts[i]));
+    if (closed && pts.length) pts[pts.length - 1] = { ...this.worldPoint(o, this.pts[0]) };
+    // Toleranz an Kreuzungen (siehe TOL_NEAR): je Paar aus dem Spielraum nach der Lösung, für beide Stellen ±1 Punkt
+    const tolAt = new Float64Array(pts.length).fill(Infinity);
+    const tighten = (k: number, tol: number) => {
+      for (let m = Math.max(from, k - 1); m <= Math.min(end - 1, k + 1); m++) tolAt[m - from] = Math.min(tolAt[m - from], tol);
+    };
+    for (let i = from; i < end; i++) {
+      const q = this.pts[i];
+      if (!q.near) continue;
+      const cx = Math.floor(q.p.X);
+      for (let c = cx - 1; c <= cx + 1; c++) {
+        const list = this.xCells.get(c);
+        if (!list) continue;
+        for (const j of list) {
+          if (j > i - NEIGHBOR) continue;
+          const r = this.pts[j];
+          const rp = this.stageOf(r);
+          const dX = q.p.X - rp.X;
+          if (Math.abs(dX) >= PASS_SIDE + 2 * TOL_LOOSE) continue;
+          const dz = q.z - this.zOf(r);
+          const margin = Math.max(Math.hypot(dX, dz) - PASS_SIDE, Math.abs(q.p.Y - rp.Y - TILT_TAN * dz) - PASS_OVER);
+          if (margin >= 2 * TOL_LOOSE) continue;
+          const tol = Math.max(TOL_NEAR, margin / 2);
+          tighten(i, tol);
+          if (j >= from) tighten(j, tol);
+        }
       }
-      const p = pos(i);
-      const a = pos(Math.max(0, i - 1));
-      const b = pos(Math.min(n - 1, i + 1));
-      const tx = b.x - a.x;
-      const ty = b.y - a.y;
-      const tz = b.z - a.z;
-      const tl = Math.hypot(tx, ty, tz) || 1;
-      const nd = createNode(p.x, p.y, p.z / LANE_DEPTH);
-      const prev = k > 0 ? pos(idx[k - 1]) : null;
-      const next = k < idx.length - 1 ? pos(idx[k + 1]) : null;
-      const lIn = prev ? Math.hypot(p.x - prev.x, p.y - prev.y, p.z - prev.z) / 3 : 0;
-      const lOut = next ? Math.hypot(next.x - p.x, next.y - p.y, next.z - p.z) / 3 : 0;
-      nd.inX = (-tx / tl) * lIn;
-      nd.inY = (-ty / tl) * lIn;
-      nd.inZ = ((-tz / tl) * lIn) / LANE_DEPTH;
-      nd.outX = (tx / tl) * lOut;
-      nd.outY = (ty / tl) * lOut;
-      nd.outZ = ((tz / tl) * lOut) / LANE_DEPTH;
+    }
+    const unit = (a: Vec3, b: Vec3): Vec3 | undefined => {
+      const l = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+      return l > 1e-9 ? { x: (b.x - a.x) / l, y: (b.y - a.y) / l, z: (b.z - a.z) / l } : undefined;
+    };
+    const lastFixed = this.fixedSegs.length ? this.fixedSegs[this.fixedSegs.length - 1] : null;
+    const startTangent = lastFixed ? unit(lastFixed.p2, lastFixed.p3) : undefined;
+    const first = this.fixedSegs[0] ?? null;
+    const endTangent = closed && first ? unit(first.p0, first.p1) : undefined;
+    // ohne feste Segmente eine geschlossene Runde: Tangente an der Naht über sie hinweg (reduceNodes closed)
+    const fit = pts.length >= 2 ? reduceNodes(pts, [], { even: true, tolAt, startTangent, endTangent, closed: closed && !first }) : { segments: [] as CubicSegment3[], indices: [] as number[] };
+    const segs = [...this.fixedSegs, ...fit.segments];
+    const nodeOf = (k: number): TrackNode => {
+      const seg = segs[k];
+      const nd = createNode(seg.p0.x, seg.p0.y, seg.p0.z / LANE_DEPTH);
+      nd.outX = seg.p1.x - seg.p0.x;
+      nd.outY = seg.p1.y - seg.p0.y;
+      nd.outZ = (seg.p1.z - seg.p0.z) / LANE_DEPTH;
+      if (k > 0) {
+        const prev = segs[k - 1];
+        nd.inX = prev.p2.x - prev.p3.x;
+        nd.inY = prev.p2.y - prev.p3.y;
+        nd.inZ = (prev.p2.z - prev.p3.z) / LANE_DEPTH;
+      }
+      return nd;
+    };
+    const nodes: TrackNode[] = this.fixedNodes.slice();
+    for (let k = nodes.length; k < segs.length; k++) nodes.push(nodeOf(k));
+    if (!segs.length) return nodes;
+    const last = segs[segs.length - 1];
+    if (closed) {
+      nodes[0].inX = last.p2.x - last.p3.x;
+      nodes[0].inY = last.p2.y - last.p3.y;
+      nodes[0].inZ = (last.p2.z - last.p3.z) / LANE_DEPTH;
+    } else {
+      const nd = createNode(last.p3.x, last.p3.y, last.p3.z / LANE_DEPTH);
+      nd.inX = last.p2.x - last.p3.x;
+      nd.inY = last.p2.y - last.p3.y;
+      nd.inZ = (last.p2.z - last.p3.z) / LANE_DEPTH;
       nodes.push(nd);
     }
-    if (closed && nodes.length > 2) {
-      // der letzte Punkt ist die Station: Schluss über die gemeinsame Tangente des ersten Knotens
-      const last = nodes.pop()!;
-      nodes[0].inX = last.inX;
-      nodes[0].inY = last.inY;
-      nodes[0].inZ = last.inZ;
-    }
     nodes[0].kind = 'station';
-    // Knoten, deren Umgebung fest ist, merken (bis zwei vor dem Ende)
-    let frozenNodes = 0;
-    while (frozenNodes < idx.length - 2 && this.pts[Math.min(n - 1, idx[frozenNodes] + 1)].frozen && this.pts[idx[frozenNodes + 1]].frozen) frozenNodes++;
-    this.nodes = nodes.slice();
-    this.nodesFrozen = closed ? 0 : frozenNodes;
+    // neue Segmente, deren Punkte (samt fixBehind dahinter) fest sind, werden fest; nicht beim Rundenschluss (alles endet)
+    if (!closed) {
+      const frozen = this.frozenEnd();
+      for (let k = 0; k < fit.segments.length; k++) {
+        const endIdx = from + fit.indices[k + 1];
+        if (endIdx + Math.max(2, this.fixBehind) >= frozen) break;
+        const seg = fit.segments[k];
+        this.fixedSegs.push(seg);
+        this.fixedEnd.push(endIdx);
+        this.fixedNodes.push(nodes[this.fixedSegs.length - 1]);
+        this.fitFrom = endIdx;
+        // Schienenpunkt je innerem Linienpunkt des Segments: Bezier an der Sehnen-Parameterstelle (dort liegt der Fit
+        // in der Toleranz am Punkt); spätere Stränge messen ihren Abstand daran
+        const a = from + fit.indices[k];
+        const cum = [0];
+        for (let i = a + 1; i <= endIdx; i++) cum.push(cum[cum.length - 1] + Math.hypot(pts[i - from].x - pts[i - 1 - from].x, pts[i - from].y - pts[i - 1 - from].y, pts[i - from].z - pts[i - 1 - from].z));
+        const L = cum[cum.length - 1];
+        for (let i = a + 1; i < endIdx; i++) this.pts[i].rail = L > 1e-9 ? bezierAt(seg, cum[i - a] / L) : null;
+      }
+    }
     return nodes;
   }
 

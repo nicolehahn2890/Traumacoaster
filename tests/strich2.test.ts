@@ -216,4 +216,41 @@ describe('Strich 2: kausal mit festem Vorlauf', () => {
     expect(r.rock.length).toBeGreaterThan(0);
     expect(r.line[r.rock[0][0]].X).toBeGreaterThan(60);
   });
+
+  it('setzt Knoten nur, wo die Form sie braucht, lässt feste Knoten stehen und schließt G1 an ihnen an', () => {
+    // 120 m gerade, dann ein weiter Bogen: wenige Knoten (der heutige Pinsel braucht hier auch nur eine Handvoll)
+    const arc: Array<[number, number]> = [];
+    for (let k = 0; k <= 12; k++) arc.push([120 + 40 * Math.sin((k / 12) * Math.PI * 0.5), 10 + 40 * (1 - Math.cos((k / 12) * Math.PI * 0.5))]);
+    const pts = polyline([[0, 10], [120, 10], ...arc.slice(1)]);
+    const s = new Strich2(() => stepOptions(1000), null, 4, 8);
+    let prevNodes: { x: number; y: number; z: number; outX: number }[] = [];
+    for (let n = 6; n <= pts.length; n += 5) {
+      const pv = s.update(pts.slice(0, n));
+      if (!pv) continue;
+      const nodes = pv.path.nodes;
+      // feste Knoten (ihr Segment endet weit hinter dem Vorlauf) stehen genau da, wo sie in der Vorschau davor standen,
+      // mit derselben Tangente (auf der Geraden wächst das erste Segment bis zum Bogen, sein Knoten bleibt derselbe Punkt)
+      const tip = pv.line[pv.line.length - 1];
+      for (let k = 0; k + 1 < Math.min(prevNodes.length, nodes.length); k++) {
+        if (Math.hypot(prevNodes[k + 1].x - tip.X, prevNodes[k + 1].y - tip.Y) < FREEZE + 20) break;
+        expect(nodes[k].x).toBe(prevNodes[k].x);
+        expect(nodes[k].y).toBe(prevNodes[k].y);
+        expect(nodes[k].z).toBe(prevNodes[k].z);
+        expect(nodes[k].outX).toBe(prevNodes[k].outX);
+      }
+      // G1: an jedem inneren Knoten zeigen in- und out-Tangente entgegengesetzt
+      for (let k = 1; k < nodes.length - 1; k++) {
+        const nd = nodes[k];
+        const li = Math.hypot(nd.inX, nd.inY, nd.inZ);
+        const lo = Math.hypot(nd.outX, nd.outY, nd.outZ);
+        if (li < 1e-6 || lo < 1e-6) continue;
+        const cos = -(nd.inX * nd.outX + nd.inY * nd.outY + nd.inZ * nd.outZ) / (li * lo);
+        expect(cos).toBeGreaterThan(0.999);
+      }
+      prevNodes = nodes.map((nd) => ({ x: nd.x, y: nd.y, z: nd.z, outX: nd.outX }));
+    }
+    const r = s.finish(pts)!;
+    expect(r.path.nodes.length).toBeLessThanOrEqual(10);
+    expect(r.path.nodes.length).toBeGreaterThanOrEqual(3);
+  });
 });
