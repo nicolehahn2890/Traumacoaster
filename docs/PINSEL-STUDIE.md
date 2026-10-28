@@ -248,6 +248,9 @@ Heutiger Stand: `http://localhost:5187/?zone=test-huegel&editor=2`. Prototyp: `�
 der noch unentschiedene Teil hinter der Spitze schwarze Linie statt Schienen (Florians „der Strich wird länger“).
 Zonen: `test-huegel`, `test-grotte`, `test-boegen`, `test-boegen-f2` (Florians geändertes Bogenland).
 
+**Absicherung:** 455 Tests grün (446 bestehende, 9 neue), `npm run build` grün, Szenarien 1–28 gegen den
+Messserver :5188 bestanden (79 Prüfungen); der heutige Pinsel ist ohne `&strich=2` unverändert.
+
 **Nicht im Prototyp** (nur Entwurf, Abschnitt 5): Tunnel-Lippen, Höhlenmeter, Vorrang-Markierungen, Halter und
 Stützenvarianten, Überzeichnen (fällt auf den heutigen Pinsel zurück), Kreuzungs-Chips, Fels abschneiden, animiertes
 Nachziehen, wachsendes Mesh. Platzhalter: alle Zahlen (Vorlauf 12 m, Glättung 20 m, Gewichte).
