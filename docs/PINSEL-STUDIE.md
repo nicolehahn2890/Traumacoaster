@@ -31,6 +31,11 @@ nach hinten in Metern (eine Spur = 8,4 m). **Loslassen** = der Finger geht hoch,
    Sprung beim Loslassen 0,2 m Tiefe statt 16 m, am Handy 58 statt 40 fps, Rückstand der Schienen 32 statt 72 px.
    Noch nicht fahrbar (0 von 45 Fahrten, heute 1 von 45): Kehren und Kreuzungen brauchen Stufe P1 und P4. Aufwand bis
    zum Einbau: zwei Stufen (M/M), Stützen und Tunnel-Lippen danach (M), nachsichtige Fahrt (S).
+7. Nachtrag vom Abend (Abschnitt 9): Florians erster Test zeigte drei Fehler des Prototyps, nicht des Ansatzes (Tinte
+   am falschen Punkt, „Fels“-Sperre unter jeder Kante, Bahn wächst nur im 50-ms-Takt), alle drei behoben; die Lesung ist
+   jetzt „Ebenen: Bodenhöhe“ wie beim heutigen Pinsel. Auf seinen 31 Strichen von 18:39–18:55 ist die Form in derselben
+   Liga wie heute, Leistung und Sprung bleiben gelöst; fahrbar ist bei beiden keiner, und die meisten „Knicke“ sind die
+   Schleifen des Strichs selbst (bei zoom 14,8 ist ein Radius von 59 px schon die 4-m-Grenze).
 
 ## 2. Befund am heutigen Pinsel
 
@@ -244,9 +249,11 @@ verlangt anderes), und den Rundenschluss als neuen Weg ab dem festen Ende.
 
 **Adresse und Schalter:** Messserver ohne Aufnahme `http://localhost:5188/` (statt 5186: den Port hält ein verwaister
 Dev-Server der gelöschten Worktree `pinsel-studie`, PID 75373); Florians Server mit Aufnahme `http://localhost:5187/`.
-Heutiger Stand: `http://localhost:5187/?zone=test-huegel&editor=2`. Prototyp: `…&strich=2`; mit `&vorlauf=1` bleibt
-der noch unentschiedene Teil hinter der Spitze schwarze Linie statt Schienen (Florians „der Strich wird länger“).
-Zonen: `test-huegel`, `test-grotte`, `test-boegen`, `test-boegen-f2` (Florians geändertes Bogenland).
+Heutiger Stand: `http://localhost:5187/?zone=test-huegel&editor=2`. Prototyp: `…&strich=2`; seit dem Nachtrag
+(Abschnitt 9) bleibt der noch unentschiedene Teil hinter der Spitze von sich aus schwarze Linie, die Schienen enden am
+festen Teil und ziehen weich nach (Florians „die Bahn zeichnet später“); `&vorlauf=2` zeigt den Vorlauf vorläufig als
+Schienen bis zur Spitze. Zonen: `test-huegel`, `test-grotte`, `test-boegen`, `test-boegen-f2` (Florians geändertes
+Bogenland).
 
 **Absicherung:** 455 Tests grün (446 bestehende, 9 neue), `npm run build` grün, Szenarien 1–28 gegen den
 Messserver :5188 bestanden (79 Prüfungen); der heutige Pinsel ist ohne `&strich=2` unverändert.
@@ -324,3 +331,78 @@ gelten für 26,6°.
 6. **Kantenrollen** im Werkzeug D: eine Taste mit Durchschalten (andocken, Lippe, Halter, Vorrang) oder vier Marken?
 7. **Stützen- und Tunnelvarianten:** Teileliste und Materialien, erst nach der Stützen-Werkstatt (Paket 3).
 8. Ob Strich 2 den heutigen Pinsel in `zoneneditor` ersetzt oder zunächst als Schalter dazu kommt.
+
+## 9. Nachtrag 28.10. abends: Florians erster Test des Prototyps
+
+Florian hat 31 Striche in `test-huegel` gezeichnet (18:39–18:55, Mac, zoom 14,8, 28 davon mit Strich 2, 2 mit dem
+heutigen Pinsel, einer leer; erkennbar am Knotenabstand 3,5 m gegen 12 m) und gemeldet: Mit `&vorlauf=1` nahm die
+schwarze Linie seltsame Formen an; Strich 2 wirkte stockend und malte „fast immer in den Boden und kaum in die Tiefe“;
+beim heutigen Pinsel hässliche Bahnteile und fallende Bildrate. Seine Vorstellung in seinen Worten: Die schwarze Linie
+ist immer genau der gezeichnete Strich; die Bahn zeichnet später, wenn die Tiefe entschieden ist, und zieht in der
+saubersten Form nach. (Damit ist Entscheidung 1 aus Abschnitt 8 so verstanden: Vorlauf als Linie, Schienen erst, wo
+entschieden.)
+
+**Ursachen** (nachgestellt mit `scripts/pinsel-bildzeiten.mjs --strich 2 --extra vorlauf=1 --shotAt 7000` an Strich 47
+und im Nachspiel aller 31 Striche, `--heute --last 31`):
+
+1. **Tinte am falschen Punkt** (Fehler im Prototyp): `drawBrushInk` klebte die Linie an den letzten Knoten der Vorschau.
+   Bei Strich 2 reichte die Vorschau bis zur Spitze, die Tinte begann aber am festen Ende: Der Versatz war der ganze
+   Vorlauf, und die Linie lief vom falschen Punkt zum Finger (das Dreieck in Florians Bild).
+2. **„In den Boden, kaum Tiefe“** (zwei Entscheidungen im Prototyp, beide anders als beim heutigen Pinsel): (a) Steil
+   Gezeichnetes war Höhe (Zielgewicht 0,03 ab 40°), während Florian mit „Ebenen: Bodenhöhe“ zeichnet, wo Bild-Y die
+   Tiefe über der Kante ist, steil wie flach. (b) Der freie Abschnitt musste an die Tiefe des Vorgängers anschließen
+   (±0,25 m). Sobald der Strich unter eine Ebenenkante läuft, liegt die alte Tiefe im Festen, nichts schließt an, der
+   Punkt gilt als Fels und die Tiefe bleibt: Die Bahn läuft in die Ebene hinein. Im Bild von Strich 47 bei 7 s waren
+   die ganzen unteren Schleifen rote Fels-Punkte. Der heutige Pinsel wählt den Abschnitt nach dem Ziel (`chooseChain`),
+   nicht nach dem Anschluss.
+3. **Stocken** (Darstellung): Ohne Vorlauf-Darstellung wuchs die Bahn nur je Vorschau (alle 50 ms, 20 Hz) in Stufen bis
+   zur Spitze, ohne Tinte dazwischen; der heutige Pinsel füllt die Lücke je Bild mit der Schleppe. Mit Vorlauf rückte das
+   Bahnende in 3-m-Schritten. Die Dauer je Vorschau war nicht die Ursache (Browser, Strich 47: Median 12,5 ms).
+
+**Geändert** (`src/track/strich2.ts`, `src/app/scenes/level.ts`):
+
+- Lesung „Ebenen: Bodenhöhe“ wie beim heutigen Pinsel: Ziel ist die Bodenhöhe der Ebenen mit vollem Gewicht, steil wie
+  flach; Landung nur flach auf derselben Kante; Hügel (kurz steil, dann wieder flach) und Kehren setzen ihre Form wie
+  bisher darüber.
+- Abschnittswahl nach dem Ziel, mit Vorzug für den Abschnitt, in dem die Tiefe schon liegt (0,25 Spuren); Fels nur, wenn
+  der nächste Abschnitt weiter als 1,2 Spuren vom Ziel liegt (ein Sprung so weit wäre keine Lesung des Strichs mehr).
+- Vorlauf-Darstellung ist Vorgabe: Die Schienen der Vorschau enden am festen Teil, die Tinte reicht von dort bis zum
+  Finger und setzt am Weltpunkt des letzten festen Linienpunkts an; das feste Ende rückt je Vorschau vor, die Tinte gibt
+  es je Bild weich frei (Zeitkonstante 0,14 s, nie weiter, als die Schienen reichen). `&vorlauf=2` zeigt den Vorlauf
+  vorläufig als Schienen bis zur Spitze.
+
+**Nachspiel der 31 Striche** (Median je Strich; „Strich 2 alt“ = Stand vor dem Nachtrag):
+
+| Maß | heutiger Pinsel | Strich 2 alt | Strich 2 neu |
+|---|---|---|---|
+| Vorschau je Aufruf, Median / 90 % (Node) | 34,7 / 114 ms | 5,7 / 14,7 ms | 6,8 / 17,0 ms (zweiter Lauf unter Last 9,7 / 27,9) |
+| Rückstand der Schienen hinter dem Finger | 95 px | 34 px | 34 px (mit Vorlauf: die Tinte, nicht die Schienen) |
+| Plan beim Loslassen / Probefahrten | 200 ms / 62 ms | 6 ms / 0 | 11 ms / 0 |
+| Sprung beim Loslassen, Bild max / Tiefe max / Roll max | 12,7 px / 0,1 m / 34° | 4,1 px / 0,2 m / 3,7° | 0,1 px / 0,2 m / 3,7° |
+| Knicke (Radius unter 4 m, 0,25-m-Proben) | 226 | 230 | 251 |
+| Rollrate 90 % / Rollen je 100 m | 3,3 °/m / 142° | 2,5 °/m / 107° | 2,7 °/m / 121° |
+| Tiefenspanne / Tiefenumkehrungen | 40 m / 19 | 23 m / 24 | 27 m / 24 |
+| Stützen / Stützstellen ohne Fuß | 22 / 49 | 22 / 8 | 32 / 31 |
+| Fahrt geschafft | 0 von 31 (15 Kreuzung, 7 Entgleisen, 7 Stillstand) | 0 von 30 (13 Kreuzung, 9 Fall, 5 Entgleisen) | 0 von 30 (19 Kreuzung, 6 Fall, 5 Entgleisen) |
+
+**Lesart, ehrlich:**
+
+- Die drei gemeldeten Fehler waren Prototyp, nicht Ansatz: Tinte, Fels-Sperre und Stocken sind behoben; Leistung, Sprung
+  und Rückstand bleiben gelöst. Das Bild von Strich 47 bei 7 s zeigt nach der Änderung keine Fels-Punkte mehr, die Tinte
+  läuft sauber vom Bahnende zum Finger.
+- Die Lesung Höhe gegen Tiefe (Entscheidung 2) ist vom Löser unabhängig; mit „Bodenhöhe“ nutzt Strich 2 wieder mehr
+  Tiefe (27 statt 23 m Spanne) und liegt in Form und Rollen in derselben Liga wie der heutige Pinsel, bei weniger Rollen
+  (121° statt 142° je 100 m) und mehr Knicken (251 statt 226).
+- Die „Knicke“ sind zum Großteil der Strich selbst: Bei zoom 14,8 px/m ist ein Radius von 59 px schon die 4-m-Grenze, und
+  Florians Striche haben im Median 85 Linienmeter mit Radius unter 4 m (2775 auf 31 Striche; mit 0,25-m-Proben rund
+  340), fast so viele wie die Bahn Knicke zählt (226 und 251). Die Schleifen sind an der Grenze gezeichnet; die Zahl
+  misst den Strich, nicht die Tiefe. Zum Beurteilen der Bahnform: größer zeichnen (näher heranzoomen) oder den
+  Mindestradius 4 m als Entscheidung behandeln.
+- Fahrbar ist bei beiden Pinseln kein Strich: Beim heutigen 15 Kreuzungen auf gleicher Höhe, bei Strich 2 neu 19
+  (Kreuzungen im offenen Vorlauf, Stufe P1) und 6 Fälle in Kehren (Stufe P4). Das ist der Rest, der die Bahn „hässlich“
+  macht, und er ist bei beiden derselbe.
+- Nicht geprüft: Florians Bildrate am Mac (headless nicht zuschreibbar, Leerlauf 33 ms je Bild), das Gefühl des weichen
+  Nachziehens (nur Standbilder), das Handy mit dem neuen Stand.
+
+**Absicherung:** 455 Tests und `npm run build` grün, Szenarien 1–28 gegen den Messserver :5188 alle bestanden (Stand
+nach der Änderung); der heutige Pinsel ist ohne `&strich=2` weiterhin unverändert.

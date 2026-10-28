@@ -15,8 +15,13 @@
  *    0,25 m, Gauß 0,5 m, 1-m-Punkte), was weiter als das Glättungsfenster zurückliegt, wird nicht neu gerechnet.
  *  - **Einfacher Löser:** min Σ w·(z − Ziel)² + λ·Σ(Δ²z)² + Σ wL·(Δz − ΔY/c)² an Wenden, mit Schranken aus dem Freiraum
  *    (Flächen der Ebenen) und aus Kreuzungen mit dem schon festen Teil, als kleines dichtes System (Cholesky) mit
- *    aktiver Menge. Steil Gezeichnetes ist Höhe (das Ziel zieht dort kaum), flach Gezeichnetes landet auf Kanten oder
- *    nimmt die Bodenhöhe der Ebenen; an einer Wende nimmt die Tiefe die Bildbewegung, damit die Bahn dort flach bleibt.
+ *    aktiver Menge. Die Lesung ist „Ebenen: Bodenhöhe“ wie beim heutigen Pinsel: Bild-Y ist die Tiefe, in der der
+ *    Strich GROUND_COMFORT über einer Ebenenkante liegt, steil wie flach (Florian, 28.10. abends: Strich 2 malte „in den
+ *    Boden und kaum in die Tiefe“, als Steiles noch Höhe war); flach Gezeichnetes landet auf Kanten, kurze Hügel bleiben
+ *    Höhe (gerade von Fuß zu Fuß), Kehren ein Halbkreis durch die Tiefe; an einer Wende nimmt die Tiefe die Bildbewegung,
+ *    damit die Bahn dort flach bleibt. Der freie Abschnitt je Punkt ist der dem Ziel nächste (mit Vorzug für den, in dem
+ *    die Tiefe schon ist), nicht der, der am vorigen anschließt: Sonst sperrte jede Kante, unter die der Strich läuft,
+ *    als „Fels“ die Tiefe, statt dass die Bahn vor die Ebene kommt.
  *  - **Knoten ohne Fit:** alle NODE_STEP Linienpunkte ein Knoten mit Catmull-Rom-Tangenten, feste Knoten bleiben.
  *  - **Rundenschluss** nur als neuer Weg ab dem festen Ende (Dubins-Bögen aus brushTrack), der gezeichnete Teil bleibt.
  *
@@ -27,8 +32,12 @@ import type { Vec3 } from '@/core/math3';
 import type { FreeLanes } from '@/zone/field';
 import { dubinsPaths, type BrushOptions, type BrushPreview, type Landing } from './brushTrack';
 
-/** Vorschau von Strich 2: wie BrushPreview, dazu die Linie (1-m-Punkte, Bühne) je Tiefe */
-export type Strich2Preview = BrushPreview & { line: StagePoint[] };
+/**
+ * Vorschau von Strich 2: wie BrushPreview, dazu die Linie (1-m-Punkte, Bühne) je Tiefe, die Zahl der festen
+ * Linienpunkte (die Bahn der Vorschau endet dort, wenn der Vorlauf abgeschnitten ist) und der Weltpunkt des letzten festen
+ * (dort setzt die Tinte an)
+ */
+export type Strich2Preview = BrushPreview & { line: StagePoint[]; frozen: number; frozenWorld: Vec3 | null };
 import { createNode, emptyPath, type TrackNode, type TrackPath } from './model';
 import { LANE_DEPTH, LANE_MAX, LANE_MIN, TILT_TAN, mixPoint, rayToWorld, type StagePoint } from './stage';
 
@@ -60,12 +69,19 @@ function PASS_SIDE_CONST(): number {
 }
 /** längster Vorlauf (Punkte): ein steiles Stück, das sich so lange nicht erklärt, friert trotzdem ein (als Höhe) */
 const FREEZE_MAX = 90;
-/** Gewicht der Wunschtiefe: flach gelandet, in einer Höhle, Boden der Ebenen; steil fast nichts */
+/** Gewicht der Wunschtiefe: flach gelandet, in einer Höhle, Bodenhöhe der Ebenen; ohne Lesung fast nichts */
 const W_LAND = 2;
 const W_CAVE = 4;
+const W_GROUND = 1;
 const STEEP_FROM = (15 * Math.PI) / 180;
 const STEEP_TO = (40 * Math.PI) / 180;
 const STEEP_W = 0.03;
+/**
+ * Abschnittswahl: der Abschnitt, in dem die Tiefe schon ist, bleibt, bis das Ziel so viel (Spuren) näher an einem anderen
+ * liegt; ein Abschnitt weiter als HOP_MAX Spuren vom Ziel ist keine Lesung mehr (Fels)
+ */
+const HOP = 0.25;
+const HOP_MAX = 1.2;
 /** flacher als das (Bildhöhe je Bildbreite) landet der Strich auf einer Kante */
 const LAND_SLOPE = 0.25;
 /** so viele Meter am Stück auf derselben Kante, bis die Landung voll zieht */
@@ -427,16 +443,21 @@ export class Strich2 {
       const z = typeof l === 'number' ? l : l.z;
       const cave = typeof l === 'object' && !!l.cave;
       if (cave) return { t: z, w: W_CAVE };
-      if (q.flat) return { t: z, w: W_LAND * Math.min(1, q.run / LAND_RUN) + STEEP_W };
-      return { t: z, w: STEEP_W };
+      // flach auf derselben Kante: Landung, die über LAND_RUN Meter voll zieht; steil über eine Kante hinweg: Bodenhöhe
+      if (q.flat && q.run >= LAND_RUN) return { t: z, w: W_LAND };
+      if (q.flat && !Number.isFinite(q.ground)) return { t: z, w: (W_LAND * q.run) / LAND_RUN + STEEP_W };
     }
-    if (Number.isFinite(q.ground)) return { t: q.ground, w: q.wh };
+    // „Ebenen: Bodenhöhe“ wie beim heutigen Pinsel: die Tiefe, in der der Strich bequem über einer Kante liegt, steil wie
+    // flach; was kurz steil ist, setzt solve() als Hügel (Höhe) oder Kehre (Halbkreis) darüber
+    if (Number.isFinite(q.ground)) return { t: q.ground, w: W_GROUND };
     return { t: q.z, w: 0 };
   }
 
   /**
-   * Schranken aus dem Freiraum: der Abschnitt, der an den des Vorgängers anschließt und dem Ziel am nächsten liegt
-   * (mit allen berührenden Nachbarn als Spielraum); keiner → blockiert, der vorige bleibt
+   * Schranken aus dem Freiraum: der Abschnitt, der dem Ziel am nächsten liegt, mit Vorzug (HOP) für den, in dem die
+   * Tiefe des Vorgängers liegt (kein Hin und Her bei Gleichstand), mit allen berührenden Nachbarn als Spielraum. Läuft der
+   * Strich unter eine Kante, liegt die vorige Tiefe im Festen: Dann nimmt die Bahn den Abschnitt davor oder dahinter, je
+   * nach Ziel; der Löser verteilt den Wechsel über das freie Stück. Gar kein Abschnitt → blockiert, die Tiefe bleibt
    */
   private bounds(q: Pt, prev: Pt | null, t: number, zMin: number, zMax: number): { lo: number; hi: number; mid: number; cave: boolean; blocked: boolean } {
     const l = q.lanes;
@@ -444,22 +465,23 @@ export class Strich2 {
     const iv = l.intervals.map((v) => ({ a: v.a * LANE_DEPTH, b: v.b * LANE_DEPTH, cave: !!v.cave && v.attract }));
     const zPrev = prev ? prev.z : t;
     const touch = (a: { a: number; b: number }, b: { a: number; b: number }) => Math.min(a.b, b.b) - Math.max(a.a, b.a) >= -0.06 * LANE_DEPTH;
-    const prevIv = { a: zPrev - 0.03 * LANE_DEPTH, b: zPrev + 0.03 * LANE_DEPTH };
     const dist = (v: { a: number; b: number }, z: number) => (z < v.a ? v.a - z : z > v.b ? z - v.b : 0);
     let best = -1;
     let bestCost = Infinity;
+    let bestFar = false;
     for (let k = 0; k < iv.length; k++) {
-      if (!touch(iv[k], prevIv)) continue;
-      const c = dist(iv[k], t) - (iv[k].cave ? 0.3 * LANE_DEPTH : 0);
+      const holds = dist(iv[k], zPrev) <= 0.06 * LANE_DEPTH;
+      const d = dist(iv[k], t);
+      const c = d - (iv[k].cave ? 0.3 * LANE_DEPTH : 0) - (holds ? HOP * LANE_DEPTH : 0);
       if (c < bestCost) {
         bestCost = c;
         best = k;
+        bestFar = !holds && d > HOP_MAX * LANE_DEPTH;
       }
     }
-    if (best < 0) {
-      // nichts schließt an: blockiert; die Tiefe bleibt, wo sie war
-      return { lo: zPrev, hi: zPrev, mid: NaN, cave: false, blocked: true };
-    }
+    // kein Abschnitt, oder der nächste liegt weiter als HOP_MAX vom Ziel und die Tiefe ist nicht schon darin: Fels, die
+    // Tiefe bleibt (ein Sprung so weit wäre keine Lesung des Strichs mehr)
+    if (best < 0 || bestFar) return { lo: zPrev, hi: zPrev, mid: NaN, cave: false, blocked: true };
     let lo = iv[best].a;
     let hi = iv[best].b;
     for (let k = best - 1; k >= 0 && touch(iv[k], iv[k + 1]); k--) lo = Math.min(lo, iv[k].a);
@@ -786,14 +808,14 @@ export class Strich2 {
     return q.wp;
   }
 
-  /** Knoten alle NODE_STEP Linienpunkte (Catmull-Rom-Tangenten); feste bleiben, das Ende wird neu gesetzt */
-  private buildNodes(o: BrushOptions, closed: boolean): TrackNode[] {
+  /** Knoten alle NODE_STEP Linienpunkte bis end (ausschließlich; Catmull-Rom-Tangenten); feste bleiben, das Ende wird neu gesetzt */
+  private buildNodes(o: BrushOptions, closed: boolean, end = this.pts.length): TrackNode[] {
     const n = this.pts.length;
     const idx: number[] = [];
-    for (let i = 0; i < n; i += NODE_STEP) idx.push(i);
-    if (idx[idx.length - 1] !== n - 1) {
-      if (n - 1 - idx[idx.length - 1] < NODE_STEP * 0.4 && idx.length > 1) idx.pop();
-      idx.push(n - 1);
+    for (let i = 0; i < end; i += NODE_STEP) idx.push(i);
+    if (idx[idx.length - 1] !== end - 1) {
+      if (end - 1 - idx[idx.length - 1] < NODE_STEP * 0.4 && idx.length > 1) idx.pop();
+      idx.push(end - 1);
     }
     const pos = (i: number) => this.worldPoint(o, this.pts[i]);
     const nodes: TrackNode[] = [];
@@ -865,8 +887,16 @@ export class Strich2 {
     return out;
   }
 
-  private preview(o: BrushOptions, closed: boolean): Strich2Preview {
-    const nodes = this.buildNodes(o, closed);
+  /** Zahl der festen Linienpunkte von vorn (alte Bahn mitgezählt) */
+  private frozenEnd(): number {
+    let f = this.baseLen;
+    while (f < this.pts.length && this.pts[f].frozen) f++;
+    return f;
+  }
+
+  /** end: so viele Linienpunkte werden Bahn (die Vorschau beim Malen endet am festen Teil, wenn der Vorlauf abgeschnitten ist) */
+  private preview(o: BrushOptions, closed: boolean, end = this.pts.length): Strich2Preview {
+    const nodes = this.buildNodes(o, closed, end);
     const n = this.pts.length;
     const z = new Float64Array(n);
     const cave = new Uint8Array(n);
@@ -876,7 +906,9 @@ export class Strich2 {
       cave[i] = this.pts[i].cave ? 1 : 0;
       if (this.pts[i].blocked) rock.push(this.pts[i].p);
     }
-    return { path: { ...emptyPath(), nodes, closed, brush: true }, z, rock, cave, crossings: [], line: this.pts.map((q) => q.p) };
+    const frozen = this.frozenEnd();
+    const frozenWorld = frozen > this.baseLen ? this.worldPoint(o, this.pts[frozen - 1]) : null;
+    return { path: { ...emptyPath(), nodes, closed, brush: true }, z, rock, cave, crossings: [], line: this.pts.map((q) => q.p), frozen, frozenWorld };
   }
 
   /** Länge der Linie bis zum letzten festen Punkt (Bühnen-Meter, ohne alte Bahn): bis hierher sind die Schienen endgültig */
@@ -886,8 +918,12 @@ export class Strich2 {
     return l;
   }
 
-  /** Vorschau beim Malen: Pinselpunkte übernehmen, freies Stück lösen, Punkte hinter dem Vorlauf einfrieren */
-  update(points: StagePoint[]): Strich2Preview | null {
+  /**
+   * Vorschau beim Malen: Pinselpunkte übernehmen, freies Stück lösen, Punkte hinter dem Vorlauf einfrieren. cut: die Bahn
+   * der Vorschau endet am festen Teil (der Vorlauf bleibt Tinte: „die Bahn zieht nach, wenn die Tiefe entschieden ist“);
+   * sonst reicht sie bis zur Spitze, der Vorlauf vorläufig
+   */
+  update(points: StagePoint[], cut = true): Strich2Preview | null {
     const t0 = performance.now();
     this.queryMs = 0;
     const o = this.options();
@@ -897,7 +933,8 @@ export class Strich2 {
     this.query(o, Math.min(before, this.lineFinal) - 2);
     this.solve(o);
     this.freeze(o);
-    const pv = this.preview(o, false);
+    const end = cut ? Math.max(this.frozenEnd(), Math.min(this.pts.length, this.baseLen + 2)) : this.pts.length;
+    const pv = this.preview(o, false, end);
     this.stats.ms = performance.now() - t0;
     this.stats.queryMs = this.queryMs;
     return pv;

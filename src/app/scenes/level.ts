@@ -31,7 +31,7 @@ import { strokeToTrack, closePath, extendTrack, interpretStroke, lanesTrack, typ
 import { bendSegment } from '@/track/edit';
 import { RubberBrush, chaikin, resamplePolyline } from '@/track/brush';
 import { BrushRefiner, joinLines, lineLength, planBrushTrack, previewBrushTrack, spliceLine, swapCrossing, trackLine, trackLineWithDepth, type BrushPlan, type BrushPreview } from '@/track/brushTrack';
-import { Strich2 } from '@/track/strich2';
+import { Strich2, type Strich2Preview } from '@/track/strich2';
 import { TrackInspector, type WeakSpot } from '@/track/inspect';
 import { findCrossings } from '@/track/crossings';
 import { MeasureOverlay } from '@/render/measureOverlay';
@@ -184,7 +184,11 @@ const AUTOSCROLL = typeof location === 'undefined' || new URLSearchParams(locati
  * Vorschau) hinter &strich=2; mit &vorlauf=1 bleibt der noch unentschiedene Teil hinter der Spitze Tinte statt Schienen
  */
 const STRICH_URL = urlNum('strich', 1);
-const VORLAUF_URL = urlNum('vorlauf', 0);
+/**
+ * Strich 2: 1 (Vorgabe) zeigt die Schienen nur bis zum festen Teil, der Vorlauf bleibt Tinte und die Bahn zieht weich
+ * nach, sobald die Tiefe entschieden ist; 2 zeigt den Vorlauf vorläufig als Schienen bis zur Spitze
+ */
+const VORLAUF_URL = urlNum('vorlauf', 1);
 /** Zeichen-Zoom auf dem Handy: mindestens so viele Pixel pro Bühnen-Meter (eine Spur rund 5 mm); der Rest des Levels
  *  über Autoscroll am Rand oder Wischen, Doppeltipp auf freie Fläche wechselt zur Übersicht */
 const DRAW_ZOOM_MIN = urlNum('dzoom', 7);
@@ -263,6 +267,8 @@ export class LevelScene implements Scene {
   private brushBase: { line: StagePoint[]; z: Float64Array } | null = null;
   /** Pinsel-Studie: Strich 2 für den laufenden Strich (&strich=2), sonst null */
   private strich2: Strich2 | null = null;
+  /** Strich 2: ab hier (Pinsellänge) zeigt die Tinte den Strich; läuft weich dem festen Bahnende nach (die Bahn „zieht nach“) */
+  private brushInkFrom = 0;
   /** Plan der aktuellen Pinsel-Bahn (Kreuzungen zum Tauschen) und der Stand der Bahn, zu dem er passt */
   private brushPlan: BrushPlan | null = null;
   private brushPlanStamp = 0;
@@ -2267,15 +2273,19 @@ export class LevelScene implements Scene {
       return { i: pts.length, p: pts[pts.length - 1] };
     };
     const { i: cut, p: cutPt } = at(this.brushShown);
-    const from = this.brushPreview ? at(Math.min(this.brushPreviewedLen, this.brushShown)) : { i: 1, p: pts[0] };
+    const from = this.brushPreview ? at(Math.min(this.strich2 ? this.brushInkFrom : this.brushPreviewedLen, this.brushShown)) : { i: 1, p: pts[0] };
     // Kamerawinkel-Test: Fährt die Kamera beim Zeichnen mit (Autoscroll), verschiebt sich die Bahn in der Tiefe
     // parallaktisch, die Tinte (Bühnen-Koordinaten der Aufnahme) nicht, und Spitze und Schiene liefen auseinander. Die
-    // Tinte beginnt deshalb dort, wo das Bahnende jetzt im Bild liegt, und läuft weich zum Finger (Versatz zum Finger hin 0)
-    const endNode = this.brushPreview?.path.nodes[this.brushPreview.path.nodes.length - 1];
+    // Tinte beginnt deshalb dort, wo das Bahnende jetzt im Bild liegt, und läuft weich zum Finger (Versatz zum Finger hin 0).
+    // Strich 2: das Bahnende ist der letzte feste Linienpunkt (die Vorschau reichte sonst bis zur Spitze, und die Tinte
+    // klebte an der falschen Stelle, Florian 28.10.: „ganz seltsame Formen“)
+    const s2 = this.strich2 ? (this.brushPreview as Strich2Preview | null) : null;
+    const endNode = s2 ? null : this.brushPreview?.path.nodes[this.brushPreview.path.nodes.length - 1];
     let shift = { X: 0, Y: 0 };
-    if (endNode && viewState().persp) {
-      const v = toView(endNode.x, endNode.y, endNode.z);
-      shift = { X: v.X - from.p.X, Y: v.Y - from.p.Y };
+    if (viewState().persp && (endNode || s2?.frozenWorld)) {
+      const v = endNode ? toView(endNode.x, endNode.y, endNode.z) : toView(s2!.frozenWorld!.x, s2!.frozenWorld!.y, s2!.frozenWorld!.z / LANE_DEPTH);
+      const anchor = s2 ? at(Math.min(this.brushPreviewedLen, this.brushShown)).p : from.p;
+      shift = { X: v.X - anchor.X, Y: v.Y - anchor.Y };
     }
     const fingerNow = this.brushFinger();
     const glue = (line: StagePoint[], s0: number, total: number): StagePoint[] => {
@@ -2341,12 +2351,30 @@ export class LevelScene implements Scene {
     this.brushShown = 0;
     this.brushPreview = null;
     this.brushPreviewedLen = 0;
+    this.brushInkFrom = 0;
     this.brushBase = this.strokeKind === 'extend' && this.samples ? trackLineWithDepth(this.samples) : null;
     // Pinsel „Spur halten“ (Kamerawinkel-Test): hält die Tiefe am Ende der alten Bahn, ein neuer Strich die Spur unter dem Anfang
     this.brushHoldZ = this.brushBase?.z.length ? this.brushBase.z[this.brushBase.z.length - 1] : NaN;
     this.strich2 = STRICH_URL >= 2 && this.strokeKind !== 'overdraw' ? new Strich2(() => this.brushOptions(), this.brushBase, this.planeStartDepth(), Math.max(8, 60 / this.view.camera.zoom)) : null;
     this.previewTimer = 0;
     this.setDrawCursor(true);
+  }
+
+  /** Pinsellänge des Pinselpunkts, der dem Bühnenpunkt p am nächsten liegt (Strich 2: das feste Bahnende auf der Tinte) */
+  private brushLengthNear(p: StagePoint): number {
+    const pts = this.brush!.points;
+    let acc = 0;
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      if (i > 0) acc += Math.hypot(pts[i].X - pts[i - 1].X, pts[i].Y - pts[i - 1].Y);
+      const d = Math.hypot(pts[i].X - p.X, pts[i].Y - p.Y);
+      if (d < bestD) {
+        bestD = d;
+        best = acc;
+      }
+    }
+    return best;
   }
 
   /** die schon gemalte Bahn des Pinsels (bis brushShown, ohne Schleppe) */
@@ -2375,12 +2403,13 @@ export class LevelScene implements Scene {
   private previewBrush(): void {
     if (this.strokeKind === 'overdraw' || this.strokeKind === 'terrain') return;
     if (this.strich2) {
-      // Strich 2: der Läufer nimmt die ganze Pinsellinie; hinter dem Vorlauf sind die Schienen endgültig
-      const pv = this.strich2.update(this.brush!.points);
+      // Strich 2: der Läufer nimmt die ganze Pinsellinie; hinter dem Vorlauf sind die Schienen endgültig. Die Vorschau
+      // endet am festen Teil (Vorlauf 1), die Tinte zeigt den Rest bis zum Finger
+      const pv = this.strich2.update(this.brush!.points, VORLAUF_URL !== 2);
       if (!pv || pv.path.nodes.length < 2) return;
       pv.path.startType = this.path?.startType ?? 'chainlift';
       this.brushPreview = pv;
-      this.brushPreviewedLen = VORLAUF_URL === 1 ? this.strich2.frozenLength : this.brush!.drawnLength;
+      this.brushPreviewedLen = VORLAUF_URL !== 2 && pv.frozen > 0 ? this.brushLengthNear(pv.line[pv.frozen - 1]) : this.brush!.drawnLength;
       const sm = sampleTrack(pv.path, 0.5);
       this.liveLength = sm.length;
       this.view.setTrack(pv.path, sm, this.skin, this.terrain, this.allowTunnels, true);
@@ -2414,8 +2443,12 @@ export class LevelScene implements Scene {
     const b = this.brush!;
     const total = b.drawnLength;
     if (this.strich2) {
-      // Strich 2: keine Schleppe, die Schienen reichen bis zur Pinselspitze (der Vorlauf ist die Entscheidungszeit)
+      // Strich 2: keine Schleppe, die Tinte reicht vom festen Bahnende bis zur Spitze (der Vorlauf ist die
+      // Entscheidungszeit). Das Bahnende rückt je Vorschau in Schritten vor; die Tinte gibt es weich frei (Zeitkonstante
+      // BRUSH_LAG), nie weiter, als die Schienen schon reichen
       this.brushShown = total;
+      const k = 1 - Math.exp(-dt / BRUSH_LAG);
+      this.brushInkFrom = Math.min(this.brushPreviewedLen, this.brushInkFrom + (this.brushPreviewedLen - this.brushInkFrom) * k);
       this.drawInk();
       return;
     }

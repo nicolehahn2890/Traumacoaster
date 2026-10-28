@@ -16,10 +16,13 @@ const opt = (f) => {
   const i = args.indexOf(f);
   return i >= 0 ? args[i + 1] : null;
 };
-const file = args.find((a, i) => !a.startsWith('--') && !['--idx', '--url', '--strich', '--gl', '--shot'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
+const file = args.find((a, i) => !a.startsWith('--') && !['--idx', '--url', '--strich', '--gl', '--shot', '--extra', '--shotAt'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
 const URL = opt('--url') ?? process.env.TC_URL ?? 'http://localhost:5186/';
 const STRICH = opt('--strich');
 const GL = opt('--gl') ?? 'metal';
+// weitere URL-Parameter (etwa vorlauf=1) und Bildschirmfoto mitten im Strich (ms nach dem Aufsetzen)
+const EXTRA = opt('--extra') ?? '';
+const SHOT_AT = Number(opt('--shotAt') ?? 0);
 const IDX = (opt('--idx') ?? '0').split(',').map(Number);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -48,7 +51,7 @@ for (const idx of IDX) {
   const ctx = await browser.newContext({ viewport: { width: rec.screen[0], height: rec.screen[1] }, deviceScaleFactor: rec.dpr ?? 2 });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.error('PAGEERROR', e.message));
-  const url = `${URL}?zone=${zone}&editor=2&scroll=0&fov=${rec.persp ?? 18}${STRICH ? `&strich=${STRICH}` : ''}`;
+  const url = `${URL}?zone=${zone}&editor=2&scroll=0&fov=${rec.persp ?? 18}${STRICH ? `&strich=${STRICH}` : ''}${EXTRA ? `&${EXTRA}` : ''}`;
   await page.goto(url, { waitUntil: 'networkidle' });
   await sleep(2500);
   const gpu = await page.evaluate(() => {
@@ -66,7 +69,9 @@ for (const idx of IDX) {
     if (p.length >= 5) cam = [p[3], p[4]];
     pts.push([p[0], p[1], p[2], cam ? cam[0] : null, cam ? cam[1] : null]);
   }
-  const res = await page.evaluate(
+  const SHOT = opt('--shot');
+  const shotName = (tag) => `${SHOT}/strich-${idx}${STRICH ? '-s' + STRICH : ''}${EXTRA ? '-' + EXTRA.replace(/[^a-z0-9]+/gi, '_') : ''}${tag}.png`;
+  const resP = page.evaluate(
     async ({ pts, zoom }) => {
       const g = window.tcGame;
       const s = g.current;
@@ -137,8 +142,13 @@ for (const idx of IDX) {
     },
     { pts, zoom: rec.zoom },
   );
-  const SHOT = opt('--shot');
-  if (SHOT) await page.screenshot({ path: `${SHOT}/strich-${idx}${STRICH ? '-s' + STRICH : ''}.png` });
+  if (SHOT && SHOT_AT > 0) {
+    // Leerlauf 1,2 s, dann läuft der Strich
+    await sleep(1200 + SHOT_AT);
+    await page.screenshot({ path: shotName(`-bei${SHOT_AT}`) });
+  }
+  const res = await resP;
+  if (SHOT) await page.screenshot({ path: shotName('') });
   const { M } = res;
   const fr = M.frames;
   const fps = fr.length ? 1000 / (fr.reduce((a, b) => a + b, 0) / fr.length) : NaN;

@@ -541,7 +541,7 @@ function replay(rec: Rec, idx: number): StrokeResult {
     } else if (lineLength(solid) < 6) continue;
     const c0 = snap(counters);
     const t0 = performance.now();
-    const next: (BrushPreview & { line?: StagePoint[] }) | null = s2 ? s2.update(brush.points) : previewBrushTrack(line, opts, pv, keep);
+    const next: (BrushPreview & { line?: StagePoint[] }) | null = s2 ? s2.update(brush.points, false) : previewBrushTrack(line, opts, pv, keep);
     const ms = performance.now() - t0;
     cost = ms / 1000;
     lastPreviewT = t;
