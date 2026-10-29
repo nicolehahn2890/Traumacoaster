@@ -12,8 +12,8 @@ import type { TrackSamples } from '@/track/model';
 import { ATTACH, MAT, SUPPORT_SPACING } from './trackBuilder';
 import type { TrackFrame } from './trackMesh';
 import { HANG_DROP, type TrackType } from './trackTypes';
-import { footBelow, type FootKind, type Foundation } from './foundations';
-import { zToLane } from './camera';
+import { footBelow, holderAt, type FootKind, type Foundation } from './foundations';
+import { laneToZ, zToLane } from './camera';
 
 export interface SupportPlan3D {
   /** Anschlusspunkt an der Bahn (Welt) */
@@ -26,6 +26,15 @@ export interface SupportPlan3D {
   /** Hängebahn: Pfeiler abwechselnd hinter (−1) und vor (+1) der Bahn */
   side: 1 | -1;
   seed: number;
+  /**
+   * Halter statt Stütze (Zonen-Editor, Stufe 4): Konsole an der Wand hinter der Bahn oder Hänger an der Decke darüber,
+   * wo unter der Bahn nichts trägt; F ist dann der Punkt an Wand oder Decke
+   */
+  holder?: 'wall' | 'ceiling';
+  /** Variante des Halters (0 bis 2): ein Lauf von Haltern hintereinander hat eine, der nächste die nächste */
+  variant?: number;
+  /** Richtung der Bahn am Anschluss (Halter: Teile folgen ihr unter der Bahn) */
+  T?: Vector3;
 }
 
 export interface SupportStats {
@@ -35,6 +44,11 @@ export interface SupportStats {
   cave: number;
   /** nichts Tragendes darunter (Wasser, Leere) */
   floating: number;
+  /** wo (Anschlusspunkt in der Welt, Spur), zum Prüfen und Zeigen */
+  floatAt: Array<{ x: number; y: number; lane: number }>;
+  /** Wand- und Deckenhalter an Stellen ohne Fuß (Stufe 4) */
+  wall: number;
+  ceiling: number;
   /** Bahn zu dicht über dem Fuß */
   skipped: number;
 }
@@ -44,11 +58,20 @@ export const SUPPORT_MIN_H = 1.3;
 /** Draufsicht-Abstand (Meter), unter dem eine Stütze ein anderes Bahnstück durchstieße bzw. zu dicht stünde */
 const PIERCE_DIST = 1.8;
 const CROWD_DIST = 2.6;
+/** Variante der Halter zum Vergleichen (`&halter=1` bis 3); ohne Angabe hat jeder Lauf von Haltern die nächste */
+const HOLDER_FIXED = ((): number | null => {
+  try {
+    const v = Number(new URLSearchParams(globalThis.location?.search ?? '').get('halter'));
+    return v >= 1 && v <= 3 ? v - 1 : null;
+  } catch {
+    return null;
+  }
+})();
 
 /** Stützen entlang der Bahn planen (deterministisch) */
 export function planWorldSupports(samples: TrackSamples, frames: TrackFrame[], type: TrackType, foundations: readonly Foundation[], insideMountain: (x: number, y: number, z: number) => boolean): { plans: SupportPlan3D[]; stats: SupportStats } {
   const plans: SupportPlan3D[] = [];
-  const stats: SupportStats = { ground: 0, rock: 0, element: 0, cave: 0, floating: 0, skipped: 0 };
+  const stats: SupportStats = { ground: 0, rock: 0, element: 0, cave: 0, floating: 0, skipped: 0, floatAt: [], wall: 0, ceiling: 0 };
   const n = frames.length;
   const L = samples.length;
   if (n < 2 || L <= 0) return { plans, stats };
@@ -56,6 +79,9 @@ export function planWorldSupports(samples: TrackSamples, frames: TrackFrame[], t
   const attach = ATTACH[type];
   const hanging = type === 'hanging';
   let side: 1 | -1 = -1;
+  // Halter: Variante je Lauf (Halter einer Art hintereinander ohne Stütze dazwischen)
+  let run = -1;
+  let runKind: 'wall' | 'ceiling' | null = null;
   // ein anderes Bahnstück (mindestens 10 m entfernt auf der Bahn) zwischen Fuß und Anschluss: die Stütze ginge hindurch
   const pierces = (i: number, A: Vector3, footY: number): boolean => {
     for (let j = 0; j < n; j += 2) {
@@ -79,11 +105,29 @@ export function planWorldSupports(samples: TrackSamples, frames: TrackFrame[], t
     // Stelle zählt dann als zu kurz, nicht als schwebend); Hängebahn: unter der Gondel, der Pfeiler steht neben der Bahn
     const probeZ = hanging ? A.z + 2.4 * side : A.z;
     const probeY = hanging ? f.p.y - HANG_DROP + 0.5 : f.p.y + 0.5;
-    const hit = footBelow(foundations, A.x, probeY, zToLane(probeZ));
+    let hit = footBelow(foundations, A.x, probeY, zToLane(probeZ));
+    // nichts trägt: Wand dahinter (Konsole), eine Kante etwas weiter hinten (Stütze) oder Decke darüber (Hänger), sonst
+    // schwebt die Stelle (Hängebahn: Pfeiler)
+    let hold = hit || hanging ? null : holderAt(foundations, A.x, A.y, laneHere);
+    if (hold?.kind === 'foot') {
+      hit = hold.y < probeY ? { y: hold.y, kind: 'element' } : null;
+      hold = null;
+    }
     if (!hit) {
-      stats.floating++;
+      if (!hold || hold.kind === 'foot') {
+        stats.floating++;
+        stats.floatAt.push({ x: A.x, y: A.y, lane: laneHere });
+        continue;
+      }
+      const F = new Vector3(A.x, hold.y, laneToZ(hold.z));
+      if (plans.some((p) => Math.hypot(p.F.x - F.x, p.F.z - F.z) < CROWD_DIST && Math.abs(p.F.y - F.y) < 3)) continue;
+      if (runKind !== hold.kind) run++;
+      runKind = hold.kind;
+      stats[hold.kind]++;
+      plans.push({ A, F, h: Math.abs(A.y - F.y), kind: 'element', side, seed: i, holder: hold.kind, variant: HOLDER_FIXED ?? run % 3, T: f.t.clone() });
       continue;
     }
+    runKind = null;
     const F = new Vector3(A.x, hit.y, A.z);
     const h = A.y - F.y;
     if (h < SUPPORT_MIN_H) {
@@ -225,6 +269,102 @@ function gantry(p: Parts, h: number, side: number, b: { taper: Batch; arm: Batch
   p.block(b.plate, 2.2, 0.4, 2.2, 0, 0.1, back);
 }
 
+/** Teile eines Halters: tragende Stäbe, Platte an Wand oder Decke, leichte Streben */
+interface HolderBatches {
+  bar: Batch;
+  plate: Batch;
+  light: Batch;
+  /** Dicke der Stäbe (Halbmesser beim Rohr) */
+  thick: number;
+}
+
+/**
+ * Wandhalter (Platzhalter-Formen, Vorschlag an Florian): A Anschluss unter der Bahn, F Punkt an der Wand darunter.
+ * 0 V-Konsole wie in Szene 06 (zwei Streben von der Bahn zur Wand, ein Sattel unter der Bahn), 1 Kragarm wie
+ * `15-wandkonsole`, im Bild von der Seite gesehen (Pfosten an der Wand neben dem Anschluss, Arm waagrecht unter die Bahn,
+ * Strebe vom Pfosten hinauf), 2 Bogenkonsole (gebogene Strebe von der Wand unter die Bahn)
+ */
+function wallHolder(p: Parts, A: Vector3, F: Vector3, variant: number, b: HolderBatches, T: Vector3 = new Vector3(1, 0, 0)): void {
+  const t = b.thick;
+  const top = new Vector3(A.x, A.y, F.z);
+  const deep = Math.abs(A.z - F.z) > 0.3;
+  // Punkte unter der Bahn, k Meter vor (positiv) oder zurück entlang ihrer Richtung
+  const along = (k: number) => A.clone().addScaledVector(T, k);
+  if (variant === 0) {
+    p.block(b.plate, 0.8, 0.8, 0.12, F.x, F.y, F.z + 0.06);
+    const l = along(-0.9);
+    const r = along(0.9);
+    p.bar(b.bar, l, F, t);
+    p.bar(b.bar, r, F, t);
+    p.bar(b.light, l, r, t * 0.8);
+  } else if (variant === 1) {
+    // Pfosten an der Wand unter einem Punkt 1,4 m zurück, Arm unter der Bahn entlang, Strebe aus dem unteren Drittel
+    const z = F.z + 0.12;
+    const back = along(-1.4);
+    const head = new Vector3(back.x, back.y, z);
+    const foot = new Vector3(back.x, Math.min(F.y, back.y - 1.2), z);
+    p.bar(b.bar, foot, head, t);
+    p.bar(b.bar, head, along(0.6), t);
+    p.bar(b.light, new Vector3(back.x, foot.y + (head.y - foot.y) * 0.3, z), along(0.2), t * 0.8);
+    p.block(b.plate, 0.7, 0.7, 0.12, foot.x, foot.y, F.z + 0.06);
+  } else {
+    p.block(b.plate, 0.8, 0.8, 0.12, F.x, F.y, F.z + 0.06);
+    // Viertelbogen von der Wand (unten) seitlich hinauf unter die Bahn, darüber ein Sattel
+    const E = along(1.6);
+    let prev = F.clone();
+    for (let k = 1; k <= 6; k++) {
+      const a = (k / 6) * (Math.PI / 2);
+      const q = new Vector3(F.x + (E.x - F.x) * Math.sin(a), E.y - (E.y - F.y) * Math.cos(a), F.z + (E.z - F.z) * Math.sin(a));
+      p.bar(b.bar, prev, q, t);
+      prev = q;
+    }
+    p.bar(b.light, along(-0.6), E, t * 0.8);
+    if (deep) p.bar(b.light, top, new Vector3(A.x, A.y, A.z), t * 0.7);
+  }
+}
+
+/** so weit hinter der Bahnmitte hängen die Stangen eines Deckenhalters (Meter): der Zug fährt davor vorbei */
+const HANG_BACK = 1.3;
+
+/**
+ * Deckenhalter (Platzhalter-Formen, Vorschlag an Florian): A Anschluss unter der Bahn, F Punkt an der Decke darüber. Die
+ * Stangen hängen hinter der Bahn (HANG_BACK), Arme greifen von hinten unter sie. 0 Hänger (zwei Stangen), 1 Pendel (eine
+ * Stange mit Gabel), 2 V-Hänger (zwei Stangen aus einem Punkt)
+ */
+function ceilingHolder(p: Parts, A: Vector3, F: Vector3, variant: number, b: HolderBatches, T: Vector3 = new Vector3(1, 0, 0)): void {
+  const t = b.thick;
+  const back = A.z - HANG_BACK;
+  // Punkt unter der Bahn k Meter entlang ihrer Richtung, und derselbe Punkt hinter der Bahn (dort enden die Stangen)
+  const under = (k: number) => A.clone().addScaledVector(T, k);
+  const behind = (k: number) => {
+    const q = under(k);
+    return new Vector3(q.x, q.y, back);
+  };
+  const arm = (k: number) => p.bar(b.light, behind(k), under(k).setZ(A.z + 0.2), t * 0.8);
+  p.block(b.plate, variant === 0 ? 2.0 : 1.0, 0.14, 0.7, F.x, F.y - 0.07, back);
+  if (variant === 0) {
+    for (const k of [-0.8, 0.8]) {
+      const q = behind(k);
+      p.bar(b.bar, new Vector3(q.x, F.y, back), q, t);
+      arm(k);
+    }
+    p.bar(b.light, behind(-0.8), behind(0.8), t * 0.8);
+  } else if (variant === 1) {
+    const fork = new Vector3(A.x, A.y + 0.9, back);
+    p.bar(b.bar, new Vector3(A.x, F.y, back), fork, t * 1.2);
+    for (const k of [-0.7, 0.7]) {
+      p.bar(b.light, fork, behind(k), t * 0.8);
+      arm(k);
+    }
+  } else {
+    const head = new Vector3(A.x, F.y, back);
+    for (const k of [-1.1, 1.1]) {
+      p.bar(b.bar, head, behind(k), t);
+      arm(k);
+    }
+  }
+}
+
 /** Stützen einer Bahn als Gruppe aus Instanzen (eine Familie je Bahntyp) */
 export function buildWorldSupports(plans: SupportPlan3D[], type: TrackType): Group {
   const g = new Group();
@@ -243,7 +383,23 @@ export function buildWorldSupports(plans: SupportPlan3D[], type: TrackType): Gro
         : type === 'hanging'
           ? { taper: batch(UNIT_TAPER, MAT.concrete), arm: batch(UNIT_TUBE, MAT.concrete), plate: batch(UNIT_BOX, MAT.concreteDark) }
           : { tube: batch(UNIT_TUBE, MAT.steelBlue), box: batch(UNIT_BOX, MAT.steelBlue), plate: batch(UNIT_BOX, MAT.concreteDark), light: batch(UNIT_BOX, MAT.steelLight) };
+  // Halter aus den Teilen der Familie (keine eigenen Zeichenaufrufe): Stahl Rohre und Platten, Holz Balken auf Stein,
+  // Straße Beton; die Hängebahn hat Pfeiler statt Haltern
+  const hold: HolderBatches | null =
+    type === 'road'
+      ? { bar: (fam as { box: Batch }).box, plate: (fam as { box: Batch }).box, light: (fam as { box: Batch }).box, thick: 0.34 }
+      : type === 'wood'
+        ? { bar: (fam as { light: Batch }).light, plate: (fam as { stone: Batch }).stone, light: (fam as { dark: Batch }).dark, thick: 0.22 }
+        : type === 'hanging'
+          ? null
+          : { bar: (fam as { tube: Batch }).tube, plate: (fam as { plate: Batch }).plate, light: (fam as { light: Batch }).light, thick: 0.14 };
+  const world = new Parts(new Matrix4());
   for (const plan of plans) {
+    if (plan.holder && hold) {
+      if (plan.holder === 'wall') wallHolder(world, plan.A, plan.F, plan.variant ?? 0, hold, plan.T);
+      else ceilingHolder(world, plan.A, plan.F, plan.variant ?? 0, hold, plan.T);
+      continue;
+    }
     // Fuß im Ursprung, zum Anschluss gekippt (wie alignY im Labor); x bleibt entlang der Bühne
     const d = plan.A.clone().sub(plan.F);
     const q = new Quaternion().setFromUnitVectors(UP, d.clone().normalize());

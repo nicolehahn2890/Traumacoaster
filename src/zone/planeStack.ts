@@ -14,7 +14,7 @@
  * Ohne Renderer und DOM; Weltpunkte kommen über `rayToWorld` aus der Bühne, Ebenen-Punkte über Lage und Maßstab der Ebene.
  */
 import { LANE_DEPTH, LANE_MAX, LANE_MIN, rayToWorld, toStage, type StagePoint } from '@/track/stage';
-import type { Foundation, FootHit } from '@/world/foundations';
+import type { Foundation, FootHit, HolderHit } from '@/world/foundations';
 import type { Landing } from '@/track/brushTrack';
 import { DOCK_GAP, GROUND_COMFORT, LAND_ABOVE, LAND_BELOW } from './slices';
 import { dockEdges, faceMaterial, groundAt, isFirm, type DockEdge } from './dock';
@@ -380,7 +380,90 @@ export class PlaneFoundation implements Foundation {
   blocks(): boolean {
     return false;
   }
+
+  /**
+   * Wandhalter: die vorderste spielbare Ebene von der Tiefe der Bahn (bis HOLD_FRONT davor) bis HOLD_BACK dahinter, die
+   * unter dem Anschluss fest wird, höchstens WALL_REACH tiefer (eine steile Flanke unter der Bahn zählt auch); die
+   * Konsole hält WALL_DROP unter dem Anschluss, mindestens 0,6 m im Festen. Gerechnet gerade nach hinten (die Wand liegt
+   * höchstens wenige Meter hinter der Bahn)
+   */
+  wallAnchor(x: number, y: number, z: number): HolderHit | null {
+    const d = z * LANE_DEPTH;
+    for (const sp of this.stack.planes) {
+      const dp = sp.lane * LANE_DEPTH;
+      if (sp.role !== 'play' || dp < d - HOLD_FRONT) continue;
+      if (dp > d + HOLD_BACK) break;
+      const solid = (wy: number) => inAreas(sp, 'solids', (x - sp.plane.x) / sp.plane.scale, (wy - sp.plane.y) / sp.plane.scale);
+      let first = -1;
+      for (let h = 0.4; h <= WALL_REACH + 1e-9; h += 0.2) {
+        if (solid(y - h)) {
+          first = h;
+          break;
+        }
+      }
+      if (first < 0) continue;
+      // bis WALL_DROP, solange es fest bleibt, mindestens 0,6 m hinein
+      let drop = Math.min(first + 0.6, Math.max(first, WALL_DROP));
+      for (let h = first; h <= Math.max(first, WALL_DROP) + 1e-9; h += 0.2) {
+        if (!solid(y - h)) break;
+        drop = Math.max(drop, h);
+      }
+      return { y: y - drop, z: sp.lane };
+    }
+    return null;
+  }
+
+  /**
+   * Fuß auf der Kante einer spielbaren Ebene, die weiter als DOCK_GAP, aber höchstens HOLD_BACK hinter der Bahn liegt
+   * (der Pinsel legt die Bahn manchmal vor die Tiefe ihrer Ebene): die Stütze steht in der Tiefe der Bahn auf der Höhe der
+   * Kante, im Bild knapp unter ihr vor der Fläche
+   */
+  footBehind(x: number, y: number, z: number): FootHit | null {
+    const d = z * LANE_DEPTH;
+    for (const sp of this.stack.planes) {
+      const dp = sp.lane * LANE_DEPTH;
+      if (sp.role !== 'play' || dp <= d + DOCK_GAP + 0.05) continue;
+      if (dp > d + HOLD_BACK) break;
+      const g = groundAt(sp.docks, (x - sp.plane.x) / sp.plane.scale, (y - sp.plane.y) / sp.plane.scale);
+      if (g !== null) return { y: sp.plane.y + sp.plane.scale * g, kind: 'element' };
+    }
+    return null;
+  }
+
+  /**
+   * Deckenhalter: die niedrigste feste Unterseite einer spielbaren Ebene in der Tiefe der Bahn (HOLD_FRONT davor bis
+   * HOLD_BACK dahinter) zwischen CEIL_MIN und CEIL_MAX über dem Anschluss; darunter muss der Zug Platz haben
+   */
+  ceilingAnchor(x: number, y: number, z: number): HolderHit | null {
+    const d = z * LANE_DEPTH;
+    let best: HolderHit | null = null;
+    for (const sp of this.stack.planes) {
+      const dp = sp.lane * LANE_DEPTH;
+      if (sp.role !== 'play' || dp < d - HOLD_FRONT) continue;
+      if (dp > d + HOLD_BACK) break;
+      const solid = (wy: number) => inAreas(sp, 'solids', (x - sp.plane.x) / sp.plane.scale, (wy - sp.plane.y) / sp.plane.scale);
+      let free = true;
+      for (let h = 0.4; h < CEIL_MIN; h += 0.4) if (solid(y + h)) free = false;
+      if (!free) continue;
+      for (let h = CEIL_MIN; h <= CEIL_MAX; h += 0.25) {
+        if (!solid(y + h)) continue;
+        if (!best || y + h < best.y) best = { y: y + h, z: sp.lane };
+        break;
+      }
+    }
+    return best;
+  }
 }
+
+/** Halter (Stufe 4): so weit vor (gleiche Tiefe mit Spielraum) und hinter der Bahn darf ihre Wand oder Decke liegen (Meter) */
+const HOLD_FRONT = 0.3;
+const HOLD_BACK = 4;
+/** Wandhalter: so tief unter dem Anschluss hält die Konsole an der Wand, und bis so tief darf die Wand erst beginnen (Meter; Platzhalter) */
+const WALL_DROP = 2.6;
+const WALL_REACH = 4;
+/** Deckenhalter: die Decke liegt mindestens so hoch über dem Anschluss (Zug darunter) und höchstens so hoch (Meter) */
+const CEIL_MIN = 3.2;
+const CEIL_MAX = 12;
 
 // ------------------------------------------------------------------ Freiraumfeld aus Flächen (Plan 4.9)
 

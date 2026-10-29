@@ -1150,7 +1150,26 @@ im Klötzchen-Editor), „Stufe“ und „Aufwertung“ (weiterschalten), „Sch
 Feldknoten und gelten beim Spielen. Szenario 29. **Platzhalter:** alle Figuren und Formen der Objekte (Bahnsteig,
 Figuren der Schlange, Pfosten und Wand der Baustelle, Coin-Marken), Schlange 8 m beim Setzen, Coins 5 im Abstand 2 m,
 Durchbruch 10 m/s, die Zeilen für Ziele und Schalter (Eingabefeld des Browsers statt eigener Oberfläche).
-**Noch offen aus Stufe 4:** Wand- und Deckenhalter, Szene 06 und Tor S4. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
+**Wand- und Deckenhalter (30.10.2026, Vorschlag; Florian, 28.10.: „Stützen bekommen Wandhalter und Deckenhalter, jeweils
+in mehreren Varianten“):** Befund vorher: Eine Stütze „schwebt“, wenn unter der Bahn keine Andockkante trägt; sie fehlt
+dann ganz. Mit den Strichen von Szenario 27 waren es 3 im Hügelland, 2 in der Grotte und 2 im Bogenland, jedes Mal vor
+einer steilen Wand 0 bis 1 m hinter der Bahn. Jetzt sucht der Planer dort erst eine **Wand**: die vorderste spielbare
+Ebene von der Tiefe der Bahn bis 4 m dahinter, die höchstens 4 m unter dem Anschluss fest wird (auch eine steile Flanke).
+Die Konsole hält 2,6 m unter dem Anschluss im Festen. Dann eine **Kante etwas weiter hinten**: Der Pinsel legt die Bahn
+manchmal mehr als 1 m vor ihre Ebene; dann trägt eine Kante bis 4 m dahinter eine gewöhnliche Stütze. Dann eine
+**Decke**: die niedrigste feste Unterseite 3,2 bis 12 m über dem Anschluss, darunter Platz für den Zug. Die Stangen
+hängen 1,3 m hinter der Bahn, der Zug fährt davor vorbei. Je drei Varianten: Wand **V-Konsole** (wie Szene 06),
+**Kragarm** (wie `bahn und strecke/15-wandkonsole`), **Bogenkonsole**; Decke **Hänger** (zwei Stangen), **Pendel** (eine
+Stange mit Gabel), **V-Hänger**. Jeder Lauf von Haltern einer Art nimmt die nächste Variante; `&halter=1` bis `3` zeigt
+eine allein. Die Halter nutzen die Teile der Stützenfamilie des Bahntyps (keine eigenen Draw Calls); die Hängebahn hat
+Pfeiler statt Haltern. Ergebnis: In den drei Testszenen schwebt keine Stütze mehr (Wandhalter 3, 2 und 2). Neue
+Halter-Probe `test-halter` (Felswand ohne Kante, Überhang über einem See): 7 Wandhalter, 5 Deckenhalter, 2 Stellen ohne
+Halt (die Bahn zu dicht unter dem Fels oder zu weit von allem). Szenario 30. Vergleichsblatt mit den Vorbildern (nur
+lokal, es zeigt Bilder aus `refs/`); unsere Bilder allein: `docs/research/halter/2026-10-30-halter-vorschlag.jpg`.
+**Platzhalter:** alle Formen und Maße der Halter, die Reichweiten (4 m, 2,6 m, 3,2 bis 12 m), die Regel „je Lauf die
+nächste Variante“. Gemalte oder modellierte Halter gehören zur Stützen-Werkstatt (Etappe 4 im großen Plan).
+**Offen:** Florians Wahl der Varianten und der Mischregel.
+**Noch offen aus Stufe 4:** Szene 06 und Tor S4. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
 lang, die Schraffuren. **Nicht geprüft:** Szene 06 in Formen (Tor S4), Stroke-Replay mit dem Ebenen-Pinsel (der Replay
 kennt den Modus nicht), 60 fps am Handy.
 

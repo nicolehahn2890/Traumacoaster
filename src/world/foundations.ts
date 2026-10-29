@@ -18,6 +18,42 @@ export interface Foundation {
   surfaceBelow(x: number, y: number, z: number): FootHit | null;
   /** sperrt die Stelle für Füße (Wasserfläche), auch wenn ein anderes Fundament darunter trüge */
   blocks?(x: number, z: number): boolean;
+  /**
+   * Halter (Zonen-Editor, Stufe 4; Florian 28.10.: „Stützen bekommen Wand- und Deckenhalter“): Wo unter dem Anschluss
+   * (x, y) auf Spur z nichts trägt, eine feste Wand knapp hinter der Bahn, an der eine Konsole hält (Punkt auf der Wand
+   * unter dem Anschluss: Höhe und Spur), oder eine Decke darüber, an der ein Hänger hängt (Unterseite: Höhe und Spur)
+   */
+  wallAnchor?(x: number, y: number, z: number): HolderHit | null;
+  ceilingAnchor?(x: number, y: number, z: number): HolderHit | null;
+  /** Kante einer Ebene etwas weiter hinter der Bahn, auf der eine Stütze in der Tiefe der Bahn stehen kann (nach der Wand) */
+  footBehind?(x: number, y: number, z: number): FootHit | null;
+}
+
+export interface HolderHit {
+  /** Höhe des Halterpunkts an Wand oder Decke (Meter) */
+  y: number;
+  /** Spur der Wand oder Decke */
+  z: number;
+}
+
+/**
+ * Halter für eine Stelle ohne Fuß: erst eine Wand dahinter (Konsole), dann eine Kante etwas weiter hinter der Bahn (eine
+ * gewöhnliche Stütze, kind foot), dann eine Decke darüber (Hänger); null, wenn alles fehlt
+ */
+export function holderAt(foundations: readonly Foundation[], x: number, y: number, z: number): (HolderHit & { kind: 'wall' | 'ceiling' | 'foot' }) | null {
+  for (const f of foundations) {
+    const w = f.wallAnchor?.(x, y, z);
+    if (w) return { ...w, kind: 'wall' };
+  }
+  for (const f of foundations) {
+    const b = f.footBehind?.(x, y, z);
+    if (b) return { y: b.y, z, kind: 'foot' };
+  }
+  for (const f of foundations) {
+    const c = f.ceilingAnchor?.(x, y, z);
+    if (c) return { ...c, kind: 'ceiling' };
+  }
+  return null;
 }
 
 /** das Terrain des Levels, wie es der Planer der Bühne liest (Boden plus Berg, kein Wasser) */

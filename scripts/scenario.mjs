@@ -2344,6 +2344,58 @@ if (want('29')) {
   check(!s7.objs.some((n) => n.kind === 'coins') && s7.objs.length === 3, `Coins mit Entf entfernt (${s7.objs.map((n) => n.kind).join(', ')})`);
 }
 
+// 30. Zonen-Editor, Stufe 4: Wand- und Deckenhalter (Florian, 28.10.2026). In der Halter-Probe (scripts/testzonen.ts
+// test-halter) steigt ein Strich vor einer Felswand ohne Kante (Wandhalter) und läuft unter einem Überhang über einem See
+// (Deckenhalter); die Fahrt läuft.
+if (want('30')) {
+  await page.goto(`${BASE}?zone=test-halter&editor=2&dev=1&fast=6`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  await page.keyboard.press('Tab');
+  await sleep(1500);
+  const pts = await page.evaluate(() => {
+    const s = window.tcGame.current;
+    const ed = s.planeEditor;
+    const end = s.path.nodes[s.path.nodes.length - 1];
+    const q0 = window.tcGame.world.camera.toScreen(end.x, end.y, end.z);
+    const fels = ed.nodes.find((n) => n.kind === 'plane' && n.name === 'Fels');
+    const way = [[30, 9], [37, 14.5], [45, 20.5], [53, 25], [58, 26], [64, 14], [72, 11.5], [84, 11], [96, 11.5], [106, 10.5], [114, 8], [120, 7]];
+    return [[q0.x, q0.y], [q0.x + 20, q0.y - 2], ...way.map(([x, y]) => {
+      const q = ed.screenOf(fels, { x, y });
+      return [q.x, q.y];
+    })];
+  });
+  await page.evaluate(async (pts) => {
+    const el = document.querySelector('canvas');
+    const ev = (type, [x, y]) => el.dispatchEvent(new PointerEvent(type, { pointerId: 30, pointerType: 'mouse', button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: x, clientY: y, bubbles: true, cancelable: true, isPrimary: true }));
+    const dense = [];
+    for (let i = 0; i + 1 < pts.length; i++) for (let k = 0; k < 8; k++) dense.push([pts[i][0] + ((pts[i + 1][0] - pts[i][0]) * k) / 8, pts[i][1] + ((pts[i + 1][1] - pts[i][1]) * k) / 8]);
+    dense.push(pts[pts.length - 1]);
+    ev('pointerdown', dense[0]);
+    for (let i = 1; i <= 5; i++) ev('pointermove', dense[i]);
+    for (let i = 6; i < dense.length; i++) {
+      ev('pointermove', dense[i]);
+      await new Promise((r) => setTimeout(r, 15));
+    }
+    ev('pointerup', dense[dense.length - 1]);
+  }, pts);
+  await sleep(2000);
+  const sup = await page.evaluate(() => window.tcGame.world.supportStats);
+  check(sup && sup.wall >= 4 && sup.ceiling >= 3 && sup.ground === 0, `Halter-Probe: ${sup?.wall} Wandhalter vor der Felswand, ${sup?.ceiling} Deckenhalter unter dem Überhang, ${sup?.element} Stützen auf Kanten`);
+  check(sup && sup.floating <= 2, `Halter-Probe: höchstens zwei Stellen ohne Halt (${sup?.floating}: Bahn zu dicht am Fels oder zu weit von allem)`);
+  await page.screenshot({ path: 'screenshots/scenario-30-halter.png' });
+  await page.mouse.click(640, 800 - 56);
+  let ride = null;
+  for (let i = 0; i < 20; i++) {
+    await sleep(400);
+    ride = await page.evaluate(() => {
+      const s = window.tcGame.current;
+      return { mode: s.mode, t: s.sim ? s.sim.t : 0, fail: s.sim?.failReason ?? null };
+    });
+    if (ride.mode === 'result' || ride.t > 2) break;
+  }
+  check(ride && (ride.t > 1 || ride.mode === 'result'), `Halter-Probe: Fahrt läuft (${ride?.mode}, ${Number(ride?.t ?? 0).toFixed(1)} s${ride?.fail ? `, ${ride.fail}` : ''})`);
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));

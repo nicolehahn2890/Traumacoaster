@@ -874,12 +874,22 @@ Plan: `docs/ZONENEDITOR-PLAN.md`, Stufe 4 und 4.9. Ohne DOM: `src/zone/dock.ts`,
 - **Startbild:** Hat die Zone Felder, beginnt der Zonen-Editor mit dem ersten Feld im freien Bereich zwischen den Leisten
   (`EditorUi.freeRect`: rechts der Werkzeuge, links der Ebenenliste, unter Kopf- und Ansichtsleiste, über der Leiste
   unten; 8 % Rand), damit seine Kanten greifbar sind; sonst wie bisher an der Station.
-- **Prüfungen:** `tests/dock.test.ts`, `tests/planeStack.test.ts`, `tests/playObjects.test.ts`; Szenario 24 (Andockkanten, Material, Handy-Link),
+- **Halter** (30.10., `src/world/supports.ts`, `PlaneFoundation` in `planeStack.ts`): `Foundation` hat optional
+  `wallAnchor`, `footBehind` und `ceilingAnchor`; `holderAt` fragt sie in dieser Reihenfolge, wenn `footBelow` nichts
+  findet. `wallAnchor`: vorderste spielbare Ebene von 0,3 m vor bis 4 m hinter der Bahn, die bis 4 m unter dem Anschluss
+  fest wird; Punkt 2,6 m darunter (mindestens 0,6 m im Festen). `footBehind`: Andockkante einer Ebene mehr als DOCK_GAP
+  und höchstens 4 m hinter der Bahn, die Stütze steht in der Tiefe der Bahn. `ceilingAnchor`: niedrigste feste Unterseite
+  3,2 bis 12 m über dem Anschluss, darunter frei. Der Plan (`SupportPlan3D.holder`, `variant`, `T`) zeichnet
+  `wallHolder` (V-Konsole, Kragarm, Bogenkonsole) oder `ceilingHolder` (Hänger, Pendel, V-Hänger) mit den Batches der
+  Familie; die Variante wechselt mit jedem Lauf einer Art, `&halter=1..3` legt sie fest. `SupportStats` zählt `wall`,
+  `ceiling` und merkt sich in `floatAt`, wo nichts hält.
+- **Prüfungen:** `tests/dock.test.ts`, `tests/planeStack.test.ts`, `tests/playObjects.test.ts`, `tests/halter.test.ts`; Szenario 24 (Andockkanten, Material, Handy-Link),
   25 (Station, Strich über der Kante: Tiefe der Ebene, Stützen auf Kanten, Fahrt), 26 (Höhle: Strich durch den Mund
   landet auf der Rückwand, Stützen auf dem unteren Rand der Öffnung), 27 (die drei Testszenen: Startbild, Station,
   Strich in die erwarteten Tiefen, Stützen, Fahrt; der Strich geht als Zeigerereignisse in der Seite, weil Swiftshader
   die großen Szenen so langsam zeichnet, dass sonst der Langdruck nach 480 ms auslöst), 29 (Spielobjekte setzen, ziehen und
-  ändern, Ziele und Stufe eines Felds, beim Spielen Welt, Coins, Wand und Ziele).
+  ändern, Ziele und Stufe eines Felds, beim Spielen Welt, Coins, Wand und Ziele), 30 (Halter-Probe `test-halter`: Wand-
+  und Deckenhalter, Fahrt).
 
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).

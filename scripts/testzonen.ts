@@ -10,6 +10,8 @@
  * - tor-s5: Tor S5 (Stufe 5), ein Satz Körper im Earle-Look: Wiese, Bogen, Baum (Earles Favoriten 01, 03, 05, Florians
  *   Bilder 6 bis 8, Baukasten 05 und 06, Visuals 14 und 43); die Earle-Vorgaben liegen schon auf den Formen. Vorschlag:
  *   Formen, Farben und die Wahl der Vorgaben sind nicht festgelegt
+ * - test-halter: Probe für Wand- und Deckenhalter (Stufe 4): eine Felswand ohne Kante unter der Bahn und ein Überhang über
+ *   einem See (Szene 06 mit ihren Wandkonsolen, `bahn und strecke/15-wandkonsole`)
  *
  * Platzhalter: alle Formen, Farben, Tiefen; Testgrundlage, kein Inhalt (Tor S4 baut Szene 06 eigens nach). Jede Ebene ist
  * mit „Bild halten“ so gesetzt, dass sie in der Startansicht des Editors (ganze Zonenbreite) aussieht wie hier gezeichnet:
@@ -723,11 +725,47 @@ function torS5(): SceneSpec {
   };
 }
 
+/**
+ * Probe für die Halter (Stufe 4): links Wiese mit Station, dann eine Felswand, vor der die Bahn steigt (unter ihr keine
+ * Kante: Wandhalter), rechts ein Überhang über einem See (unter der Bahn nichts, darüber Fels: Deckenhalter), dahinter
+ * wieder Wiese. Platzhalter wie die anderen Testszenen
+ */
+function halter(): SceneSpec {
+  const strata: Grad = { stops: [[C['Sandstein hell'], 0], [C['Sandstein hell'], 0.3], [C['Sandstein'], 0.31], [C['Sandstein'], 0.6], [C['Ocker'], 0.61], [C['Ocker'], 1]], from: [60, 40], to: [60, -10] };
+  // Fels: Wand von unten bis zur Kante oben, dann der Arm des Überhangs nach rechts (Unterseite bei 20 m)
+  const rock: Pt[] = [[29, -70], [29.5, 4], [30.5, 14], [31, 24], [32.5, 33], [40, 35.6], [52, 36.4], [64, 37], [78, 37.6], [92, 37], [102, 35.4], [106.5, 31], [106, 25.4], [101, 21.6], [90, 20.2], [76, 19.8], [66, 18.6], [62.5, 14], [61.5, 4], [61, -70]];
+  const grass: Pt[] = [[32.4, 33.6], [40, 36.6], [52, 37.4], [64, 38], [78, 38.6], [92, 38], [102, 36.4], [102, 33.8], [92, 35], [78, 35.6], [64, 35], [52, 34.4], [40, 33.6]];
+  return {
+    name: 'test-halter',
+    groups: ['Probe', 'Kulisse'],
+    station: { plane: 'Fels', x: 4 },
+    field: 'Halter',
+    planes: [
+      {
+        name: 'Fels',
+        z: 6,
+        role: 'play',
+        group: 'Probe',
+        shapes: [
+          { name: 'Wiese links', outline: band([[-60, 3], [-30, 3.6], [-10, 4.2], [0, 4.4], [10, 4.6], [20, 4.8], [28, 5]]), fill: C['Wiese'], grad: hillGrad(6, C['Wiese hell'], C['Wiese dunkel']) },
+          { name: 'Wand', outline: rock, fill: C['Sandstein hell'], material: 'solid', grad: strata },
+          { name: 'Grasdecke', outline: grass, fill: C['Wiese'], grad: hillGrad(39, C['Wiese hell'], C['Wiese']) },
+          { name: 'See', outline: [[61, -70], [61.5, -1], [80, -0.6], [100, -1], [108.4, -1.2], [108, -70]], fill: C['Wasser'], material: 'free', grad: { stops: [[C['Wasser hell'], 0], [C['Wasser'], 1]], from: [0, -1], to: [0, -12] } },
+          { name: 'Wiese rechts', outline: band([[108, 2.4], [116, 3.6], [130, 4.4], [160, 4], [190, 3.6]]), fill: C['Wiese'], grad: hillGrad(5, C['Wiese hell'], C['Wiese dunkel']) },
+        ],
+      },
+      { name: 'Hügel fern', z: 70, role: 'backdrop', group: 'Kulisse', shapes: [farHills([[-60, 22], [-20, 25], [20, 27], [60, 24.6], [100, 27.4], [140, 25], [190, 24]])] },
+      { name: 'Wolke', z: 80, role: 'air', group: 'Kulisse', shapes: [cloud(84, 50, 22)] },
+      { name: 'Berge', z: 115, role: 'backdrop', group: 'Kulisse', shapes: mountains([[18, 48], [96, 51]]) },
+    ],
+  };
+}
+
 // ------------------------------------------------------------------ schreiben und prüfen
 
 // alle Szenen bauen (der Zufall läuft in dieser Reihenfolge), nur die genannten schreiben
 const only = process.argv.slice(2);
-for (const scene of [huegel(), grotte(), boegen(), torS5()].filter((s) => !only.length || only.includes(s.name))) {
+for (const scene of [huegel(), grotte(), boegen(), torS5(), halter()].filter((s) => !only.length || only.includes(s.name))) {
   seed = 7;
   const nodes = build(scene);
   // das Feld als Feldknoten (Zonen-Editor) und als Spiegel in den Feldern der Zonendatei (Klötzchen-Editor)
