@@ -31,7 +31,7 @@ import { strokeToTrack, closePath, extendTrack, interpretStroke, lanesTrack, typ
 import { bendSegment } from '@/track/edit';
 import { RubberBrush, chaikin, resamplePolyline } from '@/track/brush';
 import { BrushRefiner, joinLines, lineLength, planBrushTrack, previewBrushTrack, spliceLine, swapCrossing, trackLine, trackLineWithDepth, type BrushPlan, type BrushPreview } from '@/track/brushTrack';
-import { FIX_BEHIND, Strich2, type Strich2Preview } from '@/track/strich2';
+import { FIX_BEHIND, FREEZE, Strich2, type Strich2Preview } from '@/track/strich2';
 import { TrackInspector, type WeakSpot } from '@/track/inspect';
 import { findCrossings } from '@/track/crossings';
 import { MeasureOverlay } from '@/render/measureOverlay';
@@ -180,10 +180,13 @@ const EDITOR2_URL = typeof location !== 'undefined' && new URLSearchParams(locat
 /** ?scroll=0: kein Autoscroll beim Zeichnen (automatische Tests zeichnen in festen Bildschirmkoordinaten) */
 const AUTOSCROLL = typeof location === 'undefined' || new URLSearchParams(location.search).get('scroll') !== '0';
 /**
- * Pinsel-Studie (28.10.2026, docs/PINSEL-STUDIE.md): Prototyp „Strich 2“ (kausal, fester Vorlauf, konstante Arbeit je
- * Vorschau) hinter &strich=2; mit &vorlauf=1 bleibt der noch unentschiedene Teil hinter der Spitze Tinte statt Schienen
+ * Pinsel-Studie (28.10.2026, docs/PINSEL-STUDIE.md): „Strich 2“ (kausal, fester Vorlauf, konstante Arbeit je Vorschau).
+ * Seit 29.10. (Florians Entscheidung 8) in Ebenen-Zonen die Vorgabe; &strich=1 nimmt den heutigen Pinsel, &strich=2
+ * erzwingt Strich 2 auch ohne Ebenen (0 = automatisch). Mit &vorlauf=1 bleibt der unentschiedene Teil Tinte statt Schienen
  */
-const STRICH_URL = urlNum('strich', 1);
+const STRICH_URL = urlNum('strich', 0);
+/** Strich 2: Vorlauf in Metern hinter der Spitze, ab dem die Tiefe fest wird (FREEZE; zum Ausprobieren, z. B. &vorlaufm=8) */
+const VORLAUFM_URL = urlNum('vorlaufm', FREEZE);
 /**
  * Strich 2: 1 (Vorgabe) zeigt die Schienen nur bis zum festen Teil, der Vorlauf bleibt Tinte und die Bahn zieht weich
  * nach, sobald die Tiefe entschieden ist; 2 zeigt den Vorlauf vorläufig als Schienen bis zur Spitze
@@ -2357,7 +2360,9 @@ export class LevelScene implements Scene {
     this.brushBase = this.strokeKind === 'extend' && this.samples ? trackLineWithDepth(this.samples) : null;
     // Pinsel „Spur halten“ (Kamerawinkel-Test): hält die Tiefe am Ende der alten Bahn, ein neuer Strich die Spur unter dem Anfang
     this.brushHoldZ = this.brushBase?.z.length ? this.brushBase.z[this.brushBase.z.length - 1] : NaN;
-    this.strich2 = STRICH_URL >= 2 && this.strokeKind !== 'overdraw' ? new Strich2(() => this.brushOptions(), this.brushBase, this.planeStartDepth(), Math.max(8, 60 / this.view.camera.zoom), FEST_URL) : null;
+    // Strich 2 ist der Pinsel der Ebenen-Zonen (sonst der heutige), Überzeichnen fällt noch auf den heutigen zurück
+    const useStrich2 = STRICH_URL >= 2 || (STRICH_URL === 0 && this.planeStack !== null);
+    this.strich2 = useStrich2 && this.strokeKind !== 'overdraw' ? new Strich2(() => this.brushOptions(), this.brushBase, this.planeStartDepth(), Math.max(8, 60 / this.view.camera.zoom), FEST_URL, VORLAUFM_URL) : null;
     this.previewTimer = 0;
     this.setDrawCursor(true);
   }

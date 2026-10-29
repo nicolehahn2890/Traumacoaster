@@ -246,7 +246,7 @@ export class Strich2 {
   /**
    * base: alte Bahn (Linie mit Tiefe je Punkt), an die der Strich anschließt; startZ: Tiefe am Anfang eines neuen
    * Strichs (Landung oder Bodenhöhe der Ebenen); closeSnap: so nah muss das Ende dem Anfang kommen, damit die Runde
-   * schließt
+   * schließt; lookahead: Vorlauf in Metern hinter der Spitze, ab dem die Tiefe fest wird (FREEZE)
    */
   constructor(
     private readonly options: () => BrushOptions,
@@ -254,6 +254,7 @@ export class Strich2 {
     startZ: number,
     private readonly closeSnap: number,
     private readonly fixBehind = FIX_BEHIND,
+    private readonly lookahead = FREEZE,
   ) {
     if (base && base.line.length >= 2) {
       base.line.forEach((p, i) => this.pts.push(this.newPt({ ...p }, base.z[i])));
@@ -644,10 +645,10 @@ export class Strich2 {
     return out;
   }
 
-  /** bis zu welchem Index (ausschließlich) eingefroren werden darf: FREEZE hinter der Spitze, aber nie in ein offenes steiles Stück hinein */
+  /** bis zu welchem Index (ausschließlich) eingefroren werden darf: lookahead (FREEZE) hinter der Spitze, aber nie in ein offenes steiles Stück hinein */
   private freezeLimit(final = false): number {
     const n = this.pts.length;
-    let limit = Math.min(this.lineFinal, n - Math.round(FREEZE / STEP));
+    let limit = Math.min(this.lineFinal, n - Math.round(this.lookahead / STEP));
     if (final) return limit;
     let first = this.baseLen;
     while (first < n && this.pts[first].frozen) first++;

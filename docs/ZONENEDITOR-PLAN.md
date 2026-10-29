@@ -1078,6 +1078,12 @@ Etappe 2); Bahn durch die Höhle gezeichnet und gefahren, Stützen auf Kanten; R
   zurückgespiegelt. Der Editor startet mit dem ersten Feld im freien Bereich zwischen den Leisten. Szenario 28.
   **Noch nicht im Zonen-Editor:** Ziele, Fortschritts- und Aufwertungsstufe, Schalter eines Felds (sie bleiben erhalten,
   bearbeitet werden sie bis dahin im Klötzchen-Editor).
+**Pinsel (29.10.2026, Pinsel-Studie `docs/PINSEL-STUDIE.md`):** Florians Entscheidung 8 der Studie: „Strich 2“ (kausal,
+fester Vorlauf 12 m, Knoten gefittet wie beim bisherigen Pinsel, pinkes Band als Vorlauf) ist in Ebenen-Zonen die Vorgabe
+des Pinsels; `&strich=1` nimmt den bisherigen Pinsel, `&strich=2` erzwingt Strich 2 auch ohne Ebenen, `&vorlaufm=N` setzt den
+Vorlauf in Metern zum Ausprobieren. Überzeichnen fällt noch auf den bisherigen Pinsel zurück; Fortsetzen auf Strich 2,
+Kreuzungen über Spuren getrennt und die Handy-Messung bei 1000 m sind Stufe P1 der Studie (ihr Tor P2 ist Tor S4). Zonen
+ohne Ebenen zeichnen weiter mit dem bisherigen Pinsel.
 **Noch offen aus Stufe 4:** die übrigen Spielobjekte auf Kanten (Schlange, Ziele, Stufen, Schalter, Coins, Baustellen;
 bis dahin der Klötzchen-Editor), Durchblick-Prüfung. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
 lang, die Schraffuren. **Nicht geprüft:** Szene 06 in Formen (Tor S4), Stroke-Replay mit dem Ebenen-Pinsel (der Replay

@@ -43,6 +43,12 @@ nach hinten in Metern (eine Spur = 8,4 m). **Loslassen** = der Finger geht hoch,
    engen Knoten an Kreuzungen, weil Strich 2 Stränge nur um den Mindestabstand trennt, und die kürzere Tiefenglättung), und der ganze Vorlauf ist das pinke
    Band statt schwarzer Tinte. Das Band ist mit 12 m (178 px) länger als beim heutigen Pinsel (41–109 px) und holt beim
    Anhalten nicht auf: Das ist die Entscheidungszeit, als Entscheidung in Abschnitt 8 und 10 festgehalten.
+9. Dritter Nachtrag (Abschnitt 11): Florians dritter Test am 29.10. („gefällt mir schon ganz gut, braucht aber noch
+   sehr viel Feintuning“) und seine Entscheidung: hier der Strich weiter (Stufe P1 als Teil von Editor-Stufe 4), die
+   Editor-Session parallel am Earle-Look (Stufe 5). Strich 2 ist seitdem in Ebenen-Zonen die Vorgabe (`&strich=1` =
+   bisheriger Pinsel). Die Vorlauflänge (12, 8, 6 m) macht auf seinen 18 + 27 + 31 Strichen in Form, Sprung und Fahrt
+   keinen messbaren Unterschied (±6 %, ohne Richtung), nur das Band wird kürzer (178 → 118 → 89 px bei zoom 14,8):
+   Entscheidung 1 ist damit eine reine Gefühlsfrage, am Mac mit `&vorlaufm=6` oder `8` ausprobierbar.
 
 ## 2. Befund am heutigen Pinsel
 
@@ -522,3 +528,74 @@ statt 20 m (wie heute) 108 Knoten und 247 statt 285 Knicke.
 `npm run build` grün, Szenarien 1–28 gegen den Messserver :5188 alle bestanden (Stand nach allen Änderungen dieses
 Abschnitts); der heutige Pinsel ist ohne `&strich=2` unverändert, `reduceNodes` hat nur die optionale Vorgabe der
 Anfangs- und Endtangente dazubekommen, die er nicht nutzt.
+
+## 11. Nachtrag 29.10.: Strich 2 wird der Pinsel, Vorlauflänge gemessen (Florians dritter Test)
+
+Florian hat am 29.10. früh 18 Striche in `test-huegel` gezeichnet (Stand 960ea46: gefittete Knoten, pinkes Band) und
+gesagt: „gefällt mir schon ganz gut, braucht aber noch sehr viel Feintuning“. Auf die Frage Editor oder Strich fiel die
+Entscheidung: hier der Strich (Stufe P1 ist der kritische Pfad von Editor-Stufe 4, Tor S4 braucht eine gezeichnete und
+gefahrene Bahn durch Szene 06), die Editor-Session beginnt parallel mit Stufe 5 (Earle-Look). Damit ist Entscheidung 8
+aus Abschnitt 8 gefallen: Strich 2 wird der Pinsel der Ebenen-Zonen. Seine Feintuning-Punkte hat er noch nicht genannt;
+sie kommen nach seinem nächsten Zeichnen als Liste.
+
+**Geändert (`src/app/scenes/level.ts`, `src/track/strich2.ts`, `scripts/pinsel-messung.ts`, `tests/strich2.test.ts`):**
+
+- **Vorgabe:** In Zonen mit Ebenenstapel zeichnet der Pinsel jetzt ohne Parameter mit Strich 2; `&strich=1` nimmt den
+  bisherigen Pinsel, `&strich=2` erzwingt Strich 2 auch ohne Ebenen (0 = automatisch). Zonen ohne Ebenen (Klötzchen,
+  Werkstatt) bleiben beim bisherigen Pinsel, dort ist Strich 2 nicht gemessen. Überzeichnen fällt weiter auf den
+  bisherigen Pinsel zurück (Stufe P1).
+- **Vorlauf als Einstellung:** `Strich2` nimmt die Vorlauflänge als sechsten Parameter (`FREEZE` 12 m bleibt Vorgabe);
+  im Spiel `&vorlaufm=8` (Meter), in der Messung `--vorlauf 8`. Neu auch `--tag JJJJ-MM-TT`, weil `--heute` fest den
+  28.10. meint. Ein Test prüft, dass ein kürzerer Vorlauf um genau so viele Meter früher fest wird (457 Tests).
+- **Geprüft im Browser** (:5188, `?zone=test-huegel&editor=2`, Strich in der Seite als Zeigerereignisse): ohne Parameter
+  läuft Strich 2 (mitten im Strich 38 von 50 Linienpunkten fest, 12 m Vorlauf bei zoom 5,1; nach dem Loslassen 78 m Bahn
+  mit 4 Knoten); mit `&strich=1` läuft der bisherige Pinsel (12 Knoten in der Vorschau, kein fester Teil).
+
+**Vorlauflänge nachgespielt** (`--strich 2 --vorlauf 12|8|6`, Median je Strich; die Spalte „heute“ ist der bisherige
+Pinsel auf denselben Strichen):
+
+| Satz | Vorlauf | Knoten | Knicke | Rollen je 100 m | Tiefenspanne / Umkehr | Sprung Loslassen (px / m) | Fahrt (Abbruch an Kreuzung) |
+|---|---|---|---|---|---|---|---|
+| 18 Striche 29.10. (`test-huegel`) | 12 m | 41 | 82 | 123° | 20,5 m / 11 | 0,1 / 0,2 | 0 von 18 (3) |
+| | 8 m | 41 | 73 | 118° | 21,9 m / 13 | 0,1 / 0,2 | 0 (3) |
+| | 6 m | 43 | 85 | 122° | 20,7 m / 13 | 0,1 / 0,2 | 0 (2) |
+| | heute | 32 | 104 | 144° | 29,2 m / 11 | 24,9 / 0,2 | 0 (2) |
+| 27 Striche 28.10. 21:34 | 12 m | 71 | 188 | 112° | 17,8 m / 21 | 0,2 / 0,2 | 0 von 27 (13) |
+| | 8 m | 72 | 190 | 115° | 18,6 m / 19 | 1,3 / 0,2 | 0 (13) |
+| | 6 m | 72 | 180 | 117° | 17,8 m / 19 | 0,2 / 0,2 | 0 (13) |
+| | heute | 54 | 229 | 142° | 30,5 m / 16 | 29,4 / 7,4 | 4 (7) |
+| 31 Striche 28.10. 18:39 | 12 m | 99 | 249 | 125° | 26,5 m / 25 | 0,1 / 0,2 | 0 von 31 (18) |
+| | 8 m | 97 | 265 | 126° | 26,6 m / 25 | 0,1 / 0,2 | 0 (17) |
+| | 6 m | 105 | 263 | 126° | 26,3 m / 25 | 0,1 / 0,2 | 0 (17) |
+| | heute | 59 | 187 | 149° | 40,7 m / 19 | 15,7 / 0,1 | 0 (10) |
+
+**Lesart, ehrlich:**
+
+- **Die Vorlauflänge kostet in der Form nichts Messbares.** Knoten, Knicke, Rollen, Tiefenspanne und Umkehrungen
+  liegen bei 6, 8 und 12 m innerhalb von ±6 % und ohne Richtung (Knicke auf den 31 Strichen +6 %, auf den 18 Strichen
+  bei 8 m −11 %, bei 6 m +4 %). Der Sprung beim Loslassen bleibt 0, die Fahrt ändert sich nicht (die Kreuzungen sind
+  bei allen drei Längen der erste Abbruchgrund, Stufe P1/P4).
+- **Was sich ändert, ist nur das Band:** 12 m sind bei zoom 14,8 rund 178 px, 8 m 118 px, 6 m 89 px, dazu kommen in
+  allen Fällen rund 34 px, um die die Pinselspitze selbst hinter dem Finger hängt (gemessen, unabhängig vom Vorlauf).
+  Der bisherige Pinsel liegt bei 41–109 px (Tempo mal 0,14 s). Mit 6 m ist Strich 2 also in derselben Liga. Die
+  Wahl ist eine Gefühlsfrage, keine Messfrage: Entscheidung 1 aus Abschnitt 8, am Mac mit `&vorlaufm=6` und `8`
+  ausprobierbar, ohne neuen Stand.
+- **Vorbehalt:** Ein kürzerer Vorlauf sieht an einer beginnenden Kehre weniger Zukunft. In den drei Sätzen (darunter
+  die schleifenreichen 31) zeigt sich das in den Zahlen nicht; ein eigener Kehren-Satz (nur Kehren, groß gezeichnet)
+  ist nicht gemessen.
+- **Heute gegen Strich 2 auf den 18 Strichen von heute:** 32 gegen 41 Knoten (1,3-fach, weniger Kreuzungen als in den
+  Schleifen-Sätzen), Knicke 104 gegen 82, Sprung beim Loslassen 24,9 gegen 0,1 px. Fahrbar ist in `test-huegel` mit
+  keinem Pinsel ein Strich (Entgleisen, Stehenbleiben, Fall, Kreuzung), das ist Stufe P4 und offen.
+- **Zeiten:** Die 8- und 6-m-Läufe liefen parallel zu Build und Szenarien, ihre Vorschau- und Plan-Zeiten (8–10 ms)
+  sind darum nicht mit den 12-m-Läufen im Leerlauf (5,2–5,6 ms) vergleichbar; die Nachmessung im Leerlauf steht unten.
+
+**Absicherung:** 457 Tests (einer neu: Vorlauflänge) und `npm run build` grün; Szenarien 1–28 gegen den Messserver
+:5188 alle 200 Prüfungen bestanden, mit Strich 2 als Vorgabe in den Ebenen-Szenen 25–28 (Szenario 25 setzt jetzt 8 statt
+5 Knoten, alle in der Tiefe der Ebene). Zonen ohne Ebenen laufen unverändert mit dem bisherigen Pinsel. Nicht geprüft:
+das Gefühl am Mac mit kürzerem Vorlauf, das Handy, Zonen ohne Ebenen mit `&strich=2`.
+
+**Zeiten im Leerlauf nachgemessen** (18 Striche vom 29.10., ohne parallele Läufe): Vorlauf 12 m: Vorschau 5,8 ms im
+Median, 90 % 12,3 ms, Plan beim Loslassen 5,6 ms; Vorlauf 6 m: 5,6 / 12,1 / 5,5 ms. Die Vorlauflänge kostet also auch in
+der Zeit nichts; die 8–10 ms in der Tabelle oben waren Last durch Build und Szenarien (derselbe 12-m-Lauf unter Last
+9,6 ms, im Leerlauf 5,8 ms). Stand: `zoneneditor` steht noch auf e38bf6b; der Fast-Forward dorthin wurde der
+Studien-Session vom Berechtigungsmodus verweigert (fremder Worktree), wie der Stand hereinkommt, entscheidet Florian.

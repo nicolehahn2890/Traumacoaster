@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { BrushOptions, Landing } from '@/track/brushTrack';
-import { FREEZE, Strich2 } from '@/track/strich2';
+import { FIX_BEHIND, FREEZE, Strich2 } from '@/track/strich2';
 import { LANE_DEPTH, setPerspective, type StagePoint } from '@/track/stage';
 import type { FreeLanes } from '@/zone/field';
 
@@ -53,6 +53,18 @@ function run(s: Strich2, pts: StagePoint[], every = 5): Float64Array[] {
 }
 
 describe('Strich 2: kausal mit festem Vorlauf', () => {
+  it('nimmt den Vorlauf als Länge: ein kürzerer Vorlauf wird um genau so viele Meter früher fest', () => {
+    // 60 m Linie (Punkte alle 0,2 m): mit 12 m Vorlauf sind 48 m fest, mit 6 m Vorlauf 54 m
+    const pts = polyline([[0, 10], [60, 10], [120, 10]]);
+    const kurz = new Strich2(() => stepOptions(50), null, 4, 8, FIX_BEHIND, 6);
+    const lang = new Strich2(() => stepOptions(50), null, 4, 8);
+    const pk = kurz.update(pts.slice(0, 301));
+    const pl = lang.update(pts.slice(0, 301));
+    expect(pk && pl).toBeTruthy();
+    expect(pl!.frozen).toBeGreaterThan(0);
+    expect(pk!.frozen).toBe(pl!.frozen + (FREEZE - 6));
+  });
+
   it('ändert eine Tiefe nie mehr, sobald sie fest ist, und springt beim Loslassen nicht', () => {
     const pts = polyline([[0, 10], [60, 10], [120, 10]]);
     const s = new Strich2(() => stepOptions(50), null, 4, 8);

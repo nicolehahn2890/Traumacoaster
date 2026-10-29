@@ -12,7 +12,9 @@
  *     Vorschau.
  *  d) Fertige Bahn: Knicke, Rollrate, Tiefenwechsel, Fahrt, Stützen ohne Fuß.
  *
- *   npx tsx scripts/pinsel-messung.ts <strokes.jsonl> [--heute] [--alt] [--last N] [--skip N] [--json datei] [--strich 2] [--fest N]
+ *   npx tsx scripts/pinsel-messung.ts <strokes.jsonl> [--heute] [--tag JJJJ-MM-TT] [--alt] [--last N] [--skip N] [--json datei] [--strich 2] [--fest N] [--vorlauf M]
+ *
+ *   --heute: die Striche vom 28.10.2026 in den Testszenen (Satz des Berichts); --tag: Striche eines anderen Tages in Zonen
  *
  * Nur lesend auf der Aufnahme. Zonen aus public/zones/<zone>/zone.json; Striche in test-boegen mit Feld f2 laufen in der
  * Kopie von Florians geändertem Bogenland (test-boegen-f2).
@@ -36,7 +38,7 @@ import { trackFrames } from '../src/world/trackMesh';
 import { buildTrack } from '../src/world/trackBuilder';
 import { planWorldSupports } from '../src/world/supports';
 import { trackTypeForSkin } from '../src/world/trackTypes';
-import { FIX_BEHIND, Strich2, type Strich2Preview } from '../src/track/strich2';
+import { FIX_BEHIND, FREEZE, Strich2, type Strich2Preview } from '../src/track/strich2';
 
 interface Rec {
   at: string;
@@ -60,7 +62,7 @@ const opt = (f: string): string | null => {
   const i = args.indexOf(f);
   return i >= 0 ? args[i + 1] : null;
 };
-const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
+const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest', '--vorlauf', '--tag'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
 const LAST = Number(opt('--last') ?? 0);
 /** so viele der jüngsten Striche weglassen (ein älterer Satz bleibt vergleichbar, wenn neue dazukamen) */
 const SKIP = Number(opt('--skip') ?? 0);
@@ -70,6 +72,8 @@ const NUR = opt('--nur');
 const DEBUG = Number(opt('--debug') ?? -1);
 /** Strich 2: Meter hinter dem festen Ende, ab denen ein Bahn-Segment fest wird (FIX_BEHIND) */
 const FEST = Number(opt('--fest') ?? FIX_BEHIND);
+/** Strich 2: Vorlauf in Metern hinter der Spitze, ab dem die Tiefe fest wird (FREEZE) */
+const VORLAUF = Number(opt('--vorlauf') ?? FREEZE);
 /** wie in der Level-Szene: Band 22 px, Vorschau höchstens alle 50 ms, sonst nach dem 1,5-Fachen ihrer Dauer */
 const BAND_PX = 22;
 const PREVIEW_MIN_S = 0.05;
@@ -92,6 +96,8 @@ let recs: Rec[] = readFileSync(file, 'utf8')
   .map((l) => JSON.parse(l) as Rec);
 recs = recs.filter((r) => r.reading === 'brush' && r.kind !== 'overdraw');
 if (flag('--heute')) recs = recs.filter((r) => r.at.startsWith('2026-10-28') && r.zone);
+const TAG = opt('--tag');
+if (TAG) recs = recs.filter((r) => r.at.startsWith(TAG) && r.zone);
 if (SKIP) recs = recs.slice(0, Math.max(0, recs.length - SKIP));
 if (flag('--alt')) recs = recs.filter((r) => !r.zone && r.at < '2026-10-28' && r.at >= '2026-10-23');
 if (NUR) recs = recs.filter((r) => r.zone === NUR);
@@ -503,7 +509,7 @@ function replay(rec: Rec, idx: number): StrokeResult {
   const holdZ = base?.z.length ? base.z[base.z.length - 1] : z ? (planeLanding(z.stack, stage(0))?.z ?? planeGroundDepth(z.stack, stage(0))) : NaN;
   const opts = brushOptionsFor(rec, z, terrain, holdZ, counters);
   // Strich 2: eigener Läufer mit festem Vorlauf; der nimmt die ganze Pinsellinie (keine Schleppe)
-  const s2 = STRICH >= 2 ? new Strich2(() => opts, base, holdZ, Math.max(8, 60 / rec.zoom), FEST) : null;
+  const s2 = STRICH >= 2 ? new Strich2(() => opts, base, holdZ, Math.max(8, 60 / rec.zoom), FEST, VORLAUF) : null;
   const brush = new RubberBrush(stage(0), BAND_PX / rec.zoom);
   const previews: PreviewRow[] = [];
   let pv: BrushPreview | null = null;
