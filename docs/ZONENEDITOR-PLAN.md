@@ -1136,6 +1136,26 @@ Schattenfarbe. **Nicht geprüft:** Bildrate am echten Handy (Messung am Mac), Pi
 aus Stufe 5:** Sonne als Griff im Bild, Kantenwelle, Farbnebel, Funkeln, Punktkronen mit Wind, Punktpinsel, Kosten je
 Schicht in der Leistungsanzeige; in zwei künstlichen Messvarianten (Testszenen ohne Kantenverlauf bzw. ohne Lichtkante)
 wurde es langsamer statt schneller, das wird bei der Handy-Messung mit angesehen.
+**Paket 2 (29.10.2026, nach dem Fast-Forward der Pinsel-Studie b658b07 nach `zoneneditor`; Earle-Zweig darauf gesetzt).**
+**Punktkronen** (`src/zone/crown.ts`, `src/world/crownMesh.ts`): echte Punkte als Achtecke in einem Draw Call, deckend
+ohne discard, Poisson-Scheibe in der Form und bis 15 cm darüber hinaus (gebuckelter Umriss wie Bild 6), dicht und hell
+zur Lichtkante, auf der Schattenseite lichter und dunkler, drei Tonstufen bis gelbgrün, in der Tiefe gestaffelt, Wind je
+Punkt, unter etwa einem Bildpunkt fallen sie weg; Zeile „Punktkrone“ im Füllstapel mit Werten, „+ Punktkrone“ unter
+„Earle …“, die Vorgabe „Krone“ setzt sie (hohe, schmale Formen wie Stämme nicht). **Kantenwelle**
+(`src/zone/edgeWave.ts`): ein ruhiges Rauschfeld verschiebt alle Punkte der Form gleich, geteilte Flächen bleiben
+lückenlos; nur im Bild, Stützen und Station stehen auf der glatten Kante, darum setzen die Vorgaben sie nicht
+automatisch („+ Kantenwelle“). **Sonne als Griff**: der Sonnenpfeil in der Lichtzeile dreht das Licht. **Handy-Messung**:
+`&earle=messen` am Spiel (zweiter Link im „Handy“-Feld) misst auf dem Gerät ohne Ebenen, wie gesichert, ohne Earle, mit
+Earle auf allen Flächen, je Schicht weniger und eine Kontrollzeile (`src/world/earleMessung.ts`). **Fehler gefunden und
+behoben:** Der Zwischenspeicher der Shader legte das durchsichtige Material unter dem Schlüssel des deckenden ab; nach
+einem Wechsel der Schichtfolgen zeichnete eine deckende Fläche dann durchsichtig (blass, ohne Tiefe, doppelt so teuer).
+Das waren die Ausreißer aus Paket 1; Regressionstest in `tests/earle.test.ts`. **Messung** (Mac, Metal, Spielblick
+1688 × 780, Earle auf allen Flächen mit Punktkronen): 1,4 bis 1,7 ms je Bild gegen 0,9 bis 1,2 ms ohne Earle;
+Gegenprobe pixelgleich. Vorher und nachher: `docs/research/earle/2026-10-29-earle-paket2.jpg`, Krone neben Bild 6:
+`docs/research/earle/2026-10-29-punktkrone.jpg`. **Platzhalter:** Werte der Punktkronen, Tonstufen, Kantenwelle,
+die Regel „Stämme ohne Krone“. **Nicht geprüft:** am echten Handy (die Messung steht bereit), Punktkronen mit Bahn und
+Fahrt davor, Kantenwelle an spielbaren Kanten. **Offen aus Stufe 5:** Punktpinsel, Farbnebel, Funkeln, Papier und
+Gouache aus Florians Scans.
 
 **Stufe 6: Bilder, Schnittmasken, Säume, Austausch (M).** Bildschichten, Schnittmaske, Saum entlang einer Kante,
 Malvorlage mit Fingerabdruck und Größenangabe, Umriss aus Bild, Import gemalter Teile mit Passmarken, KTX2 beim

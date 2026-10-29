@@ -28,6 +28,21 @@ import { BLEND_MODES, DOT_SOURCES, MAX_LAYERS, RAMP, hexToRgb, isGradient, layer
 import { faceBox, type Face } from '@/zone/faces';
 import { EDGE_IN, EDGE_OUT, faceEdge, type EdgeRaster } from '@/zone/edgeDistance';
 import { EdgeAtlas, grainTexture, rankTexture, RANK_N } from './earleTextures';
+import { cachedCrownPoints, crownColor, CROWN_STRIDE } from '@/zone/crown';
+import { cachedWavyFace } from '@/zone/edgeWave';
+import { CrownLayer, type CrownDot } from './crownMesh';
+
+/** was eine Punktkrone zum Zeichnen braucht: ihre Punkte (crown.ts), Form, Ebene, Rang, Grundfarbe, Luftanteil, Ton, Wind */
+interface CrownInput {
+  pts: Float32Array;
+  shape: ZoneShape;
+  plane: ZonePlane;
+  rank: number;
+  base: string;
+  air: number;
+  tone: number;
+  wind: number;
+}
 import type { LookName } from './looks';
 
 /** Abstand zweier Formen derselben Ebene in der Tiefe (Meter, zum Betrachter hin) */
@@ -514,14 +529,20 @@ export class PlaneLayer {
   private paintTex = dataTexture(ROW_W, 8);
   private rampTex = dataTexture(RAMP, 8);
   private readonly atlas = new EdgeAtlas();
+  /** Punktkronen (Stufe 5): alle Kronenpunkte der Zone in einem Mesh; dazu, was ihre Farben braucht */
+  private readonly crowns = new CrownLayer();
+  private crownInputs: CrownInput[] = [];
+  /** die zuletzt gebauten Knoten (Handy-Messung, `src/world/earleMessung.ts`) */
+  lastNodes: readonly ZoneNode[] = [];
   /**
    * Zahlen des letzten Aufbaus (Leistungsanzeige): Ebenen, Formen, Dreiecke, Zeilen, Verläufe, durchsichtige Flächen,
    * Flächen mit Kantenabstand und Höhe des Atlas, Zeit für Kantenabstand und Packen (ms)
    */
-  stats = { planes: 0, shapes: 0, triangles: 0, paints: 0, gradients: 0, clear: 0, edges: 0, atlas: 0, edgeMs: 0, variants: 0 };
+  stats = { planes: 0, shapes: 0, triangles: 0, paints: 0, gradients: 0, clear: 0, edges: 0, atlas: 0, edgeMs: 0, variants: 0, crowns: 0 };
 
   constructor() {
     this.group.name = 'ebenen';
+    this.group.add(this.crowns.mesh);
     this.uniforms = UniformsUtils.merge([UniformsLib.fog]);
     this.uniforms.uPaint = { value: this.paintTex };
     this.uniforms.uRamp = { value: this.rampTex };
@@ -556,7 +577,7 @@ export class PlaneLayer {
           if (this.special.size < 2 * MAX_VARIANTS) break;
         }
       }
-      this.special.set(sig, m);
+      this.special.set(key, m);
     }
     return m;
   }
@@ -566,6 +587,40 @@ export class PlaneLayer {
     if (look === this.look) return;
     this.look = look;
     this.fillTextures();
+    this.fillCrowns();
+  }
+
+  /** Zahl der Kronenpunkte (Leistungsanzeige, Messung) */
+  get crownDots(): number {
+    return this.crowns.dots;
+  }
+
+  /** Kronenpunkte in die Welt: Lage aus Ebene und Form, Farbe aus Tonstufe, Licht und Luftperspektive der Ebene */
+  private fillCrowns(): void {
+    const l = lightIn(this.light, this.look);
+    const light = hexToRgb(resolveColor(l.color, this.swatches, this.look));
+    const air = hexToRgb(resolveColor(this.airColor, this.swatches, this.look));
+    const dots: CrownDot[] = [];
+    for (const { pts, shape, plane, rank, base, air: airT, tone, wind } of this.crownInputs) {
+      const rgb = hexToRgb(resolveColor(base, this.swatches, this.look));
+      const steps = [0, 1, 2].map((s) => crownColor(rgb, light, tone, s).map((v, i) => v + (air[i] - v) * airT));
+      const Z = -plane.z + rank * ORDER_STEP;
+      for (let i = 0; i < pts.length; i += CROWN_STRIDE) {
+        const c = steps[pts[i + 3]];
+        dots.push({
+          x: plane.x + plane.scale * (shape.x + pts[i]),
+          y: plane.y + plane.scale * (shape.y + pts[i + 1]),
+          z: Z + pts[i + 4],
+          phase: pts[i + 5],
+          size: pts[i + 2] * Math.abs(plane.scale),
+          wind: wind * Math.abs(plane.scale),
+          r: c[0],
+          g: c[1],
+          b: c[2],
+        });
+      }
+    }
+    this.crowns.build(dots);
   }
 
   /** Licht der Zone im aktuellen Look in die Uniforms (Richtung im Bild, Farben in sRGB) */
@@ -580,8 +635,12 @@ export class PlaneLayer {
   /** alle sichtbaren Formen neu zusammensetzen */
   build(nodes: readonly ZoneNode[], opts: PlaneBuildOptions = {}): void {
     const show = opts.showPlane ?? ((p: ZonePlane) => !planeHidden(nodes, p));
+    this.lastNodes = nodes;
     this.swatches = swatchMap(nodes);
     this.light = lightOf(nodes);
+    const lightNow = lightIn(this.light, this.look);
+    const lightDir: [number, number] = [Math.cos((lightNow.angle * Math.PI) / 180), Math.sin((lightNow.angle * Math.PI) / 180)];
+    const crownInputs: CrownInput[] = [];
     const styles = styleMap(nodes);
     const rows: Row[] = [];
     const keys: string[] = [];
@@ -621,19 +680,30 @@ export class PlaneLayer {
       const planeEdge = layersNeedEdge(planeLayers);
       shapesOf(nodes, plane.id).forEach((shape, rank) => {
         if (shape.hidden) return;
+        if (shape.crown && !shape.crown.hidden) {
+          // Punktkrone über allen gefüllten Flächen der Form, in der Farbe ihrer Grundfarbe
+          const all = shapeFaces(shape, fineness(shape, plane));
+          const filled = all.filter((f) => facePaint(shape, f).fill !== null);
+          if (filled.length) {
+            const pts = cachedCrownPoints(filled.length === all.length ? all : filled, shape.sx, shape.sy, shape.crown, lightDir);
+            crownInputs.push({ pts, shape, plane, rank, base: facePaint(shape, filled[0]).fill ?? shape.fill, air: airAmount(air, plane), tone: shape.crown.tone, wind: shape.crown.wind });
+          }
+        }
         shapeFaces(shape, fineness(shape, plane)).forEach((face, fi) => {
           // eine Fläche ohne Füllung ist ein Loch: nichts zu zeichnen
           const paint = facePaint(shape, face);
           const pl = paintLayers(paint, styles, paint.style ? faceBox(face) : NO_BOX);
           if (!pl) return;
-          const tri = triangulateFace(face);
+          // Kantenwelle: gezeichnet wird die gewellte Fläche (Dreiecke und Kantenabstand), gefüllt wie die glatte
+          const shown = shape.wave && !shape.wave.hidden && shape.wave.amp > 0 ? cachedWavyFace(face, shape.wave, shape.sx, shape.sy) : face;
+          const tri = triangulateFace(shown);
           if (!tri.index.length) return;
           const layers = visibleLayers(pl.layers);
           note(layers);
           let edge: EdgeRaster | null = null;
           if (planeEdge || layersNeedEdge(layers)) {
             const t0 = performance.now();
-            edge = faceEdge(face, shape.sx, shape.sy);
+            edge = faceEdge(shown, shape.sx, shape.sy);
             edgeMs += performance.now() - t0;
           }
           const part = { shape, plane, rank, tri, face: fi, row: addRow(layers, pl.opacity, 0, edgeLengths(layers, shape.sx, shape.sy)), planeRow, edge };
@@ -668,6 +738,7 @@ export class PlaneLayer {
       atlas: this.atlas.stats.height,
       edgeMs: Math.round(edgeMs * 10) / 10,
       variants: 0,
+      crowns: 0,
     };
     // deckende Flächen nach Schichtfolge (Fläche|Ebene) zusammen; die häufigsten Folgen bekommen ihren eigenen Shader
     const sigOf = (part: Part) => `${layerTokens(rows[part.row].layers)}|${layerTokens(rows[part.planeRow].layers)}`;
@@ -716,6 +787,9 @@ export class PlaneLayer {
     });
     for (const mesh of old) if (mesh) this.setMesh(mesh, [], this.clearMat, '');
     this.stats.variants = groups.size + this.clearRuns.length;
+    this.crownInputs = crownInputs;
+    this.fillCrowns();
+    this.stats.crowns = this.crowns.dots;
   }
 
   /** zuletzt aufgelöste Palette, damit eine geänderte Palettenfarbe die Texturen neu füllt */

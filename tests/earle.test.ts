@@ -329,3 +329,59 @@ describe('Shader je Schichtfolge', () => {
     expect(specialFragment('c|', true).split('void main()')[1]).toContain('texelFetch(uPaint');
   });
 });
+
+describe('Earle auf die ganze Zone (ohne Editor)', () => {
+  it('setzt Vorgaben auf alle Formen sichtbarer Ebenen, Kronen bekommen echte Punkte, die Eingabe bleibt unverändert', async () => {
+    const { earleZone } = await import('@/zone/earle');
+    const nodes: ZoneNode[] = [newPlane([], 0)];
+    const plane = planesOf(nodes)[0];
+    const hill = newShape(nodes, plane.id, rectPath(30, 10), 0, 0, '#6a9a3c');
+    nodes.push(hill);
+    const crown = newShape(nodes, plane.id, ellipsePath(5, 3), 40, 10, '#2f5a2a');
+    crown.material = 'airy';
+    nodes.push(crown);
+    const before = JSON.stringify(nodes);
+    const out = earleZone(nodes);
+    expect(JSON.stringify(nodes)).toBe(before);
+    const h = out.find((n) => n.id === hill.id) as typeof hill;
+    const c = out.find((n) => n.id === crown.id) as typeof crown;
+    expect(h.fills?.some((f) => f.type === 'light')).toBe(true);
+    expect(c.crown).toBeDefined();
+    expect(c.fills?.some((f) => f.type === 'dots')).toBe(false);
+    const layer = new PlaneLayer();
+    layer.build(out);
+    expect(layer.crownDots).toBeGreaterThan(30);
+  });
+});
+
+describe('Shader je Folge: deckend und durchsichtig getrennt', () => {
+  it('nach einem Wechsel der Folgen bleibt jede deckende Fläche deckend, auch wenn eine durchsichtige dieselbe Folge hat', () => {
+    const nodes: ZoneNode[] = [newPlane([], 0)];
+    const plane = planesOf(nodes)[0];
+    const a = newShape(nodes, plane.id, rectPath(20, 10), 0, 0, '#445566');
+    nodes.push(a);
+    const b = newShape(nodes, plane.id, rectPath(10, 6), 30, 0, '#668844');
+    nodes.push(b);
+    const light: ZoneFill = { type: 'light', width: 0.6, soft: 0, blend: 'screen', opacity: 0.5 };
+    const dots = parseFill({ type: 'dots', source: 'light' })!;
+    setFacePaint(a, shapeFaces(a)[0], { fill: '#445566', fills: [light, dots] });
+    // gleiche Folge, aber durchsichtig
+    setFacePaint(b, shapeFaces(b)[0], { fill: '#668844', fills: [light, dots], opacity: 0.5 });
+    const layer = new PlaneLayer();
+    const check = () => {
+      for (const m of layer.group.children as unknown as Array<{ name: string; material: { transparent: boolean } }>) {
+        if (m.name.startsWith('ebenen-formen')) expect(m.material.transparent).toBe(false);
+        if (m.name.startsWith('ebenen-durchsichtig')) expect(m.material.transparent).toBe(true);
+      }
+    };
+    layer.build(nodes);
+    check();
+    // andere Folge (ohne Pünktchen), dann zurück: die deckende Fläche bekommt wieder ein deckendes Material
+    setFacePaint(a, shapeFaces(a)[0], { fill: '#445566', fills: [light] });
+    layer.build(nodes);
+    check();
+    setFacePaint(a, shapeFaces(a)[0], { fill: '#445566', fills: [light, dots] });
+    layer.build(nodes);
+    check();
+  });
+});

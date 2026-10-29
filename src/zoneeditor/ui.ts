@@ -581,7 +581,8 @@ export class EditorUi {
     const head = el('div', 'ze-shead');
     head.append(el('span', 'ze-title', 'Am Handy spielen'), button('Schließen', '', () => this.phone.classList.remove('open')));
     this.phone.append(head);
-    for (const u of urls) {
+    // zweiter Link: dieselbe Zone mit der Earle-Messung (Stufe 5, src/world/earleMessung.ts)
+    for (const u of [...urls, ...urls.map((x) => `${x}&earle=messen`)]) {
       const row = el('div', 'ze-phrow');
       const code = el('code', '', u);
       row.append(
@@ -599,7 +600,7 @@ export class EditorUi {
       el(
         'div',
         'ze-phint',
-        `${this.isDirty ? 'Erst sichern: das Handy lädt die Zonendatei, Ungesichertes sieht es nicht. ' : ''}Handy im selben WLAN; oben links zeigt das Spiel die Bildrate${location.protocol === 'https:' ? ' (über HTTPS braucht das Handy das Zertifikat-Profil wie das iPad)' : ''}.`,
+        `${this.isDirty ? 'Erst sichern: das Handy lädt die Zonendatei, Ungesichertes sieht es nicht. ' : ''}Handy im selben WLAN; oben links zeigt das Spiel die Bildrate${location.protocol === 'https:' ? ' (über HTTPS braucht das Handy das Zertifikat-Profil wie das iPad)' : ''}. Mit „&earle=messen“ misst das Handy, was die Ebenen mit und ohne Earle-Schichten je Bild kosten (rund eine Minute, nichts wird gesichert).`,
       ),
     );
   }

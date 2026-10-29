@@ -9,7 +9,10 @@
  * Kronen, Florians Bild 6 und 8); keine Umrisslinien, Kanten nur aus Wertsprüngen. Ohne Renderer und DOM.
  */
 import { hexToRgb, isEarle, isGradient, MAX_LAYERS, resolveColor, rgbToHex, type DotsFill, type EdgeFill, type GradientFill, type GrainFill, type Paint, type PaintColor, type SwatchMap, type ZoneFill } from './paint';
-import type { LightValues, Material } from './nodes';
+import { cloneNodes, facePaint, lightIn, lightOf, planeHidden, planeLocked, planesOf, setFacePaint, shapeFaces, shapesOf, swatchMap, type LightValues, type Material, type ZoneNode, type ZoneShape } from './nodes';
+import { faceBox, type Face } from './faces';
+import { faceMaterial } from './dock';
+import { CROWN_DEFAULT, type CrownParams } from './crown';
 
 export type EarlePreset = 'hill' | 'rock' | 'meadow' | 'crown' | 'water';
 export const EARLE_PRESETS: readonly EarlePreset[] = ['hill', 'rock', 'meadow', 'crown', 'water'];
@@ -114,11 +117,8 @@ export function presetLayers(preset: EarlePreset, c: EarleContext): ZoneFill[] {
         grain({ tile: 'paper', opacity: 0.35 }),
       ];
     case 'crown':
-      return [
-        shade({ width: rel(0.3, 0.6, 4), opacity: 0.55 }),
-        dots({ source: 'light', reach: rel(0.25, 0.6, 4), size: rel(0.05, 0.2, 0.5), gap: 1.3, density: 0.95, jitter: 0.45, tone: 0.6, seed: 7 }),
-        grain({ tile: 'gouache', scale: 5, opacity: 0.25 }),
-      ];
+      // die Punkte bringt die Punktkrone (crownFor), hier nur Innenschatten und Gouache
+      return [shade({ width: rel(0.3, 0.6, 4), opacity: 0.55 }), grain({ tile: 'gouache', scale: 5, opacity: 0.25 })];
     case 'water':
       return [
         vertical([{ t: 0, color: hi, a: 1 }, { t: 1, color: lo, a: 1 }], { steps: 5, inner: 0.5, wave: 0.6 }),
@@ -149,6 +149,59 @@ export function applyPreset(paint: Paint, preset: EarlePreset, c: EarleContext):
   const fills = [...own, ...rest].slice(0, MAX_LAYERS - 1);
   if (fills.length) paint.fills = fills;
   else delete paint.fills;
+}
+
+/** Punktkrone für eine Krone dieser Größe (kürzere Seite in Metern der Ebene); Platzhalter-Werte */
+export function crownFor(size: number): CrownParams {
+  const rel = (k: number, lo: number, hi: number) => Math.round(Math.max(lo, Math.min(hi, k * size)) * 100) / 100;
+  return { ...CROWN_DEFAULT, size: rel(0.035, 0.15, 0.5), reach: rel(0.35, 0.8, 5) };
+}
+
+/**
+ * Knopf „Earle“ auf eine Form (oder nur eine ihrer Flächen): je Fläche mit eigener Grundfarbe die Vorgabe, bei
+ * „Automatisch“ nach Material und Farbe; Flächen mit verknüpftem Stil und Löcher bleiben. Die Vorgabe „Krone“ setzt
+ * dazu eine Punktkrone auf die Form. light: Licht der Zone, aufgelöst (#rrggbb). Gibt die Zahl der geänderten Flächen
+ */
+export function earleShape(shape: ZoneShape, face: Face | null, preset: EarlePreset | 'auto', sw: SwatchMap, light: LightValues): number {
+  const faces = face ? [face] : shapeFaces(shape);
+  const one = shapeFaces(shape).length === 1;
+  let n = 0;
+  for (const f of faces) {
+    const paint = facePaint(shape, f);
+    if (paint.fill === null || paint.style) continue;
+    const base = resolveColor(paint.fill, sw, 'day');
+    const which = preset === 'auto' ? autoPreset(faceMaterial(shape, f), base) : preset;
+    const own: Paint = { fill: paint.fill, ...(paint.fills ? { fills: paint.fills.map((x) => ({ ...x })) as ZoneFill[] } : {}), ...(paint.opacity !== undefined ? { opacity: paint.opacity } : {}) };
+    const box = faceBox(f);
+    applyPreset(own, which, { box, base, light, sx: shape.sx, sy: shape.sy });
+    if (one) {
+      shape.fill = own.fill ?? shape.fill;
+      if (own.fills?.length) shape.fills = own.fills;
+      else delete shape.fills;
+    } else setFacePaint(shape, f, own);
+    // echte Punkte nur auf breiten Kronen; hohe, schmale Formen (Stämme) bleiben glatt (Platzhalter-Regel)
+    const w = (box.maxX - box.minX) * Math.abs(shape.sx);
+    const h = (box.maxY - box.minY) * Math.abs(shape.sy);
+    if (which === 'crown' && !shape.crown && h <= 1.6 * w) shape.crown = crownFor(Math.min(w, h));
+    n++;
+  }
+  return n;
+}
+
+/**
+ * Knopf „Earle“ auf die ganze Zone ohne Editor (Handy-Messung, Tests): „Automatisch“ auf alle Formen aller sichtbaren, nicht
+ * gesperrten Ebenen außer Luft, wie „Ganze Zone“ im Editor. Gibt neue Knoten zurück
+ */
+export function earleZone(nodes: readonly ZoneNode[]): ZoneNode[] {
+  const out = cloneNodes(nodes);
+  const sw = swatchMap(out);
+  const l = lightIn(lightOf(out), 'day');
+  const light = { angle: l.angle, color: resolveColor(l.color, sw, 'day'), shade: resolveColor(l.shade, sw, 'day') };
+  for (const plane of planesOf(out)) {
+    if (planeHidden(out, plane) || planeLocked(out, plane) || plane.role === 'air') continue;
+    for (const shape of shapesOf(out, plane.id)) if (!shape.locked && !shape.hidden) earleShape(shape, null, 'auto', sw, light);
+  }
+  return out;
 }
 
 /** Grundfarbe eines Anstrichs als #rrggbb im Look Tag (für die Ableitung der Vorgaben) */

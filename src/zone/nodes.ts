@@ -15,6 +15,8 @@ import { flattenPath, insideWithHoles, simplifyPoly, type Poly, type ZonePath } 
 import { computeFaces, type Face } from './faces';
 import { cloneFills, isGradient, mapFillPoints, parseColor, parseFills, samePaint, serializeFill, type Paint, type PaintColor, type ZoneFill, type ZoneStyle, type ZoneSwatch } from './paint';
 import type { LookName } from '@/world/looks';
+import { parseCrown, serializeCrown, type CrownParams } from './crown';
+import { parseWave, serializeWave, type EdgeWave } from './edgeWave';
 import { LANE_DEPTH } from '@/track/stage';
 import type { SliceRole, SliceStack } from './slices';
 
@@ -171,6 +173,10 @@ export interface ZoneShape {
   dockOff?: Array<[number, number]>;
   /** Formgruppen, in denen sie liegt, von außen nach innen (src/zone/shapeGroups.ts) */
   groups?: string[];
+  /** Punktkrone (Stufe 5, src/zone/crown.ts): echte Punkte über der Form, dicht an der Lichtkante, mit Wind */
+  crown?: CrownParams;
+  /** Kantenwelle (Stufe 5, src/zone/edgeWave.ts): Kontur unregelmäßig wie gemalt, nur im Bild */
+  wave?: EdgeWave;
   hidden?: boolean;
   locked?: boolean;
 }
@@ -1116,6 +1122,10 @@ export function parseNodes(v: unknown): ZoneNode[] {
         const pts = o.dockOff.filter((q): q is [number, number] => Array.isArray(q) && q.length === 2 && num(q[0]) && num(q[1])).slice(0, 500);
         if (pts.length) s.dockOff = pts.map(([x, y]) => [x, y]);
       }
+      const crown = parseCrown(o.crown);
+      if (crown) s.crown = crown;
+      const wave = parseWave(o.wave);
+      if (wave) s.wave = wave;
       if (o.hidden === true) s.hidden = true;
       if (o.locked === true) s.locked = true;
       out.push(s);
@@ -1212,6 +1222,8 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
           return q;
         });
       if (s.groups?.length) o.groups = [...s.groups];
+      if (s.crown) o.crown = serializeCrown(s.crown);
+      if (s.wave) o.wave = serializeWave(s.wave);
       if (s.hidden) o.hidden = true;
       if (s.locked) o.locked = true;
       out.push(o);
@@ -1247,6 +1259,8 @@ export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
       ...(n.fills ? { fills: cloneFills(n.fills) } : {}),
       ...(n.groups ? { groups: [...n.groups] } : {}),
       ...(n.dockOff ? { dockOff: n.dockOff.map(([x, y]): [number, number] => [x, y]) } : {}),
+      ...(n.crown ? { crown: { ...n.crown } } : {}),
+      ...(n.wave ? { wave: { ...n.wave } } : {}),
     };
   });
 }

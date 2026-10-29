@@ -90,8 +90,13 @@ import { SketchLayer } from './sketches';
 import { constrain45, NO_MODS, PathTools, regionRing, regionTest, simplifyShape, type Mods, type PathTool } from './pathTools';
 import { booleanShapes, type BoolOp } from '@/zone/pathfinder';
 import { evalLayers, gradientT, hexToRgb, isEarle, isGradient, isHex, MAX_LAYERS, paintLayers, rampOf, RAMP, resolveColor, rgbToHex, type GradientFill, type GradientStop, type PaintColor, type ZoneFill } from '@/zone/paint';
-import { applyPreset, autoPreset, freshEarle, type EarlePreset } from '@/zone/earle';
-import { fillParams, setFillParam } from './fillParams';
+import { crownFor, earleShape, freshEarle, type EarlePreset } from '@/zone/earle';
+import { crownParamsOf, fillParams, setCrownParam, setFillParam, setWaveParam, waveParamsOf } from './fillParams';
+import { WAVE_DEFAULT } from '@/zone/edgeWave';
+
+/** Zeilen der Punktkrone und der Kantenwelle im Füllstapel (keine Füllungen, sondern Merkmale der Form) */
+const CROWN_ROW = -10;
+const WAVE_ROW = -11;
 import { addStop, lineT, moveStop, ownPaint, readGradient, removeGradient, removeStop, reverseStops, setMid, targetBox, topGradient, writeGradient, writePaint, type GradKind, type GradLine, type GradTarget } from '@/zone/gradients';
 import type { StackAddKind, StackRow, StackView } from './stackPanel';
 import { bakeStyle, linkedStyle, linkStyle, paintToStyle, pasteStyle, styleFromClip, unlinkStyle, type StyleClip } from '@/zone/styles';
@@ -1104,7 +1109,7 @@ export class PlaneEditor {
         this.stackSel = i;
         this.uiDirty = true;
       },
-      stackOpacity: (i, v, phase) => this.stackEdit((p) => {
+      stackOpacity: (i, v, phase) => i === CROWN_ROW || i === WAVE_ROW ? undefined : this.stackEdit((p) => {
         if (i < 0) p.opacity = v;
         else if (p.fills?.[i]) p.fills[i].opacity = v;
       }, phase),
@@ -1112,13 +1117,18 @@ export class PlaneEditor {
         const f = p.fills?.[i];
         if (f && f.type !== 'fade') f.blend = m;
       }),
-      stackHide: (i) => this.stackEdit((p) => {
+      stackHide: (i) => i === CROWN_ROW || i === WAVE_ROW ? this.shapeEdit((s) => { const f = i === CROWN_ROW ? s.crown : s.wave; if (f) { if (f.hidden) delete f.hidden; else f.hidden = true; } }) : this.stackEdit((p) => {
         const f = p.fills?.[i];
         if (!f) return;
         if (f.hidden) delete f.hidden;
         else f.hidden = true;
       }),
       stackRemove: (i) => {
+        if (i === CROWN_ROW || i === WAVE_ROW) {
+          this.shapeEdit((s) => (i === CROWN_ROW ? delete s.crown : delete s.wave));
+          this.stackSel = null;
+          return;
+        }
         this.stackEdit((p) => {
           p.fills = (p.fills ?? []).filter((_, k) => k !== i);
         });
@@ -1142,7 +1152,8 @@ export class PlaneEditor {
         this.grad = { targets: [this.gradRefOf(t)], kind: f.type, stop: null, layer: i };
         this.setTool('gradient');
       },
-      stackParam: (i, key, v, phase) => this.stackParam(i, key, v, phase),
+      stackParam: (i, key, v, phase) =>
+        i === CROWN_ROW ? this.shapeEdit((s) => s.crown && setCrownParam(s.crown, key, v), phase) : i === WAVE_ROW ? this.shapeEdit((s) => s.wave && setWaveParam(s.wave, key, v), phase) : this.stackParam(i, key, v, phase),
       stackZoneColor: (i) => this.stackEdit((p) => {
         const f = p.fills?.[i];
         if (f && f.type !== 'grain' && isEarle(f)) delete f.color;
@@ -3245,6 +3256,12 @@ export class PlaneEditor {
     const p = ownPaint(t, styleMap(this.nodes));
     const fills = p.fills ?? [];
     const rows: StackRow[] = [];
+    const crown = 'plane' in t ? undefined : t.shape.crown;
+    if (crown)
+      rows.push({ index: CROWN_ROW, kind: 'crown', preview: 'radial-gradient(circle,#d8e86a 0 30%,transparent 34%) 0 0/8px 7px,#2f5a2a', blend: null, opacity: 1, hidden: !!crown.hidden, params: crownParamsOf(crown) });
+    const wave = 'plane' in t ? undefined : t.shape.wave;
+    if (wave)
+      rows.push({ index: WAVE_ROW, kind: 'wave', preview: 'radial-gradient(circle at 50% 120%,#8d8a83 0 45%,transparent 47%) 0 0/9px 12px,#5b5f6a', blend: null, opacity: 1, hidden: !!wave.hidden, params: waveParamsOf(wave) });
     for (let i = fills.length - 1; i >= 0; i--) {
       const f = fills[i];
       const row: StackRow = { index: i, kind: f.type, preview: this.fillPreview(f), blend: f.type === 'fade' ? null : f.blend, opacity: f.opacity, hidden: !!f.hidden, ...fillParams(f, 'plane' in t ? { sx: 1, sy: 1 } : t.shape) };
@@ -3254,7 +3271,7 @@ export class PlaneEditor {
     if (!('plane' in t) && p.fill !== null) rows.push({ index: -1, kind: 'base', preview: this.resolve(p.fill), blend: null, opacity: p.opacity ?? 1, hidden: false });
     const air = airOf(this.nodes);
     const lightNode = lightOf(this.nodes);
-    const usesLight = fills.some((f) => f.type === 'light' || f.type === 'shade' || f.type === 'dots');
+    const usesLight = !!crown || fills.some((f) => f.type === 'light' || f.type === 'shade' || f.type === 'dots');
     return {
       title: 'plane' in t ? `Ebenenstapel · ${t.plane.name}` : t.face ? `Füllungen · Fläche von ${t.shape.name}` : `Füllungen · ${t.shape.name}`,
       rows,
@@ -3284,6 +3301,27 @@ export class PlaneEditor {
   private stackAdd(kind: StackAddKind): void {
     const t = this.stackTarget();
     if (!t) return;
+    if (kind === 'wave') {
+      // Kantenwelle auf die ganze Form (Platzhalter-Werte)
+      if ('plane' in t || t.shape.wave) return;
+      this.history.begin(this.nodes);
+      t.shape.wave = { ...WAVE_DEFAULT };
+      if (this.history.commit(this.nodes)) this.changed();
+      this.stackSel = WAVE_ROW;
+      this.uiDirty = true;
+      return;
+    }
+    if (kind === 'crown') {
+      // Punktkrone auf die ganze Form, Größe nach ihrem Rahmen (Platzhalter-Werte)
+      if ('plane' in t || t.shape.crown) return;
+      const b = targetBox({ shape: t.shape, face: null });
+      this.history.begin(this.nodes);
+      t.shape.crown = crownFor(Math.min((b.maxX - b.minX) * Math.abs(t.shape.sx), (b.maxY - b.minY) * Math.abs(t.shape.sy)));
+      if (this.history.commit(this.nodes)) this.changed();
+      this.stackSel = CROWN_ROW;
+      this.uiDirty = true;
+      return;
+    }
     let box: { minX: number; minY: number; maxX: number; maxY: number };
     if ('plane' in t) {
       const shapes = shapesOf(this.nodes, t.plane.id);
@@ -3388,6 +3426,18 @@ export class PlaneEditor {
     };
   }
 
+  /** Merkmal der Form im Füllstapel ändern (Punktkrone, Kantenwelle; Ziehen: start, move, end ist ein Schritt) */
+  private shapeEdit(fn: (shape: ZoneShape) => unknown, phase: PickPhase = 'tap'): void {
+    const t = this.stackTarget();
+    if (!t || 'plane' in t) return;
+    if (phase === 'start' || phase === 'tap') this.history.begin(this.nodes);
+    fn(t.shape);
+    if (phase === 'end' || phase === 'tap') {
+      if (this.history.commit(this.nodes)) this.changed();
+    } else this.changed();
+    this.uiDirty = true;
+  }
+
   /** einen Wert der Schicht i ändern (Zahlen gekappt wie beim Lesen der Datei) */
   private stackParam(i: number, key: string, v: number | string, phase: PickPhase): void {
     const t = this.stackTarget();
@@ -3444,21 +3494,8 @@ export class PlaneEditor {
     }
     this.history.begin(this.nodes);
     let n = 0;
-    for (const { shape, face } of targets) {
-      // jede Fläche für sich (eigene Grundfarbe und eigenes Material), außer eine einzelne gewählte Fläche
-      const faces = face ? [face] : shapeFaces(shape);
-      const one = faces.length === 1;
-      for (const f of faces) {
-        const paint = facePaint(shape, f);
-        if (paint.fill === null || paint.style) continue;
-        const base = resolveColor(paint.fill, sw, 'day');
-        const which = preset === 'auto' || preset === 'zone' ? autoPreset(faceMaterial(shape, f), base) : preset;
-        const own = { fill: paint.fill, ...(paint.fills ? { fills: paint.fills.map((x) => ({ ...x })) as ZoneFill[] } : {}), ...(paint.opacity !== undefined ? { opacity: paint.opacity } : {}) };
-        applyPreset(own, which, { box: faceBox(f), base, light: resolved, sx: shape.sx, sy: shape.sy });
-        writePaint({ shape, face: one ? null : f }, own);
-        n++;
-      }
-    }
+    // jede Fläche für sich (eigene Grundfarbe und eigenes Material); „Krone“ setzt dazu eine Punktkrone
+    for (const { shape, face } of targets) n += earleShape(shape, face, preset === 'zone' ? 'auto' : preset, sw, resolved);
     if (this.history.commit(this.nodes)) this.changed();
     this.uiDirty = true;
     this.ui.toast(n ? `Earle auf ${n} ${n === 1 ? 'Fläche' : 'Flächen'} (Platzhalter-Vorgaben)` : 'Earle: keine Fläche ohne Stil gefunden');

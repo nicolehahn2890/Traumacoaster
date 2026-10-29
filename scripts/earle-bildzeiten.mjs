@@ -130,6 +130,10 @@ for (const sizeName of which) {
       const keep = L.group.children.map((m) => m.material);
       const generic = () => L.group.children.forEach((m) => (m.material = m.name.startsWith('ebenen-durchsichtig') ? L.clearMat : L.opaqueMat));
       const special = () => L.group.children.forEach((m, i) => (m.material = keep[i]));
+      // (die Kronenpunkte schwingen im Wind, zwei Aufnahmen hintereinander unterschieden sich schon dadurch)
+      const crowns = L.group.children.find((m) => m.name === 'ebenen-kronen');
+      const crownsShown = crowns?.visible ?? false;
+      if (crowns) crowns.visible = false;
       await ready();
       generic();
       await ready();
@@ -138,6 +142,7 @@ for (const sizeName of which) {
       generic();
       const b = grab();
       special();
+      if (crowns) crowns.visible = crownsShown;
       let off = 0;
       let max = 0;
       for (let i = 0; i < a.length; i += 4) {
