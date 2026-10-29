@@ -136,11 +136,31 @@ export interface GrainFill extends FillBase {
   angle: number;
 }
 
-export type EarleFill = EdgeFill | DotsFill | GrainFill;
+/**
+ * Funkeln (Stufe 5, Paket 0 Regel 4 und 0.3: „ein Funkeln-Shader auf markierten Stellen“, nur für Wasser, Schnee,
+ * Kristalle und Coins): je Zelle höchstens ein Glanzpunkt aus der Rang-Kachel, der in eigener Phase kurz als Kreuz
+ * aufleuchtet und wieder verlischt. Maße in Metern der Ebene
+ */
+export interface SparkleFill extends FillBase {
+  type: 'sparkle';
+  /** Größe eines Glanzpunkts */
+  size: number;
+  /** Zellgröße als Vielfaches der Größe (groß = selten) */
+  gap: number;
+  /** Anteil der Zellen mit Glanzpunkt (0 bis 1) */
+  density: number;
+  /** Aufleuchten je Sekunde (Tempo) */
+  speed: number;
+  /** eigene Farbe; ohne Angabe die Lichtfarbe der Zone */
+  color?: PaintColor;
+  seed: number;
+}
+
+export type EarleFill = EdgeFill | DotsFill | GrainFill | SparkleFill;
 export type ZoneFill = ColorFill | GradientFill | EarleFill;
 
 export const isGradient = (f: ZoneFill): f is GradientFill => f.type === 'gradient' || f.type === 'fade';
-export const isEarle = (f: ZoneFill): f is EarleFill => f.type === 'light' || f.type === 'shade' || f.type === 'dots' || f.type === 'grain';
+export const isEarle = (f: ZoneFill): f is EarleFill => f.type === 'light' || f.type === 'shade' || f.type === 'dots' || f.type === 'grain' || f.type === 'sparkle';
 /** braucht die Schicht den Kantenabstand der Fläche? */
 export const needsEdge = (f: ZoneFill): boolean => (isGradient(f) && !!f.edge) || f.type === 'light' || f.type === 'shade' || (f.type === 'dots' && f.source !== 'even' && f.source !== 'dark');
 
@@ -286,6 +306,20 @@ export function parseFill(v: unknown): ZoneFill | null {
     const color = parseColor(o.color);
     if (color) d.color = color;
     f = d;
+  } else if (o.type === 'sparkle') {
+    const k: SparkleFill = {
+      type: 'sparkle',
+      size: num(o.size) ? clampTo(o.size, 0.05, 10) : 0.5,
+      gap: num(o.gap) ? clampTo(o.gap, 1.5, 20) : 5,
+      density: num(o.density) ? clamp01(o.density) : 0.5,
+      speed: num(o.speed) ? clampTo(o.speed, 0.05, 10) : 0.8,
+      seed: num(o.seed) ? Math.round(clampTo(o.seed, 0, 9999)) : 1,
+      blend,
+      opacity,
+    };
+    const color = parseColor(o.color);
+    if (color) k.color = color;
+    f = k;
   } else if (o.type === 'grain') {
     f = {
       type: 'grain',
@@ -337,6 +371,10 @@ export function serializeFill(f: ZoneFill): Record<string, unknown> {
     Object.assign(o, { size: r3(f.size), gap: r3(f.gap), density: r3(f.density), jitter: r3(f.jitter), source: f.source, reach: r3(f.reach), tone: r3(f.tone), seed: f.seed });
     if (f.color) o.color = f.color;
   } else if (f.type === 'grain') Object.assign(o, { tile: f.tile, scale: r3(f.scale), angle: r3(f.angle) });
+  else if (f.type === 'sparkle') {
+    Object.assign(o, { size: r3(f.size), gap: r3(f.gap), density: r3(f.density), speed: r3(f.speed), seed: f.seed });
+    if (f.color) o.color = f.color;
+  }
   if (f.type !== 'fade') o.blend = f.blend;
   o.opacity = r3(f.opacity);
   if (f.hidden) o.hidden = true;

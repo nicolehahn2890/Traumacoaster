@@ -28,7 +28,7 @@ import { BLEND_MODES, DOT_SOURCES, MAX_LAYERS, RAMP, hexToRgb, isGradient, layer
 import { faceBox, type Face } from '@/zone/faces';
 import { EDGE_IN, EDGE_OUT, faceEdge, type EdgeRaster } from '@/zone/edgeDistance';
 import { EdgeAtlas, grainTexture, rankTexture, RANK_N } from './earleTextures';
-import { cachedCrownPoints, crownColor, CROWN_STRIDE } from '@/zone/crown';
+import { cachedCrownPoints, crownColor, CROWN_DEFAULT, CROWN_STRIDE, shapeDots } from '@/zone/crown';
 import { cachedWavyFace } from '@/zone/edgeWave';
 import { CrownLayer, type CrownDot } from './crownMesh';
 
@@ -53,7 +53,7 @@ const PER_LAYER = 4;
 const ROW_W = 1 + PER_LAYER * MAX_LAYERS;
 
 /** Arten im Shader (Texel A.x) */
-const CODE = { color: 0, linear: 1, radial: 2, fadeLinear: 3, fadeRadial: 4, edge: 5, fadeEdge: 6, light: 7, shade: 8, dots: 9, grain: 10 } as const;
+const CODE = { color: 0, linear: 1, radial: 2, fadeLinear: 3, fadeRadial: 4, edge: 5, fadeEdge: 6, light: 7, shade: 8, dots: 9, grain: 10, sparkle: 11 } as const;
 
 interface Triangulated {
   /** Ecken in Pfad-Koordinaten (x, y abwechselnd) */
@@ -174,6 +174,7 @@ uniform vec3 uAir;
 uniform vec2 uLight;
 uniform vec3 uLightColor;
 uniform vec3 uShadeColor;
+uniform float uTime;
 varying vec2 vLocal;
 varying vec2 vPlane;
 varying vec4 vPat;
@@ -229,6 +230,23 @@ float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
   return fract((p3.x + p3.y) * p3.z);
+}
+// Funkeln: je Zelle höchstens ein Glanzpunkt (Rang-Kachel, Wabenraster), der in eigener Phase kurz als Kreuz aufleuchtet.
+// C: Größe, Zelle (× Größe), Dichte, Tempo (je Sekunde); D.x: Samen
+float sparkleAt(vec2 pat, vec4 C, vec4 D, float px) {
+  float cell = C.x * C.y;
+  vec2 q = pat / vec2(cell, cell * 0.866) + floor(vec2(hash12(vec2(D.x, 5.3)), hash12(vec2(D.x, 9.1))) * ${RANK_N}.0);
+  q.x += 0.5 * mod(floor(q.y), 2.0);
+  vec2 id = floor(q);
+  vec4 T = texelFetch(uRank, ivec2(mod(id, ${RANK_N}.0)), 0);
+  float r = min(0.43, 0.5 / C.y);
+  vec2 f = (q - id - 0.5) * vec2(1.0, 0.866) - T.xy * vec2(0.5 - r, 0.433 - r);
+  float pulse = pow(max(0.0, sin((uTime * C.w + T.w) * 6.2832)), 6.0);
+  vec2 a = abs(f) / r;
+  // zwei schmale Strahlen und ein kleiner Kern
+  float star = max(max(1.0 - a.x - 7.0 * a.y, 1.0 - a.y - 7.0 * a.x), 1.0 - length(a) * 2.5);
+  float aa = px / (cell * r);
+  return step(T.z, C.z) * pulse * smoothstep(-aa, aa, star) * smoothstep(0.35, 0.8, r * cell / max(px, 1e-6));
 }
 float vnoise(vec2 p) {
   vec2 i = floor(p);
@@ -338,6 +356,11 @@ vec4 layers(int row, int n, vec2 p, vec2 pat, vec2 dx, vec2 dy, float px, vec4 a
       as = step(T.z, C.z * k) * (1.0 - smoothstep(r - aa, r + aa, d)) * smoothstep(0.35, 0.8, r / max(aa, 1e-6));
       // Ton: eine hellere Stufe der eigenen Farbe (Farbton bleibt, warm zum Licht) oder eine tiefere zum Schatten
       if (B.a < 0.5) cs = D.x >= 0.0 ? min(vec3(1.0), cb * (1.0 + 1.6 * D.x) + 0.12 * D.x) * mix(vec3(1.0), uLightColor, 0.6 * D.x) : mix(cb * (1.0 + 0.55 * D.x), uShadeColor, -0.35 * D.x);
+    } else if (code == ${CODE.sparkle}) {
+      vec4 C = texelFetch(uPaint, ivec2(base + 2, row), 0);
+      vec4 D = texelFetch(uPaint, ivec2(base + 3, row), 0);
+      as = sparkleAt(pat, C, D, px);
+      if (B.a < 0.5) cs = uLightColor;
     } else if (code == ${CODE.grain}) {
       // C: Kachelgröße (Meter), Drehung (Bogenmaß); Rot Papier, Grün Gouache
       vec4 C = texelFetch(uPaint, ivec2(base + 2, row), 0);
@@ -372,7 +395,7 @@ ${TAIL}
 /**
  * Schichtfolge einer Zeile als Kürzel (je Schicht eins, mit Punkt getrennt): c Farbe; g oder f (Deckkraft) mit l linear,
  * r radial, e Kante, dazu b für Bänder und w für Welle; L Lichtkante, S Innenschatten, D0 bis D4 Pünktchen je Quelle,
- * P Papier oder Gouache. Was die Folge nicht festlegt (Farben, Griffe, Maße, Mischmodus), steht in der Datentextur
+ * K Funkeln, P Papier oder Gouache. Was die Folge nicht festlegt (Farben, Griffe, Maße, Mischmodus), steht in der Datentextur
  */
 export function layerTokens(layers: readonly ZoneFill[]): string {
   return layers
@@ -382,6 +405,7 @@ export function layerTokens(layers: readonly ZoneFill[]): string {
       if (f.type === 'light') return 'L';
       if (f.type === 'shade') return 'S';
       if (f.type === 'dots') return `D${Math.max(0, DOT_SOURCES.indexOf(f.source))}`;
+      if (f.type === 'sparkle') return 'K';
       return 'P';
     })
     .join('.');
@@ -435,6 +459,7 @@ function layerGlsl(token: string, k: number, row: string, p: string, pat: string
       cs = B.a > 0.5 ? B.rgb : D.x >= 0.0 ? min(vec3(1.0), cb * (1.0 + 1.6 * D.x) + 0.12 * D.x) * mix(vec3(1.0), uLightColor, 0.6 * D.x) : mix(cb * (1.0 + 0.55 * D.x), uShadeColor, -0.35 * D.x);
       ${done} }`;
   }
+  if (token === 'K') return `{ ${head} B = ${fetch(1)}; C = ${fetch(2)}; D = ${fetch(3)}; as = sparkleAt(${pat}, C, D, px); cs = B.a > 0.5 ? B.rgb : uLightColor; ${done} }`;
   // Papier oder Gouache
   return `{ ${head} C = ${fetch(2)}; vec2 cr = vec2(cos(C.y), sin(C.y)); mat2 R = mat2(cr.x, cr.y, -cr.y, cr.x) / C.x; vec2 g = textureGrad(uGrain, R * ${pat}, R * ${dx}, R * ${dy}).rg; cs = vec3(A.w < 0.5 ? g.r : g.g); as = 1.0; ${done} }`;
 }
@@ -554,11 +579,18 @@ export class PlaneLayer {
     this.uniforms.uLight = { value: new Vector2(-0.57, 0.82) };
     this.uniforms.uLightColor = { value: new Vector3(1, 0.95, 0.8) };
     this.uniforms.uShadeColor = { value: new Vector3(0.12, 0.16, 0.36) };
+    // Uhr fürs Funkeln (jedes Mesh stellt sie vor dem Zeichnen)
+    this.uniforms.uTime = { value: 0 };
     const common = { uniforms: this.uniforms, vertexShader: VERTEX, fragmentShader: FRAGMENT, side: DoubleSide, fog: true, dithering: true };
     // undurchsichtig: Three setzt dafür selbst OPAQUE (Deckkraft 1 im Shader)
     this.opaqueMat = new ShaderMaterial(common);
     this.clearMat = new ShaderMaterial({ ...common, transparent: true, depthWrite: false });
   }
+
+  /** Uhr fürs Funkeln vor dem Zeichnen stellen */
+  private readonly tick = (): void => {
+    this.uniforms.uTime.value = (performance.now() / 1000) % 3600;
+  };
 
   /** Shader für eine Schichtfolge (alle teilen dieselben Uniforms); „*“ ist der allgemeine; clear: durchsichtig */
   private materialFor(sig: string, clear = false): ShaderMaterial {
@@ -666,7 +698,7 @@ export class PlaneLayer {
     const note = (layers: readonly ZoneFill[]) => {
       for (const f of layers) {
         if (f.hidden) continue;
-        if (f.type === 'dots') rankNeeded = true;
+        if (f.type === 'dots' || f.type === 'sparkle') rankNeeded = true;
         else if (f.type === 'grain') grainNeeded = true;
       }
     };
@@ -680,13 +712,16 @@ export class PlaneLayer {
       const planeEdge = layersNeedEdge(planeLayers);
       shapesOf(nodes, plane.id).forEach((shape, rank) => {
         if (shape.hidden) return;
-        if (shape.crown && !shape.crown.hidden) {
-          // Punktkrone über allen gefüllten Flächen der Form, in der Farbe ihrer Grundfarbe
+        const crownOn = !!shape.crown && !shape.crown.hidden;
+        if (crownOn || shape.dots?.length) {
+          // Punktkrone über allen gefüllten Flächen der Form (ohne weggenommene Stellen) und die gesetzten Punkte, in
+          // der Farbe ihrer Grundfarbe
           const all = shapeFaces(shape, fineness(shape, plane));
           const filled = all.filter((f) => facePaint(shape, f).fill !== null);
           if (filled.length) {
-            const pts = cachedCrownPoints(filled.length === all.length ? all : filled, shape.sx, shape.sy, shape.crown, lightDir);
-            crownInputs.push({ pts, shape, plane, rank, base: facePaint(shape, filled[0]).fill ?? shape.fill, air: airAmount(air, plane), tone: shape.crown.tone, wind: shape.crown.wind });
+            const crownPts = crownOn && shape.crown ? cachedCrownPoints(filled.length === all.length ? all : filled, shape.sx, shape.sy, shape.crown, lightDir) : null;
+            const pts = shapeDots(crownPts, shape.dots, shape.dotsOff);
+            crownInputs.push({ pts, shape, plane, rank, base: facePaint(shape, filled[0]).fill ?? shape.fill, air: airAmount(air, plane), tone: shape.crown?.tone ?? CROWN_DEFAULT.tone, wind: crownOn && shape.crown ? shape.crown.wind : 0 });
           }
         }
         shapeFaces(shape, fineness(shape, plane)).forEach((face, fi) => {
@@ -897,6 +932,16 @@ export class PlaneLayer {
           data[d + 2] = f.seed;
           return;
         }
+        if (f.type === 'sparkle') {
+          data[a] = CODE.sparkle;
+          own(b, f.color);
+          data[c] = f.size;
+          data[c + 1] = f.gap;
+          data[c + 2] = f.density;
+          data[c + 3] = f.speed;
+          data[d] = f.seed;
+          return;
+        }
         if (f.type !== 'grain') return;
         data[a] = CODE.grain;
         data[a + 3] = f.tile === 'gouache' ? 1 : 0;
@@ -1015,6 +1060,7 @@ export class PlaneLayer {
       mesh = new Mesh(geom, material);
       mesh.name = name;
       mesh.frustumCulled = false;
+      mesh.onBeforeRender = this.tick;
       this.group.add(mesh);
     }
     this.meshOwners.set(mesh, { triOwner, owners });

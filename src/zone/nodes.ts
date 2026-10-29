@@ -15,7 +15,7 @@ import { flattenPath, insideWithHoles, simplifyPoly, type Poly, type ZonePath } 
 import { computeFaces, type Face } from './faces';
 import { cloneFills, isGradient, mapFillPoints, parseColor, parseFills, samePaint, serializeFill, type Paint, type PaintColor, type ZoneFill, type ZoneStyle, type ZoneSwatch } from './paint';
 import type { LookName } from '@/world/looks';
-import { parseCrown, serializeCrown, type CrownParams } from './crown';
+import { parseCrown, parseDotsOff, parseSetDots, serializeCrown, type CrownParams, type DotOff, type SetDot } from './crown';
 import { parseWave, serializeWave, type EdgeWave } from './edgeWave';
 import { LANE_DEPTH } from '@/track/stage';
 import type { SliceRole, SliceStack } from './slices';
@@ -177,6 +177,9 @@ export interface ZoneShape {
   crown?: CrownParams;
   /** Kantenwelle (Stufe 5, src/zone/edgeWave.ts): Kontur unregelmäßig wie gemalt, nur im Bild */
   wave?: EdgeWave;
+  /** mit dem Punktpinsel gesetzte Punkte und weggenommene Stellen der Punktkrone (Stufe 5, src/zone/crown.ts) */
+  dots?: SetDot[];
+  dotsOff?: DotOff[];
   hidden?: boolean;
   locked?: boolean;
 }
@@ -1126,6 +1129,10 @@ export function parseNodes(v: unknown): ZoneNode[] {
       if (crown) s.crown = crown;
       const wave = parseWave(o.wave);
       if (wave) s.wave = wave;
+      const dots = parseSetDots(o.dots);
+      if (dots) s.dots = dots;
+      const dotsOff = parseDotsOff(o.dotsOff);
+      if (dotsOff) s.dotsOff = dotsOff;
       if (o.hidden === true) s.hidden = true;
       if (o.locked === true) s.locked = true;
       out.push(s);
@@ -1224,6 +1231,8 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
       if (s.groups?.length) o.groups = [...s.groups];
       if (s.crown) o.crown = serializeCrown(s.crown);
       if (s.wave) o.wave = serializeWave(s.wave);
+      if (s.dots?.length) o.dots = s.dots.map(([x, y, sz, k]) => [round(x, 3), round(y, 3), round(sz, 3), k]);
+      if (s.dotsOff?.length) o.dotsOff = s.dotsOff.map(([x, y, r]) => [round(x, 3), round(y, 3), round(r, 3)]);
       if (s.hidden) o.hidden = true;
       if (s.locked) o.locked = true;
       out.push(o);
@@ -1261,6 +1270,8 @@ export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
       ...(n.dockOff ? { dockOff: n.dockOff.map(([x, y]): [number, number] => [x, y]) } : {}),
       ...(n.crown ? { crown: { ...n.crown } } : {}),
       ...(n.wave ? { wave: { ...n.wave } } : {}),
+      ...(n.dots ? { dots: n.dots.map((d): SetDot => [d[0], d[1], d[2], d[3]]) } : {}),
+      ...(n.dotsOff ? { dotsOff: n.dotsOff.map((d): DotOff => [d[0], d[1], d[2]]) } : {}),
     };
   });
 }

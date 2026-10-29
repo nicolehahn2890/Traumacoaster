@@ -151,6 +151,8 @@ type Gesture =
   | { kind: 'gradEnd'; pointerId: number; end: 'a' | 'b' }
   | { kind: 'gradStop'; pointerId: number; index: number; off: boolean }
   | { kind: 'gradMid'; pointerId: number; index: number }
+  /** Punktpinsel (Stufe 5): Punkte entlang des Wegs setzen (auf die Form shape) oder wegnehmen (alle Formen unter dem Pinsel) */
+  | { kind: 'dots'; pointerId: number; shape: string | null; last: Pt | null; erase: boolean }
   /** Feld (Stufe 4): verschieben (innen) oder an Kante oder Ecke ziehen; Weg in Metern der Spur-0-Ebene, vom Anfang aus */
   | { kind: 'field'; pointerId: number; id: string; mode: FieldGrip; start: Pt; orig: { x0: number; x1: number; y0: number; y1: number } };
 
@@ -674,6 +676,7 @@ export class PlaneEditor {
       nums: b && !box.locked ? { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2, w: b.maxX - b.minX, h: b.maxY - b.minY } : null,
       filling: this.building && this.fillMode ? this.resolve(this.fillMode) : null,
       grad: this.building && this.tool === 'gradient' && !this.fillMode ? this.gradInfo() : null,
+      dotBrush: this.building && this.tool === 'dotbrush' ? { ...this.dotBrush } : null,
       dropChoice: this.building && this.dropChoice ? this.resolve(this.dropChoice.color) : null,
       material: this.building ? this.selectionMaterial() : null,
       dock: this.building && this.tool === 'dock' && !this.fillMode ? this.dockInfo() : null,
@@ -1052,6 +1055,10 @@ export class PlaneEditor {
         this.fieldSel = null;
         this.uiDirty = true;
         this.drawOverlay();
+      },
+      dotBrushSet: (patch) => {
+        Object.assign(this.dotBrush, patch);
+        this.uiDirty = true;
       },
       gradKind: (kind) => {
         if (this.grad) {
@@ -2103,6 +2110,10 @@ export class PlaneEditor {
       this.dockDown(p);
       return;
     }
+    if (this.tool === 'dotbrush') {
+      this.dotDown(pointerId, p);
+      return;
+    }
     if (this.tool === 'field') {
       this.fieldDown(pointerId, p);
       return;
@@ -2276,6 +2287,10 @@ export class PlaneEditor {
       this.fillAt(g, p);
       return;
     }
+    if (g.kind === 'dots') {
+      this.dotDab(g, p);
+      return;
+    }
     if (g.kind === 'field') {
       this.fieldMove(g, p);
       return;
@@ -2378,7 +2393,9 @@ export class PlaneEditor {
       return;
     }
     this.gesture = null;
-    if (g.kind === 'fill' || g.kind === 'field') {
+    // (der Punktpinsel setzt noch bis zum Punkt des Loslassens)
+    if (g.kind === 'dots') this.dotDab(g, p);
+    if (g.kind === 'fill' || g.kind === 'field' || g.kind === 'dots') {
       if (this.history.commit(this.nodes)) this.changed();
       return;
     }
@@ -3232,6 +3249,7 @@ export class PlaneEditor {
       if (f.type === 'light') return `linear-gradient(135deg,${own ?? resolveColor(light.color, sw, look)} 0 35%,#3a3f4a 35%)`;
       if (f.type === 'shade') return `linear-gradient(135deg,#8a8f9a 0 62%,${own ?? resolveColor(light.shade, sw, look)} 62%)`;
       if (f.type === 'dots') return `radial-gradient(circle,${own ?? '#efe6c8'} 0 28%,transparent 32%) 0 0/7px 7px,#4a5060`;
+      if (f.type === 'sparkle') return `radial-gradient(circle at 30% 40%,${own ?? '#fffbe6'} 0 1.5px,transparent 2.5px) 0 0/11px 9px,radial-gradient(circle at 70% 70%,${own ?? '#fffbe6'} 0 1px,transparent 2px) 0 0/13px 10px,#3d6f9a`;
       return f.tile === 'gouache' ? 'repeating-linear-gradient(170deg,#8d8a83 0 3px,#a29e96 3px 5px,#7f7c76 5px 8px)' : 'repeating-radial-gradient(circle at 30% 40%,#a9a59c 0 1px,#bdb9b0 1px 3px)';
     }
     const ramp = rampOf(f.stops, sw, look);
@@ -3333,7 +3351,7 @@ export class PlaneEditor {
       const fills = p.fills ?? [];
       if (fills.length >= MAX_LAYERS - 1) return;
       if (kind === 'color') fills.push({ type: 'color', color: this.color ?? '#ffffff', blend: 'normal', opacity: 1 });
-      else if (kind === 'light' || kind === 'shade' || kind === 'dots' || kind === 'grain') fills.push(freshEarle(kind));
+      else if (kind === 'light' || kind === 'shade' || kind === 'dots' || kind === 'grain' || kind === 'sparkle') fills.push(freshEarle(kind));
       else if (kind === 'edge') {
         // Kantenverlauf: 3 m tief (Griff waagrecht in Pfad-Koordinaten), vier Stufen als Ringe
         const sx = 'plane' in t ? 1 : Math.abs(t.shape.sx) || 1;
@@ -3424,6 +3442,83 @@ export class PlaneEditor {
         writePaint(t, q);
       },
     };
+  }
+
+  /** Punktpinsel: Durchmesser (Meter der Ebene), Tonstufe (2 hell wie die Lichtseite der Krone), Wegnehmen */
+  private dotBrush = { size: 0.3, tone: 2, erase: false };
+
+  /** Punktpinsel: auf eine Form drücken (eine Fläche unter dem Zeiger, gesperrte nicht) */
+  private dotDown(pointerId: number, p: Pt): void {
+    const erase = this.dotBrush.erase || this.mods.alt;
+    const hit = erase ? null : this.faceAtScreen(p, true);
+    if (!erase && (!hit || hit.shape.locked || planeLocked(this.nodes, hit.plane))) {
+      this.ui.toast('Punktpinsel: über eine Form ziehen');
+      return;
+    }
+    this.history.begin(this.nodes);
+    const g: Extract<Gesture, { kind: 'dots' }> = { kind: 'dots', pointerId, shape: hit?.shape.id ?? null, last: null, erase };
+    this.gesture = g;
+    this.dotDab(g, p);
+  }
+
+  /**
+   * Punktpinsel unter dem Zeiger: setzen (dicht an dicht entlang des Wegs, Lücken bei schnellem Ziehen gefüllt) oder
+   * wegnehmen (gesetzte Punkte in der Nähe fallen weg, an einer Punktkrone merkt sich die Form die Stelle)
+   */
+  private dotDab(g: Extract<Gesture, { kind: 'dots' }>, p: Pt): void {
+    const size = this.dotBrush.size;
+    if (g.erase) {
+      // alle sichtbaren, nicht gesperrten Formen mit Punkten: was unter dem Pinsel liegt, fällt weg
+      const r = size * 2.2;
+      let hit = false;
+      for (const plane of planesOf(this.nodes)) {
+        if (!this.planeShown(plane) || planeLocked(this.nodes, plane)) continue;
+        const q = this.planePoint(plane, p);
+        if (!q) continue;
+        for (const shape of shapesOf(this.nodes, plane.id)) {
+          if (shape.hidden || shape.locked || (!shape.dots?.length && !shape.crown)) continue;
+          const at = { x: q.x - shape.x, y: q.y - shape.y };
+          if (shape.dots?.length) {
+            const kept = shape.dots.filter(([x, y]) => (x - at.x) ** 2 + (y - at.y) ** 2 > r * r);
+            if (kept.length !== shape.dots.length) hit = true;
+            if (kept.length) shape.dots = kept;
+            else delete shape.dots;
+          }
+          // an einer Punktkrone merkt sich die Form die Stelle, wenn der Pinsel über ihr ist (Rahmen plus Überstand)
+          const b = shapeBounds(shape);
+          const pad = r + (shape.crown?.out ?? 0);
+          if (shape.crown && q.x > b.minX - pad && q.x < b.maxX + pad && q.y > b.minY - pad && q.y < b.maxY + pad) {
+            const off = shape.dotsOff ?? [];
+            const last = off[off.length - 1];
+            if (!last || Math.hypot(last[0] - at.x, last[1] - at.y) > r * 0.5) off.push([Math.round(at.x * 1000) / 1000, Math.round(at.y * 1000) / 1000, Math.round(r * 1000) / 1000]);
+            shape.dotsOff = off.slice(-400);
+            hit = true;
+          }
+        }
+      }
+      if (hit) this.changed();
+      return;
+    }
+    const shape = g.shape ? findShape(this.nodes, g.shape) : undefined;
+    const plane = shape ? findPlane(this.nodes, shape.parent) : undefined;
+    const q = shape && plane ? this.planePoint(plane, p) : null;
+    if (!shape || !q) return;
+    const at = { x: q.x - shape.x, y: q.y - shape.y };
+    const step = size * 1.2;
+    const from = g.last;
+    const d = from ? Math.hypot(at.x - from.x, at.y - from.y) : 0;
+    if (from && d < step) return;
+    const n = from ? Math.min(200, Math.floor(d / step)) : 1;
+    const dots = shape.dots ?? [];
+    let last = from ?? at;
+    for (let i = 1; i <= n; i++) {
+      const t = from ? (i * step) / d : 0;
+      last = from ? { x: from.x + (at.x - from.x) * t, y: from.y + (at.y - from.y) * t } : at;
+      dots.push([Math.round(last.x * 1000) / 1000, Math.round(last.y * 1000) / 1000, size, this.dotBrush.tone]);
+    }
+    shape.dots = dots.slice(-4000);
+    g.last = last;
+    this.changed();
   }
 
   /** Merkmal der Form im Füllstapel ändern (Punktkrone, Kantenwelle; Ziehen: start, move, end ist ein Schritt) */
@@ -3852,6 +3947,7 @@ export class PlaneEditor {
     else if (k === 'u') this.setTool(this.tool === 'rect' ? 'ellipse' : this.tool === 'ellipse' ? 'arch' : 'rect');
     else if (k === 'i') this.setTool('pipette');
     else if (k === 'g') this.setTool('gradient');
+    else if (k === 'e') this.setTool('dotbrush');
     else if (k === 'd') this.setTool('dock');
     else if (k === 'r') this.setTool('field');
     else if (k === '1') this.setView('game');

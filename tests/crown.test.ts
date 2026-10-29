@@ -82,3 +82,34 @@ describe('Punktkronen', () => {
     expect(s2[0] / s2[1]).toBeGreaterThan(base[0] / base[1]);
   });
 });
+
+describe('Punktpinsel', () => {
+  it('gesetzte Punkte kommen dazu, weggenommene Stellen nehmen Kronenpunkte heraus', async () => {
+    const { shapeDots } = await import('@/zone/crown');
+    const { faces } = crown();
+    const crownPts = crownPoints(faces, 1, 1, CROWN_DEFAULT, UP_LEFT);
+    const n0 = crownPts.length / CROWN_STRIDE;
+    const all = shapeDots(crownPts, [[0, 0, 0.3, 2], [1, 0, 0.3, 1]], undefined);
+    expect(all.length / CROWN_STRIDE).toBe(n0 + 2);
+    // ein Loch von 2 m Halbmesser in der Mitte
+    const holed = shapeDots(crownPts, undefined, [[0, 0, 2]]);
+    const left = holed.length / CROWN_STRIDE;
+    expect(left).toBeLessThan(n0);
+    for (let i = 0; i < holed.length; i += CROWN_STRIDE) expect(Math.hypot(holed[i], holed[i + 1])).toBeGreaterThanOrEqual(2);
+    // Tiefe und Phase gesetzter Punkte bleiben beim Neuaufbau gleich
+    expect(shapeDots(null, [[0.5, 0.5, 0.3, 2]], undefined)).toEqual(shapeDots(null, [[0.5, 0.5, 0.3, 2]], undefined));
+  });
+
+  it('die Zonendatei behält gesetzte Punkte und weggenommene Stellen', async () => {
+    const { parseNodes, serializeNodes } = await import('@/zone/nodes');
+    const nodes: ZoneNode[] = [newPlane([], 0)];
+    const s = newShape(nodes, planesOf(nodes)[0].id, ellipsePath(5, 3), 0, 0, '#2f5a2a');
+    nodes.push(s);
+    s.crown = { ...CROWN_DEFAULT };
+    s.dots = [[0.1, 0.2, 0.3, 2], [0.5, 0.6, 0.3, 0]];
+    s.dotsOff = [[1, 1, 0.66]];
+    const back = parseNodes(serializeNodes(nodes)).find((n) => n.id === s.id) as typeof s;
+    expect(back.dots).toEqual(s.dots);
+    expect(back.dotsOff).toEqual(s.dotsOff);
+  });
+});

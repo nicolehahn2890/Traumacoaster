@@ -29,7 +29,7 @@ export interface StackParam {
 export interface StackRow {
   /** Index im Füllstapel; -1 ist die Grundfarbe (Deckkraft = Deckkraft der Fläche) */
   index: number;
-  kind: 'base' | 'color' | 'gradient' | 'fade' | 'light' | 'shade' | 'dots' | 'grain' | 'crown' | 'wave';
+  kind: 'base' | 'color' | 'gradient' | 'fade' | 'light' | 'shade' | 'dots' | 'grain' | 'sparkle' | 'crown' | 'wave';
   /** Name statt des Worts der Art (Kantenverlauf, Bänder, Papier, Gouache) */
   name?: string;
   /** CSS-Hintergrund der Vorschau */
@@ -89,9 +89,9 @@ export interface StackActions {
   stackStyle(what: 'copy' | 'paste' | 'save' | 'unlink'): void;
 }
 
-export type StackAddKind = 'color' | 'gradient' | 'fade' | 'edge' | 'light' | 'shade' | 'dots' | 'grain' | 'crown' | 'wave';
+export type StackAddKind = 'color' | 'gradient' | 'fade' | 'edge' | 'light' | 'shade' | 'dots' | 'grain' | 'sparkle' | 'crown' | 'wave';
 
-const KIND_WORDS: Record<StackRow['kind'], string> = { base: 'Grundfarbe', color: 'Farbe', gradient: 'Verlauf', fade: 'Deckkraftverlauf', light: 'Lichtkante', shade: 'Innenschatten', dots: 'Pünktchen', grain: 'Papier', crown: 'Punktkrone', wave: 'Kantenwelle' };
+const KIND_WORDS: Record<StackRow['kind'], string> = { base: 'Grundfarbe', color: 'Farbe', gradient: 'Verlauf', fade: 'Deckkraftverlauf', light: 'Lichtkante', shade: 'Innenschatten', dots: 'Pünktchen', grain: 'Papier', sparkle: 'Funkeln', crown: 'Punktkrone', wave: 'Kantenwelle' };
 
 export const STACK_CSS = `
 .ze-stack{left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 66px);width:344px;padding:6px;display:none;z-index:2}
@@ -229,6 +229,7 @@ export class StackPanel {
           btn('+ Pünktchen', 'Punkte aus einer Rang-Kachel; Dichte an Kanten, im Schatten oder gleichmäßig', () => this.a.stackAdd('dots')),
           btn('+ Papier', 'Papier- oder Gouache-Korn (Platzhalter-Kachel bis zu Florians Scans)', () => this.a.stackAdd('grain')),
           btn('+ Kantenverlauf', 'Verlauf vom Rand nach innen, mit Stufen als Ringe', () => this.a.stackAdd('edge')),
+          btn('+ Funkeln', 'Glanzpunkte, die in eigener Phase aufleuchten (für Wasser, Schnee, Kristalle, Coins)', () => this.a.stackAdd('sparkle')),
         );
       if (!view.rows.some((r) => r.kind === 'crown') && view.styles) add.append(btn('+ Punktkrone', 'Echte Punkte über der ganzen Form, dicht an der Lichtkante, mit Wind (Bäume wie Bild 6)', () => this.a.stackAdd('crown')));
       if (!view.rows.some((r) => r.kind === 'wave') && view.styles) add.append(btn('+ Kantenwelle', 'Kontur der ganzen Form unregelmäßig wie gemalt (nur im Bild; Stützen stehen auf der glatten Kante)', () => this.a.stackAdd('wave')));

@@ -385,3 +385,23 @@ describe('Shader je Folge: deckend und durchsichtig getrennt', () => {
     check();
   });
 });
+
+describe('Funkeln', () => {
+  it('liest und schreibt, Kaputtes gekappt; Wasser bekommt es, die Wertezeile setzt Prozent und Tempo', () => {
+    const k: ZoneFill = { type: 'sparkle', size: 0.4, gap: 6, density: 0.3, speed: 1.2, seed: 3, color: '#fffbe6', blend: 'screen', opacity: 0.9 };
+    expect(parseFill(JSON.parse(JSON.stringify(serializeFill(k))))).toEqual(k);
+    expect(parseFill({ type: 'sparkle', gap: 0.5, speed: 99 })).toMatchObject({ gap: 1.5, speed: 10 });
+    const ctx: EarleContext = { box: { minX: -5, minY: -3, maxX: 5, maxY: 3 }, base: '#2a5ab0', light: { angle: 125, color: '#fff1c8', shade: '#1f2a5c' }, sx: 1, sy: 1 };
+    expect(presetLayers('water', ctx).some((f) => f.type === 'sparkle')).toBe(true);
+    const s = parseFill({ type: 'sparkle' })!;
+    setFillParam(s, 'density', 20);
+    setFillParam(s, 'speed', 2);
+    expect(s).toMatchObject({ density: 0.2, speed: 2 });
+    expect(fillParams(s).params!.map((p) => p.key)).toEqual(['size', 'gap', 'density', 'speed', 'seed']);
+  });
+  it('der Shader der Folge mit Funkeln braucht die Rang-Kachel und die Uhr', () => {
+    expect(layerTokens([{ type: 'color', color: '#2a5ab0', blend: 'normal', opacity: 1 }, parseFill({ type: 'sparkle' })!])).toBe('c.K');
+    const main = specialFragment('c.K|').split('void main()')[1];
+    expect(main).toContain('sparkleAt(vPat.xy');
+  });
+});

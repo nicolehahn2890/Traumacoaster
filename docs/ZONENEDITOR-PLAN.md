@@ -1153,8 +1153,12 @@ Das waren die Ausreißer aus Paket 1; Regressionstest in `tests/earle.test.ts`. 
 1688 × 780, Earle auf allen Flächen mit Punktkronen): 1,4 bis 1,7 ms je Bild gegen 0,9 bis 1,2 ms ohne Earle;
 Gegenprobe pixelgleich. Vorher und nachher: `docs/research/earle/2026-10-29-earle-paket2.jpg`, Krone neben Bild 6:
 `docs/research/earle/2026-10-29-punktkrone.jpg`. **Platzhalter:** Werte der Punktkronen, Tonstufen, Kantenwelle,
-die Regel „Stämme ohne Krone“. **Nicht geprüft:** am echten Handy (die Messung steht bereit), Punktkronen mit Bahn und
-Fahrt davor, Kantenwelle an spielbaren Kanten. **Offen aus Stufe 5:** Punktpinsel, Farbnebel, Funkeln, Papier und
+die Regel „Stämme ohne Krone“. **Am Handy gemessen (Florian, 29.10.2026, iPhone, Apple GPU, Hochformat 786 × 1262 px,
+Hügel-Szene mit `&earle=messen`):** ohne Ebenen 0,87 ms je Bild, wie gesichert 0,73, ohne Earle 0,80, Earle auf allen
+Flächen mit 1309 Kronenpunkten 1,77, Kontrolle am Ende 1,80 (stabil). Je Schicht weniger: Pünktchen −0,30 ms,
+Papier/Gouache −0,24, Innenschatten −0,17, Lichtkante −0,10, Kantenverlauf −0,04, Punktkronen ±0. Earle kostet am Handy
+also rund 1 ms der 16,7 ms je Bild; die Anzeige zeigte dabei 59 fps. Damit ist „Kosten je Schicht am Handy gemessen“
+für Tor S5 erfüllt. **Nicht geprüft:** Punktkronen mit Bahn und Fahrt davor, Kantenwelle an spielbaren Kanten. **Offen aus Stufe 5:** Punktpinsel, Farbnebel, Funkeln, Papier und
 Gouache aus Florians Scans.
 
 **Stufe 6: Bilder, Schnittmasken, Säume, Austausch (M).** Bildschichten, Schnittmaske, Saum entlang einer Kante,

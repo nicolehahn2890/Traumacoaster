@@ -8,7 +8,7 @@
  * bestätigt (Tor S5). Richtschnur bis dahin: harte Stufe, Verlauf in der Stufe; helle Punkte an der Lichtkante (Earles
  * Kronen, Florians Bild 6 und 8); keine Umrisslinien, Kanten nur aus Wertsprüngen. Ohne Renderer und DOM.
  */
-import { hexToRgb, isEarle, isGradient, MAX_LAYERS, resolveColor, rgbToHex, type DotsFill, type EdgeFill, type GradientFill, type GrainFill, type Paint, type PaintColor, type SwatchMap, type ZoneFill } from './paint';
+import { hexToRgb, isEarle, isGradient, MAX_LAYERS, resolveColor, rgbToHex, type DotsFill, type EdgeFill, type GradientFill, type GrainFill, type Paint, type PaintColor, type SparkleFill, type SwatchMap, type ZoneFill } from './paint';
 import { cloneNodes, facePaint, lightIn, lightOf, planeHidden, planeLocked, planesOf, setFacePaint, shapeFaces, shapesOf, swatchMap, type LightValues, type Material, type ZoneNode, type ZoneShape } from './nodes';
 import { faceBox, type Face } from './faces';
 import { faceMaterial } from './dock';
@@ -19,7 +19,8 @@ export const EARLE_PRESETS: readonly EarlePreset[] = ['hill', 'rock', 'meadow', 
 export const EARLE_WORDS: Record<EarlePreset, string> = { hill: 'Hügel', rock: 'Fels', meadow: 'Wiese', crown: 'Krone', water: 'Wasser' };
 
 /** neue Earle-Schicht mit Vorgaben (Platzhalter-Werte) */
-export function freshEarle(kind: 'light' | 'shade' | 'dots' | 'grain'): EdgeFill | DotsFill | GrainFill {
+export function freshEarle(kind: 'light' | 'shade' | 'dots' | 'grain' | 'sparkle'): EdgeFill | DotsFill | GrainFill | SparkleFill {
+  if (kind === 'sparkle') return { type: 'sparkle', size: 0.5, gap: 5, density: 0.5, speed: 0.8, seed: 1, blend: 'screen', opacity: 0.9 };
   if (kind === 'light') return { type: 'light', width: 0.6, soft: 0, blend: 'screen', opacity: 0.55 };
   if (kind === 'shade') return { type: 'shade', width: 2, soft: 0, blend: 'multiply', opacity: 0.45 };
   if (kind === 'dots') return { type: 'dots', size: 0.28, gap: 1.8, density: 0.7, jitter: 0.35, source: 'light', reach: 2.5, tone: 0.5, seed: 1, blend: 'normal', opacity: 1 };
@@ -124,6 +125,7 @@ export function presetLayers(preset: EarlePreset, c: EarleContext): ZoneFill[] {
         vertical([{ t: 0, color: hi, a: 1 }, { t: 1, color: lo, a: 1 }], { steps: 5, inner: 0.5, wave: 0.6 }),
         light_({ width: rel(0.03, 0.2, 0.5), opacity: 0.45 }),
         grain({ tile: 'gouache', scale: 12, angle: 0, opacity: 0.2 }),
+        { ...(freshEarle('sparkle') as SparkleFill), size: rel(0.04, 0.25, 0.8) },
       ];
   }
 }

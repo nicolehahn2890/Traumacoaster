@@ -101,6 +101,7 @@ export async function startEarleMessung(world: WorldRenderer): Promise<void> {
     await minus('Innenschatten', (f) => f.type === 'shade');
     await minus('Papier/Gouache', (f) => f.type === 'grain');
     await minus('Kantenverlauf', (f) => isGradient(f) && !!f.edge);
+    await minus('Funkeln', (f) => f.type === 'sparkle');
     const noCrowns = structuredClone(full) as ZoneNode[];
     for (const n of noCrowns) if (isShape(n)) delete n.crown;
     await step('  − Punktkronen', noCrowns);

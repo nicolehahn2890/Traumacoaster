@@ -213,3 +213,52 @@ export function cachedCrownPoints(faces: readonly Face[], sx: number, sy: number
   }
   return pts;
 }
+
+/** gesetzter Punkt des Punktpinsels: Lage (Meter der Ebene relativ zum Ursprung der Form), Durchmesser, Tonstufe 0–2 */
+export type SetDot = [x: number, y: number, size: number, step: number];
+/** weggenommene Stelle: Mitte und Halbmesser (Meter der Ebene relativ zum Ursprung der Form) */
+export type DotOff = [x: number, y: number, r: number];
+
+/** fester Zufall je Lage (Tiefe und Windphase gesetzter Punkte bleiben beim Neuaufbau gleich) */
+function spot(x: number, y: number, k: number): number {
+  const v = Math.sin(x * 12.9898 + y * 78.233 + k * 37.719) * 43758.5453;
+  return v - Math.floor(v);
+}
+
+/**
+ * Punkte einer Form zum Zeichnen: Punkte der Krone (ohne die weggenommenen Stellen) und die mit dem Punktpinsel
+ * gesetzten, im Format von crownPoints (CROWN_STRIDE je Punkt)
+ */
+export function shapeDots(crown: Float32Array | null, set: readonly SetDot[] | undefined, off: readonly DotOff[] | undefined): Float32Array {
+  const out: number[] = [];
+  if (crown) {
+    for (let i = 0; i < crown.length; i += CROWN_STRIDE) {
+      const x = crown[i];
+      const y = crown[i + 1];
+      if (off?.some(([ox, oy, r]) => (x - ox) ** 2 + (y - oy) ** 2 < r * r)) continue;
+      for (let k = 0; k < CROWN_STRIDE; k++) out.push(crown[i + k]);
+    }
+  }
+  for (const [x, y, size, step] of set ?? []) out.push(x, y, size, Math.max(0, Math.min(2, Math.round(step))), 0.04 + 0.3 * spot(x, y, 1), spot(x, y, 2) * Math.PI * 2);
+  return new Float32Array(out);
+}
+
+/** gesetzte Punkte aus der Datei (höchstens 4000), Kaputtes fällt weg */
+export function parseSetDots(v: unknown): SetDot[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v
+    .filter((q): q is number[] => Array.isArray(q) && q.length === 4 && q.every((x) => num(x)))
+    .slice(0, 4000)
+    .map(([x, y, s, k]): SetDot => [x, y, clamp(s, 0.03, 10), Math.max(0, Math.min(2, Math.round(k)))]);
+  return out.length ? out : undefined;
+}
+
+/** weggenommene Stellen aus der Datei (höchstens 400) */
+export function parseDotsOff(v: unknown): DotOff[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v
+    .filter((q): q is number[] => Array.isArray(q) && q.length === 3 && q.every((x) => num(x)))
+    .slice(0, 400)
+    .map(([x, y, r]): DotOff => [x, y, clamp(r, 0.01, 40)]);
+  return out.length ? out : undefined;
+}

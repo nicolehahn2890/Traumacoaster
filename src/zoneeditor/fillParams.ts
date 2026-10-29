@@ -63,6 +63,16 @@ export function fillParams(f: ZoneFill, s: ParamScale = { sx: 1, sy: 1 }): { nam
         { key: 'seed', label: 'Muster', title: 'Anderes Muster gleicher Art', value: f.seed, step: 0.05, min: 0, max: 9999, digits: 0 },
       ],
     };
+  if (f.type === 'sparkle')
+    return {
+      params: [
+        { key: 'size', label: 'Größe m', title: 'Größe eines Glanzpunkts (Meter)', value: r(f.size), step: 0.005, min: 0.05, max: 10, digits: 2 },
+        { key: 'gap', label: 'Abstand ×', title: 'Zellgröße als Vielfaches der Größe (groß = seltener)', value: r(f.gap, 1), step: 0.02, min: 1.5, max: 20, digits: 1 },
+        { key: 'density', label: 'Dichte %', title: 'Anteil der Zellen mit Glanzpunkt', value: Math.round(f.density * 100), step: 0.5, min: 0, max: 100, digits: 0 },
+        { key: 'speed', label: 'Tempo', title: 'Aufleuchten je Sekunde', value: r(f.speed), step: 0.005, min: 0.05, max: 10, digits: 2 },
+        { key: 'seed', label: 'Muster', title: 'Anderes Muster gleicher Art', value: f.seed, step: 0.05, min: 0, max: 9999, digits: 0 },
+      ],
+    };
   return {
     name: TILE_WORDS[f.tile],
     params: [
@@ -125,6 +135,14 @@ export function setFillParam(f: ZoneFill, key: string, v: number | string, s: Pa
     else if (key === 'tone' && ok) f.tone = clamp(n / 100, -1, 1);
     else if (key === 'seed' && ok) f.seed = Math.round(clamp(n, 0, 9999));
     else if (key === 'source' && (DOT_SOURCES as readonly string[]).includes(String(v))) f.source = v as DotSource;
+    return;
+  }
+  if (f.type === 'sparkle') {
+    if (key === 'size' && ok) f.size = clamp(n, 0.05, 10);
+    else if (key === 'gap' && ok) f.gap = clamp(n, 1.5, 20);
+    else if (key === 'density' && ok) f.density = clamp(n / 100, 0, 1);
+    else if (key === 'speed' && ok) f.speed = clamp(n, 0.05, 10);
+    else if (key === 'seed' && ok) f.seed = Math.round(clamp(n, 0, 9999));
     return;
   }
   if (f.type === 'grain') {
