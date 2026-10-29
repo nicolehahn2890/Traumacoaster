@@ -64,7 +64,7 @@ const opt = (f: string): string | null => {
   const i = args.indexOf(f);
   return i >= 0 ? args[i + 1] : null;
 };
-const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest', '--vorlauf', '--tag', '--tol', '--even', '--span', '--turn', '--freezemax', '--lookstart', '--fahrt', '--antrieb', '--loopaspect', '--loopr', '--schleifen', '--kehrewait', '--crossafter'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
+const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest', '--vorlauf', '--tag', '--tol', '--even', '--span', '--turn', '--freezemax', '--lookstart', '--fahrt', '--antrieb', '--loopaspect', '--loopr', '--schleifen'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
 const LAST = Number(opt('--last') ?? 0);
 /** so viele der jüngsten Striche weglassen (ein älterer Satz bleibt vergleichbar, wenn neue dazukamen) */
 const SKIP = Number(opt('--skip') ?? 0);
@@ -89,8 +89,6 @@ if (opt('--fahrt') !== null) RIDE_TUNING.rules = opt('--fahrt') === 'strict' ? '
 if (opt('--antrieb') !== null) RIDE_TUNING.driveSpeed = Number(opt('--antrieb'));
 // Schleifen (Paket 3): --loopaspect Höhe/Breite ab der eine Schleife ein Looping ist, --loopr Mindestradius; --ohnekette ohne Kettenlinie als Deckel
 if (opt('--schleifen') !== null) LOOP_TUNING.on = opt('--schleifen') !== '0';
-if (opt('--kehrewait') !== null) LOOP_TUNING.waitKehre = opt('--kehrewait') !== '0';
-if (opt('--crossafter') !== null) LOOP_TUNING.crossAfter = opt('--crossafter') !== '0';
 if (opt('--loopaspect') !== null) LOOP_TUNING.aspect = Number(opt('--loopaspect'));
 if (opt('--loopr') !== null) LOOP_TUNING.minR = Number(opt('--loopr'));
 const OHNE_KETTE = flag('--ohnekette');

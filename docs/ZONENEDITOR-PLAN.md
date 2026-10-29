@@ -1108,7 +1108,10 @@ Lesung (hohe schmale U kippen als halbe Loopings), Brücken-Regel nicht gebaut; 
 (Studie 16g, Florian: anlassen und aufklären): Band und ein Teil der Knicke kamen von Nebenänderungen und sind
 repariert (Kehre erkennt sich am geraden zweiten Schenkel, Schranken außerhalb von Schleifen wie vorher); die eigenen
 Schleifenkreuzungen sind in Ordnung, mehr werden Kreuzungen späterer Stränge über festen Schleifen (Stand gegen alt:
-6 → 9, 112 → 189, 196 → 297), drei Versuche dagegen ohne Wirkung; nächster Schritt dort die Schranken je Punkt ansehen.
+6 → 9, 112 → 189, 196 → 297), drei Versuche dagegen ohne Wirkung und wieder ausgebaut (Studie 16h). Florians Einwand
+(zu viele Sonderregeln im Pinsel) ist angenommen: Die Garantien „aufrecht außer im Looping“ und „Mindestradius“ kommen
+an die Schienen und in den Fit (Studie 17), die Leseschicht des Pinsels bleibt unangetastet, bis eine echte Zone zeigt,
+wie viel Lesung er braucht.
 Offen in Stufe P1: Mesh und Abtastung des festen Teils behalten (Renderer), Restkreuzungen in dichten
 Schleifenhaufen (strukturell, Stufe P2). Zonen ohne Ebenen zeichnen weiter mit dem bisherigen Pinsel.
 **Noch offen aus Stufe 4:** die übrigen Spielobjekte auf Kanten (Schlange, Ziele, Stufen, Schalter, Coins, Baustellen;

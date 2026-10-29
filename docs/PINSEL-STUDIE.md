@@ -115,7 +115,9 @@ nach hinten in Metern (eine Spur = 8,4 m). **Loslassen** = der Finger geht hoch,
    der Knicke kamen von Nebenänderungen (Kehren warteten, Schranken nach den Formzielen) und sind repariert (Kehre
    erkennt sich am geraden zweiten Schenkel); die eigenen Schleifenkreuzungen sind in Ordnung, mehr werden Kreuzungen
    späterer Stränge über festen Schleifen (Stand gegen alt: 6 → 9, 112 → 189, 196 → 297; Knicke 124 → 118, 159 → 218,
-   314 → 374), drei Versuche dagegen ohne Wirkung. Schalter `&schleifen=0`; Brücken-Regel nicht gebaut; offen 16f/16g.
+   314 → 374), drei Versuche dagegen ohne Wirkung, danach wieder ausgebaut (16h: die Streuung zwischen Varianten ist
+   so groß wie ihre Unterschiede). Schalter `&schleifen=0`; Brücken-Regel nicht gebaut; offen 16f/16g. Nächstes
+   (Studie 17): Aufrecht außer im Looping als Schienenregel, Mindestradius im Fit, keine Regeln mehr im Strich.
 
 ## 2. Befund am heutigen Pinsel
 
@@ -1455,3 +1457,34 @@ Versuche dagegen haben nichts gebracht; der Mechanismus (welche Schranken sich d
 verstanden. Auf dem kleinen Satz ohne Kringelketten kostet die Schleifen-Lesung nichts. Nächster Schritt: an einer
 dieser Stellen die Schranken je Punkt ansehen (`lastSolve` liefert sie) statt weiter an Regeln zu drehen; bis dahin
 bleibt die Lesung an, wie Florian es entschieden hat, und `&schleifen=0` ist der Vergleich.
+
+### 16h. Aufgeräumt (Florian 30.10.: „Ja, räum alles auf, aber ich weiß gerade nicht, was das Richtige ist“)
+
+Florians Einwand: Wir bauen wieder viele Sonderregeln; seine Idee war, Tiefe und Physik frei zu wählen, die Regeln
+eher aus den Ebenen (davor, dahinter) als aus dem Pinsel zu nehmen, und Überkopffahrten wie Knicke von vornherein
+auszuschließen, ohne den Strich beim Zeichnen denken zu lassen. Die Zahlen geben ihm recht: `strich2.ts` ist von 1156
+Zeilen, 37 Konstanten und keinem Schalter (Strich 2 als Vorgabe, 29.10.) auf 1897 Zeilen, 58 Konstanten und 11 Schalter
+gewachsen, und drei Regeln des Nachgangs standen ohne gemessene Wirkung im Code.
+
+**Raus** (−94 Zeilen): die gemeinsame Verschiebung einer Schleife in ihre Schranken, die eigene Tiefe überlappender
+Schleifen, die feste Schleife als eine Begegnung, die Diagnose-Schalter `--kehrewait` und `--crossafter` (die hybride
+Reihenfolge der Schranken und die Kehre am geraden Schenkel bleiben, aber ohne Schalter). Nachgemessen (gleiche Sätze):
+
+| aufgeräumt gegen 1429359 | 21 heute früh | 27 neue | 31 alte |
+|---|---|---|---|
+| Kreuzungen gleiche Höhe | 9 → 20 | 189 → 182 | 297 → 253 |
+| Knicke je Strich (Median) | 118 → 133 | 218 → 234 | 374 → 365 |
+| Knoten je Strich (Median) | 42 → 38 | 62 → 57 | 86 → 93 |
+| ungewollte Inversionen | 84 → 86 | 288 → 252 | 285 → 279 |
+
+Die Zahlen bleiben in der Spanne, in der alle Varianten des Nachgangs lagen (Kreuzungen 9 bis 20, 176 bis 189, 253 bis
+297): Die entfernten Regeln haben nichts getragen, und die Streuung zwischen Varianten ist so groß wie ihre
+Unterschiede. Das ist der eigentliche Befund: An den Kreuzungen weiter mit Regeln zu drehen, misst Rauschen.
+
+**Konsequenz (ohne weitere Rückfrage, Studie 17):** Die zwei Garantien, die Florian meint, gehören nicht in den
+Strich, sondern dorthin, wo sie ohne Raten gelten: **Aufrecht außer im Looping** als Regel der Schienen (der Rahmen
+in `sampleTrack` bleibt oben, solange die Bahn keinen vollen Kringel fährt; „Physik, wie sie uns passt“ wie der
+Antrieb in Paket 2) und **Mindestradius** als Eigenschaft des Fits (die Bahn darf dafür in der Toleranz von der Tinte
+abweichen). Beides ist auf den vorhandenen Strichen messbar. Die Leseschicht des Pinsels wird bis dahin nicht mehr
+angefasst; wie viel Lesung er haben soll (16f, Lesart „Ebenen pur“), entscheidet sich in einer echten Zone, nicht an
+den Testzonen.
