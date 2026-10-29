@@ -25,8 +25,8 @@ import { getLevel } from '../src/levels/levels';
 import { worldOfLevel } from '../src/levels/worlds';
 import type { LevelDef } from '../src/levels/types';
 import { Terrain } from '../src/physics/terrain';
-import { SKIN_PHYSICS, TrainSim, simOptionsForLevel } from '../src/physics/trainSim';
-import { railBanksFor, sampleTrack, trackStats, type TrackPath, type TrackSamples } from '../src/track/model';
+import { RIDE_TUNING, SKIN_PHYSICS, TrainSim, simOptionsForLevel } from '../src/physics/trainSim';
+import { MAX_BANK, railBanksFor, sampleTrack, trackStats, type TrackPath, type TrackSamples } from '../src/track/model';
 import type { Vec3 } from '../src/core/math3';
 import { RubberBrush } from '../src/track/brush';
 import { BrushRefiner, findLineCrossings, joinLines, lineLength, pathFromPoints, planBrushTrack, prepareBrushLine, previewBrushTrack, trackLineWithDepth, type BrushField, type BrushOptions, type BrushPreview } from '../src/track/brushTrack';
@@ -63,7 +63,7 @@ const opt = (f: string): string | null => {
   const i = args.indexOf(f);
   return i >= 0 ? args[i + 1] : null;
 };
-const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest', '--vorlauf', '--tag', '--tol', '--even', '--span', '--turn', '--freezemax', '--lookstart'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
+const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest', '--vorlauf', '--tag', '--tol', '--even', '--span', '--turn', '--freezemax', '--lookstart', '--fahrt', '--antrieb'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
 const LAST = Number(opt('--last') ?? 0);
 /** so viele der jüngsten Striche weglassen (ein älterer Satz bleibt vergleichbar, wenn neue dazukamen) */
 const SKIP = Number(opt('--skip') ?? 0);
@@ -83,6 +83,9 @@ if (opt('--turn') !== null) FIT_TUNING.evenTurn = Number(opt('--turn'));
 // offenes steiles Stück: ab so vielen Metern Höhe und fest (--freezemax), freie Meter nach dem Anschluss (--lookstart)
 if (opt('--freezemax') !== null) LOOK_TUNING.freezeMax = Number(opt('--freezemax'));
 if (opt('--lookstart') !== null) LOOK_TUNING.lookStart = Number(opt('--lookstart'));
+// Fahrregeln (Paket 2): --fahrt strict|drive (Vorgabe wie im Spiel: drive), --antrieb Mindesttempo des Antriebs in m/s
+if (opt('--fahrt') !== null) RIDE_TUNING.rules = opt('--fahrt') === 'strict' ? 'strict' : 'drive';
+if (opt('--antrieb') !== null) RIDE_TUNING.driveSpeed = Number(opt('--antrieb'));
 /** wie in der Level-Szene: Band 22 px, Vorschau höchstens alle 50 ms, sonst nach dem 1,5-Fachen ihrer Dauer */
 const BAND_PX = 22;
 const PREVIEW_MIN_S = 0.05;
@@ -345,6 +348,10 @@ interface StrokeResult {
     depthFlips: number;
     ride: string;
     rideOk: boolean;
+    /** Zahlen der Fahrt (Paket 2): Inversionen, Querkraft, Antrieb, Schräglage am Anschlag */
+    rideStats: RideNumbers;
+    /** Selbstkreuzungen des Strichs im Bild (gezeichnete Schleifen, grob) */
+    loopsDrawn: number;
     crossings?: Array<{ s1: number; s2: number; along: number; dy: number; zTrack: number; z1Line: number; z2Line: number; dzLine: number; near1: boolean | null; near2: boolean | null }>;
     accepted: string[];
   } | null;
@@ -466,16 +473,51 @@ function shapeStats(path: TrackPath, samples: TrackSamples): { knicke: number; r
   return { knicke, rollRate: q(rates, 0.9), rollPer100: (rollSum / Math.max(1, samples.length)) * 100, depthSpan: hi - lo, depthFlips: flips };
 }
 
-function ride(path: TrackPath, level: LevelDef, terrain: Terrain, skin: string, field: PlaneField | null, slices: boolean): { ok: boolean; text: string } {
+interface RideNumbers {
+  inversions: number;
+  maxLatG: number;
+  kmh: number;
+  /** Meter, die der Antrieb geschoben hat, und wo er zuerst eingriff (−1 = nie) */
+  driveM: number;
+  driveFirstM: number;
+  /** Zeitanteile im Rollen: Schräglage am Anschlag (MAX_BANK), Querkraft über 1,5 g */
+  bankCap: number;
+  lat15: number;
+  timeS: number;
+  fail: string | null;
+  failAtM: number;
+}
+
+function ride(path: TrackPath, level: LevelDef, terrain: Terrain, skin: string, field: PlaneField | null, slices: boolean): { ok: boolean; text: string; stats: RideNumbers } {
   path.startType ||= 'chainlift';
   const samples = sampleTrack(path, 0.25);
   const sim = new TrainSim(samples, path, { ...simOptionsForLevel(level, path, terrain, skin, true), ...(field ? { insideRock: (x: number, y: number, z: number) => field.ceilingAbove(x, y, z) } : {}), ...(slices ? { depthPerspective: SLICE_PHYSICS_D } : {}) });
-  for (let i = 0; i < 60 * 180 && !sim.finished; i++) sim.step(1 / 60);
+  let steps = 0;
+  let capSteps = 0;
+  let latSteps = 0;
+  let driveFirst = -1;
+  // bis 400 s Spielzeit: mit Antrieb kriecht ein langer Strich notfalls mit 4 m/s durch
+  for (let i = 0; i < 60 * 400 && !sim.finished; i++) {
+    sim.step(1 / 60);
+    if (sim.phase === 'coast') {
+      steps++;
+      if (Math.abs(sim.cars[0].bank) >= MAX_BANK - 0.02) capSteps++;
+      if (sim.cars[0].gLat > 1.5) latSteps++;
+    }
+    if (driveFirst < 0 && sim.stats.driveM > 0) driveFirst = sim.s;
+  }
   const kmh = Math.round(sim.stats.maxSpeed * 3.6);
   const lat = sim.stats.maxLatG.toFixed(1);
-  if (sim.phase === 'done') return { ok: true, text: `geschafft, ${kmh} km/h, ${lat} g quer` };
   const at = Math.round(((sim.cars[0].s % samples.length) + samples.length) % samples.length);
-  return { ok: false, text: `${sim.failReason ?? 'Zeit um'} bei ${at} m, ${kmh} km/h, ${lat} g quer` };
+  // angekommen: Runde zu Ende (geschlossene Bahn) oder das offene Ende des Strichs erreicht (die Bahn hat kein Ziel)
+  const arrived = sim.phase === 'done' || sim.failReason === 'openEnd';
+  const stats: RideNumbers = {
+    inversions: sim.stats.inversions, maxLatG: sim.stats.maxLatG, kmh, driveM: sim.stats.driveM, driveFirstM: driveFirst,
+    bankCap: steps ? capSteps / steps : 0, lat15: steps ? latSteps / steps : 0, timeS: sim.t, fail: arrived ? null : sim.failReason ?? 'Zeit um', failAtM: at,
+  };
+  const drive = sim.stats.driveM > 0 ? `, Antrieb ${Math.round(sim.stats.driveM)} m ab ${Math.round(driveFirst)} m` : '';
+  if (arrived) return { ok: true, text: `${sim.phase === 'done' ? 'geschafft' : `Ende erreicht bei ${at} m`}, ${kmh} km/h, ${lat} g quer, ${sim.stats.inversions} kopfüber${drive}`, stats };
+  return { ok: false, text: `${sim.failReason ?? 'Zeit um'} bei ${at} m, ${kmh} km/h, ${lat} g quer${drive}`, stats };
 }
 
 // ------------------------------------------------------------------ Nachspielen
@@ -798,6 +840,8 @@ function replay(rec: Rec, idx: number): StrokeResult {
     ...shape,
     ride: r.text,
     rideOk: r.ok,
+    rideStats: r.stats,
+    loopsDrawn: findLineCrossings(line, !!best.closed).length,
     accepted,
     // Kreuzungen auf gleicher Höhe (wie die Fahrt sie zählt): Zahl und je Stelle die Bogenlängen, der Abstand auf der
     // Bahn (klein = Schleife des Strichs selbst) und der Höhenunterschied
@@ -890,6 +934,8 @@ if (rels.length) {
   const lag = allPv.map((p) => p.tipLagPx);
   console.log(`Vorläufiger Teil (letzte 15 m) je Vorschau: Tiefe Median ${f2(q(tz, 0.5))} m, 90 % ${f2(q(tz, 0.9))}, max ${f2(mx(tz))}; Rückstand des Bahnendes hinter dem Finger: Median ${f1(q(lag, 0.5))} px, 90 % ${f1(q(lag, 0.9))}, max ${f1(mx(lag))}`);
   console.log(`Bahn: Knicke je Strich Median ${q(rels.map((r) => r.knicke), 0.5)} (Summe ${rels.reduce((a, r) => a + r.knicke, 0)}), Rollrate 90 % Median ${f1(q(rels.map((r) => r.rollRate), 0.5))} °/m, Rollen je 100 m Median ${Math.round(q(rels.map((r) => r.rollPer100), 0.5))}°, Tiefenspanne Median ${f1(q(rels.map((r) => r.depthSpan), 0.5))} m, Tiefenumkehr je Strich Median ${q(rels.map((r) => r.depthFlips), 0.5)}; Fahrt geschafft ${rels.filter((r) => r.rideOk).length} von ${rels.length}; Stützen ${rels.reduce((a, r) => a + r.supports, 0)}, davon schwebend ${rels.reduce((a, r) => a + r.floating, 0)}`);
+  const rs = rels.map((r) => r.rideStats);
+  console.log(`Fahrt (${RIDE_TUNING.rules}, Antrieb ${RIDE_TUNING.driveSpeed} m/s): geschafft ${rels.filter((r) => r.rideOk).length} von ${rels.length}; Antrieb-Meter je Strich Median ${Math.round(q(rs.map((x) => x.driveM), 0.5))}, max ${Math.round(mx(rs.map((x) => x.driveM)))}, Striche mit Antrieb ${rs.filter((x) => x.driveM > 0).length}; kopfüber Summe ${rs.reduce((a, x) => a + x.inversions, 0)} bei gezeichneten Schleifen ${rels.reduce((a, r) => a + r.loopsDrawn, 0)}; Querkraft max Median ${f1(q(rs.map((x) => x.maxLatG), 0.5))} g, Zeitanteil über 1,5 g Median ${Math.round(100 * q(rs.map((x) => x.lat15), 0.5))} %, Schräglage am Anschlag Median ${Math.round(100 * q(rs.map((x) => x.bankCap), 0.5))} %; Fahrzeit Median ${Math.round(q(rs.map((x) => x.timeS), 0.5))} s`);
 }
 if (JSON_OUT) {
   writeFileSync(JSON_OUT, JSON.stringify(results.map((r) => ({ ...r, previews: r.previews.map((p) => ({ ...p, devAll: undefined, devTouched: undefined, devFree: undefined, devTipFar: undefined, moveZ: undefined, movePx: undefined, dev50: q(p.devAll, 0.5), dev90: q(p.devAll, 0.9), devMax: mx(p.devAll), move90: q(p.movePx, 0.9), moveMax: mx(p.movePx), tailZ: undefined, tail90: q(p.tailZ, 0.9), tailMax: mx(p.tailZ) })) })), null, 1));

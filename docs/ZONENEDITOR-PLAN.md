@@ -1093,7 +1093,11 @@ Messung (Studie 13i, headless am Handy-Bild): 54 bis 60 fps bei 862 bis 1396 m L
 Rest kommt vom Neubau des ganzen Schienen-Meshs je Vorschau (`setTrack`, Risiko 4), nicht vom Strich. 30.10. (Studie
 14): Vorlauf dynamisch (3 / 6 / 12 m, `&vorlaufm`, `&freezemax`, `&lookstart`), erste Vorschau nach 3 m; Florians
 Antworten und die Pakete 2–5 (Fahrt, Schleifen als Loopings, Mesh inkrementell mit animiertem Nachziehen, Raum) stehen
-in Studie 14. Offen in Stufe P1: Mesh und Abtastung des festen Teils behalten (Renderer), Restkreuzungen in dichten
+in Studie 14. 30.10. (Studie 15, Paket 2): Fahrregeln `drive` als Vorgabe (Antrieb mit Mindesttempo 4 m/s,
+Stützräder: kein Entgleisen, kein Fall, kein Stillstand, kein Auffahren; Querkraft und Hängen sind Werte), auf
+Florians 78 Strichen kommen damit alle Bahnen an statt einer; `&fahrt=1` ist die strenge Fahrt, offen sind
+Mindesttempo, Kettenlinie im Zeichnen, ebene Kreuzungen, Schräglage-Deckel und ein sichtbarer Antrieb (Studie 15f).
+Offen in Stufe P1: Mesh und Abtastung des festen Teils behalten (Renderer), Restkreuzungen in dichten
 Schleifenhaufen (strukturell, Stufe P2). Zonen ohne Ebenen zeichnen weiter mit dem bisherigen Pinsel.
 **Noch offen aus Stufe 4:** die übrigen Spielobjekte auf Kanten (Schlange, Ziele, Stufen, Schalter, Coins, Baustellen;
 bis dahin der Klötzchen-Editor), Durchblick-Prüfung. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m

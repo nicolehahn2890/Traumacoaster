@@ -96,6 +96,15 @@ nach hinten in Metern (eine Spur = 8,4 m). **Loslassen** = der Finger geht hoch,
    deinen Strichen nach 4 Linienmetern. Form und Fahrt ändern sich nicht. Das Band bleibt auf deinen Strichen im Median
    14 m lang, weil fast alles steil ist und ein offenes steiles Stück nicht fest wird; `&freezemax=40` halbiert das obere
    Zehntel, kostet aber Knicke, darum nur als Schalter. Die Antwort für Schleifen ist Paket 3.
+16. Abschnitt 15, Paket 2: Die Fahrt. Recherche (OpenRCT2 bewertet g statt abzubrechen, Rollercoaster Creator und
+   Sonic funktionieren mit Abbruch nur, weil Höhe und Tempo im Bild stehen, echte Bahnen entgleisen dank Stützrädern
+   nicht, Powered Coaster fahren jede Form mit vorgegebenem Tempo) und Befund: Die strenge Fahrt endet auf deinen
+   Strichen fast immer im ersten Fünftel (1 von 78 kommt an), aus Ursachen, die in unserer Perspektive nicht zu sehen
+   sind. Umbau: Fahrregeln `drive` (Vorgabe): Antrieb mit Mindesttempo 4 m/s, Stützräder, kein Entgleisen, kein
+   Fall, kein Stillstand, kein Auffahren; Querkraft und Hängen sind Werte. Alle 78 Bahnen kommen an, der Antrieb
+   schiebt 4 bis 7 % der Länge. Offen und gemessen: Inversionen, die der Strich nicht als Schleife gezeichnet hat
+   (Paket 3), Querkraft-Spitzen an Knicken (Form), Schräglage ein Zehntel der Zeit am Anschlag (Stilprobe). Schalter
+   `&fahrt=1` (streng), `&antrieb=`; fünf Entscheidungen für Florian in 15f.
 
 ## 2. Befund am heutigen Pinsel
 
@@ -385,7 +394,8 @@ gelten für 26,6°.
 2. **Höhe gegen Tiefe:** Ab welcher Steilheit ist ein Strich Höhe (heute 15–40°, Prototyp 25°)? Und sollen Kehren
    immer durch die Tiefe gehen (Talblick) oder bei flacher Zeichnung auch als Hügel bleiben dürfen?
 3. **Nachsicht der Fahrt:** Querkraft aus der Tiefe deckeln (Arcade) oder streng lassen und mehr Fahrten scheitern
-   lassen?
+   lassen? **Beantwortet 30.10. (Florians Antwort 2, Abschnitt 15):** nachsichtig, Antrieb und Stützräder, Querkraft
+   als Wert, Abbrüche nur für Sichtbares.
 4. **Höhlenmeter:** Budget je Feld, Startwerte (Vorschlag: 60 m, nur Vorschlag).
 5. **Mindestabstand spielbarer Ebenen** (Vorschlag: 4 m, nur Vorschlag) und was mit engeren Ebenen passiert.
 6. **Kantenrollen** im Werkzeug D: eine Taste mit Durchschalten (andocken, Lippe, Halter, Vorrang) oder vier Marken?
@@ -1057,3 +1067,153 @@ neu: ruhige Strecke gleich, Kehre im Fenster anders), `vite build` ohne Fehler, 
 abbricht). Schalter: `&vorlaufm` (voller Vorlauf, Vorgabe 12 m), `&freezemax` (offenes steiles Stück, Vorgabe 90 m),
 `&lookstart` (freie Startmeter nach dem Anschluss, Vorgabe 6 m); die Messung nimmt sie als `--vorlauf --freezemax
 --lookstart`.
+
+## 15. Paket 2: Die Fahrt. Recherche, Umbau und Messung (30.10.)
+
+Florians Antwort 2 (Abschnitt 14): Die Fahrt soll „auf jeden Fall“ neu gedacht werden, nur gewollte Loopings, keine
+unnötigen Überkopffahrten; „das Entgleisen und Zurückrollen passt nicht zur Perspektive“; vorher „richtig
+recherchieren, was die beste Lösung in unserem Fall ist“. Dieser Abschnitt ist die Recherche, der Vorschlag, der
+Umbau (hinter einem Schalter, Vorgabe neu) und die Messung alt gegen neu auf den drei Strichsätzen.
+
+### 15a. Befund: Was die strenge Fahrt auf deinen Strichen tut
+
+Die Fahrt bis heute (`src/physics/trainSim.ts`) kennt vier Abbrüche aus der Bahnform: **Entgleisen** (Querkraft im Wagen
+über der Grenze des Schienentyps, Holz 2,0 g bis Weltraum 3,5 g), **Fall** (kopfüber und länger als 0,12 s weniger
+als −0,15 g im Sitz), **Stillstand** (Tempo unter 0,03 m/s im Rollen: der Zug rollt zurück) und **Auffahren** (Kreuzung
+auf gleicher Höhe, Höhenunterschied unter 3,2 m). Dazu kommen offenes Ende, Wasser ohne Splash, Wand und Kette.
+Auf deinen Strichen, mit Strich 2 und dem Stand nach Paket 1 (`--fahrt strict`):
+
+| Satz | Striche | angekommen | Abbrüche | Stelle des Abbruchs (Median) | Länge (Median) |
+|---|---|---|---|---|---|
+| 21 heute früh (29.10.) | 21 | 1 | Fall 9, Entgleisen 8, Stillstand 2, Auffahren 1 | 94 m | 348 m |
+| 27 neue (28.10. spät) | 27 | 0 | Fall 9, Entgleisen 8, Stillstand 6, Auffahren 4 | 72 m | 498 m |
+| 31 alte (28.10. früh, Schleifen) | 30 | 0 | Auffahren 13, Entgleisen 7, Fall 6, Stillstand 4 | 70 m | 756 m |
+
+Fast jede Fahrt endet im ersten Fünftel der Bahn, bevor man von der eigenen Bahn etwas gesehen hat. Die Ursachen sind
+in unserer Perspektive nicht sichtbar: Ob eine Schleife 4 oder 8 m Radius hat, wie hoch ein Hügel in Metern ist, wie
+schnell der Zug dort sein wird und ob die Schräglage reicht, entscheidet die Lesung des Strichs (Höhe gegen Tiefe,
+Abschnitt 6), nicht die Hand. Die Regeln aus dem großen Plan 4.7 (Entgleisen selten, Schwachstellen-Marker beim
+Zeichnen, Vorab-Fahrt warnt „hier zu schnell“) stammen aus der Zeit der Seitenansicht, in der Höhe und Radius im Bild
+standen. Mit Ebenen-Zone und gekippter Kamera gilt das nicht mehr, und ein Zug, der abfliegt oder rückwärts den Berg
+hinunterrollt, liest sich im Bild falsch (Florians Satz zur Perspektive).
+
+### 15b. Was andere tun (Quellen, geprüft soweit erreichbar)
+
+- **RollerCoaster Tycoon / OpenRCT2:** g-Kräfte sind nie ein Abbruch, nur Bewertung. Im Quelltext der Bewertung
+  (`RideRatings.cpp`) erhöht eine Querkraft über 2,80 g die Intensität um 3,75 und die Übelkeit um 2,00, über 3,10 g
+  wird die Spannung halbiert und negativ; nichts in dieser Datei lässt einen Zug abstürzen. Ein zu langsamer Zug
+  rollt zurück und pendelt im Tal (aus dem Spiel bekannt, nicht nachgeschlagen); Crashs gibt es an offenen Enden und
+  bei Zusammenstößen. Quelle: https://github.com/OpenRCT2/OpenRCT2/blob/develop/src/openrct2/ride/RideRatings.cpp
+- **Rollercoaster Creator (Spil Games, 2008, Flash):** Bahn mit dem Stift zeichnen, dann Physik laufen lassen, Münzen
+  sammeln; „a track that makes the coaster crash ends the level“. Es funktioniert, weil die Seitenansicht Höhe und
+  Radius so zeigt, wie die Physik sie rechnet. Quellen: https://kizi.com/games/rollercoaster-creator,
+  https://gigazine.net/gsc_news/en/20080528_rollercoaster_creator
+- **RollerCoaster Tycoon Touch (Atari, Handy):** Bahn „mit einem Finger zeichnen“ (Spline-Editor). Nutzerkritik auf
+  Metacritic: Die gezeichneten Bahnen „don't abide by the laws of physics“, das Zeichnen sei „fun but a little buggy“.
+  Dieselbe Spannung wie bei uns: Zeichenfreiheit gegen physikalische Plausibilität. Quellen:
+  https://atari.com/products/rollercoaster-tycoon-touch, https://www.metacritic.com/game/rollercoaster-tycoon-touch/
+- **Coaster Crazy (Frontier, 2012, iOS):** Bahn aus Teilen, Physikfahrt, Punkte. Rezensionen (TouchArcade, 148Apps,
+  Pocket Gamer) beschreiben es als Rätselspiel; als Frust nennt eine davon, dass unklar bleibt, warum eine Bahn
+  schlecht bewertet wird (Suchergebnis, Rezension nicht einzeln gelesen). Unlesbare Regeln frustrieren auch ohne
+  Abbruch. Quellen: https://toucharcade.com/2012/11/26/coaster-crazy-review/, https://148apps.com/reviews/coaster-crazy-review
+- **Sonic (klassisch):** Loopings brauchen Mindesttempo; an Wand oder Decke unter 2,5 Pixel je Bild fällt Sonic ab
+  (Sekundärquelle, der Sonic Physics Guide selbst war für mich gesperrt). Die Arcade-Regel funktioniert, weil das Tempo
+  sichtbar und in der Hand des Spielers ist. Quellen: https://info.sonicretro.org/Sonic_Physics_Guide,
+  https://threadreaderapp.com/scrolly/1747731331851678170, https://www.snexplores.org/article/sonic-the-hedgehog-physics-speed-loops
+- **Echte Bahnen:** Seit Millers Stützrad-Patent (1919) umfassen drei Radsätze die Schiene (Lauf-, Seiten-,
+  Stützräder); ein Zug fällt nicht aus dem Looping und entgleist nicht durch Querkraft. Querkraft ist eine
+  Komfortgrenze: ASTM F2291 lässt (nach Sekundärquellen) etwa ±1,5 g seitlich zu, und Schräglage nimmt sie heraus.
+  **Powered Coaster** (Mack Rides): Antrieb im Zug, „full control over speed and timing“, „no lift hill needed“: Der
+  Zug fährt jede Form der Bahn mit dem Tempo, das man ihm gibt. Quellen: https://en.wikipedia.org/wiki/Underfriction,
+  https://www.mack-rides.com/products/powered-coaster, https://store.astm.org/f2291-26.html (Norm, kostenpflichtig),
+  https://thrillzing.com/science/roller-coaster-g-forces-explained/ (Sekundärquelle für die 1,5 g)
+- **Spielgestaltung:** Juul (The Art of Failure, 2013): Gute Spiele versprechen eine faire Chance; Scheitern muss der
+  Spieler sich selbst zuschreiben können. Ein Abbruch aus einer Ursache, die er nicht sehen konnte, bricht dieses
+  Versprechen. Quelle: https://interactingminds.au.dk/events/single-events/artikel/failing-and-confusion-in-games-and-gaming
+
+### 15c. Was das für uns heißt: drei Wege
+
+| Weg | Was passiert | Für | Gegen |
+|---|---|---|---|
+| **A. Streng plus Warnung** (Plan 4.7) | Physik wie heute, Marker und Vorab-Fahrt warnen | ehrliche Physik, Spannung „schafft er es?“ | Warnungen zeigen Ursachen, die der Spieler nicht steuern kann (Radius, Höhe, Tempo sind Lesung); 95 % Abbrüche im ersten Fünftel; Abflug und Rückroller passen nicht zur Perspektive |
+| **B. Antrieb und Stützräder** (Powered Coaster) | Energie bleibt (Abfahrt macht schnell, Hügel langsam), aber der Zug fällt nie unter ein Mindesttempo, bleibt auf der Schiene, hängt kopfüber statt zu fallen, fährt ebene Kreuzungen; g und Hängen sind Werte (Schreien), keine Abbrüche | jede Bahn kommt an, der Spieler sieht seine ganze Bahn, Humor statt Neustart (Plan 4.7: „Schreien ist kein Scheitern“), echtes Vorbild | Kriech-Momente am Berg und im zu langsamen Looping (Cartoon-Logik), die Kettenzugstärke begrenzt die Fahrt nicht mehr (muss ins Zeichnen) |
+| **C. Arcade-Konstanttempo** | Tempo nur aus dem örtlichen Gefälle, keine Energie | einfachste Regel, nie ein Abbruch | kein Schwung über den nächsten Hügel, Höhe und Drop verlieren Bedeutung, fühlt sich nicht nach Achterbahn an |
+
+**Empfehlung: B**, und so gebaut. A ist Florians Antwort nach abgelehnt, C nimmt dem Spiel die Achterbahn. Scheitern
+bleibt für das, was der Spieler sieht und entscheidet: offenes Ende (Absperrband), Wasser ohne Splash, Wand, verfehlte
+Schanze (Plan 4.3) und Kollision im Schlangenbereich (Plan 4.7).
+
+### 15d. Umbau: Fahrregeln `drive` (gebaut, Vorgabe)
+
+- `RIDE_TUNING = { rules: 'drive', driveSpeed: 4 }` in `src/physics/trainSim.ts`, je Fahrt überschreibbar
+  (`rules`, `driveSpeed` in den Optionen). URL: `&fahrt=1` ist die strenge Fahrt wie bisher, `&antrieb=` das
+  Mindesttempo in m/s (Vorgabe 4 m/s = 14 km/h); Messung: `--fahrt strict|drive`, `--antrieb`.
+- Unter `drive`: kein Entgleisen (die Querkraft steht in `maxLatG` und je Wagen), kein Fall (kopfüber ohne Andruck
+  heißt hängen, Airtime und Inversionen zählen weiter), kein Stillstand (der Antrieb hält im Rollen mindestens
+  `driveSpeed`, außer vor dem offenen Ende, wo Radblockade und Kippen gelten), kein Auffahren (die Kreuzungsliste
+  wird gar nicht gerechnet, eine Kreuzung auf gleicher Höhe ist eine ebene Kreuzung). Der Antrieb schreibt
+  `stats.driveM` (geschobene Meter) und die Ereignisse `driveStart`/`driveEnd`, damit Darstellung und Ton später
+  darauf reagieren können; heute ist er unsichtbar. Die Kette, der Launch, Booster, Bremse, Splash, Rückführung und
+  das offene Ende bleiben, wie sie waren. Der Fehlgrund „Kette reicht nicht“ kann unter `drive` nicht mehr eintreten.
+- `src/track/inspect.ts`: Die Querkraft-Marker (Schwachstellen im DEV-Modus) gibt es nur noch unter `strict`.
+- Tests: sechs bestehende Dateien (physics, chain, crossings, inspect, slices, brush) prüfen ausdrücklich die strenge
+  Fahrt und setzen `RIDE_TUNING.rules = 'strict'`; neu `tests/fahrt.test.ts` (sechs Tests: Vorgabe, Kriechen über den
+  zu hohen Hügel mit Mindesttempo und Ereignissen, ebene Strecke, einstellbares Mindesttempo, keine Entgleisung in der
+  engen Kehre, kein Fall im zu langsamen Looping). Szenario 8 (Entgleisen auf Holz) öffnet das Level mit `fahrt=1`,
+  weil es den Abflug prüft; Szenario 1 (Oval am Boden) erwartete den Stillstand und prüft jetzt, dass der Antrieb den
+  Zug mit 14 km/h um die Runde bringt.
+- **Absicherung (30.10.):** 472 Einheitstests in 59 Dateien bestanden, `vite build` ohne Fehler, alle 28
+  Browser-Szenarien auf 5188: im Durchlauf 199 von 200 Prüfungen, die eine (Oval: Stillstand erwartet) an die neuen
+  Regeln angepasst und einzeln bestanden (Phase done, 14 km/h).
+
+### 15e. Messung alt gegen neu (dieselben Striche, dieselben Bahnen; nur die Fahrt unterscheidet sich)
+
+| | 21 heute früh | 27 neue | 31 alte (Schleifen) |
+|---|---|---|---|
+| angekommen, streng → Antrieb | 1 / 21 → 21 / 21 | 0 / 27 → 27 / 27 | 0 / 30 → 30 / 30 |
+| Striche, bei denen der Antrieb eingreift | 17 | 23 | 29 |
+| geschobene Meter je Strich: Median / 90 % / max | 20 / 33 / 49 | 41 / 100 / 123 | 60 / 123 / 131 |
+| Anteil an der Bahnlänge (Median) | 3,7 % | 7,3 % | 6,8 % |
+| kopfüber (Antrieb, ganze Bahn) / Selbstkreuzungen des Strichs im Bild | 137 / 77 | 470 / 469 | 605 / 796 |
+| Striche mit mehr kopfüber als Selbstkreuzungen | 17 | 19 | 12 |
+| Querkraft-Spitze je Strich, Median / 90 % | 9,0 / 14,3 g | 10,6 / 17,5 g | 9,7 / 14,8 g |
+| Zeitanteil über 1,5 g quer (Median) | 3 % | 4,6 % | 5,9 % |
+| Zeitanteil Schräglage am Anschlag 80° (Median) | 10 % | 12 % | 12 % |
+| Höchsttempo (Median) | 76 km/h | 77 km/h | 84 km/h |
+| Fahrzeit Median / max | 38 / 64 s | 53 / 176 s | 80 / 199 s |
+
+**Lesart, ehrlich:**
+
+- Jede Bahn kommt an. Der Antrieb greift auf fast allen Strichen ein, aber kurz: 4 bis 7 % der Länge, im oberen
+  Zehntel 100 bis 120 m am Stück (ein langer Anstieg, den die Lesung als Höhe gelesen hat). Das sind bei 4 m/s
+  25 bis 30 s Kriechen; ob das Tempo passt, ist Gefühlssache (`&antrieb`).
+- Die **Überkopffahrten** sind das offene Thema, nicht die Abbrüche: Auf den zwei neueren Sätzen haben 17 von 21 und
+  19 von 27 Strichen mehr Inversionen als Selbstkreuzungen im Bild. Die Zählung ist grob (eine Acht ist eine
+  Kreuzung, eine Schleife über einem fremden Strang zwei), aber die Richtung ist klar: Es gibt Inversionen, die der
+  Strich nicht als Schleife gezeichnet hat. Das ist genau Paket 3 (gezeichnete Schleifen als gewollte Loopings, der
+  Rest flach), und die Messung braucht dort einen echten Schleifen-Zähler statt der Selbstkreuzungen.
+- Die **Querkraft-Spitzen** von 9 bis 17 g sind keine Fahrt-, sondern Form-Werte: An Knicken der Bahn (Abschnitt 13,
+  80 bis 180 je Strich) begrenzt die Fahrt die Krümmung auf 2,5 m Radius, und bei 80 km/h sind das 20 g. Die strenge
+  Fahrt hat sie versteckt, weil sie an der ersten Stelle endete (deshalb dort 0,4 bis 1,8 g Median). Für das
+  Schreien der Fahrgäste (Bild im Bild, E3) braucht die gefühlte Kraft einen weicheren Deckel als die Fahrt selbst;
+  für die Bahn bleibt es die Knick-Arbeit am Strich.
+- Die Schräglage liegt ein Zehntel der Zeit am Anschlag (80°). Ob das in der gekippten Perspektive als Überkopf liest,
+  ist eine Stilprobe (60° als Deckel wäre ein Schalter, kostet mit `drive` nichts mehr, weil nichts mehr entgleist).
+- Fahrzeit bis 199 s auf 1300-m-Strichen: lang, aber das sind Striche aus dem Zeichentest; die Zonen-Felder begrenzen
+  die Länge (Budget-Regler, Plan 4).
+
+### 15f. Offene Entscheidungen für Florian (nichts davon ist gesetzt)
+
+1. **Mindesttempo:** 4 m/s (14 km/h) ist mein Vorschlag, langsam genug, dass eine Kuppe sich langsam anfühlt, schnell
+   genug, dass 100 m Kriechen keine halbe Minute dauern. Im Spiel per `&antrieb=` fühlen.
+2. **Kettenzugstärke:** Mit Antrieb ist „Kette reicht nicht“ kein Abbruch mehr; die Höhengrenze gehört ins Zeichnen
+   (Plan 2.4 und Zielart „Höhe ≥“: „Grenze durch Kettenzugstärke sichtbar“, Linie beim Zeichnen). Empfehlung: Strich 2
+   deckelt die Höhe an der Kettenlinie (Paket 5 oder eigenes Paket); bis dahin gilt die Grenze in der Fahrt nicht.
+3. **Ebene Kreuzungen:** Der Zug fährt durch. Im gemalten Look ist das ein Kreuzungsdiamant (Stilprobe), die
+   Pakete 1 bis 3 halten die Zahl klein. Alternative: Auffahren bleibt ein Abbruch (`&fahrt=1`-Verhalten einzeln).
+4. **Schräglage-Deckel** 80° oder 60°: Stilprobe in der Zone.
+5. **Sichtbarer Antrieb:** Ob der Antrieb hörbar oder sichtbar sein soll (Summen, kleine Funken) oder still bleibt
+   (wie bei Powered Coastern, die einfach fahren). Ereignisse sind da.
+
+**Entscheidung 3 aus Abschnitt 10** (Nachsicht der Fahrt) ist damit durch Florians Antwort 2 und diesen Umbau
+beantwortet: nachsichtig, mit Antrieb und Stützrädern, Querkraft als Wert.

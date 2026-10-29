@@ -3,6 +3,10 @@ import { createNode, sampleTrack, type TrackPath } from '@/track/model';
 import { Terrain } from '@/physics/terrain';
 import { TrainSim, liftRange, type TrainSimOptions } from '@/physics/trainSim';
 import { CAR_WORDS, carColor } from '@/world/train';
+import { RIDE_TUNING } from '../src/physics/trainSim';
+
+// Diese Tests prüfen die strenge Fahrt (Entgleisen, Stillstand, Auffahren); die Vorgabe im Spiel ist seit Paket 2 'drive'
+RIDE_TUNING.rules = 'strict';
 
 /** offene Pinsel-Bahn aus Stützpunkten (x, y) auf Spur 0 mit weichen Tangenten in x */
 function pathOf(points: Array<[number, number]>): TrackPath {

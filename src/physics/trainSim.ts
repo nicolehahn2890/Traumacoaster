@@ -91,10 +91,12 @@ export interface RideStats {
   caught: number;
   /** weitester Flug eines Fahrgasts in Metern */
   flightMax: number;
+  /** Meter, die der Antrieb den Zug geschoben hat (Regeln 'drive'): Berg und Looping, wo der Schwung nicht reichte */
+  driveM: number;
 }
 
 export interface RideEvent {
-  kind: 'coin' | 'tunnelEnter' | 'tunnelExit' | 'booster' | 'brake' | 'splash' | 'liftStart' | 'liftEnd' | 'launchEnd' | 'peak' | 'fail' | 'finish' | 'inversion' | 'wheelLock' | 'breakthrough';
+  kind: 'coin' | 'tunnelEnter' | 'tunnelExit' | 'booster' | 'brake' | 'splash' | 'liftStart' | 'liftEnd' | 'launchEnd' | 'peak' | 'fail' | 'finish' | 'inversion' | 'wheelLock' | 'breakthrough' | 'driveStart' | 'driveEnd';
   /** Durchbruch: Kennung der Baustelle */
   id?: string;
   time: number;
@@ -118,6 +120,10 @@ export interface TrainSimOptions {
   allowTunnels: boolean;
   /** Entgleis-Grenze statt der des Schienentyps (Probefahrten der Pinsel-Bahn: Infinity, die Querkraft wird mitgeschrieben) */
   lateralLimit?: number;
+  /** Fahrregeln (siehe RIDE_TUNING); ohne Angabe die Vorgabe */
+  rules?: RideRules;
+  /** Mindesttempo des Antriebs (m/s) bei Regeln 'drive'; ohne Angabe die Vorgabe */
+  driveSpeed?: number;
   /** Kreuzungen auf gleicher Höhe prüfen (Standard ja; die Probefahrten der Pinsel-Bahn prüfen sie vorab selbst) */
   checkCrossings?: boolean;
   /** Kettenzugstärke (Etappe 2, Schritt 3; Plan 2.4): Höhe über der Station in Metern, bis zu der die Kette zieht; ohne Angabe bis zum Gipfel */
@@ -158,6 +164,17 @@ const RETURN_SPEED_LIMIT = 8;
 const RETURN_LOOKAHEAD = 14;
 const DRAG = 0.0008;
 const MAX_CURVATURE = 1 / 2.5;
+/** Antrieb (Fahrregeln 'drive'): unter dieses Tempo (m/s) fällt der Zug im Rollen nie, 4 m/s sind 14 km/h */
+const DRIVE_SPEED = 4;
+/**
+ * Fahrregeln (Pinsel-Studie, Paket 2). 'strict': wie bisher, der Zug entgleist über der Querkraft-Grenze des
+ * Schienentyps, fällt kopfüber ohne Andruck, bleibt am Berg stehen und rollt zurück, fährt an Kreuzungen auf gleicher
+ * Höhe auf. 'drive': Stützräder und Antrieb, der Zug bleibt auf der Schiene und wird nie langsamer als driveSpeed;
+ * Querkraft, Hängen und Airtime stehen nur noch in den Werten (Schreien, nicht Scheitern). Fehlschläge bleiben
+ * offenes Ende, Wasser ohne Splash, Wand und Kette. Vorgabe über RIDE_TUNING (URL &fahrt=1 für 'strict', &antrieb=m/s).
+ */
+export type RideRules = 'strict' | 'drive';
+export const RIDE_TUNING: { rules: RideRules; driveSpeed: number } = { rules: 'drive', driveSpeed: DRIVE_SPEED };
 const BLACKOUT_G = 7;
 
 export class TrainSim {
@@ -169,7 +186,7 @@ export class TrainSim {
   readonly prevCars: CarState[] = [];
   readonly events: RideEvent[] = [];
   readonly stats: RideStats = {
-    time: 0, maxSpeed: 0, maxG: 1, minG: 1, maxLatG: 0, airtime: 0, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0, blackout: false, brakesUsed: false, distance: 0, ejected: 0, caught: 0, flightMax: 0, breakthroughs: 0,
+    time: 0, maxSpeed: 0, maxG: 1, minG: 1, maxLatG: 0, airtime: 0, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0, blackout: false, brakesUsed: false, distance: 0, ejected: 0, caught: 0, flightMax: 0, breakthroughs: 0, driveM: 0,
   };
   readonly collected: boolean[];
   /** Kreuzungen der Bahn mit sich selbst auf gleicher Höhe: dort fährt der Zug auf die andere Schiene auf */
@@ -200,6 +217,10 @@ export class TrainSim {
   private invertedPrev = false;
   private fallTimer = 0;
   private stallTimer = 0;
+  /** Fahrregeln dieser Fahrt und Mindesttempo des Antriebs */
+  readonly rules: RideRules;
+  private readonly driveSpeed: number;
+  private driveActive = false;
   private lapDone = false;
   private peakReported = false;
   /** Tangentialbeschleunigung des Zugs im letzten Teilschritt (Kettenzug, Launch, Bremse, Reibung, Hangabtrieb) */
@@ -210,7 +231,10 @@ export class TrainSim {
     this.path = path;
     this.opts = opts;
     this.collected = opts.coins.map(() => false);
-    this.crossings = opts.checkCrossings === false ? [] : findCrossings(samples);
+    this.rules = opts.rules ?? RIDE_TUNING.rules;
+    this.driveSpeed = opts.driveSpeed ?? RIDE_TUNING.driveSpeed;
+    // Kreuzungen auf gleicher Höhe: nur die strengen Regeln lassen den Zug dort auffahren (sonst eine ebene Kreuzung)
+    this.crossings = opts.checkCrossings === false || this.rules === 'drive' ? [] : findCrossings(samples);
     for (let i = 0; i < opts.cars; i++) {
       this.cars.push({ index: i, s: 0, x: 0, y: 0, z: 0, tx: 1, ty: 0, tz: 0, upx: 0, upy: 1, upz: 0, sx: 0, sy: 0, sz: 1, bank: 0, angle: 0, gSeat: 1, gFwd: 0, gLat: 0, feltFwd: 0, feltUp: G, feltSide: 0, inTunnel: false, inverted: false, vx: 0, vy: 0 });
       this.wasInTunnel.push(false);
@@ -384,9 +408,24 @@ export class TrainSim {
     this.aTangential = a;
     this.v += a * h;
     if (this.wheelLock > 0 && this.v < WHEEL_LOCK_FLOOR) this.v = WHEEL_LOCK_FLOOR;
-    // Stillstand: auf ebener Strecke oder am Berg → nicht geschafft
+    // Antrieb (Regeln 'drive'): im Rollen nie langsamer als driveSpeed, außer vor dem offenen Ende (Radblockade, Kippen)
+    if (this.rules === 'drive' && !afterFail && this.phase === 'coast' && this.wheelLock <= 0 && !this.lockArmed) {
+      if (this.v < this.driveSpeed) {
+        this.v = this.driveSpeed;
+        this.aTangential = Math.max(this.aTangential, 0);
+        this.stats.driveM += this.driveSpeed * h;
+        if (!this.driveActive) {
+          this.driveActive = true;
+          this.events.push({ kind: 'driveStart', time: this.t });
+        }
+      } else if (this.driveActive && this.v > this.driveSpeed + 0.5) {
+        this.driveActive = false;
+        this.events.push({ kind: 'driveEnd', time: this.t });
+      }
+    }
+    // Stillstand: auf ebener Strecke oder am Berg → nicht geschafft (nur strenge Regeln; mit Antrieb kommt er nicht vor)
     if (this.liftLimited && !this.liftDescended && this.phase === 'coast' && this.s > this.liftEnd && aGrav > 0.3) this.liftDescended = true;
-    if (!afterFail && this.phase === 'coast' && this.v <= 0.03) {
+    if (this.rules !== 'drive' && !afterFail && this.phase === 'coast' && this.v <= 0.03) {
       this.stallTimer += h;
       if (this.stallTimer > 0.4 || aGrav < -0.05) {
         // Stillstand am ersten Anstieg hinter einer zu kurzen Kette: die Kette reicht nicht (Etappe 2, Schritt 3)
@@ -517,7 +556,7 @@ export class TrainSim {
         }
       }
     }
-    if (!st.auto) {
+    if (!st.auto && this.rules !== 'drive') {
       for (const car of this.cars) {
         if (car.gLat > this.skinPhysics.lateralLimit) {
           this.fail('derail', car.index);
@@ -525,7 +564,7 @@ export class TrainSim {
         }
       }
     }
-    if (front.inverted && front.gSeat < -0.15) {
+    if (this.rules !== 'drive' && front.inverted && front.gSeat < -0.15) {
       this.fallTimer += h;
       if (this.fallTimer > 0.12) {
         this.fail('fall', 0);

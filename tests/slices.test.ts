@@ -33,6 +33,10 @@ import { RubberBrush } from "@/track/brush";
 import { sampleTrack } from "@/track/model";
 import { TrainSim } from "@/physics/trainSim";
 import { Terrain } from "@/physics/terrain";
+import { RIDE_TUNING } from '../src/physics/trainSim';
+
+// Diese Tests prüfen die strenge Fahrt (Entgleisen, Stillstand, Auffahren); die Vorgabe im Spiel ist seit Paket 2 'drive'
+RIDE_TUNING.rules = 'strict';
 
 /** kleiner Stapel von Hand: zwei Terrassen, die hintere höher, die vordere mit einem Bogen und Höhlenrückwand */
 function band(

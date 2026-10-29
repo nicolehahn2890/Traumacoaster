@@ -6,6 +6,10 @@ import { sampleTrack } from '@/track/model';
 import { TrainSim } from '@/physics/trainSim';
 import { Terrain } from '@/physics/terrain';
 import { DEFAULT_CAMERA_TILT, LANE_DEPTH, setCameraTilt, toStage, type StagePoint } from '@/track/stage';
+import { RIDE_TUNING } from '../src/physics/trainSim';
+
+// Diese Tests prüfen die strenge Fahrt (Entgleisen, Stillstand, Auffahren); die Vorgabe im Spiel ist seit Paket 2 'drive'
+RIDE_TUNING.rules = 'strict';
 
 const flat = new Terrain({ width: 200, terrain: [{ kind: 'flat' }] } as never);
 

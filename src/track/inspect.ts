@@ -4,6 +4,7 @@
  * des Schienentyps (je 20 m eine), die Stelle, an der die Fahrt scheitert (Fahrgäste fallen, Stillstand, Rauswurf …),
  * und Kreuzungen auf gleicher Höhe. Für jede Lesart gleich; nach jeder Änderung der Bahn neu.
  */
+import { RIDE_TUNING } from '../physics/trainSim';
 import { findCrossings } from './crossings';
 import type { TrackPath, TrackSamples } from './model';
 import type { ProbeFactory, ProbeSim } from './brushTrack';
@@ -58,7 +59,8 @@ export class TrackInspector {
   private collect(): void {
     const S = this.samples;
     let last = -Infinity;
-    for (let i = 0; i < S.count; i++) {
+    // Querkraft-Spitzen sind nur unter den strengen Fahrregeln Schwachstellen (mit Antrieb und Stützrädern entgleist nichts)
+    for (let i = 0; i < (RIDE_TUNING.rules === 'drive' ? 0 : S.count); i++) {
       if (this.lat[i] <= this.latLimit || S.s[i] - last < MERGE) continue;
       // die stärkste Stelle in der Umgebung
       let best = i;

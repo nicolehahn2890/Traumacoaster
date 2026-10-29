@@ -3,6 +3,10 @@ import { TrackInspector } from '@/track/inspect';
 import { createNode, emptyPath, sampleTrack, type TrackPath, type TrackSamples } from '@/track/model';
 import { TrainSim } from '@/physics/trainSim';
 import { Terrain } from '@/physics/terrain';
+import { RIDE_TUNING } from '../src/physics/trainSim';
+
+// Diese Tests prüfen die strenge Fahrt (Entgleisen, Stillstand, Auffahren); die Vorgabe im Spiel ist seit Paket 2 'drive'
+RIDE_TUNING.rules = 'strict';
 
 const flat = new Terrain({ width: 300, terrain: [{ kind: 'flat' }] } as never);
 const probe = (path: TrackPath, samples: TrackSamples) =>

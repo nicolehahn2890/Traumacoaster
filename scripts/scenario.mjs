@@ -151,9 +151,11 @@ check(st.lanes >= 2, `Oval: mindestens 2 Spuren (vorne und hinten, ist ${st.lane
 check(st.loops === 0, `Oval: kein Looping (ist ${st.loops})`);
 check(Number(st.height) < 3, `Oval: bleibt am Boden (Höhe ${st.height})`);
 await page.screenshot({ path: 'screenshots/scenario-1-oval.png' });
-// Fahrt (ohne Hügel gibt es keinen Schwung → Stillstand erwartet)
+// Fahrt (ohne Hügel gibt es keinen Schwung; seit den Fahrregeln 'drive' hält der Antrieb den Zug bei 4 m/s = 14 km/h
+// in Bewegung statt ihn stehen zu lassen, Studie 15)
 r = await ride('1-oval', 2);
-check(r.st.sim?.fail === 'stall', `Oval ohne Hügel: Zug rollt aus und bleibt stehen (ist ${r.st.sim?.fail})`);
+check(r.st.sim?.fail == null, `Oval ohne Hügel: kein Abbruch, der Antrieb fährt den Zug (Phase ${r.st.sim?.phase}, Grund ${r.st.sim?.fail})`);
+check(Number(r.st.sim?.maxSpeed) >= 13, `Oval ohne Hügel: Antrieb hält etwa 14 km/h (ist ${r.st.sim?.maxSpeed})`);
 }
 
 // ---------------------------------------------------------------- 2. Hügel + Oval am Boden, Fahrt mit Schräglage
@@ -378,7 +380,8 @@ check(proAfter === -1, `Tipp ins Leere beendet den Profi-Modus (proNode ${proAft
 
 // ---------------------------------------------------------------- 8. Entgleisen auf Holz
 if (want('8')) {
-await openLevel();
+// strenge Fahrregeln (&fahrt=1): das Szenario prüft den Abflug, den es unter den Vorgabe-Regeln 'drive' nicht mehr gibt (Studie 15)
+await openLevel('&fahrt=1');
 // 30-m-Lifthügel mit runder Kuppe (r 6 m lift-seitig, r 25 m bis 40° Gefälle, damit niemand an der Kuppe
 // rausfliegt), Abfahrt 40°, enge Kehre am Boden, Rückweg auf Spur 2 und Kehre in die Station: Dort liegt die
 // Querkraft auf der Holzbahn (Welt 1) bei rund 80 km/h trotz voller Schräglage über 2 g. Der Zug entgleist,
