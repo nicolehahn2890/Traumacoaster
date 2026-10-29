@@ -2396,6 +2396,80 @@ if (want('30')) {
   check(ride && (ride.t > 1 || ride.mode === 'result'), `Halter-Probe: Fahrt läuft (${ride?.mode}, ${Number(ride?.t ?? 0).toFixed(1)} s${ride?.fail ? `, ${ride.fail}` : ''})`);
 }
 
+// 31. Tor S4: Szene 06 „Kathedrale im Fels“ in Formen (scripts/testzonen.ts szene-06). Der Editor beginnt mit dem Feld,
+// die Station steht auf dem Bogen; ein Strich läuft über die Grasdecke, vor der Bogenwand hinab und durch die große
+// Öffnung in die Höhle: sein Ende landet hinten in der Höhle, die Stützen stehen auf Kanten, die Fahrt läuft.
+if (want('31')) {
+  await page.goto(`${BASE}?zone=szene-06&editor=2&dev=1&fast=6`, { waitUntil: 'networkidle' });
+  await sleep(3000);
+  const start = await page.evaluate(() => {
+    const ed = window.tcGame.current.planeEditor;
+    const planes = ed.nodes.filter((n) => n.kind === 'plane');
+    const g = { id: '_t', kind: 'plane', parent: null, name: '', z: 0, x: 0, y: 0, scale: 1, role: 'play' };
+    // (das hohe Feld erscheint in der Perspektive als Trapez, sein unterer Rand liegt knapp unter der Leiste unten: oben
+    // und seitlich im freien Bereich, unten noch im Fenster)
+    const fr = ed.freeRect();
+    const inside = [[0, -12], [96, -12], [96, 66], [0, 66]].every(([x, y]) => {
+      const q = ed.screenOf(g, { x, y });
+      return q && q.x >= fr.x0 - 1 && q.x <= fr.x1 + 1 && q.y >= fr.y0 - 1 && q.y <= (y < 0 ? 800 : fr.y1 + 1);
+    });
+    return { inside, planes: planes.length, lanes: Object.fromEntries(planes.map((p) => [p.name, (p.z - 1) / 8.4])) };
+  });
+  check(start.inside && start.planes === 10, `Szene 06: Editor beginnt mit dem Feld im Bild (${start.planes} Ebenen)`);
+  await page.keyboard.press('Tab');
+  await sleep(1500);
+  const piece = await page.evaluate(() => {
+    const n = window.tcGame.current.path?.nodes;
+    return n?.length ? { kind: n[0].kind, z: n[0].z } : null;
+  });
+  check(piece?.kind === 'station' && Math.abs(piece.z - start.lanes['Bogen']) < 1e-3, `Szene 06: Station mit Vorgabestück auf dem Bogen (Spur ${piece?.z?.toFixed(2)})`);
+  const pts = await page.evaluate(() => {
+    const s = window.tcGame.current;
+    const ed = s.planeEditor;
+    const end = s.path.nodes[s.path.nodes.length - 1];
+    const q0 = window.tcGame.world.camera.toScreen(end.x, end.y, end.z);
+    const bogen = ed.nodes.find((n) => n.kind === 'plane' && n.name === 'Bogen');
+    const way = [[40, 50.5], [50, 44.5], [58, 41.5], [63, 39.5], [64, 32], [58, 24], [48, 17], [38, 13], [30, 12]];
+    return [[q0.x, q0.y], [q0.x + 20, q0.y - 2], ...way.map(([x, y]) => {
+      const q = ed.screenOf(bogen, { x, y });
+      return [q.x, q.y];
+    })];
+  });
+  await page.evaluate(async (pts) => {
+    const el = document.querySelector('canvas');
+    const ev = (type, [x, y]) => el.dispatchEvent(new PointerEvent(type, { pointerId: 31, pointerType: 'mouse', button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: x, clientY: y, bubbles: true, cancelable: true, isPrimary: true }));
+    const dense = [];
+    for (let i = 0; i + 1 < pts.length; i++) for (let k = 0; k < 8; k++) dense.push([pts[i][0] + ((pts[i + 1][0] - pts[i][0]) * k) / 8, pts[i][1] + ((pts[i + 1][1] - pts[i][1]) * k) / 8]);
+    dense.push(pts[pts.length - 1]);
+    ev('pointerdown', dense[0]);
+    for (let i = 1; i <= 5; i++) ev('pointermove', dense[i]);
+    for (let i = 6; i < dense.length; i++) {
+      ev('pointermove', dense[i]);
+      await new Promise((r) => setTimeout(r, 15));
+    }
+    ev('pointerup', dense[dense.length - 1]);
+  }, pts);
+  await sleep(2000);
+  const res = await page.evaluate(() => ({ z: (window.tcGame.current.path?.nodes ?? []).map((n) => n.z), supports: window.tcGame.world.supportStats }));
+  const lastZ = res.z[res.z.length - 1];
+  const onArch = res.z.filter((z) => Math.abs(z - start.lanes['Bogen']) < 0.1).length;
+  check(res.z.length >= 5 && onArch >= 3 && Math.abs(lastZ - start.lanes['Höhle']) < 0.3, `Szene 06: über die Grasdecke (${onArch} Knoten auf dem Bogen), Ende in der Höhle (Spur ${lastZ?.toFixed(2)}, Höhlenwand ${start.lanes['Höhle'].toFixed(2)}; ${res.z.map((z) => z.toFixed(2)).join(' ')})`);
+  const sup = res.supports ?? { element: 0, ground: -1, floating: 99 };
+  check(sup.element > 0 && sup.ground === 0 && sup.floating <= 2, `Szene 06: Stützen auf Kanten (${sup.element}, Halter ${(sup.wall ?? 0) + (sup.ceiling ?? 0)}, unsichtbarer Boden ${sup.ground}, schwebend ${sup.floating})`);
+  await page.screenshot({ path: 'screenshots/scenario-31-szene-06.png' });
+  await page.mouse.click(640, 800 - 56);
+  let ride = null;
+  for (let i = 0; i < 20; i++) {
+    await sleep(400);
+    ride = await page.evaluate(() => {
+      const s = window.tcGame.current;
+      return { mode: s.mode, t: s.sim ? s.sim.t : 0, fail: s.sim?.failReason ?? null };
+    });
+    if (ride.mode === 'result' || ride.t > 2) break;
+  }
+  check(ride && (ride.t > 1 || ride.mode === 'result'), `Szene 06: Fahrt läuft (${ride?.mode}, ${Number(ride?.t ?? 0).toFixed(1)} s${ride?.fail ? `, ${ride.fail}` : ''})`);
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));

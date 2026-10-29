@@ -1169,7 +1169,26 @@ lokal, es zeigt Bilder aus `refs/`); unsere Bilder allein: `docs/research/halter
 **Platzhalter:** alle Formen und Maße der Halter, die Reichweiten (4 m, 2,6 m, 3,2 bis 12 m), die Regel „je Lauf die
 nächste Variante“. Gemalte oder modellierte Halter gehören zur Stützen-Werkstatt (Etappe 4 im großen Plan).
 **Offen:** Florians Wahl der Varianten und der Mischregel.
-**Noch offen aus Stufe 4:** Szene 06 und Tor S4. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
+**Szene 06 in Formen (30.10.2026, Vorschlag für Tor S4):** Zone `szene-06` aus `npx tsx scripts/testzonen.ts szene-06`, in
+der Lage der gemalten Fassung (Zone `ebenen`, Feld „Oben“ 0 bis 96 × −12 bis 66 m): Bogen, Terrasse und Wiesenmasse
+übernehmen deren Umrisse (dort in Etappe 2 aus den Bildern des Baukastens gewonnen). Ebenen von vorn nach hinten: Farn
+(Vordergrund, −3 m), Terrasse (4 m, der Boden der Höhle vorn), großer Bogen mit Grasdecke (8 m, Station auf der Grasdecke),
+Ring hell (11 m) und Ring tief (14 m) in der Öffnung, Höhle (18 m, Rückwand mit Lichtschacht und Graten), Bäume (26 m,
+Kulisse), Wiese (30 m, Kulisse: als spielbare Ebene nahm der Pinsel Striche knapp über der Grasdecke als Bahn auf der Wiese
+dahinter; im Editor mit einem Klick wieder spielbar), See (60 m), Berge (70 m). Earle-Vorgaben auf allen Formen außer
+den Bergen. Die zwei Steinportale des Originals fehlen (Portale, Stufe 7): Die Bahn fährt durch die große Öffnung in die
+Höhle. **Geprüft (Szenario 31):** Ein Strich über die Grasdecke, vor der Bogenwand hinab und durch die Öffnung landet mit
+seinem Ende auf der Höhlenwand (Spur 2,02), 7 Stützen auf Kanten (in der Höhle auf dem unteren Rand der Öffnung und der
+Terrasse davor, wie im Original), eine Stelle ohne Halt (die Bahn liegt dort 5 m vor dem Bogen, weiter als die Wandhalter
+reichen), die Fahrt läuft. **Bildzeit** (Mac M3 Pro, Metal, Handy-Bild 1688 × 780 px, `scripts/earle-bildzeiten.mjs`):
+mit Earle 1,45 ms je Bild, ohne Earle 1,35 ms, Grotte zum Vergleich 1,43 ms; am Handy noch nicht gemessen. Unsere Bilder:
+`docs/research/szene-06/2026-10-30-szene-06-vorschlag.jpg`; der Vergleich mit der gemalten Fassung nur lokal (Bilder aus
+`refs/`). **Platzhalter:** alle Formen außer den übernommenen Umrissen, alle Farben, Tiefen und Earle-Vorgaben, die Lage
+der Station. **Bekannt:** Das hohe Feld erscheint in der Perspektive als Trapez; sein unterer Rand liegt beim Start knapp
+unter der Leiste unten.
+**Tor S4, was noch fehlt:** Florian passt Szene 06 an, zeichnet und fährt selbst eine Bahn durch die Höhle (die Werkzeuge,
+nicht das Gefühl des Pinsels) und misst am Handy (`?zone=szene-06&dev=1&earle=messen`, dazu eine Fahrt mit der Anzeige);
+seine Wahl der Halter-Varianten. „Replay grün“ wartet, bis er wieder aufnimmt. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
 lang, die Schraffuren. **Nicht geprüft:** Szene 06 in Formen (Tor S4), Stroke-Replay mit dem Ebenen-Pinsel (der Replay
 kennt den Modus nicht), 60 fps am Handy.
 

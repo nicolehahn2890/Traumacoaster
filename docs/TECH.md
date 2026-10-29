@@ -855,7 +855,11 @@ Plan: `docs/ZONENEDITOR-PLAN.md`, Stufe 4 und 4.9. Ohne DOM: `src/zone/dock.ts`,
   Fläche verschwindet (`floorBelow`), der höhere Fuß zählt (die gerade nach hinten verlängerte Kante läge im Bild über der
   sichtbaren).
 - **Testszenen** (`scripts/testzonen.ts`, `npx tsx scripts/testzonen.ts`): drei Zonen nur aus Formen auf Ebenen,
-  `test-huegel`, `test-grotte`, `test-boegen` (Palette, Luftperspektive, Station, ein Feld 120 × 65 m). Formen in
+  `test-huegel`, `test-grotte`, `test-boegen` (Palette, Luftperspektive, Station, ein Feld 120 × 65 m); dazu `tor-s5`,
+  `test-halter` (Halter-Probe) und `szene-06` (Tor S4, eigenes Feld über `SceneSpec.rect`; Bogen, Terrasse und Wiese als
+  fertige Kurvenpfade `ShapeSpec.path` aus der Zone `ebenen`, die Grasdecke aus der oberen Hüllkurve des Bogens, Ringe
+  und Rückwand um die Mitte seiner Öffnung). Neue Szenen kommen ans Ende der Liste, damit der Zufall der alten gleich
+  bleibt. Formen in
   Bildkoordinaten, jede Ebene mit `holdPicture` aus der Tiefe 0 in ihre Tiefe gebracht, für die Kamera des Startbilds
   (Feld mit 2 % Rand bei 1280 × 800 px, Abstand 247 m). Lange Strecken werden vor `smoothPath` unterteilt (Catmull-Rom
   wölbt eine lange Gerade sonst um Meter auf). Eine Bodenkante dockt nur an, wenn in ihrer Ebene nichts Festes darüber

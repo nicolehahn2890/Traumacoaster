@@ -12,6 +12,8 @@
  *   Formen, Farben und die Wahl der Vorgaben sind nicht festgelegt
  * - test-halter: Probe für Wand- und Deckenhalter (Stufe 4): eine Felswand ohne Kante unter der Bahn und ein Überhang über
  *   einem See (Szene 06 mit ihren Wandkonsolen, `bahn und strecke/15-wandkonsole`)
+ * - szene-06: Tor S4, Szene 06 „Kathedrale im Fels“ aus dem Parallax-Baukasten in Formen nachgebaut, in der Lage der
+ *   gemalten Fassung (Zone `ebenen`); Vorschlag, den Florian im Editor anpasst
  *
  * Platzhalter: alle Formen, Farben, Tiefen; Testgrundlage, kein Inhalt (Tor S4 baut Szene 06 eigens nach). Jede Ebene ist
  * mit „Bild halten“ so gesetzt, dass sie in der Startansicht des Editors (ganze Zonenbreite) aussieht wie hier gezeichnet:
@@ -19,14 +21,14 @@
  *
  *   npx tsx scripts/testzonen.ts [zone …]     (ohne Namen alle Zonen)
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanPath, flattenPath, smoothPath, translatePath, type Poly, type ZonePath } from '../src/zone/path';
 import { holdPicture, LIGHT_DEFAULT, swatchMap, type HoldView, type Material, type PlaneRole, type ZoneAir, type ZoneFieldNode, type ZoneGroup, type ZoneNode, type ZonePlane, type ZoneShape, type ZoneStationNode } from '../src/zone/nodes';
 import { earleShape, type EarlePreset } from '../src/zone/earle';
 import type { DotsFill, GradientFill, ZoneSwatch } from '../src/zone/paint';
 import { dockEdges, stationOf } from '../src/zone/dock';
-import { emptyZone, parseZone, serializeZone } from '../src/zone/types';
+import { emptyZone, parseZone, serializeZone, type ZoneElement, type ZoneFile } from '../src/zone/types';
 import { DEFAULT_CAMERA_TILT } from '../src/track/stage';
 
 type Pt = [number, number];
@@ -98,6 +100,9 @@ interface ShapeSpec {
   name: string;
   outline: Pt[];
   holes?: Pt[][];
+  /** fertiger Kurvenpfad statt des Umrisses (Bildkoordinaten, Griffe relativ), etwa aus einem Umriss aus Bild */
+  path?: ZonePath;
+  holePaths?: ZonePath[];
   fill: string;
   grad?: Grad;
   material?: Material;
@@ -129,6 +134,8 @@ interface SceneSpec {
   field?: string;
   /** eigene Palettenfelder der Szene (nach den gemeinsamen, Kennungen ab c22) */
   swatches?: Array<[string, string]>;
+  /** eigenes Feld (sonst FIELD); auch der Bildausschnitt, für den die Ebenen ihr Bild halten */
+  rect?: { x0: number; x1: number; y0: number; y1: number };
 }
 
 /** Umriss gegen den Uhrzeigersinn (y nach oben, wie presetPath), Löcher mit ihm */
@@ -161,8 +168,8 @@ function densify(pts: Pt[], longer = 30, step = 8): Pt[] {
 }
 
 function makeShape(spec: ShapeSpec, id: string, parent: string, order: number): ZoneShape {
-  const outline = smoothPath(densify(oriented(spec.outline, true)) as Poly);
-  const holes = (spec.holes ?? []).map((h) => smoothPath(densify(oriented(h, false)) as Poly));
+  const outline = spec.path ?? smoothPath(densify(oriented(spec.outline, true)) as Poly);
+  const holes = spec.holePaths ?? (spec.holes ?? []).map((h) => smoothPath(densify(oriented(h, false)) as Poly));
   // Ursprung in die Mitte der Form, damit Griffe und Spiegeln im Editor um die Mitte arbeiten
   const poly = flattenPath(outline);
   const xs = poly.map((p) => p[0]);
@@ -197,9 +204,9 @@ const round = (v: number, d = 2): number => Math.round(v * 10 ** d) / 10 ** d;
  * Kamera, für die die Bilder stimmen: der Startblick auf das Feld (Kamera.fitBounds mit 2 % Rand, 1280 × 800 px;
  * auf größeren Fenstern ist der Abstand etwas kleiner, die Ebenen verschieben sich dann leicht gegeneinander)
  */
-const fieldView = (): HoldView => {
-  const zoom = Math.min((1280 * 0.96) / (FIELD.x1 - FIELD.x0), (800 * 0.96) / (FIELD.y1 - FIELD.y0));
-  return { cx: (FIELD.x0 + FIELD.x1) / 2, cy: (FIELD.y0 + FIELD.y1) / 2, D: 800 / 2 / zoom / Math.tan((18 * Math.PI) / 360), tilt: DEFAULT_CAMERA_TILT };
+const fieldView = (f = FIELD): HoldView => {
+  const zoom = Math.min((1280 * 0.96) / (f.x1 - f.x0), (800 * 0.96) / (f.y1 - f.y0));
+  return { cx: (f.x0 + f.x1) / 2, cy: (f.y0 + f.y1) / 2, D: 800 / 2 / zoom / Math.tan((18 * Math.PI) / 360), tilt: DEFAULT_CAMERA_TILT };
 };
 
 function build(scene: SceneSpec): ZoneNode[] {
@@ -213,7 +220,7 @@ function build(scene: SceneSpec): ZoneNode[] {
     groupIds.set(name, g.id);
     nodes.push(g);
   });
-  const view = fieldView();
+  const view = fieldView(scene.rect);
   const planeIds = new Map<string, string>();
   let shapeNo = 0;
   const looks: Array<[ZoneShape, EarlePreset | 'auto' | 'none', ShapeSpec['look']]> = [];
@@ -245,7 +252,7 @@ function build(scene: SceneSpec): ZoneNode[] {
   const st = planeIds.get(scene.station.plane);
   if (!st) throw new Error(`Station: Ebene ${scene.station.plane} fehlt`);
   nodes.push({ id: 'station', kind: 'station', parent: st, x: scene.station.x, dir: 1, length: 14 } satisfies ZoneStationNode);
-  nodes.push({ id: 'f1', kind: 'field', name: scene.field ?? 'Test', ...FIELD } satisfies ZoneFieldNode);
+  nodes.push({ id: 'f1', kind: 'field', name: scene.field ?? 'Test', ...(scene.rect ?? FIELD) } satisfies ZoneFieldNode);
   return nodes;
 }
 
@@ -761,15 +768,149 @@ function halter(): SceneSpec {
   };
 }
 
+/** Palettenfelder nur der Szene 06 (Vorschlag) */
+const S06_SWATCHES: Array<[string, string]> = [
+  ['Creme', '#f7ecc9'],
+  ['Nachtblau', '#1b2d5c'],
+  ['Lichtgold', '#f0cf6e'],
+  ['Limette', '#c8dc4a'],
+  ['Farn', '#3f9c94'],
+];
+const Y6 = Object.fromEntries(S06_SWATCHES.map(([name], i) => [name, `@c${PALETTE.length + i + 1}`])) as Record<string, string>;
+
+/**
+ * Szene 06 „Kathedrale im Fels“ (Parallax-Baukasten, Tor S4) in Formen, als Vorschlag zum Anpassen. Lage wie die gemalte
+ * Fassung (Zone `ebenen`, Etappe 2, Feld „Oben“): Bogen, Terrasse und Wiesenmasse übernehmen deren Umrisse (dort aus den
+ * Bildern gewonnen), damit beide Fassungen nebeneinander passen. Ebenen von vorn nach hinten: Farn, Terrasse (Boden der
+ * Höhle vorn), großer Bogen mit Grasdecke, zwei Ringe in seiner Öffnung, Höhle (Rückwand mit Lichtschacht), Busch, Wiese,
+ * See, Berge. Die zwei Steinportale des Originals sind Portale (Stufe 7): hier fährt die Bahn durch die große Öffnung in
+ * die Höhle
+ */
+function szene06(): SceneSpec {
+  const src = JSON.parse(readFileSync(join(process.cwd(), 'public', 'zones', 'ebenen', 'zone.json'), 'utf8')) as ZoneFile;
+  const el = (id: string): ZoneElement => {
+    const e = src.elements.find((x) => x.id === id);
+    if (!e?.path) throw new Error(`Szene 06: Körper ${id} der Zone ebenen fehlt`);
+    return e;
+  };
+  const abs = (p: ZonePath, e: ZoneElement): ZonePath => cleanPath(translatePath(p, e.x, e.y), 3);
+  const arch = el('k5');
+  const terrace = el('k7');
+  const meadow = el('k3');
+  const archPath = abs(arch.path!, arch);
+  const holePath = abs(arch.holes![0], arch);
+  // obere Hüllkurve des Bogens (je 2 m die höchste Stelle des Umrisses): darauf liegt die Grasdecke
+  const flat = flattenPath(archPath, 0.5);
+  const top: Pt[] = [];
+  for (let x = Math.ceil(Math.min(...flat.map((q) => q[0]))) + 1; x <= Math.max(...flat.map((q) => q[0])) - 1; x += 2) {
+    let y = -Infinity;
+    for (const [px, py] of flat) if (Math.abs(px - x) <= 1) y = Math.max(y, py);
+    if (Number.isFinite(y)) top.push([x, round(y, 2)]);
+  }
+  // nach rechts dicker, wie die grüne Flanke im Original
+  const thick = (x: number): number => 2.4 + 4.6 * Math.max(0, Math.min(1, (x - 20) / 90)) + 0.5 * Math.sin(x / 7);
+  const grass: Pt[] = [...top.map(([x, y]): Pt => [x, y + 0.5]), ...[...top].reverse().map(([x, y]): Pt => [x, y - thick(x)])];
+  // Öffnung: Mitte und Punkte (Ringe und Rückwand um sie herum)
+  const hole: Pt[] = holePath.map((q): Pt => [q.x, q.y]);
+  const M: Pt = [hole.reduce((a, q) => a + q[0], 0) / hole.length, hole.reduce((a, q) => a + q[1], 0) / hole.length];
+  const ring = (kx: number, ky: number, dx: number, dy: number): Pt[] => grow(hole, M[0], M[1], kx, ky).map(([x, y]): Pt => [round(x + dx, 2), round(y + dy, 2)]);
+  const ridge = (y0: number, amp: number, x0: number, x1: number, h: number): Pt[] => {
+    const pts: Pt[] = [];
+    for (let x = x0; x <= x1; x += 3) pts.push([x, y0 + amp * Math.sin((x - x0) / 6) + (x - x0) * 0.18]);
+    return [...pts, ...[...pts].reverse().map(([x, y]): Pt => [x, y - h])];
+  };
+  // Schirmbäume oben links (Baukasten `bush_alpine_fan`): flache Kronen auf schlanken Stämmen
+  const umbrella = (cx: number, y0: number, rx: number, ry: number): ShapeSpec[] => [
+    { name: 'Stamm', outline: [[cx - 0.5, y0 - 7], [cx - 0.35, y0 - 1], [cx - 1.4, y0 + 0.3], [cx + 1.4, y0 + 0.3], [cx + 0.35, y0 - 1], [cx + 0.5, y0 - 7]], fill: C['Wald'], material: 'airy', earle: 'none' },
+    { name: 'Krone', outline: [...blob(cx, y0 + ry * 0.55, rx, ry, 12, 0.08).filter(([, y]) => y >= y0), [cx + rx * 0.7, y0 - 0.2], [cx, y0 - 0.5], [cx - rx * 0.7, y0 - 0.2]], fill: C['Wiese dunkel'], material: 'airy', grad: { stops: [[C['Wiese'], 0], [C['Busch'], 1]], from: [cx, y0 + ry * 1.4], to: [cx, y0] }, earle: 'crown' },
+  ];
+  const fern = (cx: number, cy: number): ShapeSpec[] => [
+    { name: 'Farnblatt', outline: blob(cx - 1.8, cy + 2.6, 2.4, 1.1, 9, 0.12, -0.5), fill: Y6['Farn'], material: 'airy', earle: 'crown' },
+    { name: 'Farnblatt', outline: blob(cx + 1.6, cy + 1.8, 2, 0.9, 9, 0.12, 0.4), fill: Y6['Farn'], material: 'airy', earle: 'crown' },
+    { name: 'Farnstiel', outline: [[cx - 0.2, cy - 1.2], [cx - 1.2, cy + 2.2], [cx - 0.8, cy + 2.4], [cx + 0.3, cy - 1.2]], fill: C['Wald'], material: 'airy', earle: 'none' },
+  ];
+  return {
+    name: 'szene-06',
+    groups: ['Kathedrale', 'Kulisse'],
+    station: { plane: 'Bogen', x: 20 },
+    earle: true,
+    field: 'Kathedrale (Vorschlag)',
+    swatches: S06_SWATCHES,
+    rect: { x0: 0, x1: 96, y0: -12, y1: 66 },
+    planes: [
+      { name: 'Farn', z: -3, role: 'front', shapes: fern(81, 3.2) },
+      {
+        name: 'Terrasse',
+        z: 4,
+        role: 'play',
+        group: 'Kathedrale',
+        shapes: [{ name: 'Höhlenterrasse', outline: [], path: abs(terrace.path!, terrace), holePaths: (terrace.holes ?? []).map((h) => abs(h, terrace)), fill: C['Fels blau hell'], material: 'solid', grad: { stops: [[Y6['Creme'], 0], [C['Fels blau hell'], 0.35], [C['Fels blau'], 0.7], [C['Fels blau tief'], 1]], from: [40, 8], to: [40, -40] }, earle: 'rock' }],
+      },
+      {
+        name: 'Bogen',
+        z: 8,
+        role: 'play',
+        group: 'Kathedrale',
+        shapes: [
+          { name: 'Großer Bogen', outline: [], path: archPath, holePaths: [holePath], fill: C['Sandstein hell'], material: 'solid', grad: { stops: [[Y6['Creme'], 0], [C['Sandstein hell'], 0.4], [C['Sandstein'], 0.75], [C['Fels blau hell'], 1]], from: [40, 62], to: [40, -16] }, earle: 'rock' },
+          { name: 'Grasdecke', outline: grass, fill: Y6['Limette'], grad: { stops: [[Y6['Limette'], 0], [C['Wiese'], 0.6], [C['Wiese dunkel'], 1]], from: [40, 60], to: [96, 24] }, earle: 'meadow' },
+        ],
+      },
+      {
+        name: 'Ring hell',
+        z: 11,
+        role: 'play',
+        group: 'Kathedrale',
+        air: 0,
+        shapes: [{ name: 'Ring hell', outline: ring(1.08, 1.08, 0, 0), holes: [ring(0.86, 0.84, 1.6, -0.8)], fill: C['Fels blau hell'], material: 'solid', grad: { stops: [[C['Fels blau hell'], 0], [C['Fels blau'], 1]], from: [M[0] - 18, M[1] + 14], to: [M[0] + 18, M[1] - 14] }, earle: 'rock' }],
+      },
+      {
+        name: 'Ring tief',
+        z: 14,
+        role: 'play',
+        group: 'Kathedrale',
+        air: 0,
+        shapes: [{ name: 'Ring tief', outline: ring(0.9, 0.88, 1.6, -0.8), holes: [ring(0.7, 0.68, 3.2, -1.6)], fill: C['Fels blau'], material: 'solid', grad: { stops: [[C['Fels blau'], 0], [Y6['Nachtblau'], 1]], from: [M[0] - 14, M[1] + 10], to: [M[0] + 14, M[1] - 10] }, earle: 'rock' }],
+      },
+      {
+        name: 'Höhle',
+        z: 18,
+        role: 'play',
+        group: 'Kathedrale',
+        air: 0,
+        shapes: [
+          { name: 'Rückwand', outline: ring(1.22, 1.1, 0, -0.5), fill: C['Fels blau tief'], material: 'solid', grad: { stops: [[Y6['Lichtgold'], 0], [C['Fels blau hell'], 0.35], [C['Fels blau'], 0.65], [C['Höhle tief'], 1]], from: [M[0] - 22, M[1] + 16], to: [M[0] + 20, M[1] - 14], radial: true }, earle: 'rock' },
+          { name: 'Grat hell', outline: ridge(M[1] + 3, 1.6, M[0] - 22, M[0] + 14, 3.4), fill: C['Fels blau hell'], material: 'airy', opacity: 0.35, earle: 'none' },
+          { name: 'Grat tief', outline: ridge(M[1] - 6, 1.2, M[0] - 14, M[0] + 22, 2.6), fill: Y6['Nachtblau'], material: 'airy', opacity: 0.4, earle: 'none' },
+        ],
+      },
+      { name: 'Bäume', z: 26, role: 'backdrop', group: 'Kulisse', shapes: [...umbrella(4, 58, 7, 2.4), ...umbrella(15, 60, 8, 2.8), ...umbrella(26, 57, 6, 2.2), { name: 'Busch', outline: blob(12, 55, 9, 2.6, 11, 0.14), fill: C['Busch'], material: 'airy', grad: { stops: [[C['Wiese dunkel'], 0], [C['Busch'], 1]], from: [12, 57.6], to: [12, 52.4] }, earle: 'crown' }] },
+      // (Kulisse, nicht spielbar: dicht hinter der Grasdecke des Bogens nähme der Pinsel sonst Striche knapp über dem Gras
+      // als Bahn auf der Wiese dahinter; mit einem Klick auf „spielbar“ im Editor wieder umschaltbar)
+      {
+        name: 'Wiese',
+        z: 30,
+        role: 'backdrop',
+        group: 'Kulisse',
+        shapes: [{ name: 'Wiesenmasse', outline: [], path: abs(meadow.path!, meadow), fill: Y6['Limette'], grad: { stops: [[Y6['Limette'], 0], [C['Wiese'], 0.55], [C['Wiese dunkel'], 1]], from: [40, 62], to: [40, 20] }, earle: 'hill' }],
+      },
+      { name: 'See', z: 60, role: 'backdrop', group: 'Kulisse', shapes: [{ ...lake(40.5), earle: 'water' }] },
+      // (Berge näher als in den Testzonen: der Nebel der Welt nimmt ab 24 m hinter der Bühne zu, bei 110 m waren sie fast weiß)
+      { name: 'Berge', z: 70, role: 'backdrop', group: 'Kulisse', air: 0.2, shapes: mountains([[22, 66], [52, 70], [86, 66], [112, 68]], -60, 220, 30).map((sh): ShapeSpec => ({ ...sh, earle: 'none' })) },
+    ],
+  };
+}
+
 // ------------------------------------------------------------------ schreiben und prüfen
 
 // alle Szenen bauen (der Zufall läuft in dieser Reihenfolge), nur die genannten schreiben
 const only = process.argv.slice(2);
-for (const scene of [huegel(), grotte(), boegen(), torS5(), halter()].filter((s) => !only.length || only.includes(s.name))) {
+for (const scene of [huegel(), grotte(), boegen(), torS5(), halter(), szene06()].filter((s) => !only.length || only.includes(s.name))) {
   seed = 7;
   const nodes = build(scene);
   // das Feld als Feldknoten (Zonen-Editor) und als Spiegel in den Feldern der Zonendatei (Klötzchen-Editor)
-  const zone = { ...emptyZone(scene.name, FIELD.x1 - FIELD.x0, 'steel'), fields: [{ id: 'f1', name: scene.field ?? 'Test', ...FIELD }], nodes };
+  const rect = scene.rect ?? FIELD;
+  const zone = { ...emptyZone(scene.name, rect.x1 - rect.x0, 'steel'), fields: [{ id: 'f1', name: scene.field ?? 'Test', ...rect }], nodes };
   const text = serializeZone(zone);
   const back = parseZone(JSON.parse(text));
   if (!back || (back.nodes?.length ?? 0) !== nodes.length) throw new Error(`${scene.name}: Zonendatei liest sich nicht zurück (${back?.nodes?.length} von ${nodes.length} Knoten)`);
