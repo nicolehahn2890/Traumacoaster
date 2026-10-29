@@ -1293,6 +1293,13 @@ Reihenfolge: Erst was Florian zum Formen braucht (S1 bis S3), dann der Beweis, d
 der Look (S5, S6), dann das schwierigste Spielsystem (S7), zuletzt die Produktion (S8). Wer den Look früher sehen will,
 kann S5 vor S4 ziehen (Entscheidung A3). Nach S2 ist der Editor schon als Formwerkzeug mit SVG-Export nutzbar, nach S3
 als Vorlagenwerkzeug für gemalte Teile.
+**Neu (29.10.2026):** S5 ist vorgezogen und fertig. Weiter geht es mit dem Rest von S4 (Florian: „dann Stufe 4
+zuerst“): Spielobjekte auf Kanten, Wand- und Deckenhalter für schwebende Stützen (Florian, 28.10.: in mehreren
+Varianten), Tor S4 mit Szene 06 „Kathedrale im Fels“, die zugleich die dichte, echte Zone für den nächsten Strich-Versuch
+wird. Danach als Vorschlag (bestätigt ist bisher nur „Stufe 4 zuerst“): S6, S8, dann der Strich neu in Szene 06 oder der
+Basiszone, S7 zuletzt, weil die Platzierung der Portale beim Zeichnen und der Tiefenwechsel durch die Öffnung am Strich
+hängen. Tor S4 mit eingefrorenem Strich (Vorschlag): „Bahn gezeichnet und gefahren“ prüft die Werkzeuge, nicht das
+Gefühl des Pinsels; „Replay grün“ wartet, bis Florian wieder aufnimmt.
 
 ## 7. Risiken
 
