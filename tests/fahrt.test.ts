@@ -42,10 +42,10 @@ function fromStroke(stroke: StagePoint[], over: Partial<TrainSimOptions> = {}): 
 /** 10-m-Hügel, dann ein 20-m-Hügel, den der Schwung nicht schafft (wie der Rückroller-Test der strengen Fahrt) */
 const twoHills = stageCurve(0, 120, 240, (x) => 10 * Math.exp(-((x - 20) ** 2) / 60) + 20 * Math.exp(-((x - 70) ** 2) / 80));
 
-/** 42-m-Lifthügel und eine 4 m enge Kehre am Boden: knapp 3 g quer, auf Holz ein Entgleisen der strengen Fahrt */
+/** 42-m-Lifthügel und eine 2,5 m enge Kehre am Boden: gut 2 g quer, auf Holz ein Entgleisen der strengen Fahrt (4 m reichten bis Studie 17, siehe physics.test) */
 function hairpin(): StagePoint[] {
   const R = laneRise(1);
-  const W = 4;
+  const W = 2.5;
   return [
     ...stageCurve(0, 40, 80, (x) => 42 * Math.exp(-((x - 18) ** 2) / 50)),
     ...param(40, (t) => [40 + W * Math.sin(Math.PI * t), R - R * Math.cos(Math.PI * t)]),

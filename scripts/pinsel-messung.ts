@@ -26,7 +26,7 @@ import { worldOfLevel } from '../src/levels/worlds';
 import type { LevelDef } from '../src/levels/types';
 import { Terrain } from '../src/physics/terrain';
 import { RIDE_TUNING, SKIN_PHYSICS, TrainSim, simOptionsForLevel } from '../src/physics/trainSim';
-import { MAX_BANK, railBanksFor, sampleTrack, trackStats, type TrackPath, type TrackSamples } from '../src/track/model';
+import { FRAME_TUNING, MAX_BANK, PASS_H, framePlan, railBanksFor, sampleTrack, trackStats, type TrackPath, type TrackSamples } from '../src/track/model';
 import type { Vec3 } from '../src/core/math3';
 import { RubberBrush } from '../src/track/brush';
 import { BrushRefiner, findElements, findLineCrossings, joinLines, lineLength, pathFromPoints, planBrushTrack, prepareBrushLine, previewBrushTrack, trackLineWithDepth, type BrushField, type BrushOptions, type BrushPreview } from '../src/track/brushTrack';
@@ -64,7 +64,7 @@ const opt = (f: string): string | null => {
   const i = args.indexOf(f);
   return i >= 0 ? args[i + 1] : null;
 };
-const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest', '--vorlauf', '--tag', '--tol', '--even', '--span', '--turn', '--freezemax', '--lookstart', '--fahrt', '--antrieb', '--loopaspect', '--loopr', '--schleifen'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
+const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest', '--vorlauf', '--tag', '--tol', '--even', '--span', '--turn', '--freezemax', '--lookstart', '--fahrt', '--antrieb', '--loopaspect', '--loopr', '--schleifen', '--rahmen', '--minr', '--zeit'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
 const LAST = Number(opt('--last') ?? 0);
 /** so viele der jüngsten Striche weglassen (ein älterer Satz bleibt vergleichbar, wenn neue dazukamen) */
 const SKIP = Number(opt('--skip') ?? 0);
@@ -92,6 +92,9 @@ if (opt('--schleifen') !== null) LOOP_TUNING.on = opt('--schleifen') !== '0';
 if (opt('--loopaspect') !== null) LOOP_TUNING.aspect = Number(opt('--loopaspect'));
 if (opt('--loopr') !== null) LOOP_TUNING.minR = Number(opt('--loopr'));
 const OHNE_KETTE = flag('--ohnekette');
+// Studie 17: --rahmen alt = alter Oben-Vektor der Schienen (Messung alt gegen neu), --minr N = Mindestradius des Fits in m (0 = aus)
+if (opt('--rahmen') !== null) FRAME_TUNING.upright = opt('--rahmen') !== 'alt';
+if (opt('--minr') !== null) FIT_TUNING.minRadius = Number(opt('--minr'));
 /** wie in der Level-Szene: Band 22 px, Vorschau höchstens alle 50 ms, sonst nach dem 1,5-Fachen ihrer Dauer */
 const BAND_PX = 22;
 const PREVIEW_MIN_S = 0.05;
@@ -116,6 +119,12 @@ recs = recs.filter((r) => r.reading === 'brush' && r.kind !== 'overdraw');
 if (flag('--heute')) recs = recs.filter((r) => r.at.startsWith('2026-10-28') && r.zone);
 const TAG = opt('--tag');
 if (TAG) recs = recs.filter((r) => r.at.startsWith(TAG) && r.zone);
+// --zeit A..B: Striche mit Zone zwischen zwei Zeitstempeln (ISO, Präfix genügt), unabhängig davon, wie viele neue dazukamen
+const ZEIT = opt('--zeit');
+if (ZEIT) {
+  const [za, zb] = ZEIT.split('..');
+  recs = recs.filter((r) => r.zone && r.at >= za && r.at <= zb + '~');
+}
 if (SKIP) recs = recs.slice(0, Math.max(0, recs.length - SKIP));
 if (flag('--alt')) recs = recs.filter((r) => !r.zone && r.at < '2026-10-28' && r.at >= '2026-10-23');
 if (NUR) recs = recs.filter((r) => r.zone === NUR);
@@ -378,6 +387,12 @@ interface StrokeResult {
     /** Knicke der Bahn: Bogenlänge und nächster Linienindex */
     knickeAt: number[];
     knickeLine: number[];
+    /** Studie 17: Knicke unabhängig vom Oben-Vektor, halbe Rollen außerhalb von Loopings, Rahmen-Drehung in Grad je 100 m */
+    knickeAll: number;
+    knickeAllAt: number[];
+    knickeAllLine: number[];
+    twists: number;
+    frameTwistPer100: number;
     s2Capped: number;
     chainTop: number;
     maxHeightM: number;
@@ -391,6 +406,8 @@ interface StrokeResult {
     invHairpin: number;
     invOther: number;
     invShapes: Array<{ k: number; kind: string; dy: number; dz: number }>;
+    /** Studie 17: Lage der Inversionen im Rahmenplan der Schienen */
+    invFrame: { loop: number; twist: number; steep: number; other: number };
     crossings?: Array<{ i1: number; i2: number; s1: number; s2: number; along: number; dy: number; zTrack: number; z1Line: number; z2Line: number; dzLine: number; near1: boolean | null; near2: boolean | null }>;
     accepted: string[];
   } | null;
@@ -466,22 +483,49 @@ function jumpOf(pv: { pts: { x: number; y: number; z: number }[]; z: Float64Arra
   return { px50: q(px, 0.5), px90: q(px, 0.9), pxMax: mx(px), m50: q(m, 0.5), mMax: mx(m), z50: q(dz, 0.5), zMax: mx(dz), roll50: q(roll, 0.5), rollMax: mx(roll), pxMaxFar: mx(far), zMaxFar: mx(farZ) };
 }
 
-/** Knicke (Krümmungsradius unter 4 m außerhalb von Loopings), Rollrate (°/m, 90 %), Rollen je 100 m, Tiefenspanne und -umkehrungen */
-function shapeStats(path: TrackPath, samples: TrackSamples): { knicke: number; knickeAt: number[]; rollRate: number; rollPer100: number; depthSpan: number; depthFlips: number } {
+/**
+ * Knicke (Krümmungsradius unter 4 m außerhalb von Loopings; knickeAll: überall, unabhängig vom Oben-Vektor), Rollrate
+ * (°/m, 90 %), Rollen je 100 m, Tiefenspanne und -umkehrungen. Studie 17: Verdrehung des Oben-Vektors gegen die
+ * Welt-Senkrechte quer zur Tangente (frameTwistPer100, Grad je 100 m, ohne fast senkrechte Stücke) und halbe Rollen
+ * (twists: der Winkel geht außerhalb fast senkrechter Stücke über 90°, also Kopfüber-Wechsel, die kein Looping sind)
+ */
+function shapeStats(path: TrackPath, samples: TrackSamples): { knicke: number; knickeAt: number[]; knickeAll: number; knickeAllAt: number[]; twists: number; frameTwistPer100: number; rollRate: number; rollPer100: number; depthSpan: number; depthFlips: number } {
   const banks = railBanksFor(samples);
   let knicke = 0;
+  let knickeAll = 0;
   const knickeAt: number[] = [];
+  const knickeAllAt: number[] = [];
   const rates: number[] = [];
   let rollSum = 0;
+  let twists = 0;
+  let twistSum = 0;
+  let prevAng = NaN;
   for (let i = 1; i < samples.count; i++) {
     const k = Math.hypot(samples.k3x[i], samples.k3y[i], samples.k3z[i]);
-    if (k > 0.25 && samples.upy[i] > 0.35) {
-      knicke++;
-      knickeAt.push(+samples.s[i].toFixed(1));
+    if (k > 0.25) {
+      knickeAll++;
+      knickeAllAt.push(+samples.s[i].toFixed(1));
+      if (samples.upy[i] > 0.35) {
+        knicke++;
+        knickeAt.push(+samples.s[i].toFixed(1));
+      }
     }
     const dr = (Math.abs(banks[i] - banks[i - 1]) * 180) / Math.PI;
     rates.push(dr / samples.step);
     rollSum += dr;
+    const tx = samples.t3x[i], ty = samples.t3y[i], tz = samples.t3z[i];
+    if (Math.hypot(tx, tz) < PASS_H) {
+      prevAng = NaN;
+      continue;
+    }
+    const px = -ty * tx, py = 1 - ty * ty, pz = -ty * tz;
+    const pl = Math.hypot(px, py, pz) || 1;
+    const ang = (Math.acos(Math.max(-1, Math.min(1, (samples.upx[i] * px + samples.upy[i] * py + samples.upz[i] * pz) / pl))) * 180) / Math.PI;
+    if (!Number.isNaN(prevAng)) {
+      twistSum += Math.abs(ang - prevAng);
+      if (ang > 90 !== prevAng > 90) twists++;
+    }
+    prevAng = ang;
   }
   let lo = Infinity;
   let hi = -Infinity;
@@ -513,11 +557,12 @@ function shapeStats(path: TrackPath, samples: TrackSamples): { knicke: number; k
       ref = z;
     }
   }
-  return { knicke, knickeAt, rollRate: q(rates, 0.9), rollPer100: (rollSum / Math.max(1, samples.length)) * 100, depthSpan: hi - lo, depthFlips: flips };
+  return { knicke, knickeAt, knickeAll, knickeAllAt, twists, frameTwistPer100: (twistSum / Math.max(1, samples.length)) * 100, rollRate: q(rates, 0.9), rollPer100: (rollSum / Math.max(1, samples.length)) * 100, depthSpan: hi - lo, depthFlips: flips };
 }
 
 interface RideNumbers {
   inversions: number;
+  inversionsDeep: number;
   maxLatG: number;
   kmh: number;
   /** Meter, die der Antrieb geschoben hat, und wo er zuerst eingriff (−1 = nie) */
@@ -562,7 +607,7 @@ function ride(path: TrackPath, level: LevelDef, terrain: Terrain, skin: string, 
   // angekommen: Runde zu Ende (geschlossene Bahn) oder das offene Ende des Strichs erreicht (die Bahn hat kein Ziel)
   const arrived = sim.phase === 'done' || sim.failReason === 'openEnd';
   const stats: RideNumbers = {
-    inversions: sim.stats.inversions, maxLatG: sim.stats.maxLatG, kmh, driveM: sim.stats.driveM, driveFirstM: driveFirst,
+    inversions: sim.stats.inversions, inversionsDeep: sim.stats.inversionsDeep, maxLatG: sim.stats.maxLatG, kmh, driveM: sim.stats.driveM, driveFirstM: driveFirst,
     bankCap: steps ? capSteps / steps : 0, lat15: steps ? latSteps / steps : 0, timeS: sim.t, fail: arrived ? null : sim.failReason ?? 'Zeit um', failAtM: at, invAt,
   };
   const drive = sim.stats.driveM > 0 ? `, Antrieb ${Math.round(sim.stats.driveM)} m ab ${Math.round(driveFirst)} m` : '';
@@ -871,6 +916,8 @@ function replay(rec: Rec, idx: number): StrokeResult {
   const jumpPlan = pvFin ? jumpOf(pvFin, { pts: planPts, z: planZ, path: planPath }, cam, rec.zoom, rec.screen) : empty;
   const jumpBest = pvFin ? jumpOf(pvFin, { pts: bestPts, z: bestZ, path: best }, cam, rec.zoom, rec.screen) : empty;
   const shape = shapeStats(best, bestSamples);
+  /** Linienindex (1-m-Punkt) zur Bogenlänge sv der Bahn: nächster Punkt zum Abtastpunkt dort */
+  const lineIndexAt = (sv: number): number => { let k = 0; while (k + 1 < bestSamples.count && bestSamples.s[k + 1] < sv) k++; const wx = bestSamples.x[k], wy = bestSamples.y[k], wz = bestSamples.z[k] * LANE_DEPTH; let bi = -1, bd = Infinity; for (let i = 0; i < bestPts.length; i++) { const d = Math.hypot(bestPts[i].x - wx, bestPts[i].y - wy, bestPts[i].z - wz); if (d < bd) { bd = d; bi = i; } } return bi; };
   const r = ride(best, level, terrain, skin, z?.field ?? null, !!z);
   // gezeichnete Schleifen (Linie von Strich 2, sonst die Pinsellinie) und Lage der Inversionen
   const loopLine = s2Line ?? line;
@@ -883,6 +930,20 @@ function replay(rec: Rec, idx: number): StrokeResult {
   });
   let invInLoop = 0, invInFlat = 0, invHairpin = 0, invOther = 0;
   const invShapes: Array<{ k: number; kind: string; dy: number; dz: number }> = [];
+  // Studie 17: Lage jeder Inversion im Rahmenplan der Schienen (geometrischer Looping-Bogen, halbe Drehung vor einer
+  // Kehre, fast senkrechtes Stück, sonst), unabhängig von der gezeichneten Linie
+  const plan = framePlan(bestSamples);
+  const twistZone = new Uint8Array(bestSamples.count);
+  for (const t of plan.twists) for (let i = t.from; i <= t.to; i++) twistZone[i] = 1;
+  const invFrame = { loop: 0, twist: 0, steep: 0, other: 0 };
+  for (const inv of r.stats.invAt) {
+    let k = 0, bd = Infinity;
+    for (let i = 0; i < bestSamples.count; i++) { const d = Math.hypot(bestSamples.x[i] - inv.x, bestSamples.y[i] - inv.y, bestSamples.z[i] * LANE_DEPTH - inv.z); if (d < bd) { bd = d; k = i; } }
+    if (plan.inv[k] || plan.inv[Math.min(bestSamples.count - 1, k + 8)]) invFrame.loop++;
+    else if (twistZone[k] || twistZone[Math.max(0, k - 8)]) invFrame.twist++;
+    else if (Math.hypot(bestSamples.t3x[k], bestSamples.t3z[k]) < PASS_H) invFrame.steep++;
+    else invFrame.other++;
+  }
   if (loopPts && loopPts.length === loopLine.length) {
     for (const inv of r.stats.invAt) {
       let k = 0, bd = Infinity;
@@ -917,7 +978,8 @@ function replay(rec: Rec, idx: number): StrokeResult {
     s2LoopsWidened: s2?.stats.loopsWidened ?? NaN,
     s2LoopsFlat: s2?.stats.loopsFlat ?? NaN,
     s2LoopList: s2 ? ((s2 as unknown as { loops: Array<{ i: number; j: number; vertical: boolean; scale: number }> }).loops.map((l) => ({ i: l.i, j: l.j, vertical: l.vertical, scale: +l.scale.toFixed(2) }))) : [],
-    knickeLine: shape.knickeAt.map((sv) => { let k = 0; while (k + 1 < bestSamples.count && bestSamples.s[k + 1] < sv) k++; const wx = bestSamples.x[k], wy = bestSamples.y[k], wz = bestSamples.z[k] * LANE_DEPTH; let bi = -1, bd = Infinity; for (let i = 0; i < bestPts.length; i++) { const d = Math.hypot(bestPts[i].x - wx, bestPts[i].y - wy, bestPts[i].z - wz); if (d < bd) { bd = d; bi = i; } } return bi; }),
+    knickeLine: shape.knickeAt.map(lineIndexAt),
+    knickeAllLine: shape.knickeAllAt.map(lineIndexAt),
     s2Capped: s2?.stats.capped ?? NaN,
     chainTop: opts.chainTop ?? NaN,
     maxHeightM: bestPts.reduce((m, p) => Math.max(m, p.y), -Infinity),
@@ -934,6 +996,7 @@ function replay(rec: Rec, idx: number): StrokeResult {
     loopsFlat: els.loops.filter((l) => !l.vertical).length,
     loopRadii,
     invInLoop, invInFlat, invHairpin, invOther, invShapes,
+    invFrame,
     accepted,
     // Kreuzungen auf gleicher Höhe (wie die Fahrt sie zählt): Zahl und je Stelle die Bogenlängen, der Abstand auf der
     // Bahn (klein = Schleife des Strichs selbst) und der Höhenunterschied
@@ -1025,7 +1088,7 @@ if (rels.length) {
   const tz = allPv.flatMap((p) => p.tailZ);
   const lag = allPv.map((p) => p.tipLagPx);
   console.log(`Vorläufiger Teil (letzte 15 m) je Vorschau: Tiefe Median ${f2(q(tz, 0.5))} m, 90 % ${f2(q(tz, 0.9))}, max ${f2(mx(tz))}; Rückstand des Bahnendes hinter dem Finger: Median ${f1(q(lag, 0.5))} px, 90 % ${f1(q(lag, 0.9))}, max ${f1(mx(lag))}`);
-  console.log(`Bahn: Knicke je Strich Median ${q(rels.map((r) => r.knicke), 0.5)} (Summe ${rels.reduce((a, r) => a + r.knicke, 0)}), Rollrate 90 % Median ${f1(q(rels.map((r) => r.rollRate), 0.5))} °/m, Rollen je 100 m Median ${Math.round(q(rels.map((r) => r.rollPer100), 0.5))}°, Tiefenspanne Median ${f1(q(rels.map((r) => r.depthSpan), 0.5))} m, Tiefenumkehr je Strich Median ${q(rels.map((r) => r.depthFlips), 0.5)}; Fahrt geschafft ${rels.filter((r) => r.rideOk).length} von ${rels.length}; Stützen ${rels.reduce((a, r) => a + r.supports, 0)}, davon schwebend ${rels.reduce((a, r) => a + r.floating, 0)}`);
+  console.log(`Bahn: Knicke je Strich Median ${q(rels.map((r) => r.knicke), 0.5)} (Summe ${rels.reduce((a, r) => a + r.knicke, 0)}; unabhängig vom Oben-Vektor Summe ${rels.reduce((a, r) => a + r.knickeAll, 0)}), halbe Rollen außerhalb von Loopings Summe ${rels.reduce((a, r) => a + r.twists, 0)}, Rahmen-Drehung je 100 m Median ${Math.round(q(rels.map((r) => r.frameTwistPer100), 0.5))}°, Rollrate 90 % Median ${f1(q(rels.map((r) => r.rollRate), 0.5))} °/m, Rollen je 100 m Median ${Math.round(q(rels.map((r) => r.rollPer100), 0.5))}°, Tiefenspanne Median ${f1(q(rels.map((r) => r.depthSpan), 0.5))} m, Tiefenumkehr je Strich Median ${q(rels.map((r) => r.depthFlips), 0.5)}; Fahrt geschafft ${rels.filter((r) => r.rideOk).length} von ${rels.length}; Stützen ${rels.reduce((a, r) => a + r.supports, 0)}, davon schwebend ${rels.reduce((a, r) => a + r.floating, 0)}`);
   const rs = rels.map((r) => r.rideStats);
   console.log(`Fahrt (${RIDE_TUNING.rules}, Antrieb ${RIDE_TUNING.driveSpeed} m/s): geschafft ${rels.filter((r) => r.rideOk).length} von ${rels.length}; Antrieb-Meter je Strich Median ${Math.round(q(rs.map((x) => x.driveM), 0.5))}, max ${Math.round(mx(rs.map((x) => x.driveM)))}, Striche mit Antrieb ${rs.filter((x) => x.driveM > 0).length}; kopfüber Summe ${rs.reduce((a, x) => a + x.inversions, 0)} bei gezeichneten Schleifen ${rels.reduce((a, r) => a + r.loopsDrawn, 0)}; Querkraft max Median ${f1(q(rs.map((x) => x.maxLatG), 0.5))} g, Zeitanteil über 1,5 g Median ${Math.round(100 * q(rs.map((x) => x.lat15), 0.5))} %, Schräglage am Anschlag Median ${Math.round(100 * q(rs.map((x) => x.bankCap), 0.5))} %; Fahrzeit Median ${Math.round(q(rs.map((x) => x.timeS), 0.5))} s`);
   const radii = rels.flatMap((r) => r.loopRadii);

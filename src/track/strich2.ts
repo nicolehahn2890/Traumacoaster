@@ -43,7 +43,7 @@ import { dubinsPaths, type BrushOptions, type BrushPreview, type Landing } from 
 export type Strich2Preview = BrushPreview & { line: StagePoint[]; frozen: number; frozenWorld: Vec3 | null };
 import type { CubicSegment3 } from '@/core/bezierFit3';
 import { createNode, emptyPath, type TrackNode, type TrackPath } from './model';
-import { reduceNodes } from './reduceNodes';
+import { reduceNodes, relaxCurvature } from './reduceNodes';
 import { LANE_DEPTH, LANE_MAX, LANE_MIN, TILT_TAN, mixPoint, rayToWorld, toView, zAtHeight, type StagePoint } from './stage';
 
 /** so weit (m) hinter der Spitze ist die Tiefe noch frei; davor fest */
@@ -103,7 +103,7 @@ const GLUE = 5;
  * die Knotenzahl nicht (48 → 48, die Schleifen des Strichs brauchen ihre Segmente), 150 m / 180° gibt 44 statt 48 bei
  * gleicher Abweichung; das ist jetzt die Vorgabe (vorher 90 m / 120°, wie beim bisherigen Pinsel).
  */
-export const FIT_TUNING = { tolScale: 1, even: true, evenSpan: 150, evenTurn: 180 };
+export const FIT_TUNING = { tolScale: 1, even: true, evenSpan: 150, evenTurn: 180, minRadius: 4 };
 /** Grenzwellenlänge (m) der Tiefenglättung; kürzer als beim heutigen Pinsel (40 m), weil die Ebenen Terrassen von 10–20 m haben */
 const CUTOFF = 20;
 const LAMBDA = (CUTOFF / (2 * Math.PI)) ** 4;
@@ -1432,9 +1432,16 @@ export class Strich2 {
     // wird bis end. Freie Punkte nehmen den billigen Weltpunkt (ohne Feld), ihre Segmente werden nie fest
     const total = this.pts.length;
     const frozenEnd = this.frozenEnd();
-    const pts: Vec3[] = [];
-    for (let i = from; i < total; i++) pts.push(i < frozenEnd ? this.worldPoint(o, this.pts[i]) : this.worldPointCheap(this.pts[i]));
-    if (closed && pts.length) pts[pts.length - 1] = { ...this.worldPoint(o, this.pts[0]) };
+    const raw: Vec3[] = [];
+    for (let i = from; i < total; i++) raw.push(i < frozenEnd ? this.worldPoint(o, this.pts[i]) : this.worldPointCheap(this.pts[i]));
+    if (closed && raw.length) raw[raw.length - 1] = { ...this.worldPoint(o, this.pts[0]) };
+    // der erste Punkt ist das Ende des letzten festen Segments (so, wie es gefittet wurde: mit Mindestradius kann es
+    // neben dem rohen Punkt liegen), damit das nächste Segment dort ansetzt
+    const lastFixed = this.fixedSegs.length ? this.fixedSegs[this.fixedSegs.length - 1] : null;
+    if (lastFixed && raw.length) raw[0] = { ...lastFixed.p3 };
+    // Mindestradius als Eigenschaft des Fits (Studie 17): Ecken und zu enge Bögen der Punktfolge werden zu Bögen von
+    // FIT_TUNING.minRadius; Anfang (Anschluss) und Spitze bleiben liegen
+    const pts = relaxCurvature(raw, FIT_TUNING.minRadius);
     // Toleranz an Kreuzungen (siehe TOL_NEAR): je Paar aus dem Spielraum nach der Lösung, für beide Stellen ±1 Punkt
     const tolAt = new Float64Array(pts.length).fill(Infinity);
     const tighten = (k: number, tol: number) => {
@@ -1466,7 +1473,6 @@ export class Strich2 {
       const l = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
       return l > 1e-9 ? { x: (b.x - a.x) / l, y: (b.y - a.y) / l, z: (b.z - a.z) / l } : undefined;
     };
-    const lastFixed = this.fixedSegs.length ? this.fixedSegs[this.fixedSegs.length - 1] : null;
     const startTangent = lastFixed ? unit(lastFixed.p2, lastFixed.p3) : undefined;
     const first = this.fixedSegs[0] ?? null;
     const endTangent = closed && first ? unit(first.p0, first.p1) : (this.endTangent ?? undefined);

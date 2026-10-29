@@ -140,6 +140,100 @@ export function curvatureProfile(pts: Vec3[], window = WINDOW): Float64Array {
   return k;
 }
 
+/** Drehung der Richtung (Bogenmaß) über ein zu enges Stück, ab der es eine Schleife oder Kehre ist und nicht gerundet wird */
+const RELAX_TURN_MAX = (150 * Math.PI) / 180;
+/** Punkte Rand um ein zu enges Stück, die beim Runden mitgehen dürfen (ein 4-m-Bogen um eine Ecke braucht Platz) */
+const RELAX_MARGIN = 4;
+/** Punkte beidseits eines zu engen Stücks, über die seine Richtungsänderung gemessen wird (eine kleine Schleife ganz) */
+const RELAX_LOOK = 8;
+
+/**
+ * Mindestradius als Eigenschaft des Fits (Studie 17): Ecken und Wellen der Punktfolge, deren Radius unter minRadius
+ * liegt, werden so weit zu den Nachbarn hin ausgeglichen, bis jeder Punkt den Radius hält (Gauß-Seidel über die
+ * Menger-Krümmung der drei Nachbarn; eine Ecke wird so zu einem Bogen von minRadius). Zwei Grenzen halten die Tinte:
+ * Ein zu enges Stück, dessen Richtung sich um RELAX_TURN_MAX oder mehr dreht (Schleife, enge Kehre), bleibt wie
+ * gezeichnet, denn Glätten zöge es zusammen statt es zu weiten (Schleifen weitet der Pinsel, 16b); und kein Punkt
+ * weicht mehr als maxDev von seiner Lage ab (was sich so nicht runden lässt, bleibt eng). Anfang und Ende bleiben
+ * liegen (Anschluss an feste Segmente, Spitze am Finger). Gibt die Folge selbst zurück, wenn nichts zu tun ist.
+ */
+export function relaxCurvature(pts: Vec3[], minRadius: number, maxDev = 2, maxSweeps = 200): Vec3[] {
+  const n = pts.length;
+  if (n < 3 || !(minRadius > 0)) return pts;
+  const kMax = 1 / minRadius;
+  const over = (a: Vec3, b: Vec3, c: Vec3): number => {
+    const k = menger(a, b, c);
+    return k > kMax * 1.02 ? k : 0;
+  };
+  // zu enge Stücke (Lücken bis zwei Punkte überbrückt); nur Ecken und Wellen dürfen samt Rand mitgehen
+  const allowed = new Uint8Array(n);
+  let dirty: number[] = [];
+  let i = 1;
+  while (i < n - 1) {
+    if (!over(pts[i - 1], pts[i], pts[i + 1])) {
+      i++;
+      continue;
+    }
+    let last = i;
+    for (let j = i + 1, gap = 0; j < n - 1 && gap <= 2; j++) {
+      if (over(pts[j - 1], pts[j], pts[j + 1])) {
+        last = j;
+        gap = 0;
+      } else gap++;
+    }
+    // größte Richtungsänderung zwischen zwei Punkten im Umfeld des Stücks (RELAX_LOOK Punkte beidseits): eine Schleife
+    // oder Kehre erreicht 180°, auch wenn ihre Krümmung stellenweise unter die Grenze fällt und das Stück zerteilt;
+    // eine Ecke erreicht ihren Winkel, eine Welle das Doppelte ihrer Neigung
+    const w0 = Math.max(0, i - RELAX_LOOK);
+    const w1 = Math.min(n - 1, last + RELAX_LOOK);
+    const dirs: Vec3[] = [];
+    for (let k = w0; k < w1; k++) {
+      const d = normalize3(sub3(pts[k + 1], pts[k]));
+      if (len3(d) > 0.5) dirs.push(d);
+    }
+    let turn = 0;
+    for (let p = 0; p < dirs.length && turn < RELAX_TURN_MAX; p++) {
+      for (let q = p + 1; q < dirs.length; q++) {
+        const c = dirs[p].x * dirs[q].x + dirs[p].y * dirs[q].y + dirs[p].z * dirs[q].z;
+        if (c < Math.cos(turn)) turn = Math.acos(Math.max(-1, Math.min(1, c)));
+      }
+    }
+    if (turn < RELAX_TURN_MAX) {
+      for (let k = Math.max(1, i - RELAX_MARGIN); k <= Math.min(n - 2, last + RELAX_MARGIN); k++) allowed[k] = 1;
+      for (let k = i; k <= last; k++) dirty.push(k);
+    }
+    i = last + 1;
+  }
+  if (!dirty.length) return pts;
+  const out = pts.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+  // weiter nur an den Punkten, deren Nachbarschaft sich geändert hat (Ecken sind wenige, die Folge ist lang)
+  for (let sweep = 0; sweep < maxSweeps && dirty.length; sweep++) {
+    const next: number[] = [];
+    const seen = new Uint8Array(n);
+    for (const m of dirty) {
+      if (!allowed[m]) continue;
+      const a = out[m - 1];
+      const b = out[m];
+      const c = out[m + 1];
+      const k = over(a, b, c);
+      if (!k) continue;
+      // zur Sehnenmitte hin, so weit, dass die Krümmung knapp unter kMax käme (Pfeilhöhe ∝ Krümmung), leicht gedämpft
+      const f = 0.8 * (1 - (0.85 * kMax) / k);
+      const nx = b.x + ((a.x + c.x) / 2 - b.x) * f;
+      const ny = b.y + ((a.y + c.y) / 2 - b.y) * f;
+      const nz = b.z + ((a.z + c.z) / 2 - b.z) * f;
+      if (Math.hypot(nx - pts[m].x, ny - pts[m].y, nz - pts[m].z) > maxDev) continue;
+      b.x = nx; b.y = ny; b.z = nz;
+      for (let j = Math.max(1, m - 1); j <= Math.min(n - 2, m + 1); j++) {
+        if (seen[j] || !allowed[j]) continue;
+        seen[j] = 1;
+        next.push(j);
+      }
+    }
+    dirty = next.sort((p, q) => p - q);
+  }
+  return out;
+}
+
 /** Krümmung aus den unmittelbaren Nachbarn (Menger), danach über ±half Meter Bogenlänge gemittelt: was der Wagen spürt */
 export function feltCurvature(pts: Vec3[], half = 1.2): Float64Array {
   const n = pts.length;

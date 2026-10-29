@@ -82,6 +82,8 @@ export interface RideStats {
   /** Durchbrüche durch Baustellen-Wände (Etappe 2, Schritt 6) */
   breakthroughs: number;
   inversions: number;
+  /** davon deutlich kopfüber (Oben-Vektor des Wagens unter −0,6, nicht nur quer in voller Schräglage) */
+  inversionsDeep: number;
   blackout: boolean;
   brakesUsed: boolean;
   distance: number;
@@ -186,7 +188,7 @@ export class TrainSim {
   readonly prevCars: CarState[] = [];
   readonly events: RideEvent[] = [];
   readonly stats: RideStats = {
-    time: 0, maxSpeed: 0, maxG: 1, minG: 1, maxLatG: 0, airtime: 0, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0, blackout: false, brakesUsed: false, distance: 0, ejected: 0, caught: 0, flightMax: 0, breakthroughs: 0, driveM: 0,
+    time: 0, maxSpeed: 0, maxG: 1, minG: 1, maxLatG: 0, airtime: 0, coins: 0, tunnels: 0, boosters: 0, splashes: 0, inversions: 0, inversionsDeep: 0, blackout: false, brakesUsed: false, distance: 0, ejected: 0, caught: 0, flightMax: 0, breakthroughs: 0, driveM: 0,
   };
   readonly collected: boolean[];
   /** Kreuzungen der Bahn mit sich selbst auf gleicher Höhe: dort fährt der Zug auf die andere Schiene auf */
@@ -215,6 +217,7 @@ export class TrainSim {
   private wasInTunnel: boolean[] = [];
   private passedElements = new Set<number>();
   private invertedPrev = false;
+  private invertedDeepPrev = false;
   private fallTimer = 0;
   private stallTimer = 0;
   /** Fahrregeln dieser Fahrt und Mindesttempo des Antriebs */
@@ -492,6 +495,9 @@ export class TrainSim {
       this.events.push({ kind: 'inversion', time: this.t, car: 0 });
     }
     this.invertedPrev = front.inverted;
+    const deep = front.upy < -0.6;
+    if (deep && !this.invertedDeepPrev) this.stats.inversionsDeep++;
+    this.invertedDeepPrev = deep;
     if (!this.peakReported && this.phase === 'coast') {
       const next = stateAt(this.samples, this.s + 1);
       if (next.y < front.y - 0.05 && front.y > 3) {

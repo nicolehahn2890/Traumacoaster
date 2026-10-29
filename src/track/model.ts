@@ -185,6 +185,125 @@ const EMPTY = (): TrackSamples => ({
 /** Halbe Breite (Meter) des Fensters, über das die Krümmung für die automatische Überhöhung geglättet wird */
 export const BANK_SMOOTH = 5;
 
+/** Waagerechter Anteil der Tangente, unter dem die Bahn als senkrecht gilt (Neigung über 66°): Dort ist „aufrecht“ nicht bestimmt */
+export const PASS_H = 0.4;
+/** Oben-Vektor nach der Regel „aufrecht außer im Looping“ (Studie 17); false = alte Regel (nur für die Messung alt gegen neu) */
+export const FRAME_TUNING = { upright: true };
+
+/** Höchste Rolldrehung des Oben-Vektors je Meter, mit der er auf die Zielrichtung zurückkommt */
+const ROLL_BACK = (24 * Math.PI) / 180;
+/** Anteil des Restwinkels, um den je Schritt auf die Zielrichtung gedreht wird (weich, ohne Überschwingen) */
+const ROLL_GAIN = 0.35;
+
+/** Meter vor einem Durchgang mit Umkehr, der kein Looping ist, über die sich der Rahmen um eine halbe Drehung vorbereitet */
+const TWIST_M = 16;
+
+/**
+ * Rahmenplan (Studie 17): obere Bögen der Loopings (inv, je Abtastpunkt 1) und die Stücke, auf denen sich der Rahmen um
+ * eine halbe Drehung vorbereitet (twists). Ein Durchgang ist ein zusammenhängendes Stück fast senkrechter Bahn
+ * (waagerechter Anteil der Tangente unter PASS_H); er kehrt um, wenn die waagerechte Richtung davor und dahinter
+ * entgegengesetzt ist (die Bahn ging über die Senkrechte hinweg, nicht nur bis an sie heran). Ein Looping ist ein
+ * Durchgang nach oben mit Umkehr, auf den als nächster ein Durchgang nach unten mit Umkehr folgt; vom senkrechtesten
+ * Punkt des einen bis zum senkrechtesten Punkt des anderen hängt der Wagen innen. Jeder andere Durchgang mit Umkehr
+ * (Kehre mit senkrechten Schenkeln, Sturz über die Senkrechte zurück)
+ * brächte den mitgeführten Rahmen kopfüber heraus; davor dreht er sich über TWIST_M Meter und den Durchgang hinweg um
+ * eine halbe Drehung, so kommt er aufrecht heraus. Eine Kuppe (kein Durchgang) oder eine Bodenschleife ist nichts
+ * davon. Geschlossene Runden zyklisch.
+ */
+export function framePlan(s: TrackSamples): { inv: Uint8Array; calm: Uint8Array; twists: Array<{ from: number; to: number }> } {
+  const n = s.count;
+  const inv = new Uint8Array(n);
+  // calm: fast senkrechte Stücke ohne Umkehr (steiler Anstieg, Sturz): Die Zielrichtung schwenkt dort nicht, der Zug
+  // zu ihr darf voll wirken, sonst rollt der Transport den Wagen auf einem in der Tiefe verdrehten Anstieg weg
+  const calm = new Uint8Array(n);
+  const twists: Array<{ from: number; to: number }> = [];
+  if (n < 3) return { inv, calm, twists };
+  const h = (i: number) => Math.hypot(s.t3x[i], s.t3z[i]);
+  const idx = (k: number) => (s.closed ? ((k % n) + n) % n : k);
+  // geschlossen: hinter einem nicht senkrechten Punkt anfangen, damit ein Durchgang über die Naht ein Stück bleibt
+  let start = 0;
+  if (s.closed) {
+    while (start < n && h(start) < PASS_H) start++;
+    if (start >= n) return { inv, calm, twists };
+  }
+  // je Durchgang: erster und letzter Punkt, der senkrechteste (mid) und ob er hoch geht und umkehrt
+  const passes: Array<{ a: number; b: number; mid: number; up: boolean; rev: boolean }> = [];
+  let k = 0;
+  while (k < n) {
+    if (h(idx(start + k)) >= PASS_H) {
+      k++;
+      continue;
+    }
+    let len = 0;
+    let ySum = 0;
+    let mid = idx(start + k);
+    let hMin = Infinity;
+    while (k + len < n && h(idx(start + k + len)) < PASS_H) {
+      const ii = idx(start + k + len);
+      ySum += s.t3y[ii];
+      const hh = h(ii);
+      if (hh < hMin) {
+        hMin = hh;
+        mid = ii;
+      }
+      len++;
+    }
+    const before = s.closed || k > 0 ? idx(start + k - 1) : -1;
+    const after = s.closed || k + len < n ? idx(start + k + len) : -1;
+    let rev = false;
+    if (before >= 0 && after >= 0) {
+      const dot = s.t3x[before] * s.t3x[after] + s.t3z[before] * s.t3z[after];
+      rev = dot / (h(before) * h(after)) < 0;
+    }
+    passes.push({ a: idx(start + k), b: idx(start + k + len - 1), mid, up: ySum > 0, rev });
+    if (!rev) for (let j = 0; j < len; j++) calm[idx(start + k + j)] = 1;
+    k += len;
+  }
+  const loopBound = new Set<number>();
+  for (let p = 0; p < passes.length; p++) {
+    const P = passes[p];
+    if (!P.up || !P.rev) continue;
+    const q = p + 1 < passes.length ? p + 1 : s.closed && passes.length > 1 ? 0 : -1;
+    const Q = q >= 0 ? passes[q] : null;
+    if (!Q || Q.up || !Q.rev) continue;
+    loopBound.add(p);
+    loopBound.add(q);
+    // kopfüber vom senkrechtesten Punkt des Aufstiegs bis zum senkrechtesten Punkt des Abstiegs: So wechselt die
+    // Zielrichtung (Welt-Senkrechte quer zur Tangente, im Looping ihr Gegenteil) genau dort, wo sie selbst umspringt,
+    // und ist über den ganzen Looping stetig
+    let m = idx(P.mid + 1);
+    let guard = 0;
+    while (m !== Q.mid && m < n && guard++ < n) {
+      inv[m] = 1;
+      m = idx(m + 1);
+    }
+  }
+  const twistLen = Math.round(TWIST_M / s.step);
+  for (let p = 0; p < passes.length; p++) {
+    const P = passes[p];
+    if (!P.rev || loopBound.has(p)) continue;
+    const prevEnd = p > 0 ? passes[p - 1].b : -1;
+    const nextStart = p + 1 < passes.length ? passes[p + 1].a : n;
+    // die halbe Drehung liegt möglichst auf dem senkrechten Stück selbst (dort steht der Wagen ohnehin quer, keine
+    // Lage zählt als kopfüber); ein kurzer Durchgang bekommt den Rest zu gleichen Teilen davor und dahinter, bis
+    // TWIST_M insgesamt: so ist der Wagen davor und dahinter höchstens quer, nie kopfüber
+    const len = P.b - P.a + 1;
+    const ext = Math.max(0, Math.ceil((twistLen - len) / 2));
+    let from = Math.max(0, P.a - ext);
+    let to = Math.min(n - 1, P.b + ext);
+    if (prevEnd >= 0 && prevEnd < P.a) from = Math.max(from, prevEnd + 1);
+    if (nextStart > P.b) to = Math.min(to, nextStart - 1);
+    if (to < from || to - from < Math.round(2 / s.step)) continue; // zu kurz (oder über die Naht): dann dreht der Rahmen hinter dem Durchgang zurück
+    twists.push({ from, to });
+  }
+  return { inv, calm, twists };
+}
+
+/** Obere Bögen der Loopings, je Abtastpunkt 1 (siehe framePlan) */
+export function loopRegions(s: TrackSamples): Uint8Array {
+  return framePlan(s).inv;
+}
+
 /** Tastet die 3D-Bahn mit festem Schritt ab (geschlossen zyklisch, offen bis zum letzten Knoten). */
 export function sampleTrack(path: TrackPath, step = 0.25): TrackSamples {
   const n = path.nodes.length;
@@ -307,12 +426,24 @@ export function sampleTrack(path: TrackPath, step = 0.25): TrackSamples {
     out.kbx[i] = sx - d * out.t3x[i]; out.kby[i] = sy - d * out.t3y[i]; out.kbz[i] = sz - d * out.t3z[i];
   }
 
-  // 4) Oben-Vektor: Parallel-Transport, bei waagerechter Bahn zur Welt-Senkrechten zurückgedreht. Kopfüber bleibt
-  // der Wagen nur, wo der Transport ihn kopfüber bringt und die Bahn sich nach unten krümmt (oben im Looping: Die
-  // Mitte liegt darunter). Sonst dreht er auf flacher Strecke zurück auf die Räder, höchstens ROLL_BACK je Meter.
-  // (Früher folgte die Richtung dem Transport: Auf verdrehten 3D-Wegen, etwa einem kleinen Kringel der Pinsel-Bahn,
-  // blieb der Zug danach auf ebener Strecke kopfüber liegen.)
-  const ROLL_BACK = (24 * Math.PI) / 180;
+  // 4) Oben-Vektor: Regel der Schienen (Studie 17). Der Wagen fährt aufrecht, kopfüber nur auf dem oberen Bogen eines
+  // Loopings (siehe loopRegions). Der Rahmen läuft per Parallel-Transport mit und wird je Schritt um den Anteil
+  // ROLL_GAIN seines Restwinkels, höchstens ROLL_BACK je Meter, auf die Zielrichtung gedreht: die Welt-Senkrechte quer
+  // zur Tangente, im Looping ihr Gegenteil. Je steiler die Bahn, desto schwächer der Zug (an der Senkrechten ist die
+  // Zielrichtung nicht bestimmt, dort läuft nur der Transport); ein Looping kommt so von selbst kopfüber über den
+  // Scheitel (Ziel und Transport stimmen dort überein), eine Kehre mit senkrechten Schenkeln dreht sich vor dem
+  // Durchgang um eine halbe Drehung (twists) und kommt aufrecht über den Scheitel, eine Kuppe nach verdrehter Anfahrt
+  // wird aufrecht gezogen.
+  // (Vorher: zurückgedreht nur auf flacher Bahn, kopfüber blieb, wo der Transport kopfüber brachte und die Bahn nach
+  // unten krümmte. Das ließ Kehren und Kuppen nach verdrehten Anfahrten kopfüber liegen, Studie 16a und 17.)
+  const plan = FRAME_TUNING.upright ? framePlan(out) : null;
+  const inv = plan ? plan.inv : null;
+  const calm = plan ? plan.calm : null;
+  // Drehzone um einen Durchgang, der kein Looping ist: Drehwinkel je Schritt, gleichmäßig über das Stück; der Winkel
+  // wird am Zonenanfang aus einer Vorausrechnung des Transports bestimmt (siehe unten), bei einer ebenen Kehre 180°
+  const twistAt = plan && plan.twists.length ? new Float64Array(count) : null;
+  const twistStartAt = new Map<number, { from: number; to: number }>();
+  if (plan) for (const t of plan.twists) twistStartAt.set(t.from, t);
   let ux = 0;
   let uy = 1;
   let uz = 0;
@@ -328,15 +459,76 @@ export function sampleTrack(path: TrackPath, step = 0.25): TrackSamples {
       l = Math.hypot(ux, uy, uz) || 1;
     }
     ux /= l; uy /= l; uz /= l;
+    const zone = twistAt ? twistStartAt.get(i) : undefined;
+    if (zone && twistAt) {
+      // Vorausrechnung: den Rahmen ohne Zug durch die Zone transportieren und am ersten Punkt dahinter mit der
+      // Zielrichtung vergleichen; der Fehlwinkel wird gleichmäßig über die Zone verteilt, so steht der Rahmen hinter
+      // dem Durchgang genau richtig (ebene Kehre: 180°, verdrehte Kehre: was eben fehlt, nichts: keine Drehung)
+      let vx = ux;
+      let vy = uy;
+      let vz = uz;
+      const je = Math.min(count - 1, zone.to + 1);
+      for (let j = i + 1; j <= je; j++) {
+        const ax = out.t3x[j];
+        const ay = out.t3y[j];
+        const az = out.t3z[j];
+        const dd = vx * ax + vy * ay + vz * az;
+        vx -= dd * ax; vy -= dd * ay; vz -= dd * az;
+        const ll = Math.hypot(vx, vy, vz) || 1;
+        vx /= ll; vy /= ll; vz /= ll;
+      }
+      const ax = out.t3x[je];
+      const ay = out.t3y[je];
+      const az = out.t3z[je];
+      let qx = -ay * ax;
+      let qy = 1 - ay * ay;
+      let qz = -ay * az;
+      const ql = Math.hypot(qx, qy, qz);
+      if (ql > 1e-6) {
+        const sg = inv && inv[je] ? -1 : 1;
+        qx = (sg * qx) / ql; qy = (sg * qy) / ql; qz = (sg * qz) / ql;
+        const cx = vy * qz - vz * qy;
+        const cy = vz * qx - vx * qz;
+        const cz = vx * qy - vy * qx;
+        const phi = Math.atan2(cx * ax + cy * ay + cz * az, vx * qx + vy * qy + vz * qz);
+        const per = phi / (zone.to - i + 1);
+        for (let k = i; k <= zone.to; k++) twistAt[k] = per;
+      }
+    }
+    if (twistAt && twistAt[i]) {
+      // Rodrigues um T (u steht senkrecht auf T): u' = u·cos + (T × u)·sin
+      const cs = Math.cos(twistAt[i]);
+      const sn = Math.sin(twistAt[i]);
+      const rx = ty * uz - tz * uy;
+      const ry = tz * ux - tx * uz;
+      const rz = tx * uy - ty * ux;
+      ux = ux * cs + rx * sn; uy = uy * cs + ry * sn; uz = uz * cs + rz * sn;
+    }
     let px = -ty * tx;
     let py = 1 - ty * ty;
     let pz = -ty * tz;
     const pl = Math.hypot(px, py, pz);
-    if (pl > 1e-6) {
+    if (pl > 1e-6 && (!inv || !(twistAt && twistAt[i]))) {
       px /= pl; py /= pl; pz /= pl;
-      const cur = ux * px + uy * py + uz * pz >= 0 ? 1 : -1;
-      const sgn = cur < 0 && out.k3y[i] < -0.02 ? -1 : 1;
-      const w = Math.pow(Math.max(0, 1 - Math.abs(ty) * 1.3), 2) * 0.35;
+      let sgn: number;
+      let w: number;
+      if (inv) {
+        // je steiler, desto schwächer der Zug zur Zielrichtung (an der Senkrechten ist sie nicht bestimmt und
+        // schwenkt mit kleinster Tiefendrift herum); so bleibt auch ein steiler, in der Tiefe verdrehter Anstieg oben
+        const hh = Math.hypot(tx, tz);
+        sgn = inv[i] ? -1 : 1;
+        w = calm && calm[i] ? ROLL_GAIN : ROLL_GAIN * Math.min(1, hh / PASS_H);
+        if (i === 0) {
+          if (hh >= PASS_H) {
+            ux = sgn * px; uy = sgn * py; uz = sgn * pz;
+          }
+          w = 0;
+        }
+      } else {
+        const cur = ux * px + uy * py + uz * pz >= 0 ? 1 : -1;
+        sgn = cur < 0 && out.k3y[i] < -0.02 ? -1 : 1;
+        w = Math.pow(Math.max(0, 1 - Math.abs(ty) * 1.3), 2) * 0.35;
+      }
       if (w > 0) {
         // um die Tangente zur Zielrichtung drehen (Anteil w des Winkels): Drehen statt Mischen, so kommt auch ein
         // ganz verdrehter Rahmen zurück (gemischt hebt sich ein entgegengesetzter Vektor nur auf)

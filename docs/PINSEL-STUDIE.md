@@ -119,6 +119,21 @@ nach hinten in Metern (eine Spur = 8,4 m). **Loslassen** = der Finger geht hoch,
    so groß wie ihre Unterschiede). Schalter `&schleifen=0`; Brücken-Regel nicht gebaut; offen 16f/16g. Nächstes
    (Studie 17): Aufrecht außer im Looping als Schienenregel, Mindestradius im Fit, keine Regeln mehr im Strich.
 
+18. Abschnitt 17: Florians Einwand („wieder viele Extraregeln“) umgesetzt, ohne Rückfrage: Überkopffahrten und Knicke
+   sind keine Lese-Regeln des Pinsels mehr, sondern Garantien der Schienen und des Fits. Die Schienen halten den Wagen
+   aufrecht, kopfüber nur auf dem oberen Bogen eines Loopings (ein Looping ist, was durch die Senkrechte hinauf- und mit
+   Umkehr wieder hinabgeht; Kehren mit senkrechten Schenkeln drehen sich auf dem senkrechten Stück um eine halbe
+   Drehung und kommen aufrecht über den Scheitel). Der Fit rundet Ecken unter 4 m Radius, lässt Schleifen und enge
+   Kehren wie gezeichnet und weicht nie mehr als 2 m von der Tinte ab (eine erste Fassung zog Bodenschleifen zusammen,
+   Bahnen ein Drittel kürzer – verworfen). Gemessen auf denselben 21 + 27 + 31 Strichen: halbe Rollen des Rahmens −75
+   bis −92 %, Rahmen-Drehung gegen die Senkrechte −52 bis −62 %, von der Fahrt gezähltes Kopfüber −29 bis −46 %
+   (deutlich kopfüber −33 bis −62 %), Knicke (Radius unter 4 m) −20 bis −26 %, Knoten −7 bis −12 %, Querkraft-Spitzen
+   −13 bis −34 %; die Bahnen werden an den Ecken 2 bis 3 % kürzer, die Vorschau kostet höchstens 0,1 ms mehr. Vom Rest
+   liegt rund die Hälfte in Kringeln, die der Pinsel flach liest, aber steil baut (für die Schienen Loopings); auf den
+   Schleifen-Sätzen bleiben 231 und 198 deutliche Kopfüber-Stellen, die noch nicht nach Lage aufgeschlüsselt sind. Nebenbefund: Zwei Entgleisungs-Tests hingen am alten Rahmen (28° nach außen
+   gerollt in einer abfallenden Kehre), nicht an der Bahn. Korrektur zu 16h: Die dort zuerst genannten Zahlen stammten
+   von einem Zwischenstand; der committete Stand misst wie 1429359.
+
 ## 2. Befund am heutigen Pinsel
 
 Werkzeuge: `scripts/pinsel-messung.ts` (spielt die Aufnahmen so nach, wie die Level-Szene sie verarbeitet, mit der
@@ -407,7 +422,7 @@ gelten für 26,6°.
 2. **Höhe gegen Tiefe:** Ab welcher Steilheit ist ein Strich Höhe (heute 15–40°, Prototyp 25°)? Und sollen Kehren
    immer durch die Tiefe gehen (Talblick) oder bei flacher Zeichnung auch als Hügel bleiben dürfen?
 3. **Nachsicht der Fahrt:** Querkraft aus der Tiefe deckeln (Arcade) oder streng lassen und mehr Fahrten scheitern
-   lassen? **Beantwortet 30.10. (Florians Antwort 2, Abschnitt 15):** nachsichtig, Antrieb und Stützräder, Querkraft
+   lassen? **Beantwortet 29.10. (Florians Antwort 2, Abschnitt 15):** nachsichtig, Antrieb und Stützräder, Querkraft
    als Wert, Abbrüche nur für Sichtbares.
 4. **Höhlenmeter:** Budget je Feld, Startwerte (Vorschlag: 60 m, nur Vorschlag).
 5. **Mindestabstand spielbarer Ebenen** (Vorschlag: 4 m, nur Vorschlag) und was mit engeren Ebenen passiert.
@@ -670,7 +685,7 @@ der Zeit nichts; die 8–10 ms in der Tabelle oben waren Last durch Build und Sz
 9,6 ms, im Leerlauf 5,8 ms). Stand: `zoneneditor` steht noch auf e38bf6b; der Fast-Forward dorthin wurde der
 Studien-Session vom Berechtigungsmodus verweigert (fremder Worktree), wie der Stand hereinkommt, entscheidet Florian.
 
-## 12. Nachtrag 29.10. mittags: Fortsetzen und Überzeichnen auf Strich 2 (Stufe P1)
+## 12. Nachtrag 29.10. vormittags (9 Uhr): Fortsetzen und Überzeichnen auf Strich 2 (Stufe P1)
 
 Florians Auftrag nach der Entscheidung: „Du machst hier mit Fortsetzen/Überzeichnen auf Strich 2 weiter.“
 
@@ -723,7 +738,7 @@ Prüfungen bestanden (nur Zahlenrauschen gegenüber dem Lauf vom Vormittag). Sta
 `claude/pinsel-studie-8f0777` nach b658b07; die Editor-Session holt den Zweig per Fast-Forward nach `zoneneditor`
 (Florians Entscheidung, 29.10.).
 
-## 13. Nachtrag 29.10. nachmittags: Kreuzungen, Knotenzahl, Ruckeln beim Bearbeiten (Stufe P1)
+## 13. Nachtrag 29.10. vormittags (10 Uhr): Kreuzungen, Knotenzahl, Ruckeln beim Bearbeiten (Stufe P1)
 
 Florians Auftrag: „Mach hier mit den Kreuzungen weiter: Stränge um ganze Spuren trennen, wo Platz ist (weniger enge
 Knoten, weniger Abbrüche an Kreuzungen).“ Und mittendrin: „Kreuzungen sind aktuell recht frustrierend. Es entstehen sehr
@@ -1013,9 +1028,9 @@ nach dem Loslassen für die Probefahrten ein.
 Nicht geprüft: das echte Handy (Metal auf dem M3 Pro ist schneller als ein iPhone; die Zahlen sind eine obere Schranke
 der Bildrate), Hochformat, Striche über 1400 m.
 
-## 14. Nachtrag 30.10. früh: Florians Antworten und Paket 1, der dynamische Vorlauf
+## 14. Nachtrag 29.10. nachmittags (14 Uhr): Florians Antworten und Paket 1, der dynamische Vorlauf
 
-Florians Antworten auf die Empfehlung aus Abschnitt 13 (29.10. spät), in seinen Worten: (1) „Der Vorlauf sollte
+Florians Antworten auf die Empfehlung aus Abschnitt 13 (29.10. mittags), in seinen Worten: (1) „Der Vorlauf sollte
 dynamisch sein … je kürzer, desto besser ist das Zeichengefühl, und es sollte immer so lange sein, wie es nötig ist, um
 die Strecke optimal zu zeichnen … im Zweifel 6 … Es dauert sehr lange, bis die Bahn am Anfang meinem Strich folgt. Das
 sollte auch dynamischer sein“; dazu: „kann der Anfang der Bahn auch animiert dem Pinsel folgen und nicht solche Sprünge
@@ -1062,7 +1077,7 @@ steiles Stück ab 40 statt 90 m als Höhe fest):
 
 **Lesart, ehrlich:** In Form und Fahrt ist der dynamische Vorlauf auf deinen Strichen unsichtbar (alle Unterschiede im
 Rauschen der Regel), er ändert nur, wann die Schienen kommen. Und da zeigte die erste Messung des Bands etwas anderes
-als erwartet: Auf deinen 15 Strichen von gestern früh liegt das Band im Median bei 13,9 m und im oberen Zehntel bei
+als erwartet: Auf deinen 15 Strichen von heute früh liegt das Band im Median bei 13,9 m und im oberen Zehntel bei
 54 m, nicht bei den 3 bis 6 m, die der dynamische Vorlauf auf ruhiger Strecke erlaubt; die ersten Schienen kommen nach
 3,9 Linienmetern (vorher waren es 6 m plus Vorlauf). Der Grund für das lange Band ist nicht der Vorlauf, sondern
 die Regel „ein offenes steiles Stück wird nicht fest“ (Abschnitt 6): Deine Striche sind fast durchgehend steil
@@ -1074,14 +1089,14 @@ nichts Messbares (die ersten Schienen kommen ohnehin nach 4 m), sie bleiben als 
 eigentliche Antwort auf das lange Band bei Schleifen ist Paket 3: Eine erkannte Schleife kann als Ganzes fest werden,
 sobald sie sich schließt.
 
-**Absicherung (30.10. früh):** 466 Einheitstests in 58 Dateien bestanden (15 davon für Strich 2, der Vorlauf-Test
+**Absicherung (29.10., 14 Uhr):** 466 Einheitstests in 58 Dateien bestanden (15 davon für Strich 2, der Vorlauf-Test
 neu: ruhige Strecke gleich, Kehre im Fenster anders), `vite build` ohne Fehler, alle 28 Browser-Szenarien mit
 200 Prüfungen bestanden (Server 5188, nach Abschluss der Code-Änderungen gestartet, damit kein Vite-Neuladen die Kette
 abbricht). Schalter: `&vorlaufm` (voller Vorlauf, Vorgabe 12 m), `&freezemax` (offenes steiles Stück, Vorgabe 90 m),
 `&lookstart` (freie Startmeter nach dem Anschluss, Vorgabe 6 m); die Messung nimmt sie als `--vorlauf --freezemax
 --lookstart`.
 
-## 15. Paket 2: Die Fahrt. Recherche, Umbau und Messung (30.10.)
+## 15. Paket 2: Die Fahrt. Recherche, Umbau und Messung (29.10., 14:30 Uhr)
 
 Florians Antwort 2 (Abschnitt 14): Die Fahrt soll „auf jeden Fall“ neu gedacht werden, nur gewollte Loopings, keine
 unnötigen Überkopffahrten; „das Entgleisen und Zurückrollen passt nicht zur Perspektive“; vorher „richtig
@@ -1100,7 +1115,7 @@ Auf deinen Strichen, mit Strich 2 und dem Stand nach Paket 1 (`--fahrt strict`):
 |---|---|---|---|---|---|
 | 21 heute früh (29.10.) | 21 | 1 | Fall 9, Entgleisen 8, Stillstand 2, Auffahren 1 | 94 m | 348 m |
 | 27 neue (28.10. spät) | 27 | 0 | Fall 9, Entgleisen 8, Stillstand 6, Auffahren 4 | 72 m | 498 m |
-| 31 alte (28.10. früh, Schleifen) | 30 | 0 | Auffahren 13, Entgleisen 7, Fall 6, Stillstand 4 | 70 m | 756 m |
+| 31 alte (28.10. abends, Schleifen) | 30 | 0 | Auffahren 13, Entgleisen 7, Fall 6, Stillstand 4 | 70 m | 756 m |
 
 Fast jede Fahrt endet im ersten Fünftel der Bahn, bevor man von der eigenen Bahn etwas gesehen hat. Die Ursachen sind
 in unserer Perspektive nicht sichtbar: Ob eine Schleife 4 oder 8 m Radius hat, wie hoch ein Hügel in Metern ist, wie
@@ -1175,7 +1190,7 @@ Schanze (Plan 4.3) und Kollision im Schlangenbereich (Plan 4.7).
   engen Kehre, kein Fall im zu langsamen Looping). Szenario 8 (Entgleisen auf Holz) öffnet das Level mit `fahrt=1`,
   weil es den Abflug prüft; Szenario 1 (Oval am Boden) erwartete den Stillstand und prüft jetzt, dass der Antrieb den
   Zug mit 14 km/h um die Runde bringt.
-- **Absicherung (30.10.):** 472 Einheitstests in 59 Dateien bestanden, `vite build` ohne Fehler, alle 28
+- **Absicherung (29.10.):** 472 Einheitstests in 59 Dateien bestanden, `vite build` ohne Fehler, alle 28
   Browser-Szenarien auf 5188: im Durchlauf 199 von 200 Prüfungen, die eine (Oval: Stillstand erwartet) an die neuen
   Regeln angepasst und einzeln bestanden (Phase done, 14 km/h).
 
@@ -1231,9 +1246,9 @@ Schanze (Plan 4.3) und Kollision im Schlangenbereich (Plan 4.7).
 **Entscheidung 3 aus Abschnitt 10** (Nachsicht der Fahrt) ist damit durch Florians Antwort 2 und diesen Umbau
 beantwortet: nachsichtig, mit Antrieb und Stützrädern, Querkraft als Wert.
 
-## 16. Paket 3: Schleifen als Loopings, Kehren, Kettenlinie (30.10.)
+## 16. Paket 3: Schleifen als Loopings, Kehren, Kettenlinie (29.10., 17 Uhr)
 
-Florians Auftrag (30.10.): „gezeichnete Schleifen als gewollte Loopings mit Mindestradius 4 m, Restkreuzungen als
+Florians Auftrag (29.10.): „gezeichnete Schleifen als gewollte Loopings mit Mindestradius 4 m, Restkreuzungen als
 Brücken wo ein Höcker passt (eben nur als letzter Ausweg, nie ein Abbruch), Kettenlinie als Deckel in Strich 2,
 echter Schleifen-Zähler in der Messung.“ Dazu seine Antworten: Mindesttempo bleibt 4 m/s, Schräglage 80° und stiller
 Antrieb bis zur Stilprobe.
@@ -1398,7 +1413,7 @@ Zahlen an Florian (16f). Ich würde sie heute nicht als Verbesserung verkaufen.
 5. **Kettenlinie:** greift erst, wenn ein Feld eine Aufwertungsstufe hat (Plan 2.4); die Testzonen haben keine. Ein
    Feld mit Stufe in `test-huegel` wäre der Test.
 
-### 16g. Nachgang (Florian 30.10.: „Schleifen anlassen und die Kreuzungen aufklären“)
+### 16g. Nachgang (Florian 29.10., 18 Uhr: „Schleifen anlassen und die Kreuzungen aufklären“)
 
 **Zuordnung.** Je Strichsatz drei Läufe ohne Schleifen-Lesung auf dem neuen Code (die Nebenänderungen einzeln) und
 die Messung nach Lage: eigene Schleifenkreuzung (Ausfahrt gegen Einfahrt), Schleife gegen fremden Strang, außerhalb.
@@ -1458,7 +1473,7 @@ verstanden. Auf dem kleinen Satz ohne Kringelketten kostet die Schleifen-Lesung 
 dieser Stellen die Schranken je Punkt ansehen (`lastSolve` liefert sie) statt weiter an Regeln zu drehen; bis dahin
 bleibt die Lesung an, wie Florian es entschieden hat, und `&schleifen=0` ist der Vergleich.
 
-### 16h. Aufgeräumt (Florian 30.10.: „Ja, räum alles auf, aber ich weiß gerade nicht, was das Richtige ist“)
+### 16h. Aufgeräumt (Florian 29.10., 21 Uhr: „Ja, räum alles auf, aber ich weiß gerade nicht, was das Richtige ist“)
 
 Florians Einwand: Wir bauen wieder viele Sonderregeln; seine Idee war, Tiefe und Physik frei zu wählen, die Regeln
 eher aus den Ebenen (davor, dahinter) als aus dem Pinsel zu nehmen, und Überkopffahrten wie Knicke von vornherein
@@ -1470,16 +1485,20 @@ gewachsen, und drei Regeln des Nachgangs standen ohne gemessene Wirkung im Code.
 Schleifen, die feste Schleife als eine Begegnung, die Diagnose-Schalter `--kehrewait` und `--crossafter` (die hybride
 Reihenfolge der Schranken und die Kehre am geraden Schenkel bleiben, aber ohne Schalter). Nachgemessen (gleiche Sätze):
 
-| aufgeräumt gegen 1429359 | 21 heute früh | 27 neue | 31 alte |
+| aufgeräumt (55b2e39) gegen 1429359 | 21 heute früh | 27 neue | 31 alte |
 |---|---|---|---|
-| Kreuzungen gleiche Höhe | 9 → 20 | 189 → 182 | 297 → 253 |
-| Knicke je Strich (Median) | 118 → 133 | 218 → 234 | 374 → 365 |
-| Knoten je Strich (Median) | 42 → 38 | 62 → 57 | 86 → 93 |
-| ungewollte Inversionen | 84 → 86 | 288 → 252 | 285 → 279 |
+| Kreuzungen gleiche Höhe | 9 → 12 | 189 → 181 | 297 → 277 |
+| Knicke je Strich (Median) | 118 → 129 | 218 → 240 | 374 → 374 |
+| Knoten je Strich (Median) | 42 → 43 | 62 → 61 | 86 → 82 |
+| ungewollte Inversionen (Kehre + sonst) | 84 → 84 | 288 → 300 | 285 → 282 |
 
-Die Zahlen bleiben in der Spanne, in der alle Varianten des Nachgangs lagen (Kreuzungen 9 bis 20, 176 bis 189, 253 bis
-297): Die entfernten Regeln haben nichts getragen, und die Streuung zwischen Varianten ist so groß wie ihre
-Unterschiede. Das ist der eigentliche Befund: An den Kreuzungen weiter mit Regeln zu drehen, misst Rauschen.
+Strich für Strich sind die Bahnen des committeten Stands praktisch die von 1429359 (Längen auf wenige Meter gleich):
+Die entfernten Regeln haben nichts getragen. (Korrektur: In der ersten Fassung dieses Abschnitts standen Zahlen eines
+Zwischenstands der Aufräumarbeit, Kreuzungen 20/182/253, Knicke 133/234/365; die Striche waren dort um bis zu 15 %
+länger als in beiden Ständen davor und danach. Beim Nachmessen für Studie 17 ist das aufgefallen, die Tabelle oben ist
+der committete Stand.) Die Streuung zwischen den Varianten des Nachgangs (Kreuzungen 9 bis 20, 176 bis 189, 253 bis
+297) ist so groß wie ihre Unterschiede. Das ist der eigentliche Befund: An den Kreuzungen weiter mit Regeln zu drehen,
+misst Rauschen.
 
 **Konsequenz (ohne weitere Rückfrage, Studie 17):** Die zwei Garantien, die Florian meint, gehören nicht in den
 Strich, sondern dorthin, wo sie ohne Raten gelten: **Aufrecht außer im Looping** als Regel der Schienen (der Rahmen
@@ -1488,3 +1507,158 @@ Antrieb in Paket 2) und **Mindestradius** als Eigenschaft des Fits (die Bahn dar
 abweichen). Beides ist auf den vorhandenen Strichen messbar. Die Leseschicht des Pinsels wird bis dahin nicht mehr
 angefasst; wie viel Lesung er haben soll (16f, Lesart „Ebenen pur“), entscheidet sich in einer echten Zone, nicht an
 den Testzonen.
+
+## 17. Garantien an den Schienen und im Fit: aufrecht außer im Looping, Mindestradius (29.10., nachts)
+
+Florians Einwand aus 16h, umgesetzt ohne Rückfrage: Die zwei Dinge, die er von vornherein ausgeschlossen haben will,
+ungewollte Überkopffahrten und Knicke, sind jetzt keine Lese-Regeln des Pinsels mehr, sondern Eigenschaften der Schienen
+und des Knoten-Fits. Der Pinsel (`strich2.ts`) ist in seiner Lesung unverändert; geändert sind `model.ts` (der
+Oben-Vektor in `sampleTrack`), `reduceNodes.ts` (ein Mindestradius vor dem Fit) und die Stelle in `strich2.ts`, die den
+Fit aufruft. Alles ist auf den vorhandenen Strichen gemessen (17d), es brauchte keine neuen Striche und keine Entscheidung.
+
+### 17a. Regel der Schienen: aufrecht außer im Looping
+
+**Vorher** stand der Oben-Vektor der Schienen auf Parallel-Transport: Er wurde entlang der Bahn mitgeführt und nur auf
+flacher Strecke (Neigung unter 50°) zur Welt-Senkrechten zurückgedreht; kopfüber blieb er, wo der Transport ihn kopfüber
+brachte und die Bahn nach unten krümmte. Das gab Loopings richtig, aber auch alles andere, was der Transport auf einer
+verdrehten 3D-Bahn anrichtet: Auf steilen Stücken wurde gar nicht zurückgedreht, auf mittleren Neigungen fast nicht
+(bei 30° noch 4 % der Kraft), und jede Kuppe nach einer verdrehten Anfahrt hielt den Wagen kopfüber, weil sie „nach
+unten krümmt“. Gemessen (17d, Stand alt) dreht sich der Rahmen auf Florians Strichen im Median um 400 bis 460° je 100 m
+gegen die Welt-Senkrechte und geht 5 bis 11 Mal je Strich außerhalb jedes Loopings über die Seite.
+
+**Jetzt** gilt an den Schienen: Der Wagen fährt aufrecht (Oben-Vektor = Welt-Senkrechte quer zur Tangente), kopfüber
+nur auf dem oberen Bogen eines Loopings. Was ein Looping ist, liest `framePlan` aus der Geometrie der fertigen Bahn,
+ohne den Pinsel: Ein *Durchgang* ist ein Stück fast senkrechter Bahn (waagerechter Anteil der Tangente unter 0,4,
+Neigung über 66°); er *kehrt um*, wenn die waagerechte Richtung davor und dahinter entgegengesetzt ist (die Bahn ging
+über die Senkrechte hinweg, nicht nur bis an sie heran). Ein Looping ist ein Durchgang nach oben mit Umkehr, auf den als
+nächster ein Durchgang nach unten mit Umkehr folgt; vom senkrechtesten Punkt des einen bis zum senkrechtesten Punkt des
+anderen hängt der Wagen innen. Der Rahmen läuft weiter per Transport mit und wird je Schritt um 35 % seines Restwinkels,
+höchstens 24° je Meter, auf die Zielrichtung gedreht (im Looping ihr Gegenteil); je steiler die Bahn, desto schwächer
+der Zug, denn an der Senkrechten ist „aufrecht“ nicht bestimmt. So kommt ein Looping von selbst kopfüber über den
+Scheitel (Ziel und Transport stimmen dort überein, der Wechsel der Zielrichtung liegt genau an der Senkrechten, wo sie
+ohnehin umspringt), und eine Kuppe nach verdrehter Anfahrt wird aufrecht gezogen.
+
+Der eine Fall, der eine Entscheidung brauchte: eine **Kehre mit senkrechten Schenkeln** (Durchgang nach oben mit Umkehr,
+dann nach unten ohne Umkehr). Physikalisch ist das ein halber Looping, der Transport brächte den Wagen kopfüber heraus
+und ließe ihn so weiterfahren; irgendwo muss eine halbe Drehung hin. Sie liegt auf dem senkrechten Schenkel: Dort dreht
+sich der Rahmen gleichmäßig um eine halbe Drehung, wo der Wagen ohnehin quer steht, und kommt aufrecht über den
+Scheitel und bleibt es auf dem Abstieg (Test: tiefster Oben-Wert −0,04 statt −0,51 mit der Drehung erst hinter dem
+Durchgang, die den Wagen am Scheitel quer stehen ließ). Genauer: Die Drehzone liegt auf dem senkrechten Stück selbst, ein
+kurzer Durchgang bekommt den Rest zu gleichen Teilen davor und dahinter (bis 16 m insgesamt); am Anfang der Zone
+rechnet `sampleTrack` den Transport ohne Zug bis hinter den Durchgang voraus, vergleicht ihn dort mit der Zielrichtung
+und verteilt genau den Fehlwinkel gleichmäßig über die Zone: bei einer ebenen Kehre 180°, bei einer verdrehten, was
+eben fehlt, manchmal nichts. (Mit pauschal 180° blieben auf den Strichen drei- bis viermal so viele halbe Rollen übrig.)
+Dasselbe gilt für einen Sturz über die Senkrechte zurück. Im Spiel sind solche Kehren selten, weil der Pinsel Kehren
+Tiefe gibt (sie werden Steilkurven unter 66°); die Regel fängt den Rest.
+
+Was die Regel *nicht* ändert: die Bahn selbst (Strich für Strich dieselben Knoten, Längen, Tiefen; 17d), die Schräglage
+(`bankAt` rechnet weiter auf dem Oben-Vektor auf) und die Fahrt-Regeln aus Paket 2. Messschalter `--rahmen alt` nur in
+`pinsel-messung.ts`, kein Spielschalter.
+
+### 17b. Mindestradius als Eigenschaft des Fits
+
+Vor dem Knoten-Fit von Strich 2 läuft `relaxCurvature` über die Punktfolge: Wo der Radius unter 4 m liegt, werden die
+Punkte zu ihren Nachbarn hin ausgeglichen (Gauß-Seidel über die Menger-Krümmung der drei Nachbarn, nur an den Stellen,
+deren Nachbarschaft sich geändert hat), bis jeder Punkt den Radius hält; eine Ecke wird so zu einem Bogen von 4 m. Der
+erste Punkt ist das Ende des letzten festen Segments, so wie es gefittet wurde (bisher der rohe Punkt; mit Mindestradius
+können beide um die Toleranz auseinanderliegen), die Spitze bleibt am Finger.
+
+**Ehrlich gescheitert, erste Fassung:** Glätten überall, wo der Radius zu klein ist, ist ein Kurvenverkürzungsfluss.
+Eine Bodenschleife von 2 m Radius kann den Radius 4 m nicht durch Glätten erreichen (Zusammenziehen macht sie enger),
+also zieht sie sich bis auf einen Punkt zusammen. Auf dem Schleifen-Satz wurden die Bahnen dadurch um ein Drittel kürzer
+(447 → 292 m bei einem Strich) – die Tinte war weg. Zweite Fassung, zwei Grenzen: Ein zu enges Stück, dessen Richtung
+sich im Umfeld (±8 Punkte) irgendwo um 150° oder mehr dreht, ist eine Schleife oder Kehre und bleibt wie gezeichnet
+(Loopings weitet der Pinsel, 16b; Bodenschleifen und enge Kehren bleiben eng, das ist jetzt messbar und eine Frage an
+den Pinsel, nicht an den Fit); und kein Punkt weicht mehr als 2 m von seiner Lage ab, was sich so nicht runden lässt,
+bleibt eng. Mit der Lücken-Regel allein (Stücke, deren Krümmung zwischendurch unter die Grenze fällt, gelten als eins)
+reichte es noch nicht: Zerstückelte Schleifen wurden als lauter Ecken gerundet, auf dem Schleifen-Satz −100 m je Strich
+im Median. Erst die Drehung im Umfeld hält sie.
+
+### 17c. Befund am Rande: zwei Entgleisungs-Tests waren ein Rahmen-Fehler
+
+Zwei Tests der strengen Fahrt (physics, fahrt: „42-m-Lifthügel, 4 m enge Kehre am Boden, knapp 3 g quer trotz voller
+Schräglage, Entgleisen auf Holz“) schlugen mit der neuen Regel fehl: Der Wagen hält die Kehre jetzt mit 0,8 g. Nachgesehen:
+Die Kehre fällt in der Tiefe ab (16 m Höhe auf 1,6 m über 30 m, dabei 180° Drehung); der alte Rahmen zog auf dieser
+Neigung kaum zurück und ließ den Wagen aus dem Transport heraus 28° *nach außen* gerollt stehen, die 80° Schräglage
+griffen so nur zur Hälfte, 1,9 g quer, Entgleisen. Mit dem Rahmen quer zur Tangente aufrecht sitzt die Schräglage
+richtig. Die Tests fahren jetzt eine 2,5 m enge Kehre (physics zusätzlich ab 50 m Höhe, 106 km/h): strenge Fahrt
+entgleist mit gut 2 g, `drive` kommt mit 3,3 g quer durch. Das heißt auch: Ein Teil der „Entgleisen 8 von 21“ aus 15a
+war der Rahmen, nicht die Bahn.
+
+### 17d. Messung: alt gegen neu, Regel und Mindestradius einzeln und zusammen
+
+Dieselben drei Strichsätze wie in 15 und 16 (21 vom 29.10. früh, 27 neue, 31 alte mit Schleifen), Strich 2, Fahrt
+`drive`; vier Stände aus zwei Messschaltern (`--rahmen alt`, `--minr 0`): **alt** = Stand 55b2e39, **Rahmen** = nur die
+Regel der Schienen, **Radius** = nur der Mindestradius im Fit, **beides** = der neue Stand. Die Bahn ist bei „alt“ und
+„Rahmen“ Strich für Strich dieselbe (die Regel ändert nur den Oben-Vektor), bei „Radius“ und „beides“ ebenso.
+„Kopfüber“ zählt die Fahrt wie bisher: Wagen-Oben unter −0,2, also auch ein Wagen, der in voller Schräglage (80°)
+schon leicht über die Seite kippt; „halbe Rollen“ und „Rahmen-Drehung“ messen den Oben-Vektor der Schienen gegen die
+Welt-Senkrechte quer zur Tangente, ohne fast senkrechte Stücke. Knicke sind Abtastpunkte (0,25 m) mit Radius unter
+4 m, hier unabhängig vom Oben-Vektor gezählt (die bisherige Zählung „nur wo aufrecht“ steigt mit der neuen Regel, weil
+mehr Bahn aufrecht ist, und taugt nicht mehr zum Vergleich).
+
+| alt → Rahmen → Radius → beides | 21 heute früh | 27 neue | 31 alte (Schleifen) |
+|---|---|---|---|
+| kopfüber (Fahrt, Wagen-Oben unter −0,2) Σ | 151 → 87 → 135 → **81** | 531 → 439 → 439 → **375** | 536 → 456 → 444 → **339** |
+| davon deutlich (Wagen-Oben unter −0,6) | 98 → 40 → – → **37** | 346 → 249 → – → **231** | 305 → 246 → – → **198** |
+| davon außerhalb gezeichneter Loopings | 129 → 73 → 112 → **69** | 502 → 415 → 408 → **353** | 493 → 420 → 404 → **296** |
+| halbe Rollen des Rahmens außerhalb von Loopings Σ | 107 → 12 → 91 → **9** | 288 → 79 → 249 → **71** | 315 → 75 → 292 → **50** |
+| Rahmen-Drehung je 100 m (Median) | 403° → 180° → 370° → **157°** | 462° → 250° → 422° → **221°** | 450° → 236° → 383° → **173°** |
+| Knicke R < 4 m (Abtastpunkte) Σ | 4551 → 4551 → 3406 → **3406** | 14353 → 14353 → 11454 → **11454** | 19570 → 19569 → 14518 → **14503** |
+| davon außerhalb gezeichneter Schleifen | 2815 → 2815 → 2009 → **2009** | 6998 → 6998 → 5328 → **5328** | 8705 → 8705 → 6311 → **6299** |
+| Knoten je Strich (Median) | 43 → 43 → 38 → **38** | 61 → 61 → 57 → **57** | 82 → 82 → 76 → **76** |
+| Querkraft max je Strich (Median) | 9,5 → 7,8 → 9,2 → **6,3 g** | 9,4 → 10,8 → 8,5 → **8,2 g** | 10,5 → 9,3 → 10,7 → **8,5 g** |
+| Kreuzungen gleiche Höhe (wie die Fahrt zählt) | 12 → 30 → 9 → 21 | 181 → 230 → 172 → 213 | 277 → 339 → 245 → 332 |
+| Vorschau je Schritt (Median) | 0,8 → 0,8 → 0,8 → **0,8 ms** | 0,8 → 0,8 → 0,7 → **0,8 ms** | 1,0 → 1,0 → 0,9 → **1,0 ms** |
+
+Was das heißt:
+
+- **Die Regel der Schienen** nimmt drei Viertel bis neun Zehntel der halben Rollen (−89 / −73 / −76 %) und die Hälfte der
+  Rahmen-Drehung (−55 / −46 / −48 %); die Fahrt zählt 15 bis 42 % weniger Kopfüber, deutliches Kopfüber (unter −0,6)
+  −59 / −28 / −19 %. Die Querkraft-Spitzen sinken auf zwei Sätzen (ein Satz steigt: 9,4 → 10,8 g; der Wagen, der vorher
+  aus dem Transport schief stand, nimmt manche Kurve jetzt aufrecht und spürt sie voll).
+- **Der Mindestradius** nimmt ein Viertel der Knicke (−25 / −20 / −26 %, außerhalb der Schleifen −29 / −24 / −28 %) und
+  7 bis 12 % der Knoten, kostet höchstens 0,1 ms je Vorschau und kürzt die Bahnen im Median um 2,2 / 2,2 / 2,9 %
+  (schlimmster Strich −8 %): Das ist die Abweichung von der Tinte an den Ecken. Was bleibt, sind die Schleifen und
+  engen Kehren unter 4 m, die er absichtlich nicht anfasst (17b), und Ecken über 150°.
+- **Zusammen:** Kopfüber −46 / −29 / −37 %, deutliches Kopfüber −62 / −33 / −35 %, halbe Rollen −92 / −75 / −84 %,
+  Rahmen-Drehung −61 / −52 / −62 %, Knicke −25 / −20 / −26 %, Querkraft-Spitzen −34 / −13 / −19 %.
+- **Kreuzungen auf gleicher Höhe** schwanken bei *identischer Bahn* zwischen 12 und 30 (Satz 21): Die Fahrt zählt sie
+  dort, wo der Zug beim Passieren der anderen Spur zu nahe kommt, und die Lage des Zugs hängt am Oben-Vektor und an der
+  Schräglage. Die Zahl taugt seit Paket 2 nicht mehr als Formmaß; eine rein geometrische Zählung an den Schienen wäre
+  ehrlicher (offen, klein).
+
+**Woher der Rest kommt** (Stand „beides“, jede Kopfüber-Stelle der Fahrt nach ihrer Lage im Rahmenplan der Schienen):
+
+| | 21 | 27 | 31 |
+|---|---|---|---|
+| im geometrischen Looping-Bogen | 22 | 107 | 93 |
+| in einer Drehzone (halbe Rolle an einer Kehre) | 37 | 97 | 40 |
+| auf fast senkrechtem Stück | 3 | 4 | 3 |
+| sonst | 19 | 167 | 203 |
+| zum Vergleich: deutlich kopfüber (unter −0,6), alle Lagen | 37 | 231 | 198 |
+
+- Die *geometrischen Loopings* sind mehr als die gezeichneten (14 / 23 / 43): Der Pinsel liest manche Kringel als
+  Bodenschleife oder Kehre, baut sie aber so steil, dass sie in 3D durch die Senkrechte gehen und umkehren; für die
+  Schienen sind das Loopings, und sie fahren sie als solche. Das ist eine Frage an die Lesung (Bodenschleife wirklich
+  flach bauen, oder als Looping lesen), nicht an die Regel.
+- Die *Drehzonen* sind die halben Rollen vor Kehren mit senkrechten Schenkeln: Auf dem Weg durch „quer“ zählt die Fahrt
+  den Wagen mit Schräglage und Neigung kurz als kopfüber. Hier sieht man im Spiel eine Schiene, die sich über 16 m um
+  180° dreht; ob das stört, kann nur Florian sagen.
+- *Sonst* (19 / 167 / 203) ist nicht aufgeklärt. Ein Teil ist quer, nicht kopfüber: In voller Schräglage (80°) reichen
+  zehn Grad Neigung des Rahmens für „unter −0,2“. Aber die strengere Zählung (Wagen-Oben unter −0,6, 37 / 231 / 198)
+  zeigt, dass auf den Schleifen-Sätzen mehr deutliche Kopfüber-Stellen bleiben, als die geometrischen Loopings (107 / 93)
+  erklären; der Rest liegt wohl hinter Loopings und Drehzonen, wo der Rahmen noch zurückdreht (die Lage-Zählung greift
+  nur 2 m weit). Dafür fehlt eine Aufschlüsselung der deutlichen Stellen nach Lage; sie ist der erste Schritt, wenn
+  Florian im Spiel noch Kopfüber sieht, das er nicht gezeichnet hat.
+
+### 17e. Was offen bleibt
+
+- Bodenschleifen und enge Kehren unter 4 m bleiben eng (bewusst, 17b). Ob der Pinsel sie wie Loopings weiten soll, ist
+  eine Lesungsfrage für eine echte Zone, nicht für die Testzonen.
+- Die Drehzonen (16 m, 11° je Meter) sind sichtbar; Florian sieht sie beim nächsten Zeichnen, wenn er eine senkrechte
+  Kehre zeichnet. Länge und Lage sind eine Konstante (`TWIST_M`), kein Schalter.
+- Kreuzungszählung geometrisch statt über die Fahrt (klein).
+- Der Messschalter `--rahmen alt` bleibt, bis Florian den neuen Rahmen im Spiel gesehen hat; dann fliegt die alte Regel.
+- Unverändert offen: 16f (Brücken, Marker, Kettenlinie-Testfeld), Pakete 4 (Mesh inkrementell, animiertes Nachziehen)
+  und 5 (Raum in Zonen), Florians Feintuning-Liste.

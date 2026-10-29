@@ -204,11 +204,14 @@ describe('Zug-Simulation', () => {
     expect(minUp).toBeGreaterThan(-0.1); // nie kopfüber (steile Abfahrt kippt den Oben-Vektor mit)
   });
   it('entgleist auf Holz in der engen Kehre bei fast 90 km/h und fliegt sichtbar davon', () => {
-    // 42-m-Lifthügel, dann eine 4 m enge Kehre am Boden: knapp 3 g quer trotz voller Schräglage
+    // 50-m-Lifthügel, dann eine 2,5 m enge Kehre am Boden: gut 2 g quer trotz voller Schräglage, 106 km/h. (Bis Studie 17
+    // reichten 42 m und eine 4 m breite Kehre: Der alte Oben-Vektor ließ den Wagen in der abfallenden Kehre 28° nach
+    // außen gerollt stehen, die Schräglage fehlte ihm; seit der Rahmen quer zur Tangente aufrecht steht, hält er sie
+    // mit 0,8 g. Die Drift aus der Spur liegt hier knapp über der Schwelle, 0,21 m.)
     const R = laneRise(1);
-    const W = 4;
+    const W = 2.5;
     const stroke = [
-      ...stageCurve(0, 40, 80, (x) => 42 * Math.exp(-((x - 18) ** 2) / 50)),
+      ...stageCurve(0, 40, 80, (x) => 50 * Math.exp(-((x - 18) ** 2) / 50)),
       ...param(40, (t) => [40 + W * Math.sin(Math.PI * t), R - R * Math.cos(Math.PI * t)]),
       ...param(50, (t) => [40 - t * 40, 2 * R]),
       ...param(40, (t) => [-W * Math.sin(Math.PI * t), R + R * Math.cos(Math.PI * t)]),

@@ -1084,23 +1084,23 @@ Etappe 2); Bahn durch die Höhle gezeichnet und gefahren, Stützen auf Kanten; R
 **Pinsel (29.10.2026, Pinsel-Studie `docs/PINSEL-STUDIE.md`):** Florians Entscheidung 8 der Studie: „Strich 2“ (kausal,
 fester Vorlauf 12 m, Knoten gefittet wie beim bisherigen Pinsel, pinkes Band als Vorlauf) ist in Ebenen-Zonen die Vorgabe
 des Pinsels; `&strich=1` nimmt den bisherigen Pinsel, `&strich=2` erzwingt Strich 2 auch ohne Ebenen, `&vorlaufm=N` setzt den
-Vorlauf in Metern zum Ausprobieren. Fortsetzen und Überzeichnen laufen seit 29.10. mittags auf Strich 2 (die alte Bahn
+Vorlauf in Metern zum Ausprobieren. Fortsetzen und Überzeichnen laufen seit 29.10. vormittags auf Strich 2 (die alte Bahn
 bleibt wörtlich, Studie Abschnitt 12; rückwärts Überzeichnetes fällt noch auf den bisherigen Pinsel zurück). Seit 29.10.
 nachmittags (Studie Abschnitt 13): Kreuzungen auf gleicher Höhe auf Florians Strichen 11 → 3 (kleiner Versatz im
 ±6-m-Fenster, Seite je Begegnung, ganze Spur nur an sauberen Kreuzungen), Knoten-Fit 150 m / 180° (`&tol= &even= &span=
 &turn=` zum Ausprobieren), Bearbeiten über Knoten und Griffe baut die Bahn einmal je Bild leicht neu statt je
-Zeigerereignis. Kantenfelder je Ebene (Studie 13h, 29.10. abends): ein Rasterindex je Ebene und Flächenliste in
+Zeigerereignis. Kantenfelder je Ebene (Studie 13h, 29.10. mittags): ein Rasterindex je Ebene und Flächenliste in
 `planeStack.ts`, beim ersten Zugriff nach jedem Neubau des Stapels gebaut (30 bis 80 ms), macht Freiraum, Landung und
 Bodenhöhe 60- bis 100-mal billiger bei identischen Ergebnissen; die Vorschau von Strich 2 liegt damit um 1 ms. Handy-
 Messung (Studie 13i, headless am Handy-Bild): 54 bis 60 fps bei 862 bis 1396 m Linie, 0 bis 6 % Bilder über 20 ms; der
-Rest kommt vom Neubau des ganzen Schienen-Meshs je Vorschau (`setTrack`, Risiko 4), nicht vom Strich. 30.10. (Studie
+Rest kommt vom Neubau des ganzen Schienen-Meshs je Vorschau (`setTrack`, Risiko 4), nicht vom Strich. 29.10. nachmittags (Studie
 14): Vorlauf dynamisch (3 / 6 / 12 m, `&vorlaufm`, `&freezemax`, `&lookstart`), erste Vorschau nach 3 m; Florians
 Antworten und die Pakete 2–5 (Fahrt, Schleifen als Loopings, Mesh inkrementell mit animiertem Nachziehen, Raum) stehen
-in Studie 14. 30.10. (Studie 15, Paket 2): Fahrregeln `drive` als Vorgabe (Antrieb mit Mindesttempo 4 m/s,
+in Studie 14. 29.10. (Studie 15, Paket 2): Fahrregeln `drive` als Vorgabe (Antrieb mit Mindesttempo 4 m/s,
 Stützräder: kein Entgleisen, kein Fall, kein Stillstand, kein Auffahren; Querkraft und Hängen sind Werte), auf
 Florians 78 Strichen kommen damit alle Bahnen an statt einer; `&fahrt=1` ist die strenge Fahrt, offen sind
 Mindesttempo, Kettenlinie im Zeichnen, ebene Kreuzungen, Schräglage-Deckel und ein sichtbarer Antrieb (Studie 15f).
-30.10. (Studie 16, Paket 3): Strich 2 erkennt gezeichnete Schleifen und liest sie als Loopings (Tiefe bleibt,
+29.10. (Studie 16, Paket 3): Strich 2 erkennt gezeichnete Schleifen und liest sie als Loopings (Tiefe bleibt,
 Mindestradius 4 m mit Aufweitung, Tinte bleibt) oder Bodenschleifen; die Kettenlinie ist ein Deckel (`chainTop`,
 greift nur in Feldern mit Aufwertungsstufe). Gemessen entstehen die Loopings, aber Kreuzungen auf gleicher Höhe und
 Knicke nehmen zu und die ungewollten Inversionen sinken kaum; Schalter `&schleifen=0`, Kehren bleiben die bisherige
@@ -1109,9 +1109,15 @@ Lesung (hohe schmale U kippen als halbe Loopings), Brücken-Regel nicht gebaut; 
 repariert (Kehre erkennt sich am geraden zweiten Schenkel, Schranken außerhalb von Schleifen wie vorher); die eigenen
 Schleifenkreuzungen sind in Ordnung, mehr werden Kreuzungen späterer Stränge über festen Schleifen (Stand gegen alt:
 6 → 9, 112 → 189, 196 → 297), drei Versuche dagegen ohne Wirkung und wieder ausgebaut (Studie 16h). Florians Einwand
-(zu viele Sonderregeln im Pinsel) ist angenommen: Die Garantien „aufrecht außer im Looping“ und „Mindestradius“ kommen
-an die Schienen und in den Fit (Studie 17), die Leseschicht des Pinsels bleibt unangetastet, bis eine echte Zone zeigt,
-wie viel Lesung er braucht.
+(zu viele Sonderregeln im Pinsel) ist angenommen: Die Garantien „aufrecht außer im Looping“ und „Mindestradius“ sind
+an den Schienen und im Fit (Studie 17, 29.10. nachts): Der Oben-Vektor in `sampleTrack` hält den Wagen aufrecht, kopfüber
+nur auf dem oberen Bogen eines Loopings (`framePlan` liest Loopings aus der Geometrie: durch die Senkrechte hinauf und
+mit Umkehr wieder hinab; senkrechte Kehren drehen sich auf dem Schenkel um eine halbe Drehung), und `relaxCurvature`
+rundet vor dem Fit von Strich 2 Ecken unter 4 m Radius (Schleifen und enge Kehren bleiben, höchstens 2 m Abweichung von
+der Tinte). Auf den 21 + 27 + 31 Strichen: halbe Rollen −75 bis −92 %, Kopfüber (Fahrt) −29 bis −46 %, Knicke unter 4 m
+−20 bis −26 %, Knoten −7 bis −12 %, Bahnen 2–3 % kürzer, Vorschau höchstens +0,1 ms. Die Leseschicht des Pinsels bleibt
+unangetastet, bis eine echte Zone zeigt, wie viel Lesung er braucht (offen: Bodenschleifen und Kehren unter 4 m, die
+der Pinsel flach liest, aber steil baut).
 Offen in Stufe P1: Mesh und Abtastung des festen Teils behalten (Renderer), Restkreuzungen in dichten
 Schleifenhaufen (strukturell, Stufe P2). Zonen ohne Ebenen zeichnen weiter mit dem bisherigen Pinsel.
 **Noch offen aus Stufe 4:** die übrigen Spielobjekte auf Kanten (Schlange, Ziele, Stufen, Schalter, Coins, Baustellen;
