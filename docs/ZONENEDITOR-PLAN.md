@@ -5,8 +5,8 @@ Stufe 0 und Stufe 1 gebaut, Tor S1 bestanden (Florian, 27.10.2026); Stufe 2 ganz
 (Florian, 27.10.2026; ein paar Kleinigkeiten meldet er nach); Stufe 3 gebaut (Farbmenü, Verläufe, Füllstapel,
 Ebenenstapel, Luftperspektive, Stile, Looks, SVG), Tor S3 am Mac bestanden („Es scheint alles erstmal zu
 funktionieren“; Kleinigkeiten aus S2 und S3 sammelt Florian und geht sie später mit uns durch); weiter mit Stufe 4.
-Der Editor muss zuerst am Mac laufen, iPad und Tablet optimieren wir später (Florian, 27.10.2026). Stufe 5 (Earle-Schichten) steht auf dem Branch
-`zoneneditor-tor2`; an Tor S5 hat Florian die Werkzeuge freigegeben und Regel 4 neu gefasst, die Testzone bleibt Vorschlag (29.10.2026).**
+Der Editor muss zuerst am Mac laufen, iPad und Tablet optimieren wir später (Florian, 27.10.2026). Stufe 5 (Earle-Schichten) ist seit 29.10.2026 in
+`zoneneditor` (gebaut auf `zoneneditor-tor2`); an Tor S5 hat Florian die Werkzeuge freigegeben und Regel 4 neu gefasst, die Testzone bleibt Vorschlag (29.10.2026).**
 Gebaut wird Stufe für
 Stufe mit Tor, auf dem Branch `zoneneditor`. Der große Plan (`docs/GROSSER-PLAN.md`)
 ruht seit heute auf Florians Wunsch; Etappe 2 steht nach Schritt 7, dem Freiraumfeld und der Freigabe der Ebenen-Probe,
@@ -1241,9 +1241,11 @@ braucht Florian nicht; „Ja, Regel 4 gilt neu: Pünktchen und Textur dürfen im
 geändert. **Offen aus Stufe 5:** Papier und
 Gouache aus Florians Scans (bis dahin Platzhalter-Kacheln). **Nicht geprüft:** Pünktchen-Verläufe am Handy gemessen;
 Farbnebel, Funkeln und Punktpinsel am iPad mit dem Pencil; Punktkronen mit Bahn und Fahrt davor; Kantenwelle an
-spielbaren Kanten. Earle liegt weiter nur auf `zoneneditor-tor2` (jetzt auf `zoneneditor` 11454fb, Pinsel-Studie
-Paket 2), damit die Pinsel-Studie `zoneneditor` weiter per Fast-Forward nachziehen kann; wann Earle nach `zoneneditor`
-kommt, ist offen.
+spielbaren Kanten. **Earle in `zoneneditor` (29.10.2026, Florian: „Ja, bring Earle nach zoneneditor und stimm
+dich dafür mit der Pinsel-Studie ab.“):** Fast-Forward von 11454fb (Pinsel-Studie Paket 2) auf den Earle-Zweig, damit
+:5183 Pinsel und Earle zusammen zeigt. Ab jetzt liefern beide Zweige gleich: Die Pinsel-Studie und der Earle-Zweig
+(`zoneneditor-tor2`, :5184) holen vor jedem neuen Stand `zoneneditor` herein, dann geht es per Fast-Forward nach
+`zoneneditor`. Die Pinsel-Studie hat das per Nachricht bekommen. Nichts ist gepusht.
 
 **Stufe 6: Bilder, Schnittmasken, Säume, Austausch (M).** Bildschichten, Schnittmaske, Saum entlang einer Kante,
 Malvorlage mit Fingerabdruck und Größenangabe, Umriss aus Bild, Import gemalter Teile mit Passmarken, KTX2 beim
