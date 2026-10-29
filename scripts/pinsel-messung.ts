@@ -289,6 +289,12 @@ interface PreviewRow {
   tipLagPx: number;
   /** Atmen: größte Bewegung (px) der schon gezeigten Schienen (bis zum festen Ende) gegenüber der letzten Vorschau; NaN ohne Vergleich */
   breathPx: number;
+  /** Strich 2: Anteile der Vorschau (ms) und Schranken-Konflikte */
+  s2SolveMs: number;
+  s2CrossMs: number;
+  s2FitMs: number;
+  s2QueryMs: number;
+  s2Conflicts: number;
 }
 
 interface StrokeResult {
@@ -568,7 +574,8 @@ function replay(rec: Rec, idx: number): StrokeResult {
     } else if (lineLength(solid) < 6) continue;
     const c0 = snap(counters);
     const t0 = performance.now();
-    const next: (BrushPreview & { line?: StagePoint[] }) | null = s2 ? s2.update(brush.points, false) : previewBrushTrack(line, opts, pv, keep);
+    // Strich 2 wie im Spiel (&vorlauf=1): die Vorschau-Bahn endet am festen Teil, Linie und Tiefe reichen bis zur Spitze
+    const next: (BrushPreview & { line?: StagePoint[] }) | null = s2 ? s2.update(brush.points, true) : previewBrushTrack(line, opts, pv, keep);
     const ms = performance.now() - t0;
     cost = ms / 1000;
     lastPreviewT = t;
@@ -687,7 +694,7 @@ function replay(rec: Rec, idx: number): StrokeResult {
         }
       }
     }
-    previews.push({ t, n: next.z.length, lineM: tipLen, ms, calls, prepareMs, crossingsMs, sampleMs, meshMs, statsMs, devAll, devTouched, devFree, devTipFar, moveZ, movePx, tailZ, tipLagPx, breathPx });
+    previews.push({ t, n: next.z.length, lineM: tipLen, ms, calls, prepareMs, crossingsMs, sampleMs, meshMs, statsMs, devAll, devTouched, devFree, devTipFar, moveZ, movePx, tailZ, tipLagPx, breathPx, s2SolveMs: s2?.stats.solveMs ?? NaN, s2CrossMs: s2?.stats.crossMs ?? NaN, s2FitMs: s2?.stats.fitMs ?? NaN, s2QueryMs: s2?.stats.queryMs ?? NaN, s2Conflicts: s2?.stats.conflicts ?? NaN });
     lastDebug = debugLines;
     pv = next;
     pvPts = nPts;

@@ -74,6 +74,12 @@ const TOL_LOOSE = 1.2;
  * dafür „atmen“ die Schienen in diesem Stück noch in der Toleranz). Schalter &fest=N
  */
 export const FIX_BEHIND = 2;
+/**
+ * Ein Segment, das über die feste Grenze hinaus bis in den Vorlauf reicht, wird am festen Ende geteilt und sein vorderer
+ * Teil fest, sobald der feste Teil so viele Meter lang ist: Die Schienen weiter hinten stehen still, ohne dass der Fit
+ * dort je Vorschau ein kurzes Segment abschneiden muss (Platzhalter, 29.10.)
+ */
+const FIX_SPAN = 30;
 /** Überzeichnen: über so viele Pinsel-Meter gleitet das Ende des Strichs auf den Zielpunkt auf der alten Bahn */
 const GLUE = 5;
 /**
@@ -126,6 +132,8 @@ const TURN_SPAN = 12;
 const PASS_SIDE = 2.2;
 const PASS_OVER = 3.8;
 const NEIGHBOR = 8;
+/** Abfrage-Cache: so nah (Bühnen-Meter) darf ein neu entstandener Linienpunkt am gemerkten liegen, um dessen Abfragen zu übernehmen */
+const QUERY_REUSE = 0.3;
 /**
  * Kreuzungen (Florian 29.10.: „Stränge um ganze Spuren trennen, wo Platz ist“, „es sollte so gut wie keine Kreuzungen
  * geben“). Der kleine Versatz (seitlich PASS_SIDE oder in der Höhe PASS_OVER) gilt für jeden früheren Punkt, der im Bild
@@ -172,9 +180,14 @@ export interface Strich2Stats {
   /** Linienpunkte gesamt und davon fest */
   n: number;
   frozen: number;
-  /** Dauer der letzten Vorschau (ms) und darin die Abfragen an Ebenen und Feld */
+  /** Dauer der letzten Vorschau (ms) und darin die Abfragen an Ebenen und Feld, der Löser (mit Kreuzungsschranken), die Kreuzungsschranken allein, der Knoten-Fit */
   ms: number;
   queryMs: number;
+  solveMs: number;
+  crossMs: number;
+  fitMs: number;
+  /** Punkte, deren Kreuzungsschranken sich auch mit einheitlicher Seite widersprachen (kein Platz) */
+  conflicts: number;
 }
 
 /** je Linienpunkt gemerkt: Abfragen und Lösung */
@@ -196,6 +209,10 @@ interface Pt {
   cave: boolean;
   /** hat eine Kreuzungsschranke bekommen: Knoten dort eng (die Bahn darf den Abstand nicht auffressen) */
   near: boolean;
+  /** Ebenen und Feld schon abgefragt (ein Linienpunkt bewegt sich nicht mehr, sobald er endgültig ist; nur vorläufige Punkte entstehen je Vorschau neu) */
+  queried: boolean;
+  /** Bühnenlage des Schienenpunkts (einmal berechnet, für die Kreuzungssuche) */
+  railStage: StagePoint | null;
   /** Schienenpunkt (Welt) des festen Segments an dieser Stelle; null: Linienpunkt gilt */
   rail: Vec3 | null;
   /** Weltpunkt mit Hub über die tragende Fläche (gilt für die Tiefe wpLane) */
@@ -206,31 +223,53 @@ interface Pt {
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 
 /** kleines dichtes symmetrisches System lösen (Cholesky mit etwas Regularisierung) */
+/**
+ * Symmetrisches, positiv definites Gleichungssystem mit Bandbreite BAND lösen (Cholesky auf dem Band). Die Matrix des
+ * Lösers hat nur Einträge mit |i − j| ≤ 2 (Nachbarglättung ±1, Krümmungsglättung und Wende ±2, Ziele und Pins auf der
+ * Diagonalen); vorher dichte Cholesky O(k³) je Runde, bei k ≈ 100 und bis zu 24 Runden der größte Posten der Vorschau
+ */
+const BAND = 2;
 function solveSym(A: Float64Array, k: number, b: Float64Array): Float64Array<ArrayBuffer> {
   let maxDiag = 0;
   for (let i = 0; i < k; i++) maxDiag = Math.max(maxDiag, A[i * k + i]);
   const eps = 1e-10 * maxDiag + 1e-300;
-  const L = new Float64Array(k * k);
+  const W = BAND + 1;
+  // L[i][j] für i − BAND ≤ j ≤ i liegt in Lb[i * W + (i − j)]
+  const Lb = new Float64Array(k * W);
   for (let i = 0; i < k; i++) {
-    for (let j = 0; j <= i; j++) {
-      let s = A[i * k + j];
-      for (let m = 0; m < j; m++) s -= L[i * k + m] * L[j * k + m];
-      if (i === j) L[i * k + i] = Math.sqrt(Math.max(s, 0) + eps);
-      else L[i * k + j] = s / L[j * k + j];
+    const j0 = Math.max(0, i - BAND);
+    for (let j = j0; j <= i; j++) {
+      let v = A[i * k + j];
+      const m0 = Math.max(j0, j - BAND);
+      for (let m = m0; m < j; m++) v -= Lb[i * W + (i - m)] * Lb[j * W + (j - m)];
+      if (i === j) Lb[i * W] = Math.sqrt(Math.max(v, 0) + eps);
+      else Lb[i * W + (i - j)] = v / Lb[j * W];
     }
   }
   const x = new Float64Array(k);
   for (let i = 0; i < k; i++) {
-    let s = b[i];
-    for (let m = 0; m < i; m++) s -= L[i * k + m] * x[m];
-    x[i] = s / L[i * k + i];
+    let v = b[i];
+    for (let m = Math.max(0, i - BAND); m < i; m++) v -= Lb[i * W + (i - m)] * x[m];
+    x[i] = v / Lb[i * W];
   }
   for (let i = k - 1; i >= 0; i--) {
-    let s = x[i];
-    for (let m = i + 1; m < k; m++) s -= L[m * k + i] * x[m];
-    x[i] = s / L[i * k + i];
+    let v = x[i];
+    for (let m = i + 1; m <= Math.min(k - 1, i + BAND); m++) v -= Lb[m * W + (m - i)] * x[m];
+    x[i] = v / Lb[i * W];
   }
   return x;
+}
+
+/** kubisches Segment bei u teilen (de Casteljau): vorderer und hinterer Teil, die Kurve bleibt dieselbe */
+function splitCubic(seg: CubicSegment3, u: number): { left: CubicSegment3; right: CubicSegment3 } {
+  const L = (a: Vec3, b: Vec3): Vec3 => ({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u, z: a.z + (b.z - a.z) * u });
+  const q0 = L(seg.p0, seg.p1);
+  const q1 = L(seg.p1, seg.p2);
+  const q2 = L(seg.p2, seg.p3);
+  const r0 = L(q0, q1);
+  const r1 = L(q1, q2);
+  const m = L(r0, r1);
+  return { left: { p0: seg.p0, p1: q0, p2: r0, p3: m }, right: { p0: m, p1: r1, p2: q2, p3: seg.p3 } };
 }
 
 /** Punkt der kubischen Bezier-Kurve bei u */
@@ -276,13 +315,19 @@ export class Strich2 {
   private endTangent: Vec3 | null = null;
   /** beim Lösen: eine Kreuzungsschranke bezog sich auf einen noch freien Punkt (seine Tiefe ändert sich mit) → zweiter Durchgang */
   private freePairs = false;
+  /**
+   * Abfragen je Linienindex: Vorläufige Linienpunkte entstehen je Vorschau neu, liegen aber fast an derselben Stelle. Liegt
+   * der neue Punkt näher als QUERY_REUSE am gemerkten, gelten dessen Ebenen- und Feldwerte (je Punkt kosten die Abfragen
+   * rund 1 ms, sie waren 5 von 7 ms der Vorschau)
+   */
+  private queryCache = new Map<number, { X: number; Y: number; land: Landing | number | null; ground: number; lanes: FreeLanes | null }>();
   /** Seite je Kreuzung (Schlüssel: Bündel des späteren und des früheren Punkts), bleibt und wird an Nachbarbündel vererbt */
-  private sides = new Map<string, number>();
+  private sides = new Map<number, number>();
   /** feste Punkte nach x-Zelle für die Kreuzungssuche */
   private xCells = new Map<number, number[]>();
   private readonly startZ: number;
   private readonly tsX: number;
-  stats: Strich2Stats = { n: 0, frozen: 0, ms: 0, queryMs: 0 };
+  stats: Strich2Stats = { n: 0, frozen: 0, ms: 0, queryMs: 0, solveMs: 0, crossMs: 0, fitMs: 0, conflicts: 0 };
   private queryMs = 0;
 
   /**
@@ -362,7 +407,7 @@ export class Strich2 {
   }
 
   private newPt(p: StagePoint, z: number): Pt {
-    return { p, land: null, ground: NaN, lanes: null, flat: true, wh: 1, run: 0, dirX: 0, z, frozen: false, blocked: false, cave: false, near: false, rail: null, wp: null, wpLane: NaN };
+    return { p, land: null, ground: NaN, lanes: null, flat: true, wh: 1, run: 0, dirX: 0, z, frozen: false, blocked: false, cave: false, near: false, queried: false, rail: null, railStage: null, wp: null, wpLane: NaN };
   }
 
   private indexX(i: number): void {
@@ -445,7 +490,10 @@ export class Strich2 {
     while (this.fixedEnd.length > this.baseSegs && this.fixedEnd[this.fixedEnd.length - 1] + Math.max(2, this.fixBehind) >= from) {
       const b = this.fixedEnd.pop()!;
       const a = this.fixedEnd.length ? this.fixedEnd[this.fixedEnd.length - 1] : 0;
-      for (let i = a; i <= Math.min(b, this.pts.length - 1); i++) this.pts[i].rail = null;
+      for (let i = a; i <= Math.min(b, this.pts.length - 1); i++) {
+        this.pts[i].rail = null;
+        this.pts[i].railStage = null;
+      }
       this.fixedSegs.pop();
       this.fixedNodes.pop();
     }
@@ -538,10 +586,19 @@ export class Strich2 {
     const t0 = performance.now();
     for (let i = Math.max(from, this.baseLen); i < n; i++) {
       const q = this.pts[i];
-      if (q.frozen) continue;
-      q.land = o.depthAt ? o.depthAt(q.p) : null;
-      q.ground = o.groundAt ? o.groundAt(q.p) : NaN;
-      q.lanes = o.field ? o.field.free(q.p) : null;
+      if (q.frozen || q.queried) continue;
+      const c = this.queryCache.get(i);
+      if (c && Math.abs(c.X - q.p.X) < QUERY_REUSE && Math.abs(c.Y - q.p.Y) < QUERY_REUSE) {
+        q.land = c.land;
+        q.ground = c.ground;
+        q.lanes = c.lanes;
+      } else {
+        q.land = o.depthAt ? o.depthAt(q.p) : null;
+        q.ground = o.groundAt ? o.groundAt(q.p) : NaN;
+        q.lanes = o.field ? o.field.free(q.p) : null;
+        this.queryCache.set(i, { X: q.p.X, Y: q.p.Y, land: q.land, ground: q.ground, lanes: q.lanes });
+      }
+      q.queried = true;
     }
     this.queryMs += performance.now() - t0;
     for (let i = Math.max(from, this.baseLen, 1); i < n; i++) {
@@ -622,7 +679,7 @@ export class Strich2 {
 
   /** Lage eines früheren Punkts für die Kreuzungsregel: seine festen Schienen (Bühne), sonst sein Linienpunkt */
   private stageOf(r: Pt): StagePoint {
-    return r.rail ? toView(r.rail.x, r.rail.y, r.rail.z / LANE_DEPTH) : r.p;
+    return r.railStage ?? r.p;
   }
 
   private zOf(r: Pt): number {
@@ -643,15 +700,19 @@ export class Strich2 {
   }
 
   /**
-   * Kreuzung mit einem früheren Punkt (fest, oder frei mit der Tiefe der letzten Lösung): verbotener Tiefenunterschied,
-   * die Seite (vorne oder hinten) wird je Begegnung einmal entschieden und an die Nachbarbündel vererbt. (Ein Versuch mit
-   * der Lücke zwischen allen verbotenen Bändern je Punkt, mit und ohne Gedächtnis, war auf Florians Schleifen-Strichen
-   * messbar schlechter: 31 Striche 375 und 478 Kreuzungen statt 215, 27 Striche 202 und 298 statt 129; verworfen 29.10.)
+   * Kreuzung mit früheren Punkten (fest, oder frei mit der Tiefe der letzten Lösung): verbotener Tiefenunterschied je
+   * Paar, die Seite (vorne oder hinten) wird je Begegnung einmal entschieden und an die Nachbarbündel vererbt.
+   * Widersprechen sich die Schranken (vor dem einen, hinter dem anderen Strang: in dichten Schleifenhaufen), zählt ein
+   * Konflikt; der Löser klemmt den Punkt dann an eine Schranke. (Ein Versuch mit der Lücke
+   * zwischen allen verbotenen Bändern je Punkt, mit und ohne Gedächtnis, war auf Florians Schleifen-Strichen messbar
+   * schlechter: 31 Striche 375 und 478 Kreuzungen statt 215; verworfen 29.10.)
    */
   private crossBounds(i: number, t: number, lo: number, hi: number, closing = false): { lo: number; hi: number } {
+    const tC = performance.now();
     const q = this.pts[i];
     const n = this.pts.length;
     const cx = Math.floor(q.p.X);
+    const pairs: Array<{ rz: number; fLo: number; fHi: number; clean: boolean; key: number; iB: number; jB: number }> = [];
     for (let c = cx - XWIN; c <= cx + XWIN; c++) {
       const list = this.xCells.get(c);
       if (!list) continue;
@@ -661,7 +722,6 @@ export class Strich2 {
         if (closing && n - i + j < NEIGHBOR + 3) continue;
         const r = this.pts[j];
         const rp = this.stageOf(r);
-        const rz = this.zOf(r);
         const dX = q.p.X - rp.X;
         if (Math.abs(dX) >= XWIN) continue;
         const dY = q.p.Y - rp.Y;
@@ -671,41 +731,55 @@ export class Strich2 {
         const fHi = Math.min(w, (dY + PASS_OVER) / TILT_TAN);
         if (fLo >= fHi) continue;
         if (!r.frozen) this.freePairs = true;
-        // ganze Spur nur an einer sauberen Kreuzung: weit auseinander auf dem Strich, schräg kreuzend, und Platz dafür
+        // ganze Spur nur an einer sauberen Kreuzung: weit auseinander auf dem Strich, schräg kreuzend
         const clean = i - j > LOOP_ARC / STEP && this.crossSin(i, j) >= CROSS_SIN;
-        const fitsLane = (s: number) => clean && (s > 0 ? hi >= rz + LANE_DEPTH : lo <= rz - LANE_DEPTH);
-        const fitsMin = (s: number) => (s > 0 ? hi >= rz + fHi : lo <= rz + fLo);
         const iB = Math.floor(i / 12);
         const jB = Math.floor(j / 12);
-        const key = `${iB}:${jB}`;
-        let side = this.sides.get(key) ?? 0;
-        if (!side) {
-          // Seite vom Nachbarpaar erben (dieselbe Begegnung ein Stück weiter vorn oder hinten): Wechselt die Seite entlang
-          // einer flachen Kreuzung, müssen die Tiefenkurven sich schneiden (so entstanden Kreuzungen auf gleicher Höhe)
-          for (const k of [`${iB - 1}:${jB}`, `${iB}:${jB - 1}`, `${iB}:${jB + 1}`, `${iB - 1}:${jB - 1}`, `${iB - 1}:${jB + 1}`]) {
-            const s = this.sides.get(k);
-            if (s) {
-              side = s;
-              break;
-            }
-          }
-        }
-        if (!side) {
-          // nahe am Ziel; sonst später Gezeichnetes vorne. An einer sauberen Kreuzung lieber die Seite mit Platz für die Spur
-          side = t - rz >= (fLo + fHi) / 2 ? 1 : -1;
-          if (clean && !fitsLane(side) && fitsLane(-side)) side = -side;
-          else if (!fitsLane(side) && !fitsMin(side) && fitsMin(-side)) side = -side;
-        }
-        this.sides.set(key, side);
-        if (fitsLane(side)) {
-          if (side > 0) lo = Math.max(lo, rz + LANE_DEPTH);
-          else hi = Math.min(hi, rz - LANE_DEPTH);
-        } else if (side > 0) lo = Math.max(lo, rz + fHi);
-        else hi = Math.min(hi, rz + fLo);
-        q.near = true;
+        pairs.push({ rz: this.zOf(r), fLo, fHi, clean, key: iB * 65536 + jB, iB, jB });
       }
     }
-    return { lo, hi };
+    if (!pairs.length) {
+      this.stats.crossMs += performance.now() - tC;
+      return { lo, hi };
+    }
+    q.near = true;
+    const bound = (pr: (typeof pairs)[number], side: number, cur: { lo: number; hi: number }) => {
+      const lane = pr.clean && (side > 0 ? cur.hi >= pr.rz + LANE_DEPTH : cur.lo <= pr.rz - LANE_DEPTH);
+      if (side > 0) cur.lo = Math.max(cur.lo, pr.rz + (lane ? LANE_DEPTH : pr.fHi));
+      else cur.hi = Math.min(cur.hi, pr.rz + (lane ? -LANE_DEPTH : pr.fLo));
+    };
+    const cur = { lo, hi };
+    for (const pr of pairs) {
+      let side = this.sides.get(pr.key) ?? 0;
+      if (!side) {
+        // Seite vom Nachbarpaar erben (dieselbe Begegnung ein Stück weiter vorn oder hinten): Wechselt die Seite entlang
+        // einer flachen Kreuzung, müssen die Tiefenkurven sich schneiden (so entstanden Kreuzungen auf gleicher Höhe)
+        const { iB, jB } = pr;
+        for (const k of [(iB - 1) * 65536 + jB, iB * 65536 + jB - 1, iB * 65536 + jB + 1, (iB - 1) * 65536 + jB - 1, (iB - 1) * 65536 + jB + 1]) {
+          const sd = this.sides.get(k);
+          if (sd) {
+            side = sd;
+            break;
+          }
+        }
+      }
+      if (!side) {
+        // nahe am Ziel; sonst später Gezeichnetes vorne. An einer sauberen Kreuzung lieber die Seite mit Platz für die Spur
+        side = t - pr.rz >= (pr.fLo + pr.fHi) / 2 ? 1 : -1;
+        const fitsLane = (sd: number) => pr.clean && (sd > 0 ? cur.hi >= pr.rz + LANE_DEPTH : cur.lo <= pr.rz - LANE_DEPTH);
+        const fitsMin = (sd: number) => (sd > 0 ? cur.hi >= pr.rz + pr.fHi : cur.lo <= pr.rz + pr.fLo);
+        if (pr.clean && !fitsLane(side) && fitsLane(-side)) side = -side;
+        else if (!fitsLane(side) && !fitsMin(side) && fitsMin(-side)) side = -side;
+      }
+      this.sides.set(pr.key, side);
+      bound(pr, side, cur);
+    }
+    // Widerspruch (vor dem einen, hinter dem anderen Strang): nur zählen, der Löser klemmt den Punkt an eine Schranke.
+    // Gemessen und verworfen (29.10., 31 Schleifen-Striche): alle Paare auf eine Seite zwingen 297 statt 215 Kreuzungen,
+    // fernere Paare fallen lassen 276 statt 236. Die Haufen sind strukturell zu eng (rund 1000 Konfliktpunkte je Strich)
+    if (cur.lo > cur.hi) this.stats.conflicts++;
+    this.stats.crossMs += performance.now() - tC;
+    return cur;
   }
 
   // ------------------------------------------------------------------ Formen (Hügel, Kehren) und Vorlauf
@@ -795,6 +869,7 @@ export class Strich2 {
 
   /** Tiefe des freien Stücks lösen (feste Punkte als Rand); endZ: Tiefe am letzten Punkt (Rundenschluss) */
   private solve(o: BrushOptions, endZ = NaN): void {
+    const tS = performance.now();
     this.freePairs = false;
     const n = this.pts.length;
     let free = this.baseLen;
@@ -974,11 +1049,18 @@ export class Strich2 {
       if (q.frozen) continue;
       q.z = Number.isFinite(z[m]) ? clamp(z[m], LO[m], HI[m]) : q.z;
     }
+    this.stats.solveMs += performance.now() - tS;
   }
 
   // ------------------------------------------------------------------ Bahn
 
   /** Weltpunkt eines Linienpunkts (Hub über die tragende Fläche), gemerkt je Tiefe */
+  /** Weltpunkt ohne Feld (freie Punkte beim Fitten: vorläufig, nie fest) */
+  private worldPointCheap(q: Pt): Vec3 {
+    const w = rayToWorld(q.p, q.z / LANE_DEPTH);
+    return { x: w.x, y: w.y, z: q.z };
+  }
+
   private worldPoint(o: BrushOptions, q: Pt): Vec3 {
     const lane = q.z / LANE_DEPTH;
     if (q.wp && Math.abs(q.wpLane - lane) < 0.02) return q.wp;
@@ -1003,15 +1085,20 @@ export class Strich2 {
    */
   private buildNodes(o: BrushOptions, closed: boolean, end = this.pts.length): TrackNode[] {
     const from = this.fitFrom;
+    // gefittet wird immer bis zur Spitze (die Segmentierung am festen Ende hängt sonst davon ab, wo die Vorschau endet:
+    // mit Fit nur bis zum festen Teil entstanden kurze Segmente an der Grenze, rund 10 Knoten je Strich mehr); gezeigt
+    // wird bis end. Freie Punkte nehmen den billigen Weltpunkt (ohne Feld), ihre Segmente werden nie fest
+    const total = this.pts.length;
+    const frozenEnd = this.frozenEnd();
     const pts: Vec3[] = [];
-    for (let i = from; i < end; i++) pts.push(this.worldPoint(o, this.pts[i]));
+    for (let i = from; i < total; i++) pts.push(i < frozenEnd ? this.worldPoint(o, this.pts[i]) : this.worldPointCheap(this.pts[i]));
     if (closed && pts.length) pts[pts.length - 1] = { ...this.worldPoint(o, this.pts[0]) };
     // Toleranz an Kreuzungen (siehe TOL_NEAR): je Paar aus dem Spielraum nach der Lösung, für beide Stellen ±1 Punkt
     const tolAt = new Float64Array(pts.length).fill(Infinity);
     const tighten = (k: number, tol: number) => {
-      for (let m = Math.max(from, k - 1); m <= Math.min(end - 1, k + 1); m++) tolAt[m - from] = Math.min(tolAt[m - from], tol);
+      for (let m = Math.max(from, k - 1); m <= Math.min(total - 1, k + 1); m++) tolAt[m - from] = Math.min(tolAt[m - from], tol);
     };
-    for (let i = from; i < end; i++) {
+    for (let i = from; i < total; i++) {
       const q = this.pts[i];
       if (!q.near) continue;
       const cx = Math.floor(q.p.X);
@@ -1043,7 +1130,31 @@ export class Strich2 {
     const endTangent = closed && first ? unit(first.p0, first.p1) : (this.endTangent ?? undefined);
     // ohne feste Segmente eine geschlossene Runde: Tangente an der Naht über sie hinweg (reduceNodes closed)
     const fit = pts.length >= 2 ? reduceNodes(pts, [], { even: FIT_TUNING.even, tolScale: FIT_TUNING.tolScale, evenSpan: FIT_TUNING.evenSpan, evenTurn: FIT_TUNING.evenTurn, tolAt, startTangent, endTangent, closed: closed && !first }) : { segments: [] as CubicSegment3[], indices: [] as number[] };
-    const segs = [...this.fixedSegs, ...fit.segments];
+    // gezeigt bis end: ganze Segmente davor, das Segment mit dem Ende an der Sehnen-Parameterstelle geteilt
+    let shown: CubicSegment3[] = fit.segments;
+    if (!closed && end < total && fit.segments.length) {
+      const endIdx = end - 1;
+      shown = [];
+      for (let k = 0; k < fit.segments.length; k++) {
+        const a = from + fit.indices[k];
+        const b = from + fit.indices[k + 1];
+        if (b <= endIdx) {
+          shown.push(fit.segments[k]);
+          continue;
+        }
+        if (a >= endIdx) break;
+        let cumA = 0;
+        let cumE = 0;
+        for (let i = a + 1; i <= b; i++) {
+          const d = Math.hypot(pts[i - from].x - pts[i - 1 - from].x, pts[i - from].y - pts[i - 1 - from].y, pts[i - from].z - pts[i - 1 - from].z);
+          cumA += d;
+          if (i <= endIdx) cumE += d;
+        }
+        shown.push(splitCubic(fit.segments[k], cumA > 1e-9 ? cumE / cumA : 1).left);
+        break;
+      }
+    }
+    const segs = [...this.fixedSegs, ...shown];
     const nodeOf = (k: number): TrackNode => {
       const seg = segs[k];
       const nd = createNode(seg.p0.x, seg.p0.y, seg.p0.z / LANE_DEPTH);
@@ -1077,7 +1188,24 @@ export class Strich2 {
     // neue Segmente, deren Punkte (samt fixBehind dahinter) fest sind, werden fest; nicht beim Rundenschluss (alles endet)
     if (!closed) {
       const frozen = this.frozenEnd();
-      for (let k = 0; k < fit.segments.length; k++) {
+      // Schienenpunkt je innerem Linienpunkt eines festen Segments: Bezier an der Sehnen-Parameterstelle (dort liegt der
+      // Fit in der Toleranz am Punkt); spätere Stränge messen ihren Abstand daran
+      const chord = (a: number, b: number) => {
+        const cum = [0];
+        for (let i = a + 1; i <= b; i++) cum.push(cum[cum.length - 1] + Math.hypot(pts[i - from].x - pts[i - 1 - from].x, pts[i - from].y - pts[i - 1 - from].y, pts[i - from].z - pts[i - 1 - from].z));
+        return cum;
+      };
+      const rails = (seg: CubicSegment3, a: number, b: number) => {
+        const cum = chord(a, b);
+        const L = cum[cum.length - 1];
+        for (let i = a + 1; i < b; i++) {
+          const q = this.pts[i];
+          q.rail = L > 1e-9 ? bezierAt(seg, cum[i - a] / L) : null;
+          q.railStage = q.rail ? toView(q.rail.x, q.rail.y, q.rail.z / LANE_DEPTH) : null;
+        }
+      };
+      let k = 0;
+      for (; k < fit.segments.length; k++) {
         const endIdx = from + fit.indices[k + 1];
         if (endIdx + Math.max(2, this.fixBehind) >= frozen) break;
         const seg = fit.segments[k];
@@ -1085,13 +1213,26 @@ export class Strich2 {
         this.fixedEnd.push(endIdx);
         this.fixedNodes.push(nodes[this.fixedSegs.length - 1]);
         this.fitFrom = endIdx;
-        // Schienenpunkt je innerem Linienpunkt des Segments: Bezier an der Sehnen-Parameterstelle (dort liegt der Fit
-        // in der Toleranz am Punkt); spätere Stränge messen ihren Abstand daran
+        rails(seg, from + fit.indices[k], endIdx);
+      }
+      // das erste nicht feste Segment reicht über die feste Grenze: ist sein fester Teil länger als FIX_SPAN, am festen
+      // Ende teilen und den vorderen Teil fest machen (die Kurve bleibt dieselbe, ein Knoten kommt dazu)
+      if (k < fit.segments.length) {
         const a = from + fit.indices[k];
-        const cum = [0];
-        for (let i = a + 1; i <= endIdx; i++) cum.push(cum[cum.length - 1] + Math.hypot(pts[i - from].x - pts[i - 1 - from].x, pts[i - from].y - pts[i - 1 - from].y, pts[i - from].z - pts[i - 1 - from].z));
-        const L = cum[cum.length - 1];
-        for (let i = a + 1; i < endIdx; i++) this.pts[i].rail = L > 1e-9 ? bezierAt(seg, cum[i - a] / L) : null;
+        const b = from + fit.indices[k + 1];
+        const cut = frozen - Math.max(2, this.fixBehind) - 1;
+        if (cut - a >= FIX_SPAN / STEP && b - cut >= 3) {
+          const cum = chord(a, b);
+          const L = cum[cum.length - 1];
+          const { left } = splitCubic(fit.segments[k], L > 1e-9 ? cum[cut - a] / L : 0.5);
+          // der Knoten am Anfang des Segments wird fest (wie bei ganzen Segmenten); der Teilungspunkt wird beim nächsten
+          // Fit der Anfang des Restes, G1 über die Endtangente des festen Teils
+          this.fixedSegs.push(left);
+          this.fixedEnd.push(cut);
+          this.fixedNodes.push(nodes[this.fixedSegs.length - 1]);
+          this.fitFrom = cut;
+          rails(left, a, cut);
+        }
       }
     }
     return nodes;
@@ -1131,7 +1272,9 @@ export class Strich2 {
 
   /** end: so viele Linienpunkte werden Bahn (die Vorschau beim Malen endet am festen Teil, wenn der Vorlauf abgeschnitten ist) */
   private preview(o: BrushOptions, closed: boolean, end = this.pts.length): Strich2Preview {
+    const tF = performance.now();
     const nodes = this.buildNodes(o, closed, end);
+    this.stats.fitMs += performance.now() - tF;
     const n = this.pts.length;
     const z = new Float64Array(n);
     const cave = new Uint8Array(n);
@@ -1161,6 +1304,10 @@ export class Strich2 {
   update(points: StagePoint[], cut = true): Strich2Preview | null {
     const t0 = performance.now();
     this.queryMs = 0;
+    this.stats.solveMs = 0;
+    this.stats.crossMs = 0;
+    this.stats.fitMs = 0;
+    this.stats.conflicts = 0;
     const o = this.options();
     const before = this.pts.length;
     this.feed(points);

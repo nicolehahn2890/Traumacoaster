@@ -354,9 +354,10 @@ describe('Strich 2: kausal mit festem Vorlauf', () => {
       if (!pv) continue;
       const nodes = pv.path.nodes;
       // feste Knoten (ihr Segment endet weit hinter dem Vorlauf) stehen genau da, wo sie in der Vorschau davor standen,
-      // mit derselben Tangente (auf der Geraden wächst das erste Segment bis zum Bogen, sein Knoten bleibt derselbe Punkt)
+      // mit derselben Tangente (auf der Geraden wächst das erste Segment bis zum Bogen, sein Knoten bleibt derselbe Punkt).
+      // Das letzte gezeigte Segment wird noch gefittet (es reicht bis in den Vorlauf), sein Anfangsknoten darf atmen
       const tip = pv.line[pv.line.length - 1];
-      for (let k = 0; k + 1 < Math.min(prevNodes.length, nodes.length); k++) {
+      for (let k = 0; k + 2 < Math.min(prevNodes.length, nodes.length); k++) {
         if (Math.hypot(prevNodes[k + 1].x - tip.X, prevNodes[k + 1].y - tip.Y) < FREEZE + 20) break;
         expect(nodes[k].x).toBe(prevNodes[k].x);
         expect(nodes[k].y).toBe(prevNodes[k].y);

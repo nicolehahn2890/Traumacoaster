@@ -68,6 +68,14 @@ nach hinten in Metern (eine Spur = 8,4 m). **Loslassen** = der Finger geht hoch,
    Knoten kommen aus den Schleifen des Strichs (ein kubisches Segment dreht höchstens 180°); Vorgabe jetzt 150 m / 180°.
    Das Ruckeln kam vom Neubau der ganzen Bahn je Zeigerereignis (14 ms, bis 120 je Sekunde); jetzt einmal je Bild
    leicht, beim Loslassen ganz (0,2 ms je Ereignis, 10 ms je Bild).
+12. Sechster Nachtrag (Abschnitt 13g): Vorschau-Kosten aufgeschlüsselt: nicht der Löser, die Abfragen an Ebenen und
+   Feld waren 6 von 7 ms, weil jede Vorschau alle freien Linienpunkte neu befragte. Jetzt einmal je endgültigem Punkt,
+   Löser auf dem Band, Fit bis zur Spitze (gezeigt bis zum festen Teil), Messung wie im Spiel: 7,4 → 4,1 ms je
+   Vorschau unter Last, bei freier Maschine 3,0 / 3,8 / 2,8 ms auf den drei Sätzen; der Rest sind zwei Aufrufe von
+   `field.free` zu je 1,4 ms, also der Ebenenstapel selbst (Stufe P1 „Kantenfelder“). Restkreuzungen in dichten
+   Schleifenhaufen: rund 1000 Konfliktpunkte je Strich (vor dem einen, hinter dem anderen Strang), zwei Rückfälle
+   gemessen und verworfen; die Zahl schwankt dort schon durch Rundung um ±10 %. Mehr geht nur mit mehr Raum (Stufe P2)
+   oder ohne kleine Schleifen (Entscheidung).
 
 ## 2. Befund am heutigen Pinsel
 
@@ -817,3 +825,69 @@ Knoten, keine Kreuzung auf gleicher Höhe); zwei Schleifen hintereinander mit me
 ebenfalls ohne Kreuzung auf gleicher Höhe. Nicht geprüft: das Gefühl am Mac (Band, Spur-Rampen, Ziehen über die
 Punkte), das Handy, Zonen ohne Ebenen. Stand: Commit auf `claude/pinsel-studie-8f0777` nach 0d07c0f; die Editor-Session
 holt den Zweig per Fast-Forward nach `zoneneditor`.
+
+### 13g. Vorschau-Kosten und Restkreuzungen (Florians zweiter Auftrag: „Vorschau wieder unter 5 ms, Restkreuzungen in dichten Schleifenhaufen“)
+
+**Aufschlüsselung** (die Messung gibt je Vorschau jetzt Löser, Kreuzungsschranken, Knoten-Fit und Abfragen getrennt aus;
+31 Schleifen-Striche, Median je Vorschau, unter Last durch die Szenarien der Editor-Session): Vorschau 7,4 ms, davon
+Löser 0,2, Kreuzungsschranken 0,1, Knoten-Fit 0,8 und **Abfragen an Ebenen und Feld 6,3 ms**. Nicht der Löser war teuer,
+sondern die Abfragen: je Vorschau wurden alle noch freien Linienpunkte neu befragt (rund 20 Punkte, je Punkt
+`depthAt`, `groundAt` und `field.free`), obwohl ein endgültiger Linienpunkt sich nicht mehr bewegt, und die Messung
+ließ die Vorschau-Bahn bis zur Spitze reichen (`cut = false`), was für jeden freien Punkt noch `solid` und `floor`
+kostete. Im Spiel endet die Vorschau-Bahn am festen Teil.
+
+**Geändert:**
+
+- **Abfragen einmal je endgültigem Linienpunkt** (`queried`), und vorläufige Punkte (sie entstehen je Vorschau neu, liegen
+  aber fast an derselben Stelle) übernehmen die Werte ihres Vorgängers am selben Linienindex, wenn er näher als 0,3 m liegt.
+- **Löser auf dem Band:** Die Matrix hat nur Einträge mit |i − j| ≤ 2; Cholesky auf dem Band statt dicht (O(k) statt O(k³)
+  je Runde). Bei den üblichen 20 freien Punkten kaum messbar (0,2 ms), bei offenen steilen Läufen bis 90 m wichtig.
+- **Kreuzungssuche billiger:** Bühnenlage der Schienenpunkte einmal berechnet (`railStage`), Seiten-Schlüssel als Zahl
+  statt Text, Zeitmessung je Anteil.
+- **Messung wie im Spiel:** Vorschau-Bahn bis zum festen Teil (`cut = true`); dadurch misst „Rückstand der Schienen“ jetzt
+  den Vorlauf (im Spiel sichtbar), nicht mehr den Pinselrückstand.
+- **Fit bis zur Spitze, gezeigt bis zum festen Teil:** Die Messung wie im Spiel deckte auf, dass der Fit nur bis zum
+  festen Teil (so lief es im Spiel) rund 10 Knoten je Strich mehr setzt als der Fit bis zur Spitze (so lief es in der
+  Messung mit `cut = false`): An der festen Grenze entstanden kurze Segmente, die dann fest wurden. Jetzt fittet Strich 2
+  immer bis zur Spitze (freie Punkte mit billigem Weltpunkt ohne Feld), zeigt die Bahn aber nur bis zum festen Teil (das
+  Segment mit dem Ende wird dort geteilt, de Casteljau). Damit die Schienen weit hinten stillstehen, wird ein Segment, das
+  über die feste Grenze hinausreicht, am festen Ende geteilt und sein vorderer Teil fest, sobald der länger als `FIX_SPAN`
+  30 m ist (Platzhalter). Das letzte gezeigte Segment atmet, wie schon beim Stand 0d07c0f (1,6 px, Abschnitt 10).
+
+**Ergebnis** (Median je Vorschau; zuerst unter Last durch die Szenarien der Editor-Session, Endstand bei freier
+Maschine): 31 Striche 7,4 → 5,4 → 4,1 ms unter Last, Endstand **3,0 ms** (90 %: 11,5 ms); 27 Striche 3,8 ms (90 %:
+10,6); 17 Striche von heute 2,8 ms (90 %: 8,8). Davon Abfragen 2,5 bis 3,0 ms, und die bestehen aus zwei Aufrufen von
+`field.free` je Vorschau zu je rund 1,4 ms (die freien Tiefenabschnitte am Strahl eines neuen Punkts über den ganzen
+Ebenenstapel). Löser, Schranken und Fit zusammen 0,3 ms. Weiter runter geht es nur über das Feld selbst (Stufe P1
+„Kantenfelder je Ebene“: ein Index je Ebene statt des Gangs über alle Flächen), nicht über Strich 2.
+
+**Restkreuzungen, ehrlich:** Die Messung zählt jetzt Schranken-Konflikte (ein Punkt soll vor dem einen und hinter dem
+anderen Strang liegen): auf den 31 Schleifen-Strichen rund 31 000 Konfliktpunkte über alle Vorschauen, rund 1000 je
+Strich. Zwei Rückfälle gemessen: alle Paare eines Punkts auf eine Seite zwingen (297 statt 215 Kreuzungen, weil es die
+Seiten anderer Begegnungen kippt) und fernere Paare fallen lassen, erst die Paare an derselben x-Stelle, dann nur das
+nächste (276 statt 236). Beides verworfen. Dazu kommt: Die Seiten-Regel reagiert in dichten Haufen auf Rundung (der
+Band-Löser rechnet dieselbe Matrix, 215 → 236 Kreuzungen nur durch Rundungsunterschiede in den Seitenentscheidungen),
+die Zahl schwankt also um rund ±10 %. Die Haufen sind strukturell zu eng für die Mindestabstände; mehr geht nur mit mehr
+Raum (Höhlenmeter, Spuren, Stufe P2) oder damit, dass die Bahn kleine Schleifen nicht mitmacht (Entscheidung).
+
+**Endstand** (Median je Strich; „b954df7“ = der Stand vom Nachmittag, „jetzt“ = Fit bis zur Spitze, Abfragen einmal,
+Band-Löser; bei freier Maschine):
+
+| | 31 alte: b954df7 | jetzt | 27 neue: b954df7 | jetzt | 17 heute: b954df7 | jetzt |
+|---|---|---|---|---|---|---|
+| Kreuzungen auf gleicher Höhe (Summe) | 215 | 179 | 129 | 107 | 3 | 3 |
+| Striche ohne Kreuzung | 8 | 8 | 16 | 15 | 15 | 15 |
+| Fahrt-Abbruch an Kreuzung | 12 | 12 | 3 | 3 | 1 | 0 |
+| Knoten je Strich | 80 | 83 | 52 | 53 | 36 | 35 |
+| Knicke | 301 | 310 | 177 | 142 | 78 | 80 |
+| Tiefenspanne | 38,3 m | 40,3 m | 28,3 m | 27,7 m | 25,3 m | 25,5 m |
+| Vorschau Median / 90 % (ms) | 8,7 / 24,5 (Last) | 3,0 / 11,5 | 9,8 / 23,7 (Last) | 3,8 / 10,6 | 7,7 / 18,4 (Last) | 2,8 / 8,8 |
+
+Die Kreuzungen sind mit demselben Regelwerk etwas weniger (179 statt 215, 107 statt 129): Fit bis zur Spitze und
+einmalige Abfragen ändern die Tiefenlösung nur über Rundung und den Abfrage-Cache, in dichten Haufen reicht das für
+±10 bis 15 %. Die Zahl ist also keine Verbesserung der Regel, sondern Rauschen in ihrem Rahmen.
+
+**Absicherung:** 464 Tests und `npm run build` grün (der Stillstand-Test lässt das letzte gezeigte Segment atmen, wie es
+seit 0d07c0f ist); Szenarien 1–28 gegen den Messserver :5188 alle 200 Prüfungen bestanden, nur Zahlenrauschen gegenüber
+dem Lauf von b954df7. Nicht geprüft: das Gefühl am Mac (Atmen des letzten Segments, Spur-Rampen), das Handy, Zonen ohne
+Ebenen. Stand: Commit auf `claude/pinsel-studie-8f0777` nach b954df7, Fast-Forward nach `zoneneditor` möglich.

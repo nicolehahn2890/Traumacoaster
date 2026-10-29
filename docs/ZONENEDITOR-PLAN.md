@@ -1086,7 +1086,10 @@ bleibt wörtlich, Studie Abschnitt 12; rückwärts Überzeichnetes fällt noch a
 nachmittags (Studie Abschnitt 13): Kreuzungen auf gleicher Höhe auf Florians Strichen 11 → 3 (kleiner Versatz im
 ±6-m-Fenster, Seite je Begegnung, ganze Spur nur an sauberen Kreuzungen), Knoten-Fit 150 m / 180° (`&tol= &even= &span=
 &turn=` zum Ausprobieren), Bearbeiten über Knoten und Griffe baut die Bahn einmal je Bild leicht neu statt je
-Zeigerereignis. Offen in Stufe P1: Handy-Messung bei 1000 m. Zonen ohne Ebenen zeichnen weiter mit dem bisherigen Pinsel.
+Zeigerereignis. Vorschau von Strich 2 rund 3 ms je Aufruf bei freier Maschine (Studie 13g); davon sind 2,5 ms zwei Aufrufe von `field.free`
+über den ganzen Ebenenstapel, also die Stelle für „Kantenfelder je Ebene“ (Stufe P1). Offen in Stufe P1: Handy-Messung
+bei 1000 m, Restkreuzungen in dichten Schleifenhaufen (strukturell, Stufe P2). Zonen ohne Ebenen zeichnen weiter mit dem
+bisherigen Pinsel.
 **Noch offen aus Stufe 4:** die übrigen Spielobjekte auf Kanten (Schlange, Ziele, Stufen, Schalter, Coins, Baustellen;
 bis dahin der Klötzchen-Editor), Durchblick-Prüfung. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
 lang, die Schraffuren. **Nicht geprüft:** Szene 06 in Formen (Tor S4), Stroke-Replay mit dem Ebenen-Pinsel (der Replay
