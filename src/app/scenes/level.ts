@@ -18,7 +18,7 @@ import { goalLabel, ELEMENT_NAMES } from '@/levels/goalLabels';
 import { evaluate, type Evaluation, hasNegativeGoals } from '@/levels/evaluator';
 import { Terrain } from '@/physics/terrain';
 import { RIDE_TUNING, SKIN_PHYSICS, TrainSim, simOptionsForLevel, type CarState, type FailReason, type TrainSimOptions } from '@/physics/trainSim';
-import { carFrame, stateAt } from '@/track/model';
+import { FRAME_TUNING, carFrame, stateAt } from '@/track/model';
 import { PassengerSim, initPhysics, emptyParts, seatedPose, type PassengerView } from '@/physics/passengers';
 import { restraintFor } from '@/physics/belts';
 import { audio } from '@/core/audio';
@@ -204,6 +204,8 @@ LOOP_TUNING.minR = urlNum('loopr', LOOP_TUNING.minR);
 // Fahrregeln (Pinsel-Studie, Paket 2): &fahrt=1 die strenge Fahrt wie bisher, sonst Antrieb und Stützräder; &antrieb= Mindesttempo in m/s
 RIDE_TUNING.rules = urlNum('fahrt', 2) === 1 ? 'strict' : 'drive';
 RIDE_TUNING.driveSpeed = urlNum('antrieb', RIDE_TUNING.driveSpeed);
+// Oben-Vektor der Schienen (Studie 17): Vorgabe aufrecht außer im Looping; &rahmen=1 = bisherige Regel, zum Vergleich im Spiel
+FRAME_TUNING.upright = urlNum('rahmen', 2) !== 1;
 /**
  * Strich 2: 1 (Vorgabe) zeigt die Schienen nur bis zum festen Teil, der Vorlauf bleibt Tinte und die Bahn zieht weich
  * nach, sobald die Tiefe entschieden ist; 2 zeigt den Vorlauf vorläufig als Schienen bis zur Spitze
