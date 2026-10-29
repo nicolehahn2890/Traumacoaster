@@ -31,7 +31,8 @@ import { strokeToTrack, closePath, extendTrack, interpretStroke, lanesTrack, typ
 import { bendSegment } from '@/track/edit';
 import { RubberBrush, chaikin, resamplePolyline } from '@/track/brush';
 import { BrushRefiner, joinLines, lineLength, planBrushTrack, previewBrushTrack, spliceLine, swapCrossing, trackLine, trackLineWithDepth, type BrushPlan, type BrushPreview } from '@/track/brushTrack';
-import { FIX_BEHIND, FREEZE, Strich2, type Strich2Preview } from '@/track/strich2';
+import { FIX_BEHIND, FREEZE, Strich2, type Strich2End, type Strich2Preview } from '@/track/strich2';
+import { splitPathAt } from '@/track/pathSplit';
 import { TrackInspector, type WeakSpot } from '@/track/inspect';
 import { findCrossings } from '@/track/crossings';
 import { MeasureOverlay } from '@/render/measureOverlay';
@@ -269,9 +270,11 @@ export class LevelScene implements Scene {
   private brushPreview: BrushPreview | null = null;
   /** so weit (Bühnen-Meter entlang der Linie) zeigt die letzte Vorschau die Bahn schon als Schienen */
   private brushPreviewedLen = 0;
-  private brushBase: { line: StagePoint[]; z: Float64Array } | null = null;
+  private brushBase: { line: StagePoint[]; z: Float64Array; nodes?: TrackNode[] } | null = null;
   /** Pinsel-Studie: Strich 2 für den laufenden Strich (&strich=2), sonst null */
   private strich2: Strich2 | null = null;
+  /** Überzeichnen mit Strich 2: Stelle der alten Bahn (Bogenlänge, Probe), an der der Strich begann */
+  private overdrawAt: { s: number; index: number } | null = null;
   /** Strich 2: ab hier (Pinsellänge) zeigt die Tinte den Strich; läuft weich dem festen Bahnende nach (die Bahn „zieht nach“) */
   private brushInkFrom = 0;
   /** Plan der aktuellen Pinsel-Bahn (Kreuzungen zum Tauschen) und der Stand der Bahn, zu dem er passt */
@@ -1139,6 +1142,9 @@ export class LevelScene implements Scene {
           } else {
             // längs der Bahn: überzeichnen, der Strich beginnt am Anfasspunkt
             this.beginRaw(d.startSt!);
+            // Art zuerst: der Pinsel-Start (Strich 2) muss wissen, dass er überzeichnet
+            this.strokeModes = [];
+            this.strokeKind = 'overdraw';
             if (this.brushMode) {
               this.refiner = null;
               this.brush = new RubberBrush(d.startSt!, BAND_PX / this.view.camera.zoom);
@@ -1146,8 +1152,6 @@ export class LevelScene implements Scene {
               this.stroke = this.brush.points;
               this.startBrushStroke();
             } else this.stroke = [d.startSt!, { X: st.X, Y: st.Y }];
-            this.strokeModes = [];
-            this.strokeKind = 'overdraw';
             this.resetAutoscroll();
             this.drag = { kind: 'stroke' };
             this.drawInk();
@@ -2357,12 +2361,27 @@ export class LevelScene implements Scene {
     this.brushPreview = null;
     this.brushPreviewedLen = 0;
     this.brushInkFrom = 0;
-    this.brushBase = this.strokeKind === 'extend' && this.samples ? trackLineWithDepth(this.samples) : null;
+    // Strich 2 ist der Pinsel der Ebenen-Zonen (sonst der heutige)
+    const useStrich2 = STRICH_URL >= 2 || (STRICH_URL === 0 && this.planeStack !== null);
+    this.overdrawAt = null;
+    if (this.strokeKind === 'extend' && this.samples) {
+      // Fortsetzen: die alte Bahn mit Tiefe je Punkt; Strich 2 behält dazu ihre Knoten wörtlich und fittet erst ab dem Ende
+      this.brushBase = { ...trackLineWithDepth(this.samples), ...(this.path && !isClosed(this.path) ? { nodes: this.path.nodes } : {}) };
+    } else if (this.strokeKind === 'overdraw' && useStrich2 && this.path && this.samples) {
+      // Überzeichnen mit Strich 2: die Bahn bis zum Anfasspunkt ist der Kopf (bleibt wörtlich), ab dort löst der Strich
+      // neu; der Rest hinter dem Ende des Strichs kommt beim Loslassen wieder dazu (endBrushStroke)
+      const a = nearestOnTrack(this.samples, this.brush!.points[0]);
+      const head = a.index >= 0 ? splitPathAt(this.path, this.samples.seg[a.index], this.samples.t[a.index]).head : [];
+      if (head.length >= 2) {
+        this.brushBase = { ...trackLineWithDepth(sampleTrack({ ...this.path, nodes: head, closed: false }, 0.25)), nodes: head };
+        this.overdrawAt = { s: a.s, index: a.index };
+      } else this.brushBase = null;
+    } else this.brushBase = null;
     // Pinsel „Spur halten“ (Kamerawinkel-Test): hält die Tiefe am Ende der alten Bahn, ein neuer Strich die Spur unter dem Anfang
     this.brushHoldZ = this.brushBase?.z.length ? this.brushBase.z[this.brushBase.z.length - 1] : NaN;
-    // Strich 2 ist der Pinsel der Ebenen-Zonen (sonst der heutige), Überzeichnen fällt noch auf den heutigen zurück
-    const useStrich2 = STRICH_URL >= 2 || (STRICH_URL === 0 && this.planeStack !== null);
-    this.strich2 = useStrich2 && this.strokeKind !== 'overdraw' ? new Strich2(() => this.brushOptions(), this.brushBase, this.planeStartDepth(), Math.max(8, 60 / this.view.camera.zoom), FEST_URL, VORLAUFM_URL) : null;
+    // Überzeichnen ohne Kopf (Anfasspunkt ganz vorn) läuft als neuer Strich 2; rückwärts Gezeichnetes fällt beim Loslassen
+    // auf den heutigen Pinsel zurück (Platzhalter, Stufe P1)
+    this.strich2 = useStrich2 && (this.strokeKind !== 'overdraw' || this.overdrawAt) ? new Strich2(() => this.brushOptions(), this.brushBase, this.planeStartDepth(), Math.max(8, 60 / this.view.camera.zoom), FEST_URL, VORLAUFM_URL) : null;
     this.previewTimer = 0;
     this.setDrawCursor(true);
   }
@@ -2408,7 +2427,7 @@ export class LevelScene implements Scene {
    * zeigt nur die Tinte (die Bahn ändert sich erst beim Loslassen).
    */
   private previewBrush(): void {
-    if (this.strokeKind === 'overdraw' || this.strokeKind === 'terrain') return;
+    if (this.strokeKind === 'terrain' || (this.strokeKind === 'overdraw' && !this.strich2)) return;
     if (this.strich2) {
       // Strich 2: der Läufer nimmt die ganze Pinsellinie; hinter dem Vorlauf sind die Schienen endgültig. Die Vorschau
       // endet am festen Teil (Vorlauf 1), die Tinte zeigt den Rest bis zum Finger
@@ -2515,20 +2534,55 @@ export class LevelScene implements Scene {
     const shown = this.brushPreview;
     this.brushBase = null;
     this.brushPreview = null;
-    const s2 = this.strich2;
+    let s2 = this.strich2;
     this.strich2 = null;
-    if (s2 && kind !== 'overdraw') {
+    const at = this.overdrawAt;
+    this.overdrawAt = null;
+    // Überzeichnen mit Strich 2: endet der Strich wieder auf der alten Bahn (vorwärts), bleibt der Rest dahinter wörtlich
+    // (Schwanz) und der Strich endet genau dort, in dessen Tiefe und Richtung; endet er daneben, geht die Bahn ab dem
+    // Anfasspunkt im Strich weiter; rückwärts gezeichnet nimmt der heutige Pinsel (Platzhalter, Stufe P1)
+    let tail: TrackNode[] | null = null;
+    let endAt: Strich2End | undefined;
+    if (s2 && kind === 'overdraw' && at && this.path && this.samples) {
+      const b = nearestOnTrack(this.samples, drawn[drawn.length - 1]);
+      if (b.index >= 0 && b.d * this.view.camera.zoom <= 30) {
+        if (b.s >= at.s + 2) {
+          tail = splitPathAt(this.path, this.samples.seg[b.index], this.samples.t[b.index]).tail;
+          const M = tail[0];
+          let dir = { x: M.outX, y: M.outY, z: M.outZ * LANE_DEPTH };
+          if (Math.hypot(dir.x, dir.y, dir.z) < 1e-9 && tail.length >= 2) dir = { x: tail[1].x - M.x, y: tail[1].y - M.y, z: (tail[1].z - M.z) * LANE_DEPTH };
+          const l = Math.hypot(dir.x, dir.y, dir.z) || 1;
+          endAt = { p: tagRay(toView(M.x, M.y, M.z)), z: M.z * LANE_DEPTH, tangent: { x: dir.x / l, y: dir.y / l, z: dir.z / l } };
+        } else if (b.s < at.s - 2) s2 = null;
+      }
+    }
+    if (s2) {
       // Strich 2: was fest war, bleibt genau so; nur das freie Ende wird gelöst, ein Rundenschluss ist ein neuer Weg
-      const r = s2.finish(drawn);
+      const r = s2.finish(drawn, endAt);
       if (!r || r.path.nodes.length < 2) {
         this.redrawTrack();
         return;
+      }
+      if (tail) {
+        // Nahtknoten: Lage und Eingangsgriff aus dem Fit, Ausgangsgriff und Art aus dem Schwanz; dahinter der Schwanz
+        const nodes = r.path.nodes;
+        const j = nodes[nodes.length - 1];
+        const M = tail[0];
+        j.x = M.x;
+        j.y = M.y;
+        j.z = M.z;
+        j.outX = M.outX;
+        j.outY = M.outY;
+        j.outZ = M.outZ;
+        j.roll = M.roll;
+        nodes.push(...tail.slice(1));
+        r.path.closed = isClosed(this.path!);
       }
       this.pushHistory();
       r.path.startType = this.path?.startType ?? 'chainlift';
       this.setPath(r.path, true);
       this.scheduleInspect();
-      if (!r.closed) {
+      if (!r.closed && !tail) {
         const a = r.line[0];
         const b = r.line[r.line.length - 1];
         if (Math.hypot(a.X - b.X, a.Y - b.Y) <= this.closeReach()) this.toast.show(t('closeOffer'), 2.2);

@@ -70,6 +70,8 @@ const TOL_LOOSE = 1.2;
  * dafür „atmen“ die Schienen in diesem Stück noch in der Toleranz). Schalter &fest=N
  */
 export const FIX_BEHIND = 2;
+/** Überzeichnen: über so viele Pinsel-Meter gleitet das Ende des Strichs auf den Zielpunkt auf der alten Bahn */
+const GLUE = 5;
 /** Grenzwellenlänge (m) der Tiefenglättung; kürzer als beim heutigen Pinsel (40 m), weil die Ebenen Terrassen von 10–20 m haben */
 const CUTOFF = 20;
 const LAMBDA = (CUTOFF / (2 * Math.PI)) ** 4;
@@ -130,6 +132,13 @@ export interface Strich2Result {
   closed: boolean;
   /** Läufe blockierter Linienpunkte (kein freier Abschnitt, der an den vorigen anschließt) */
   rock: Array<[number, number]>;
+}
+
+/** Ziel beim Loslassen (Überzeichnen): der Strich endet genau hier, in dieser Tiefe (Meter) und mit dieser Einheitsrichtung */
+export interface Strich2End {
+  p: StagePoint;
+  z: number;
+  tangent: Vec3;
 }
 
 export interface Strich2Stats {
@@ -234,6 +243,10 @@ export class Strich2 {
   private fixedEnd: number[] = [];
   private fixedNodes: TrackNode[] = [];
   private fitFrom = 0;
+  /** so viele der festen Segmente sind die alte Bahn (Fortsetzen, Überzeichnen): sie fallen beim Zurückziehen nie weg */
+  private baseSegs = 0;
+  /** Richtung am Ende (Überzeichnen: Anschluss an den Rest der alten Bahn), nur beim Loslassen gesetzt */
+  private endTangent: Vec3 | null = null;
   /** Seite je Kreuzung (Schlüssel: Bündel des späteren und des früheren Punkts), bleibt */
   private sides = new Map<string, number>();
   /** feste Punkte nach x-Zelle für die Kreuzungssuche */
@@ -246,11 +259,12 @@ export class Strich2 {
   /**
    * base: alte Bahn (Linie mit Tiefe je Punkt), an die der Strich anschließt; startZ: Tiefe am Anfang eines neuen
    * Strichs (Landung oder Bodenhöhe der Ebenen); closeSnap: so nah muss das Ende dem Anfang kommen, damit die Runde
-   * schließt; lookahead: Vorlauf in Metern hinter der Spitze, ab dem die Tiefe fest wird (FREEZE)
+   * schließt; lookahead: Vorlauf in Metern hinter der Spitze, ab dem die Tiefe fest wird (FREEZE). base.nodes: die
+   * Knoten der alten Bahn (offen, bis zu ihrem Ende): sie bleiben wörtlich stehen, gefittet wird erst ab ihrem Ende
    */
   constructor(
     private readonly options: () => BrushOptions,
-    base: { line: StagePoint[]; z: Float64Array } | null,
+    base: { line: StagePoint[]; z: Float64Array; nodes?: TrackNode[] } | null,
     startZ: number,
     private readonly closeSnap: number,
     private readonly fixBehind = FIX_BEHIND,
@@ -258,6 +272,13 @@ export class Strich2 {
   ) {
     if (base && base.line.length >= 2) {
       base.line.forEach((p, i) => this.pts.push(this.newPt({ ...p }, base.z[i])));
+      if (base.nodes && base.nodes.length >= 2) {
+        // die 1-m-Linie endet meist kurz vor dem letzten Knoten: ein Punkt genau dort, damit der Fit am Knoten ansetzt
+        const last = base.nodes[base.nodes.length - 1];
+        const sEnd = toView(last.x, last.y, last.z);
+        const lp = this.pts[this.pts.length - 1];
+        if (Math.hypot(lp.p.X - sEnd.X, lp.p.Y - sEnd.Y) > 0.05) this.pts.push(this.newPt({ ...lp.p, X: sEnd.X, Y: sEnd.Y }, last.z * LANE_DEPTH));
+      }
       for (const q of this.pts) {
         q.frozen = true;
         this.indexX(this.pts.indexOf(q));
@@ -268,11 +289,47 @@ export class Strich2 {
       const a = base.line[0];
       const b = base.line[Math.min(base.line.length - 1, 4)];
       this.tsX = Math.sign(b.X - a.X) || 1;
+      if (base.nodes && base.nodes.length >= 2) this.adoptNodes(base.nodes);
     } else {
       this.baseLen = 0;
       this.startZ = Number.isFinite(startZ) ? startZ : 0;
       this.tsX = 0;
     }
+  }
+
+  /**
+   * Knoten der alten Bahn als feste Segmente übernehmen (dieselben Werte, eigene Kopien): Griffe in Spuren → Meter. Das
+   * Ende jedes Segments wird dem nächsten Linienpunkt zugeordnet (monoton; das letzte endet am Ende der alten Bahn)
+   */
+  private adoptNodes(nd: TrackNode[]): void {
+    const w = (n: TrackNode): Vec3 => ({ x: n.x, y: n.y, z: n.z * LANE_DEPTH });
+    let prevEnd = 0;
+    for (let k = 0; k + 1 < nd.length; k++) {
+      const a = nd[k];
+      const b = nd[k + 1];
+      const p0 = w(a);
+      const p3 = w(b);
+      const p1 = { x: p0.x + a.outX, y: p0.y + a.outY, z: p0.z + a.outZ * LANE_DEPTH };
+      const p2 = { x: p3.x + b.inX, y: p3.y + b.inY, z: p3.z + b.inZ * LANE_DEPTH };
+      this.fixedSegs.push({ p0, p1, p2, p3 });
+      this.fixedNodes.push({ ...a });
+      let end = this.baseLen - 1;
+      if (k + 2 < nd.length) {
+        const s = toView(b.x, b.y, b.z);
+        let bd = Infinity;
+        for (let i = prevEnd; i < this.baseLen; i++) {
+          const d = Math.hypot(this.pts[i].p.X - s.X, this.pts[i].p.Y - s.Y);
+          if (d < bd) {
+            bd = d;
+            end = i;
+          }
+        }
+      }
+      this.fixedEnd.push(end);
+      prevEnd = end;
+    }
+    this.baseSegs = this.fixedSegs.length;
+    this.fitFrom = this.baseLen - 1;
   }
 
   private newPt(p: StagePoint, z: number): Pt {
@@ -356,7 +413,7 @@ export class Strich2 {
     this.xCells = new Map();
     for (let i = 0; i < from; i++) if (this.pts[i].frozen) this.indexX(i);
     // feste Segmente, deren Ende (samt Tangenten-Nachbarn) noch da ist, bleiben
-    while (this.fixedEnd.length && this.fixedEnd[this.fixedEnd.length - 1] + Math.max(2, this.fixBehind) >= from) {
+    while (this.fixedEnd.length > this.baseSegs && this.fixedEnd[this.fixedEnd.length - 1] + Math.max(2, this.fixBehind) >= from) {
       const b = this.fixedEnd.pop()!;
       const a = this.fixedEnd.length ? this.fixedEnd[this.fixedEnd.length - 1] : 0;
       for (let i = a; i <= Math.min(b, this.pts.length - 1); i++) this.pts[i].rail = null;
@@ -910,7 +967,7 @@ export class Strich2 {
     const lastFixed = this.fixedSegs.length ? this.fixedSegs[this.fixedSegs.length - 1] : null;
     const startTangent = lastFixed ? unit(lastFixed.p2, lastFixed.p3) : undefined;
     const first = this.fixedSegs[0] ?? null;
-    const endTangent = closed && first ? unit(first.p0, first.p1) : undefined;
+    const endTangent = closed && first ? unit(first.p0, first.p1) : (this.endTangent ?? undefined);
     // ohne feste Segmente eine geschlossene Runde: Tangente an der Naht über sie hinweg (reduceNodes closed)
     const fit = pts.length >= 2 ? reduceNodes(pts, [], { even: true, tolAt, startTangent, endTangent, closed: closed && !first }) : { segments: [] as CubicSegment3[], indices: [] as number[] };
     const segs = [...this.fixedSegs, ...fit.segments];
@@ -1049,13 +1106,38 @@ export class Strich2 {
    * Loslassen: die ganze Pinsellinie übernehmen, den Rest lösen; endet sie nah am Anfang, ein neuer Weg ab dem festen
    * Ende in die Station (der gezeichnete Teil bleibt). Danach ist alles fest.
    */
-  finish(points: StagePoint[]): Strich2Result | null {
+  finish(points: StagePoint[], endAt?: Strich2End): Strich2Result | null {
     const o = this.options();
     const before = this.pts.length;
+    if (endAt) {
+      // Überzeichnen: die letzten GLUE Meter des Pinsels gleiten auf den Zielpunkt zu, der letzte Punkt liegt genau dort
+      const pts = points.map((p) => ({ ...p }));
+      const cum = [0];
+      for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].X - pts[i - 1].X, pts[i].Y - pts[i - 1].Y));
+      const L = cum[cum.length - 1];
+      const last = pts[pts.length - 1];
+      const dx = endAt.p.X - last.X;
+      const dy = endAt.p.Y - last.Y;
+      for (let i = 0; i < pts.length; i++) {
+        const f = Math.max(0, 1 - (L - cum[i]) / GLUE);
+        pts[i].X += dx * f;
+        pts[i].Y += dy * f;
+      }
+      pts[pts.length - 1] = { ...endAt.p };
+      points = pts;
+      this.endTangent = endAt.tangent;
+    }
     this.feed(points);
     if (this.pts.length - this.baseLen < 6) return null;
+    if (endAt) {
+      // die 1-m-Linie endet bis zu 1 m vor dem Pinselende: ein Linienpunkt genau am Ziel, dort setzt der Schwanz an
+      const lp = this.pts[this.pts.length - 1];
+      if (Math.hypot(lp.p.X - endAt.p.X, lp.p.Y - endAt.p.Y) > 0.01) this.pts.push(this.newPt({ ...endAt.p }, lp.z));
+      this.lineFinal = this.pts.length;
+    }
     this.query(o, Math.min(before, this.lineFinal) - 2);
-    this.solve(o);
+    this.solve(o, endAt ? endAt.z : NaN);
+    if (endAt) this.pts[this.pts.length - 1].z = endAt.z;
     // beim Loslassen ist ein noch offenes steiles Stück Höhe: alles bis FREEZE vor dem Ende wird fest
     this.freeze(o, true);
     let closed = false;
@@ -1063,7 +1145,7 @@ export class Strich2 {
     const p0 = this.pts[0].p;
     const end = this.pts[n - 1].p;
     const gap = Math.hypot(end.X - p0.X, end.Y - p0.Y);
-    if (gap <= this.closeSnap && (n - 1) * STEP >= 40) {
+    if (!endAt && gap <= this.closeSnap && (n - 1) * STEP >= 40) {
       const ring = this.closeRing();
       if (ring) {
         this.dropFrom(ring.from);

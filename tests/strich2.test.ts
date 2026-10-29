@@ -2,7 +2,8 @@
  * Pinsel-Studie: Strich 2 (src/track/strich2.ts). Ohne Perspektive liest sich die Bühne direkt: Höhe = Y − 0,5·Tiefe.
  */
 import { describe, expect, it } from 'vitest';
-import type { BrushOptions, Landing } from '@/track/brushTrack';
+import { trackLineWithDepth, type BrushOptions, type Landing } from '@/track/brushTrack';
+import { createNode, emptyPath, sampleTrack, type TrackPath } from '@/track/model';
 import { FIX_BEHIND, FREEZE, Strich2 } from '@/track/strich2';
 import { LANE_DEPTH, setPerspective, type StagePoint } from '@/track/stage';
 import type { FreeLanes } from '@/zone/field';
@@ -63,6 +64,62 @@ describe('Strich 2: kausal mit festem Vorlauf', () => {
     expect(pk && pl).toBeTruthy();
     expect(pl!.frozen).toBeGreaterThan(0);
     expect(pk!.frozen).toBe(pl!.frozen + (FREEZE - 6));
+  });
+
+  it('Fortsetzen: die Knoten der alten Bahn bleiben wörtlich stehen, der Anschluss ist G1', () => {
+    const zl = 4 / LANE_DEPTH;
+    const mk = (x: number) => {
+      const n = createNode(x, 10, zl);
+      n.inX = -2.3;
+      n.outX = 2.3;
+      return n;
+    };
+    const old: TrackPath = { ...emptyPath(), nodes: [mk(0), mk(7), mk(14)], closed: false };
+    old.nodes[0].inX = 0;
+    old.nodes[0].kind = 'station';
+    old.nodes[2].outX = 0;
+    const line = trackLineWithDepth(sampleTrack(old, 0.25));
+    const s = new Strich2(() => stepOptions(1000), { ...line, nodes: old.nodes }, NaN, 8);
+    // weiter nach rechts ab dem Ende (ohne Perspektive: X = x, Y = y + 0,5·Tiefe)
+    const endS = { X: 14, Y: 12 };
+    const pts = polyline([[endS.X, endS.Y], [endS.X + 60, endS.Y], [endS.X + 120, endS.Y + 20]]);
+    for (let n = 6; n <= pts.length; n += 10) s.update(pts.slice(0, n));
+    const r = s.finish(pts)!;
+    expect(r).not.toBeNull();
+    for (let k = 0; k < 2; k++) {
+      for (const key of ['x', 'y', 'z', 'inX', 'inY', 'inZ', 'outX', 'outY', 'outZ', 'kind'] as const) expect(r.path.nodes[k][key]).toBe(old.nodes[k][key]);
+    }
+    const j = r.path.nodes[2];
+    expect(j.x).toBeCloseTo(14, 6);
+    expect(j.y).toBeCloseTo(10, 6);
+    expect(j.z).toBeCloseTo(zl, 6);
+    expect(j.inX).toBeCloseTo(-2.3, 9);
+    expect(j.inY).toBeCloseTo(0, 9);
+    const lo = Math.hypot(j.outX, j.outY, j.outZ * LANE_DEPTH);
+    expect(lo).toBeGreaterThan(0);
+    expect(j.outX / lo).toBeGreaterThan(0.999);
+    expect(r.path.nodes.length).toBeGreaterThan(3);
+    // die alten Knoten sind eigene Kopien, nicht dieselben Objekte
+    expect(r.path.nodes[0]).not.toBe(old.nodes[0]);
+  });
+
+  it('Überzeichnen: der Strich endet genau am Zielpunkt, in dessen Tiefe und Richtung', () => {
+    const s = new Strich2(() => stepOptions(1000), null, 4, 8);
+    const pts = polyline([[0, 12], [40, 12], [80, 12]]);
+    for (let n = 6; n <= pts.length; n += 10) s.update(pts.slice(0, n));
+    const goal = { X: 84, Y: 15 };
+    const r = s.finish(pts, { p: goal, z: 10, tangent: { x: 0, y: 1, z: 0 } })!;
+    expect(r).not.toBeNull();
+    expect(r.closed).toBe(false);
+    const last = r.path.nodes[r.path.nodes.length - 1];
+    expect(last.x).toBeCloseTo(84, 6);
+    expect(last.z * LANE_DEPTH).toBeCloseTo(10, 6);
+    expect(last.y + 0.5 * last.z * LANE_DEPTH).toBeCloseTo(15, 6);
+    const li = Math.hypot(last.inX, last.inY, last.inZ * LANE_DEPTH);
+    expect(li).toBeGreaterThan(0);
+    expect(-last.inY / li).toBeGreaterThan(0.99);
+    expect(r.line[r.line.length - 1].X).toBeCloseTo(84, 6);
+    expect(r.z[r.z.length - 1]).toBeCloseTo(10, 6);
   });
 
   it('ändert eine Tiefe nie mehr, sobald sie fest ist, und springt beim Loslassen nicht', () => {

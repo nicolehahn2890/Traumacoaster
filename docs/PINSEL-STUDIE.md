@@ -49,6 +49,13 @@ nach hinten in Metern (eine Spur = 8,4 m). **Loslassen** = der Finger geht hoch,
    bisheriger Pinsel). Die Vorlauflänge (12, 8, 6 m) macht auf seinen 18 + 27 + 31 Strichen in Form, Sprung und Fahrt
    keinen messbaren Unterschied (±6 %, ohne Richtung), nur das Band wird kürzer (178 → 118 → 89 px bei zoom 14,8):
    Entscheidung 1 ist damit eine reine Gefühlsfrage, am Mac mit `&vorlaufm=6` oder `8` ausprobierbar.
+10. Vierter Nachtrag (Abschnitt 12): Fortsetzen und Überzeichnen laufen auf Strich 2. Vorher wanderten beim
+   Fortsetzen die Knoten der alten Bahn um bis zu 5,3 m (sie wurde mitgefittet, beim heutigen Pinsel genauso), und
+   Überzeichnen fiel ohne Vorschau auf den heutigen Pinsel zurück, der die ganze Bahn neu plante. Jetzt übernimmt
+   Strich 2 die alten Knoten wörtlich als feste Segmente und fittet erst ab dem Anschluss (G1); beim Überzeichnen bleibt
+   die Bahn vor dem Anfasspunkt und hinter dem Ende wörtlich, der Strich endet genau am Ende in dessen Tiefe und
+   Richtung, mit Vorschau während des Strichs. Platzhalter: rückwärts gezeichnet und über die Naht einer Runde nimmt
+   weiter der heutige Pinsel.
 
 ## 2. Befund am heutigen Pinsel
 
@@ -599,3 +606,56 @@ Median, 90 % 12,3 ms, Plan beim Loslassen 5,6 ms; Vorlauf 6 m: 5,6 / 12,1 / 5,5 
 der Zeit nichts; die 8–10 ms in der Tabelle oben waren Last durch Build und Szenarien (derselbe 12-m-Lauf unter Last
 9,6 ms, im Leerlauf 5,8 ms). Stand: `zoneneditor` steht noch auf e38bf6b; der Fast-Forward dorthin wurde der
 Studien-Session vom Berechtigungsmodus verweigert (fremder Worktree), wie der Stand hereinkommt, entscheidet Florian.
+
+## 12. Nachtrag 29.10. mittags: Fortsetzen und Überzeichnen auf Strich 2 (Stufe P1)
+
+Florians Auftrag nach der Entscheidung: „Du machst hier mit Fortsetzen/Überzeichnen auf Strich 2 weiter.“
+
+**Befund vorher** (im Browser nachgestellt, `test-huegel`, Strich 2 als Vorgabe):
+
+- **Fortsetzen:** Strich 2 bekam die alte Bahn nur als Linie mit Tiefe und fittete sie bei jeder Vorschau mit; ihre
+  Knoten wanderten dadurch um bis zu 5,3 m (Tiefe blieb). Der heutige Pinsel macht dasselbe (er plant die ganze Linie
+  neu und hält nur die Tiefe). Florians Bild „was fest ist, bleibt“ galt also nur innerhalb eines Strichs.
+- **Überzeichnen:** fiel auf den heutigen Pinsel zurück: keine Vorschau während des Strichs, beim Loslassen wurde die
+  ganze Bahn neu geplant (auch die Tiefe außerhalb des überzeichneten Stücks).
+
+**Geändert** (`src/track/pathSplit.ts` neu, `src/track/strich2.ts`, `src/app/scenes/level.ts`, `scripts/pinsel-messung.ts`):
+
+- **Bahn-Teilung** (`splitPathAt`): de Casteljau auf einem Segment an der Parameterstelle einer Bahnprobe; die Kurve
+  bleibt dieselbe, nur ein Knoten kommt dazu (dicht an einem Knoten wird an ihm geteilt). Kopf und Schwanz tragen den
+  Teilungsknoten als Kopie.
+- **Strich 2 übernimmt die Knoten der alten Bahn wörtlich** (`base.nodes`): sie werden feste Segmente, die beim
+  Zurückziehen nie wegfallen; gefittet wird erst ab dem letzten alten Knoten, mit dessen Richtung (G1). Die 1-m-Linie
+  bekommt einen Punkt genau am letzten Knoten, damit der Fit dort ansetzt.
+- **Ende mit Ziel** (`finish(points, endAt)`): für das Überzeichnen gleiten die letzten 5 Pinselmeter auf den Zielpunkt,
+  ein Linienpunkt liegt genau dort, die Tiefe dort ist vorgegeben (Löser-Pin wie beim Rundenschluss) und die
+  Endrichtung geht als Endtangente in den Fit; kein Rundenschluss in diesem Fall.
+- **Level-Szene:** Fortsetzen gibt die Knoten mit. Überzeichnen mit Strich 2: Kopf = Bahn bis zum Anfasspunkt (bleibt
+  wörtlich), der Strich löst ab dort mit Vorschau wie ein neuer; beim Loslassen auf der Bahn (vorwärts, binnen 30 px)
+  bleibt der Schwanz dahinter wörtlich und der Nahtknoten nimmt Lage und Ausgangsgriff des Schwanzes, Eingangsgriff aus
+  dem Fit. Endet der Strich neben der Bahn, geht die Bahn ab dem Anfasspunkt im Strich weiter (wie heute).
+  **Platzhalter:** rückwärts gezeichnetes Überzeichnen fällt weiter auf den heutigen Pinsel zurück; Überzeichnen über
+  die Naht einer geschlossenen Runde ebenso (der Kopf wäre leer).
+- Die Nachspiel-Messung gibt beim Fortsetzen jetzt ebenfalls die Knoten mit (sonst liefe sie anders als das Spiel).
+
+**Geprüft:** 16 Tests in `tests/strich2.test.ts` und `tests/pathSplit.test.ts` (Teilung ändert die Kurve nicht, nahe am
+Knoten keine Winzsegmente, geschlossene Bahn; Fortsetzen: alte Knoten wörtlich gleich, Nahtknoten an der alten Lage,
+Eingangsgriff wie dort, Ausgang in dieselbe Richtung; Ende mit Ziel: letzter Knoten genau am Ziel, in dessen Tiefe,
+Eingangsgriff gegen die Zielrichtung). Im Browser (:5188, `test-huegel`): Fortsetzen lässt alle alten Knoten exakt stehen
+(3 von 3, Nahtknoten an derselben Stelle), Strich 2 aktiv mit Vorschau; Überzeichnen mitten in der Bahn mit Strich 2
+(Art „overdraw“, Vorschau mit 5 Knoten während des Strichs), Kopf und Schwanz behalten Lage und Kurve, nur die Griffe
+der beiden Teilungsnachbarn sind wie bei de Casteljau verkürzt. Nicht geprüft: das Gefühl am Mac, rückwärts, geschlossene
+Runden, das Handy.
+
+**Nachspiel, ehrlich** (deine ersten 18 Striche von heute, alle setzen das Vorgabestück der Station fort; Median je
+Strich, vorher → nachher): Knoten 41 → 45, Knicke 82 → 92, Rollen 123° → 126° je 100 m, Tiefenspanne 20,5 → 20,6 m,
+Sprung beim Loslassen 0,1 px → 0,1 px, Abweichung Bahn–Strich 2,5 → 2,6 px. Ursache: Das Vorgabestück bleibt jetzt
+starr und der Strich schließt G1 daran an; vorher bog der Fit das Stück mit (bei beiden Pinseln), was die ersten Meter
+glatter machte, aber „was fest ist, bleibt“ verletzte. Wer schräg zum Stück loszeichnet, bekommt jetzt einen kurzen
+Haken mit zwei bis vier Knoten. Eine Richtungs-Angleichung der ersten Meter wäre eine Änderung an deinem Strich selbst
+(deine Regel: die schwarze Linie bleibt), darum nicht gebaut, sondern eine Entscheidung für dich.
+
+**Absicherung:** 462 Tests (sechs neu) und `npm run build` grün; Szenarien 1–28 gegen den Messserver :5188 alle 200
+Prüfungen bestanden (nur Zahlenrauschen gegenüber dem Lauf vom Vormittag). Stand: Commit auf
+`claude/pinsel-studie-8f0777` nach b658b07; die Editor-Session holt den Zweig per Fast-Forward nach `zoneneditor`
+(Florians Entscheidung, 29.10.).

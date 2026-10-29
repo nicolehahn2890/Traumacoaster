@@ -504,8 +504,9 @@ function replay(rec: Rec, idx: number): StrokeResult {
   }
   const counters = newCounters();
   const before = fixNaN(rec.before);
-  let base: { line: StagePoint[]; z: Float64Array } | null = null;
-  if (before && rec.kind === 'extend') base = trackLineWithDepth(sampleTrack(before, 0.25));
+  let base: { line: StagePoint[]; z: Float64Array; nodes?: TrackPath['nodes'] } | null = null;
+  // Fortsetzen: Strich 2 behält die Knoten der alten Bahn wörtlich (nodes), der heutige Pinsel liest nur Linie und Tiefe
+  if (before && rec.kind === 'extend') base = { ...trackLineWithDepth(sampleTrack(before, 0.25)), nodes: before.nodes };
   const holdZ = base?.z.length ? base.z[base.z.length - 1] : z ? (planeLanding(z.stack, stage(0))?.z ?? planeGroundDepth(z.stack, stage(0))) : NaN;
   const opts = brushOptionsFor(rec, z, terrain, holdZ, counters);
   // Strich 2: eigener Läufer mit festem Vorlauf; der nimmt die ganze Pinsellinie (keine Schleppe)
