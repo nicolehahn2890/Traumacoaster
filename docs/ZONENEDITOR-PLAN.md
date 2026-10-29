@@ -1178,8 +1178,13 @@ kostet nichts Messbares, mit 16 Tupfern auf jeder Form rund +0,8 ms, über Earle
 Gegenprobe gegen den allgemeinen Shader pixelgleich (größte Abweichung 1 Stufe). Die Handy-Messung hat dafür die Zeile
 „+ Farbnebel (16 Tupfer)“. Vorher und nachher: `docs/research/earle/2026-10-29-farbnebel.jpg` (Demo-Tupfer, keine
 Vorgabe). **Platzhalter:** Startgröße 6 m und Stärke 70 % des Farbnebels, Abstand der Tupfer beim Ziehen, Größen- und
-Tonschritte des Punktpinsels, Werte des Funkelns. **Nicht geprüft:** Farbnebel, Funkeln und Punktpinsel am Handy und
-mit dem Pencil am iPad (der Editor ist zuerst für den Mac, die Handy-Zeile steht bereit). **Offen aus Stufe 5:** Papier
+Tonschritte des Punktpinsels, Werte des Funkelns. **Am Handy gemessen (Florian, 29.10.2026, iPhone, Apple GPU,
+786 × 1390 px, Hügel-Szene mit `&earle=messen`):** ohne Earle 0,83 ms je Bild, Earle auf allen Flächen 1,83 (Kontrolle am
+Ende 1,73), dazu Farbnebel mit 16 Tupfern auf jeder Form 2,70 ms, also rund +0,9 ms im teuersten Fall. Je Schicht
+weniger: Pünktchen −0,36 ms, Papier/Gouache −0,33, Lichtkante und Innenschatten je −0,23, Funkeln −0,16, Kantenverlauf
+und Punktkronen je −0,10 (Schwankung etwa 0,1 ms, siehe Kontrolle); die Anzeige zeigte 60 fps. Florian: die neuen
+Werkzeuge „sehen vielversprechend aus“. **Nicht geprüft:** Malen mit Farbnebel und Punktpinsel am iPad mit dem Pencil
+(der Editor ist zuerst für den Mac). **Offen aus Stufe 5:** Papier
 und Gouache aus Florians Scans; dann Tor S5 (Standbilder vom Handy neben Earles Favoriten, Florians Freigabe).
 
 **Stufe 6: Bilder, Schnittmasken, Säume, Austausch (M).** Bildschichten, Schnittmaske, Saum entlang einer Kante,
