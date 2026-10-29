@@ -13,9 +13,13 @@ import { VIEW_WORDS, type ViewMode } from './views';
 import { COLOR_CSS, ColorMenu, type ColorMenuHost } from './colorMenu';
 import { STACK_CSS, StackPanel, type StackActions, type StackView } from './stackPanel';
 
-export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch' | 'gradient' | 'dotbrush' | 'pipette' | 'dock' | 'field';
+export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch' | 'gradient' | 'mist' | 'dotbrush' | 'pipette' | 'dock' | 'field';
 export type Isolate = 'off' | 'front' | 'only';
 export const ISOLATE_WORDS: Record<Isolate, string> = { off: 'alle Ebenen', front: 'davor ausgeblendet', only: 'nur diese' };
+
+/** nächste Größe der Farbnebel-Tupfer (Halbmesser in Metern) und der Punkte des Punktpinsels (Durchmesser), dir ±1 */
+export const mistSize = (size: number, dir: 1 | -1): number => Math.min(80, Math.max(0.3, Math.round(size * (dir > 0 ? 1.5 : 1 / 1.5) * 10) / 10));
+export const dotSize = (size: number, dir: 1 | -1): number => Math.min(3, Math.max(0.05, Math.round(size * (dir > 0 ? 1.25 : 0.8) * 100) / 100));
 
 export interface UiActions extends StackActions {
   tool(t: Tool): void;
@@ -86,6 +90,8 @@ export interface UiActions extends StackActions {
   gradKind(kind: 'gradient' | 'fade'): void;
   /** Punktpinsel (Stufe 5): Größe, Tonstufe, Wegnehmen */
   dotBrushSet(patch: Partial<{ size: number; tone: number; erase: boolean }>): void;
+  /** Farbnebel (Stufe 5): Größe der Tupfer, Stärke */
+  mistBrushSet(patch: Partial<{ size: number; strength: number }>): void;
   gradRadial(radial: boolean): void;
   gradReverse(): void;
   gradStopAlpha(): void;
@@ -142,6 +148,8 @@ export interface ContextExtra {
   dropChoice?: string | null;
   /** Punktpinsel: Durchmesser (Meter), Tonstufe 0–2, Wegnehmen */
   dotBrush?: { size: number; tone: number; erase: boolean } | null;
+  /** Farbnebel: Halbmesser der Tupfer (Meter), Stärke 0–1, Farbe (aufgelöst) */
+  mist?: { size: number; strength: number; color: string } | null;
   /** Material der Auswahl (gemischt: null) */
   material?: Material | 'mixed' | null;
   /** Werkzeug Andockkanten: Zahl der Kanten, angetippte Fläche (Name, Material) */
@@ -176,6 +184,7 @@ const CSS = `
 .ze-cp{fill:#16181c;stroke:#8db4ff;stroke-width:1.2}
 .ze-grid{fill:none;stroke:rgba(255,255,255,.16);stroke-width:1}
 .ze-snap{fill:none;stroke:#ffd27a;stroke-width:2}
+.ze-brush{fill:none;stroke:rgba(255,255,255,.9);stroke-width:1.5;filter:drop-shadow(0 0 1.5px rgba(0,0,0,.7))}
 .ze-region{fill:rgba(141,180,255,.08);stroke:#8db4ff;stroke-width:1;stroke-dasharray:4 3}
 .ze-groupbox{fill:none;stroke:rgba(255,255,255,.7);stroke-width:1;stroke-dasharray:2 4}
 .ze-target{fill:rgba(255,255,255,.14);stroke:#ffffff;stroke-width:2;stroke-dasharray:5 4}
@@ -298,6 +307,7 @@ const ICONS: Record<Tool, string> = {
   ellipse: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6"/></svg>',
   arch: '<svg viewBox="0 0 24 24"><path d="M5.5 20v-8.5a6.5 6.5 0 0 1 13 0V20z"/></svg>',
   gradient: '<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M7 15l10-6"/><circle cx="7" cy="15" r="1.8" fill="#16181c"/><circle cx="17" cy="9" r="1.8" fill="currentColor"/></svg>',
+  mist: '<svg viewBox="0 0 24 24"><circle cx="9" cy="12" r="5.5" fill="currentColor" opacity=".3" stroke="none"/><circle cx="15" cy="10" r="4.5" fill="currentColor" opacity=".55" stroke="none"/><circle cx="13.5" cy="15.5" r="3" fill="currentColor" opacity=".85" stroke="none"/></svg>',
   dotbrush: '<svg viewBox="0 0 24 24"><circle cx="5" cy="17" r="1.8" fill="currentColor"/><circle cx="9.5" cy="13.5" r="1.8" fill="currentColor"/><circle cx="14" cy="11" r="1.8" fill="currentColor"/><circle cx="18.5" cy="9.5" r="1.8" fill="currentColor"/><circle cx="12" cy="18" r="1.2"/></svg>',
   pipette: '<svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5M13 6l5 5-9 9H4v-5z"/><path d="M16.5 2.5a2.1 2.1 0 0 1 3 0l2 2a2.1 2.1 0 0 1 0 3L19 10"/></svg>',
   dock: '<svg viewBox="0 0 24 24"><path d="M3 13c3-3 6-4 9-4s6 1 9 4" stroke-width="2.4"/><path d="M5 21l2-6M12 21v-8M19 21l-2-6" stroke-width="1.4"/></svg>',
@@ -347,12 +357,13 @@ const TOOL_TITLES: Record<Tool, string> = {
   ellipse: 'Ellipse (L)',
   arch: 'Bogen (U wechselt Rechteck, Ellipse, Bogen): Portalform, unten gerade, oben rund',
   gradient: 'Verlauf (G): über eine Fläche ziehen; Enden, Stopps und Mitten am Objekt ziehen, auf die Linie tippen gibt einen Stopp',
+  mist: 'Farbnebel (N): in eine Fläche tupfen oder ziehen gibt weiche Tupfer in der aktuellen Farbe (Freiform-Verlauf); Farbe im Farbmenü wählen, Größe mit [ und ]',
   dotbrush: 'Punktpinsel (E): über eine Form ziehen setzt Punkte dicht an dicht wie Earles Reihen entlang von Graten; mit Wahltaste oder „Wegnehmen“ Punkte entfernen, auch aus der Punktkrone',
   pipette: 'Pipette (I): Farbe aus dem Bild aufnehmen; am iPad auch mit dem Finger lange halten',
   dock: 'Andockkanten (D): grüne Oberkanten tragen Bahn und Stützen; eine Kante antippen schaltet ihr Stück aus und an, eine Fläche antippen zeigt ihr Material (Schraffur: fest dicht, grabbar weit, luftig gepunktet)',
   field: 'Felder (R): Spielbereich mit Kamerabegrenzung; ein Feld antippen, Ecken und Kanten ziehen, innen verschieben; die Rahmen zeigen, was das Handy quer und hoch höchstens sieht',
 };
-const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse', 'arch', 'gradient', 'dotbrush', 'pipette', 'dock', 'field'];
+const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse', 'arch', 'gradient', 'mist', 'dotbrush', 'pipette', 'dock', 'field'];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -1139,14 +1150,14 @@ export class EditorUi {
    * gewählte Formen Farbe und Reihenfolge, sonst für die gewählten Ebenen Rolle und Isolieren
    */
   setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false, extra: ContextExtra = {}): void {
-    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null, filling = null, grad = null, dropChoice = null, material = null, dock = null, field = null, dotBrush = null } = extra;
+    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null, filling = null, grad = null, dropChoice = null, material = null, dock = null, field = null, dotBrush = null, mist = null } = extra;
     const plane = planes.at(-1) ?? null;
     const shape = shapes.at(-1) ?? null;
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
     const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : path.kind === 'band' ? `b|${path.shape}` : `l|${path.form}|${path.count}|${path.smooth}`;
     const gi = units ?? { units: shapes.length, groups: 0, inside: false };
     const numKey = this.sub === 'numbers' && nums ? `${[nums.x, nums.y, nums.w, nums.h].map((v) => v.toFixed(2)).join(',')}|${this.keepRatio}` : `${!!nums}`;
-    const key = dropChoice ? `drop|${dropChoice}` : filling ? `fill|${filling}` : grad ? `grad|${JSON.stringify(grad)}` : dotBrush ? `dots|${JSON.stringify(dotBrush)}` : dock ? `dock|${JSON.stringify(dock)}|${this.sub}` : field ? `field|${JSON.stringify(field)}` : path ? `${pk}|${material}|${this.sub}` : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
+    const key = dropChoice ? `drop|${dropChoice}` : filling ? `fill|${filling}` : grad ? `grad|${JSON.stringify(grad)}` : dotBrush ? `dots|${JSON.stringify(dotBrush)}` : mist ? `mist|${JSON.stringify(mist)}` : dock ? `dock|${JSON.stringify(dock)}|${this.sub}` : field ? `field|${JSON.stringify(field)}` : path ? `${pk}|${material}|${this.sub}` : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
     this.context.replaceChildren();
@@ -1195,12 +1206,23 @@ export class EditorUi {
         this.context.append(el('span', 'ze-sep'), el('span', 'ze-label', dock.face.name));
         for (const m of MATERIALS) this.context.append(button(MATERIAL_WORDS[m], `Material: ${MATERIAL_WORDS[m]}`, () => this.a.setMaterial(m), dock.face.material === m ? 'on' : ''));
       }
+    } else if (mist) {
+      const dot = el('span', 'ze-swatch');
+      dot.style.background = mist.color;
+      this.context.append(
+        dot,
+        el('span', 'ze-label', `Farbnebel: ${mist.size < 10 ? Math.round(mist.size * 10) / 10 : Math.round(mist.size)} m, Stärke ${Math.round(mist.strength * 100)} %`),
+        button('Kleiner', 'Kleinere Tupfer (Taste [)', () => this.a.mistBrushSet({ size: mistSize(mist.size, -1) })),
+        button('Größer', 'Größere Tupfer (Taste ])', () => this.a.mistBrushSet({ size: mistSize(mist.size, 1) })),
+        button('Zarter', 'Weniger Deckkraft je Tupfer', () => this.a.mistBrushSet({ strength: Math.max(0.1, Math.round((mist.strength - 0.15) * 100) / 100) })),
+        button('Kräftiger', 'Mehr Deckkraft je Tupfer', () => this.a.mistBrushSet({ strength: Math.min(1, Math.round((mist.strength + 0.15) * 100) / 100) })),
+      );
     } else if (dotBrush) {
       const TONES = ['dunkel', 'mittel', 'hell'];
       this.context.append(
         el('span', 'ze-label', dotBrush.erase ? 'Punktpinsel: über Punkte ziehen nimmt sie weg' : `Punktpinsel: ${Math.round(dotBrush.size * 100)} cm, Ton ${TONES[dotBrush.tone]}`),
-        button('Kleiner', 'Kleinere Punkte', () => this.a.dotBrushSet({ size: Math.max(0.05, Math.round(dotBrush.size * 80) / 100) })),
-        button('Größer', 'Größere Punkte', () => this.a.dotBrushSet({ size: Math.min(3, Math.round(dotBrush.size * 125) / 100) })),
+        button('Kleiner', 'Kleinere Punkte (Taste [)', () => this.a.dotBrushSet({ size: dotSize(dotBrush.size, -1) })),
+        button('Größer', 'Größere Punkte (Taste ])', () => this.a.dotBrushSet({ size: dotSize(dotBrush.size, 1) })),
         button(`Ton ${TONES[dotBrush.tone]}`, 'Tonstufe der gesetzten Punkte weiterschalten (hell, mittel, dunkel wie in der Punktkrone)', () => this.a.dotBrushSet({ tone: (dotBrush.tone + 2) % 3 })),
         el('span', 'ze-sep'),
         button('Wegnehmen', 'Punkte wegnehmen statt setzen (auch Punkte der Punktkrone); mit Wahltaste geht es auch kurz', () => this.a.dotBrushSet({ erase: !dotBrush.erase }), dotBrush.erase ? 'on' : ''),

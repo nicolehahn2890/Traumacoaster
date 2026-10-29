@@ -29,7 +29,7 @@ export interface StackParam {
 export interface StackRow {
   /** Index im Füllstapel; -1 ist die Grundfarbe (Deckkraft = Deckkraft der Fläche) */
   index: number;
-  kind: 'base' | 'color' | 'gradient' | 'fade' | 'light' | 'shade' | 'dots' | 'grain' | 'sparkle' | 'crown' | 'wave';
+  kind: 'base' | 'color' | 'gradient' | 'fade' | 'light' | 'shade' | 'dots' | 'grain' | 'sparkle' | 'mist' | 'crown' | 'wave';
   /** Name statt des Worts der Art (Kantenverlauf, Bänder, Papier, Gouache) */
   name?: string;
   /** CSS-Hintergrund der Vorschau */
@@ -91,7 +91,7 @@ export interface StackActions {
 
 export type StackAddKind = 'color' | 'gradient' | 'fade' | 'edge' | 'light' | 'shade' | 'dots' | 'grain' | 'sparkle' | 'crown' | 'wave';
 
-const KIND_WORDS: Record<StackRow['kind'], string> = { base: 'Grundfarbe', color: 'Farbe', gradient: 'Verlauf', fade: 'Deckkraftverlauf', light: 'Lichtkante', shade: 'Innenschatten', dots: 'Pünktchen', grain: 'Papier', sparkle: 'Funkeln', crown: 'Punktkrone', wave: 'Kantenwelle' };
+const KIND_WORDS: Record<StackRow['kind'], string> = { base: 'Grundfarbe', color: 'Farbe', gradient: 'Verlauf', fade: 'Deckkraftverlauf', light: 'Lichtkante', shade: 'Innenschatten', dots: 'Pünktchen', grain: 'Papier', sparkle: 'Funkeln', mist: 'Farbnebel', crown: 'Punktkrone', wave: 'Kantenwelle' };
 
 export const STACK_CSS = `
 .ze-stack{left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 66px);width:344px;padding:6px;display:none;z-index:2}

@@ -648,6 +648,7 @@ export function bakeSwatch(nodes: readonly ZoneNode[], id: string): void {
     for (const f of fills ?? []) {
       if (isGradient(f)) for (const st of f.stops) st.color = fix(st.color);
       else if (f.type === 'color') f.color = fix(f.color);
+      else if (f.type === 'mist') for (const d of f.dabs) d.color = fix(d.color);
       else if (f.type !== 'grain' && f.color) f.color = fix(f.color);
     }
   };

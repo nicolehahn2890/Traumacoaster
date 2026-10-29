@@ -63,6 +63,7 @@ export function fillParams(f: ZoneFill, s: ParamScale = { sx: 1, sy: 1 }): { nam
         { key: 'seed', label: 'Muster', title: 'Anderes Muster gleicher Art', value: f.seed, step: 0.05, min: 0, max: 9999, digits: 0 },
       ],
     };
+  if (f.type === 'mist') return { name: `Farbnebel · ${f.dabs.length} Tupfer` };
   if (f.type === 'sparkle')
     return {
       params: [

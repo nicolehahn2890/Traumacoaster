@@ -1,16 +1,17 @@
 /**
  * Handy-Messung der Earle-Schichten (docs/ZONENEDITOR-PLAN.md, Stufe 5: „Kosten je Schicht am Handy gemessen“, Tor S5).
  * Mit `&earle=messen` in der Adresse misst das Spiel nach dem Laden auf dem Gerät selbst, was die Ebenen kosten: ohne
- * Ebenen, wie gesichert, ohne Earle-Schichten, mit Earle auf allen Flächen (Knopf „Ganze Zone“, nur im Speicher) und
- * davon je eine Art Schicht weniger. Je Zeile 30 Bilder am Stück über world.render, dann einmal auf die GPU warten
+ * Ebenen, wie gesichert, ohne Earle-Schichten, mit Earle auf allen Flächen (Knopf „Ganze Zone“, nur im Speicher),
+ * davon je eine Art Schicht weniger und dazu ein Farbnebel mit allen 16 Tupfern auf jeder Form (der teuerste Fall). Je Zeile 30 Bilder am Stück über world.render, dann einmal auf die GPU warten
  * (Auslesen eines Bildpunkts), Median aus fünf solchen Stapeln. Die Tafel zeigt Millisekunden je Bild; 16,7 ms ist das
  * ganze Budget für 60 fps, das Spiel braucht daneben noch Pixi, Bahn und Logik. Danach gilt wieder die Zone wie
  * gesichert; geschrieben wird nichts.
  */
 import type { WorldRenderer } from './renderer';
 import { earleZone } from '@/zone/earle';
-import { isGradient, isEarle, type ZoneFill } from '@/zone/paint';
-import { isShape, type ZoneNode } from '@/zone/nodes';
+import { isGradient, isEarle, MIST_MAX, type MistDab, type ZoneFill } from '@/zone/paint';
+import { isShape, shapeFaces, type ZoneNode } from '@/zone/nodes';
+import { faceBox } from '@/zone/faces';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -29,6 +30,25 @@ function mapFills(nodes: readonly ZoneNode[], fn: (f: ZoneFill) => ZoneFill[]): 
 export function withoutEarle(nodes: readonly ZoneNode[]): ZoneNode[] {
   const out = mapFills(nodes, (f) => (isEarle(f) || (isGradient(f) && f.edge) ? [] : isGradient(f) && f.steps ? [{ ...f, steps: undefined, wave: undefined, inner: undefined }] : [f]));
   for (const n of out) if (isShape(n)) delete n.crown;
+  return out;
+}
+
+/** teuerster Farbnebel: auf jeder Form (und jeder Fläche mit eigenem Stapel) einer mit allen MIST_MAX Tupfern über die ganze Form */
+function withMist(nodes: readonly ZoneNode[]): ZoneNode[] {
+  const out = structuredClone(nodes) as ZoneNode[];
+  for (const n of out) {
+    if (!isShape(n)) continue;
+    const boxes = shapeFaces(n).map(faceBox);
+    if (!boxes.length) continue;
+    const x0 = Math.min(...boxes.map((b) => b.minX));
+    const y0 = Math.min(...boxes.map((b) => b.minY));
+    const w = Math.max(...boxes.map((b) => b.maxX)) - x0;
+    const h = Math.max(...boxes.map((b) => b.maxY)) - y0;
+    const dabs = (): MistDab[] =>
+      Array.from({ length: MIST_MAX }, (_, i) => ({ x: x0 + (w * ((i % 4) + 0.5)) / 4, y: y0 + (h * (Math.floor(i / 4) + 0.5)) / 4, r: Math.max(w, h) / 3, color: i % 2 ? '#ffd27a' : '#7a9cff', a: 0.3 }));
+    n.fills = [...(n.fills ?? []), { type: 'mist', dabs: dabs(), blend: 'normal', opacity: 1 }];
+    for (const r of n.regions ?? []) if (r.fills) r.fills = [...r.fills, { type: 'mist', dabs: dabs(), blend: 'normal', opacity: 1 }];
+  }
   return out;
 }
 
@@ -105,6 +125,7 @@ export async function startEarleMessung(world: WorldRenderer): Promise<void> {
     const noCrowns = structuredClone(full) as ZoneNode[];
     for (const n of noCrowns) if (isShape(n)) delete n.crown;
     await step('  − Punktkronen', noCrowns);
+    await step('  + Farbnebel (16 Tupfer)', withMist(full));
     // Kontrolle: dieselbe Zeile wie oben; weicht sie stark ab, schwankt das Gerät (Wärme, Takt), nicht die Schichten
     await step('Earle auf allen Flächen (Kontrolle)', full);
     show(`\n\nFertig (Earle auf allen Flächen: ${fullStats}). Es gilt wieder die Zone wie gesichert.`);

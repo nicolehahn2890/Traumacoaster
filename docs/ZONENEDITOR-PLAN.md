@@ -1160,6 +1160,27 @@ Papier/Gouache −0,24, Innenschatten −0,17, Lichtkante −0,10, Kantenverlauf
 also rund 1 ms der 16,7 ms je Bild; die Anzeige zeigte dabei 59 fps. Damit ist „Kosten je Schicht am Handy gemessen“
 für Tor S5 erfüllt. **Nicht geprüft:** Punktkronen mit Bahn und Fahrt davor, Kantenwelle an spielbaren Kanten. **Offen aus Stufe 5:** Punktpinsel, Farbnebel, Funkeln, Papier und
 Gouache aus Florians Scans.
+**Paket 3 (29.10.2026).** **Funkeln** (Schicht im Füllstapel): Glanzkreuze je Zelle aus der Rang-Kachel, die in eigener
+Phase aufleuchten; „+ Funkeln“ unter „Earle …“, die Vorgabe Wasser setzt es. **Punktpinsel** (Werkzeug E): über eine
+Form ziehen setzt Punkte dicht an dicht wie Earles Reihen entlang von Graten; Größe, Ton und „Wegnehmen“ (auch mit
+Wahltaste, auf allen Formen unter dem Pinsel, auch Punkte der Punktkrone); gezeichnet mit dem Mesh der Punktkronen.
+**Farbnebel** (Werkzeug N, Abschnitt 4.3): in eine Fläche tupfen oder ziehen gibt weiche Tupfer in der aktuellen Farbe
+(der Farbe des Farbknopfs). Die Tupfer sammeln sich als Schicht „Farbnebel“ im Füllstapel der Fläche, bis 16 je Schicht,
+dann beginnt eine neue; die Farbe ist nach Nähe gemischt, die Deckkraft die Vereinigung der weichen Kreise
+(Freiform-Verlauf); Palettenfarben bleiben Verweise und ändern sich mit dem Feld. Ein Ring am Zeiger zeigt die Größe von
+Farbnebel und Punktpinsel, die Tasten [ und ] ändern sie. **Fehler gefunden und behoben:** Eine Schleife im
+Flächen-Shader kostet unter ANGLE/Metal (Chromium am Mac) einige Millisekunden je Bild, auch mit fester Länge: der
+Farbnebel mit einem Tupfer auf allen Flächen kostete +3,5 ms, mit 16 Tupfern +19 ms. Die Shader je Schichtfolge
+schreiben die Tupfer jetzt einzeln aus (Plätze 1, 2, 4, 8 oder 16 je Folge), ein Test hält sie schleifenfrei. Das
+erklärt wohl auch, warum der allgemeine Shader aus Paket 1 je Schicht rund 2 ms kostete (er läuft in einer Schleife
+über die Schichten). **Messung** (Mac, Metal, Spielblick 1688 × 780): Farbnebel mit 1 bis 4 Tupfern auf allen Flächen
+kostet nichts Messbares, mit 16 Tupfern auf jeder Form rund +0,8 ms, über Earle auf allen Flächen rund +1 ms;
+Gegenprobe gegen den allgemeinen Shader pixelgleich (größte Abweichung 1 Stufe). Die Handy-Messung hat dafür die Zeile
+„+ Farbnebel (16 Tupfer)“. Vorher und nachher: `docs/research/earle/2026-10-29-farbnebel.jpg` (Demo-Tupfer, keine
+Vorgabe). **Platzhalter:** Startgröße 6 m und Stärke 70 % des Farbnebels, Abstand der Tupfer beim Ziehen, Größen- und
+Tonschritte des Punktpinsels, Werte des Funkelns. **Nicht geprüft:** Farbnebel, Funkeln und Punktpinsel am Handy und
+mit dem Pencil am iPad (der Editor ist zuerst für den Mac, die Handy-Zeile steht bereit). **Offen aus Stufe 5:** Papier
+und Gouache aus Florians Scans; dann Tor S5 (Standbilder vom Handy neben Earles Favoriten, Florians Freigabe).
 
 **Stufe 6: Bilder, Schnittmasken, Säume, Austausch (M).** Bildschichten, Schnittmaske, Saum entlang einer Kante,
 Malvorlage mit Fingerabdruck und Größenangabe, Umriss aus Bild, Import gemalter Teile mit Passmarken, KTX2 beim

@@ -89,7 +89,7 @@ import { EditorOverlay, emptyOverlay } from './overlay';
 import { SketchLayer } from './sketches';
 import { constrain45, NO_MODS, PathTools, regionRing, regionTest, simplifyShape, type Mods, type PathTool } from './pathTools';
 import { booleanShapes, type BoolOp } from '@/zone/pathfinder';
-import { evalLayers, gradientT, hexToRgb, isEarle, isGradient, isHex, MAX_LAYERS, paintLayers, rampOf, RAMP, resolveColor, rgbToHex, type GradientFill, type GradientStop, type PaintColor, type ZoneFill } from '@/zone/paint';
+import { evalLayers, gradientT, hexToRgb, isEarle, isGradient, isHex, MAX_LAYERS, MIST_MAX, paintLayers, rampOf, RAMP, resolveColor, rgbToHex, type GradientFill, type GradientStop, type PaintColor, type ZoneFill } from '@/zone/paint';
 import { crownFor, earleShape, freshEarle, type EarlePreset } from '@/zone/earle';
 import { crownParamsOf, fillParams, setCrownParam, setFillParam, setWaveParam, waveParamsOf } from './fillParams';
 import { WAVE_DEFAULT } from '@/zone/edgeWave';
@@ -103,7 +103,7 @@ import { bakeStyle, linkedStyle, linkStyle, paintToStyle, pasteStyle, styleFromC
 import { DEFAULT_MATERIAL, dockEdges, faceMaterial, setFaceMaterial, stationOf, toggleDock, type DockEdge } from '@/zone/dock';
 import { faceAt, faceBox, type Face } from '@/zone/faces';
 import type { ColorMenuHost, PickPhase } from './colorMenu';
-import { EditorUi, type Isolate, type LayerRow, type Tool } from './ui';
+import { dotSize, EditorUi, mistSize, type Isolate, type LayerRow, type Tool } from './ui';
 import { EditorViews, type ViewMode } from './views';
 
 export interface PlaneEditorHost {
@@ -151,6 +151,8 @@ type Gesture =
   | { kind: 'gradEnd'; pointerId: number; end: 'a' | 'b' }
   | { kind: 'gradStop'; pointerId: number; index: number; off: boolean }
   | { kind: 'gradMid'; pointerId: number; index: number }
+  /** Farbnebel (Stufe 5): Tupfer entlang des Wegs in eine Fläche (at: Punkt der Fläche, wenn die Form mehrere hat) */
+  | { kind: 'mist'; pointerId: number; shape: string; at: Pt | null; last: Pt | null; full: boolean }
   /** Punktpinsel (Stufe 5): Punkte entlang des Wegs setzen (auf die Form shape) oder wegnehmen (alle Formen unter dem Pinsel) */
   | { kind: 'dots'; pointerId: number; shape: string | null; last: Pt | null; erase: boolean }
   /** Feld (Stufe 4): verschieben (innen) oder an Kante oder Ecke ziehen; Weg in Metern der Spur-0-Ebene, vom Anfang aus */
@@ -677,6 +679,7 @@ export class PlaneEditor {
       filling: this.building && this.fillMode ? this.resolve(this.fillMode) : null,
       grad: this.building && this.tool === 'gradient' && !this.fillMode ? this.gradInfo() : null,
       dotBrush: this.building && this.tool === 'dotbrush' ? { ...this.dotBrush } : null,
+      mist: this.building && this.tool === 'mist' ? { ...this.mistBrush, color: this.resolve(this.currentColor()) } : null,
       dropChoice: this.building && this.dropChoice ? this.resolve(this.dropChoice.color) : null,
       material: this.building ? this.selectionMaterial() : null,
       dock: this.building && this.tool === 'dock' && !this.fillMode ? this.dockInfo() : null,
@@ -811,6 +814,7 @@ export class PlaneEditor {
     if (this.building && this.tool === 'gradient') this.gradOverlay(st);
     if (this.building && this.tool === 'dock') this.dockOverlay(st);
     if (this.building && this.tool === 'field') this.fieldOverlay(st);
+    if (this.building && (this.tool === 'mist' || this.tool === 'dotbrush') && this.brushAt) st.brush = this.brushRing(this.brushAt);
     const tf = this.dropAt ? this.faceAtScreen(this.dropAt) : null;
     if (tf) st.target = [tf.face.outline, ...tf.face.holes].map((r) => r.map(([x, y]) => this.screenOf(tf.plane, shapeToPlane(tf.shape, x, y), tf.shape)).filter((q): q is Pt => !!q));
     const sk = this.adjusting();
@@ -1056,6 +1060,10 @@ export class PlaneEditor {
         this.uiDirty = true;
         this.drawOverlay();
       },
+      mistBrushSet: (patch) => {
+        Object.assign(this.mistBrush, patch);
+        this.uiDirty = true;
+      },
       dotBrushSet: (patch) => {
         Object.assign(this.dotBrush, patch);
         this.uiDirty = true;
@@ -1220,6 +1228,7 @@ export class PlaneEditor {
     if (this.fillMode) this.endFill();
     if (this.grad) this.grad.stop = null;
     this.stationPlacing = false;
+    this.brushAt = null;
     this.paths.setTool(isPathTool(t) ? t : null);
     this.ui.setTool(t);
     this.updateCursor();
@@ -1966,6 +1975,11 @@ export class PlaneEditor {
   private onMove = (e: PointerEvent): void => {
     if (!this.building) return;
     const ptr = this.pointers.get(e.pointerId);
+    // Größenring der Pinsel folgt Maus und Pencil (unter dem Finger sähe man ihn nicht)
+    if (this.tool === 'mist' || this.tool === 'dotbrush') {
+      this.brushAt = e.pointerType === 'touch' ? null : this.local(e);
+      this.drawOverlay();
+    }
     if (!ptr) {
       // ohne Druck: Gummiband des Zeichenstifts (Maus, schwebender Pencil)
       if ((this.tool === 'pen' || this.tool === 'curve') && e.pointerType !== 'touch') this.paths.hoverAt(this.local(e));
@@ -2112,6 +2126,10 @@ export class PlaneEditor {
     }
     if (this.tool === 'dotbrush') {
       this.dotDown(pointerId, p);
+      return;
+    }
+    if (this.tool === 'mist') {
+      this.mistDown(pointerId, p);
       return;
     }
     if (this.tool === 'field') {
@@ -2291,6 +2309,10 @@ export class PlaneEditor {
       this.dotDab(g, p);
       return;
     }
+    if (g.kind === 'mist') {
+      this.mistDab(g, p);
+      return;
+    }
     if (g.kind === 'field') {
       this.fieldMove(g, p);
       return;
@@ -2395,7 +2417,8 @@ export class PlaneEditor {
     this.gesture = null;
     // (der Punktpinsel setzt noch bis zum Punkt des Loslassens)
     if (g.kind === 'dots') this.dotDab(g, p);
-    if (g.kind === 'fill' || g.kind === 'field' || g.kind === 'dots') {
+    if (g.kind === 'mist') this.mistDab(g, p);
+    if (g.kind === 'fill' || g.kind === 'field' || g.kind === 'dots' || g.kind === 'mist') {
       if (this.history.commit(this.nodes)) this.changed();
       return;
     }
@@ -2474,6 +2497,11 @@ export class PlaneEditor {
 
   // ------------------------------------------------------------------ Farbe (Stufe 3)
 
+  /** aktuelle Farbe, wie sie der Farbknopf zeigt (ohne gewählte Farbe der Platzhalter der aktiven Ebene) */
+  private currentColor(): PaintColor {
+    return this.color ?? placeholderFill(this.plane?.z ?? 0);
+  }
+
   /** Wert einer Farbe im aktuellen Look */
   private resolve(c: PaintColor): string {
     return resolveColor(c, swatchMap(this.nodes), this.host.world.currentLook);
@@ -2481,7 +2509,7 @@ export class PlaneEditor {
 
   private colorHost(): ColorMenuHost {
     return {
-      current: () => this.color ?? placeholderFill(this.plane?.z ?? 0),
+      current: () => this.currentColor(),
       resolve: (c) => this.resolve(c),
       pick: (c, phase) => this.pickColor(c, phase),
       setCurrent: (c) => {
@@ -3243,6 +3271,7 @@ export class PlaneEditor {
     const sw = swatchMap(this.nodes);
     const look = this.host.world.currentLook;
     if (f.type === 'color') return resolveColor(f.color, sw, look);
+    if (f.type === 'mist') return f.dabs.slice(0, 4).map((d, i) => `radial-gradient(circle at ${20 + i * 20}% ${40 + (i % 2) * 20}%,${resolveColor(d.color, sw, look)} 0 25%,transparent 45%)`).join(',') + ',#4a4f5a';
     if (!isGradient(f)) {
       const light = lightIn(lightOf(this.nodes), look);
       const own = f.type !== 'grain' && f.color ? resolveColor(f.color, sw, look) : null;
@@ -3283,7 +3312,7 @@ export class PlaneEditor {
     for (let i = fills.length - 1; i >= 0; i--) {
       const f = fills[i];
       const row: StackRow = { index: i, kind: f.type, preview: this.fillPreview(f), blend: f.type === 'fade' ? null : f.blend, opacity: f.opacity, hidden: !!f.hidden, ...fillParams(f, 'plane' in t ? { sx: 1, sy: 1 } : t.shape) };
-      if (f.type !== 'color' && f.type !== 'grain' && !isGradient(f)) row.ownColor = !!f.color;
+      if (f.type !== 'color' && f.type !== 'grain' && f.type !== 'mist' && !isGradient(f)) row.ownColor = !!f.color;
       rows.push(row);
     }
     if (!('plane' in t) && p.fill !== null) rows.push({ index: -1, kind: 'base', preview: this.resolve(p.fill), blend: null, opacity: p.opacity ?? 1, hidden: false });
@@ -3432,16 +3461,102 @@ export class PlaneEditor {
         },
       };
     const f = p.fills?.[i];
-    if (!f || isGradient(f) || f.type === 'grain') return null;
+    if (!f || isGradient(f) || f.type === 'grain' || f.type === 'mist') return null;
     return {
       get: () => f.color ?? null,
       set: (c) => {
         const q = ownPaint(t, styleMap(this.nodes));
         const g = q.fills?.[i];
-        if (g && !isGradient(g) && g.type !== 'grain') g.color = c;
+        if (g && !isGradient(g) && g.type !== 'grain' && g.type !== 'mist') g.color = c;
         writePaint(t, q);
       },
     };
+  }
+
+  /** Farbnebel: Halbmesser der Tupfer (Meter der Ebene), Deckkraft je Tupfer */
+  private mistBrush = { size: 6, strength: 0.7 };
+  /** wo der Zeiger über dem Bild schwebt (Bildpunkte), für den Größenring der Pinsel */
+  private brushAt: Pt | null = null;
+
+  /** Ring in Pinselgröße um den Zeiger, auf die Fläche darunter gelegt (Farbnebel: Halbmesser, Punktpinsel: Durchmesser) */
+  private brushRing(p: Pt): Pt[] | null {
+    const hit = this.faceAtScreen(p, true);
+    if (!hit) return null;
+    const r = this.tool === 'mist' ? this.mistBrush.size : this.dotBrush.size / 2;
+    const pts: Pt[] = [];
+    for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * Math.PI * 2;
+      const s = this.screenOf(hit.plane, { x: hit.q.x + Math.cos(a) * r, y: hit.q.y + Math.sin(a) * r }, hit.shape);
+      if (!s) return null;
+      pts.push(s);
+    }
+    return pts;
+  }
+
+  /** Farbnebel: in eine Fläche drücken (gesperrte nicht) */
+  private mistDown(pointerId: number, p: Pt): void {
+    const hit = this.faceAtScreen(p, true);
+    if (!hit || hit.shape.locked || planeLocked(this.nodes, hit.plane)) {
+      this.ui.toast('Farbnebel: in eine Fläche tupfen oder ziehen');
+      return;
+    }
+    this.history.begin(this.nodes);
+    const multi = shapeFaces(hit.shape).length > 1;
+    const g: Extract<Gesture, { kind: 'mist' }> = { kind: 'mist', pointerId, shape: hit.shape.id, at: multi ? { x: hit.face.inner[0], y: hit.face.inner[1] } : null, last: null, full: false };
+    this.gesture = g;
+    this.mistDab(g, p);
+  }
+
+  /**
+   * Farbnebel bis zum Zeiger: Tupfer in der aktuellen Farbe in festem Abstand entlang des Wegs (0,6 Halbmesser gibt einen
+   * glatten Strich, auch wenn der Zeiger schnell zieht). Die Tupfer sammeln sich im obersten Farbnebel der Fläche; ist er
+   * voll oder liegt etwas darüber, kommt ein neuer dazu
+   */
+  private mistDab(g: Extract<Gesture, { kind: 'mist' }>, p: Pt): void {
+    if (g.full) return;
+    const shape = findShape(this.nodes, g.shape);
+    const plane = shape ? findPlane(this.nodes, shape.parent) : undefined;
+    const q = shape && plane ? this.planePoint(plane, p) : null;
+    if (!shape || !q) return;
+    const local = { x: (q.x - shape.x) / shape.sx, y: (q.y - shape.y) / shape.sy };
+    const r = this.mistBrush.size / Math.max(1e-6, Math.sqrt(Math.abs(shape.sx * shape.sy)));
+    const step = r * 0.6;
+    const at: Pt[] = [];
+    if (!g.last) at.push(local);
+    else {
+      const d = Math.hypot(local.x - g.last.x, local.y - g.last.y);
+      for (let k = 1; k * step <= d; k++) at.push({ x: g.last.x + ((local.x - g.last.x) * k * step) / d, y: g.last.y + ((local.y - g.last.y) * k * step) / d });
+    }
+    if (!at.length) return;
+    const faces = shapeFaces(shape);
+    const fi = g.at ? faceAt(faces, g.at.x, g.at.y) : -1;
+    const t: GradTarget = { shape, face: g.at && fi >= 0 ? faces[fi] : null };
+    const paint = ownPaint(t, styleMap(this.nodes));
+    const fills = paint.fills ?? [];
+    const r3 = (v: number) => Math.round(v * 1000) / 1000;
+    // Tupfer, die die Fläche nicht berühren, verbrauchen keinen Platz im Farbnebel
+    const box = faceBox(t.face ?? faces[0]);
+    let added = 0;
+    for (const c of at) {
+      g.last = c;
+      if (c.x < box.minX - r || c.x > box.maxX + r || c.y < box.minY - r || c.y > box.maxY + r) continue;
+      let top = fills[fills.length - 1];
+      if (!top || top.type !== 'mist' || top.dabs.length >= MIST_MAX) {
+        if (fills.length >= MAX_LAYERS - 1) {
+          if (!g.full) this.ui.toast('Farbnebel: der Füllstapel ist voll');
+          g.full = true;
+          break;
+        }
+        top = { type: 'mist', dabs: [], blend: 'normal', opacity: 1 };
+        fills.push(top);
+      }
+      top.dabs.push({ x: r3(c.x), y: r3(c.y), r: r3(r), color: this.currentColor(), a: this.mistBrush.strength });
+      added++;
+    }
+    if (!added) return;
+    paint.fills = fills;
+    writePaint(t, paint);
+    this.changed();
   }
 
   /** Punktpinsel: Durchmesser (Meter der Ebene), Tonstufe (2 hell wie die Lichtseite der Krone), Wegnehmen */
@@ -3948,6 +4063,7 @@ export class PlaneEditor {
     else if (k === 'i') this.setTool('pipette');
     else if (k === 'g') this.setTool('gradient');
     else if (k === 'e') this.setTool('dotbrush');
+    else if (k === 'n') this.setTool('mist');
     else if (k === 'd') this.setTool('dock');
     else if (k === 'r') this.setTool('field');
     else if (k === '1') this.setView('game');
@@ -3969,6 +4085,13 @@ export class PlaneEditor {
       else this.escape();
     }
     else if (k === 'delete' || k === 'backspace') this.deleteShape();
+    else if ((k === ']' || k === '[') && (this.tool === 'mist' || this.tool === 'dotbrush')) {
+      const dir = k === ']' ? 1 : -1;
+      if (this.tool === 'mist') this.mistBrush.size = mistSize(this.mistBrush.size, dir);
+      else this.dotBrush.size = dotSize(this.dotBrush.size, dir);
+      this.uiDirty = true;
+      this.drawOverlay();
+    }
     else if (k === ']') this.orderShape(1);
     else if (k === '[') this.orderShape(-1);
     else if (k.startsWith('arrow') && this.selection.length) {

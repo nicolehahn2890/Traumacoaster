@@ -157,7 +157,29 @@ export interface SparkleFill extends FillBase {
 }
 
 export type EarleFill = EdgeFill | DotsFill | GrainFill | SparkleFill;
-export type ZoneFill = ColorFill | GradientFill | EarleFill;
+
+/** ein Tupfer des Farbnebels: Mitte und Halbmesser (Pfad-Koordinaten wie Verlaufsgriffe), Farbe, Deckkraft */
+export interface MistDab {
+  x: number;
+  y: number;
+  r: number;
+  color: PaintColor;
+  a: number;
+}
+
+/**
+ * Farbnebel (Plan 4.6, Werkzeug N): weiche Farbtupfer in eine Fläche, intern ein Freiform-Verlauf wie in Illustrator. Die
+ * Farbe ist das nach Nähe gewichtete Mittel der Tupfer, die Deckkraft die Vereinigung ihrer weichen Kreise
+ */
+export interface MistFill extends FillBase {
+  type: 'mist';
+  dabs: MistDab[];
+}
+
+/** höchstens so viele Tupfer je Farbnebel (der Shader liest sie aus einer Zeile) */
+export const MIST_MAX = 16;
+
+export type ZoneFill = ColorFill | GradientFill | EarleFill | MistFill;
 
 export const isGradient = (f: ZoneFill): f is GradientFill => f.type === 'gradient' || f.type === 'fade';
 export const isEarle = (f: ZoneFill): f is EarleFill => f.type === 'light' || f.type === 'shade' || f.type === 'dots' || f.type === 'grain' || f.type === 'sparkle';
@@ -320,6 +342,15 @@ export function parseFill(v: unknown): ZoneFill | null {
     const color = parseColor(o.color);
     if (color) k.color = color;
     f = k;
+  } else if (o.type === 'mist' && Array.isArray(o.dabs)) {
+    const dabs: MistDab[] = [];
+    for (const raw of o.dabs.slice(0, MIST_MAX)) {
+      const d = raw as Record<string, unknown>;
+      const color = d ? parseColor(d.color) : null;
+      if (!d || !color || !num(d.x) || !num(d.y) || !num(d.r) || d.r <= 0) continue;
+      dabs.push({ x: d.x, y: d.y, r: d.r, color, a: num(d.a) ? clamp01(d.a) : 1 });
+    }
+    if (dabs.length) f = { type: 'mist', dabs, blend, opacity };
   } else if (o.type === 'grain') {
     f = {
       type: 'grain',
@@ -374,7 +405,7 @@ export function serializeFill(f: ZoneFill): Record<string, unknown> {
   else if (f.type === 'sparkle') {
     Object.assign(o, { size: r3(f.size), gap: r3(f.gap), density: r3(f.density), speed: r3(f.speed), seed: f.seed });
     if (f.color) o.color = f.color;
-  }
+  } else if (f.type === 'mist') o.dabs = f.dabs.map((d) => ({ x: r3(d.x), y: r3(d.y), r: r3(d.r), color: d.color, a: r3(d.a) }));
   if (f.type !== 'fade') o.blend = f.blend;
   o.opacity = r3(f.opacity);
   if (f.hidden) o.hidden = true;
@@ -382,6 +413,7 @@ export function serializeFill(f: ZoneFill): Record<string, unknown> {
 }
 
 export function cloneFill(f: ZoneFill): ZoneFill {
+  if (f.type === 'mist') return { ...f, dabs: f.dabs.map((d) => ({ ...d })) };
   return isGradient(f) ? { ...f, stops: f.stops.map((s) => ({ ...s })) } : { ...f };
 }
 
@@ -390,6 +422,14 @@ export const cloneFills = (fills: readonly ZoneFill[] | undefined): ZoneFill[] |
 /** Anfang und Ende jedes Verlaufs abbilden (Drehen, Spiegeln, Umrechnen zwischen Formen); ändert in place */
 export function mapFillPoints(fills: readonly ZoneFill[] | undefined, fn: (x: number, y: number) => [number, number]): void {
   for (const f of fills ?? []) {
+    if (f.type === 'mist') {
+      for (const d of f.dabs) {
+        [d.x, d.y] = fn(d.x, d.y);
+        d.x = r3(d.x);
+        d.y = r3(d.y);
+      }
+      continue;
+    }
     if (!isGradient(f)) continue;
     [f.x0, f.y0] = fn(f.x0, f.y0);
     [f.x1, f.y1] = fn(f.x1, f.y1);
@@ -582,7 +622,11 @@ export function evalLayers(layers: readonly ZoneFill[], x: number, y: number, sw
     if (f.hidden || isEarle(f)) continue;
     let cs: RGB;
     let as: number;
-    if (f.type === 'color') {
+    if (f.type === 'mist') {
+      const m = mistAt(f, x, y, swatches, look);
+      cs = m.rgb;
+      as = m.a;
+    } else if (f.type === 'color') {
       cs = hexToRgb(resolveColor(f.color, swatches, look));
       as = 1;
     } else {
@@ -610,6 +654,26 @@ export function evalLayers(layers: readonly ZoneFill[], x: number, y: number, sw
     pa = as + pa * (1 - as);
   }
   return { rgb: pa > 1e-6 ? [pr[0] / pa, pr[1] / pa, pr[2] / pa] : [0, 0, 0], a: pa };
+}
+
+/**
+ * Farbnebel am Punkt (wie der Shader): Gewicht je Tupfer weich zum Rand (eins in der Mitte, null am Halbmesser) mal seine
+ * Deckkraft; Farbe nach Gewicht gemittelt, Deckkraft als Vereinigung der Tupfer
+ */
+export function mistAt(f: MistFill, x: number, y: number, swatches: SwatchMap, look: LookName = 'day'): { rgb: RGB; a: number } {
+  const sum: RGB = [0, 0, 0];
+  let wsum = 0;
+  let keep = 1;
+  for (const d of f.dabs) {
+    const t = Math.min(1, Math.hypot(x - d.x, y - d.y) / Math.max(1e-4, d.r));
+    let w = 1 - t * t * (3 - 2 * t);
+    w = d.a * w * w * (3 - 2 * w);
+    const c = hexToRgb(resolveColor(d.color, swatches, look));
+    for (let i = 0; i < 3; i++) sum[i] += c[i] * w;
+    wsum += w;
+    keep *= 1 - w;
+  }
+  return { rgb: wsum > 1e-5 ? [sum[0] / wsum, sum[1] / wsum, sum[2] / wsum] : [0, 0, 0], a: 1 - keep };
 }
 
 // ------------------------------------------------------------------ Vorgaben

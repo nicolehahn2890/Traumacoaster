@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { bakeSwatch, ellipsePath, lightIn, lightOf, newPlane, newShape, parseNodes, planesOf, rectPath, serializeNodes, cloneNodes, setFacePaint, shapeFaces, LIGHT_DEFAULT, type ZoneLight, type ZoneNode } from '@/zone/nodes';
-import { bandT, cloneFill, evalLayers, layersNeedEdge, mapFillPoints, MAX_LAYERS, parseFill, serializeFill, visibleLayers, type DotsFill, type GradientFill, type ZoneFill, type ZoneSwatch } from '@/zone/paint';
+import { bandT, cloneFill, evalLayers, layersNeedEdge, mapFillPoints, MAX_LAYERS, MIST_MAX, mistAt, parseFill, serializeFill, visibleLayers, type DotsFill, type GradientFill, type MistDab, type MistFill, type ZoneFill, type ZoneSwatch } from '@/zone/paint';
 import { decodeEdge, edgeAtPoint, edgeRaster, encodeEdge, EDGE_IN, faceEdge } from '@/zone/edgeDistance';
 import { EdgeAtlas, grainTiles, rankTile } from '@/world/earleTextures';
 import { applyPreset, autoPreset, presetLayers, type EarleContext } from '@/zone/earle';
 import { fillParams, setFillParam } from '@/zoneeditor/fillParams';
-import { layerTokens, PlaneLayer, specialFragment } from '@/world/planeMesh';
+import { layerTokens, mistSlots, PlaneLayer, specialFragment } from '@/world/planeMesh';
 import type { Poly } from '@/zone/path';
 
 const none = new Map<string, ZoneSwatch>();
@@ -403,5 +403,81 @@ describe('Funkeln', () => {
     expect(layerTokens([{ type: 'color', color: '#2a5ab0', blend: 'normal', opacity: 1 }, parseFill({ type: 'sparkle' })!])).toBe('c.K');
     const main = specialFragment('c.K|').split('void main()')[1];
     expect(main).toContain('sparkleAt(vPat.xy');
+  });
+});
+
+describe('Farbnebel', () => {
+  const nebel = (dabs: Array<Partial<MistDab>>): MistFill => ({ type: 'mist', dabs: dabs.map((d) => ({ x: 0, y: 0, r: 2, color: '#ff0000', a: 1, ...d })), blend: 'normal', opacity: 1 });
+  const close = (a: readonly number[], b: readonly number[]) => a.forEach((v, i) => expect(v).toBeCloseTo(b[i], 6));
+
+  it('liest und schreibt; kaputte Tupfer fallen weg, mehr als MIST_MAX werden gekappt, ohne Tupfer kein Farbnebel', () => {
+    const m = nebel([{ x: 1, y: -2, r: 1.5, color: '@c1', a: 0.6 }, { x: -3, y: 0.5, r: 4, color: '#204080' }]);
+    expect(parseFill(JSON.parse(JSON.stringify(serializeFill(m))))).toEqual(m);
+    const broken = [{ x: 0, y: 0, r: 0, color: '#ffffff' }, { x: 0, y: 'a', r: 1, color: '#ffffff' }, { x: 1, y: 1, r: 1, color: 'rot' }, { x: 1, y: 1, r: 1, color: '#ffffff', a: 3 }];
+    expect((parseFill({ type: 'mist', dabs: broken }) as MistFill).dabs).toEqual([{ x: 1, y: 1, r: 1, color: '#ffffff', a: 1 }]);
+    expect(parseFill({ type: 'mist', dabs: [] })).toBeNull();
+    const many = Array.from({ length: MIST_MAX + 5 }, (_, i) => ({ x: i, y: 0, r: 1, color: '#ffffff', a: 1 }));
+    expect((parseFill({ type: 'mist', dabs: many }) as MistFill).dabs).toHaveLength(MIST_MAX);
+  });
+
+  it('in der Mitte eines vollen Tupfers seine Farbe, am Halbmesser nichts, dazwischen weich; zwei Tupfer mischen nach Nähe', () => {
+    const one = nebel([{ x: 0, y: 0, r: 2 }]);
+    expect(mistAt(one, 0, 0, none)).toEqual({ rgb: [1, 0, 0], a: 1 });
+    expect(mistAt(one, 2, 0, none).a).toBe(0);
+    expect(mistAt(one, 1, 0, none).a).toBeCloseTo(0.5, 6);
+    const two = nebel([{ x: -2, y: 0, r: 3 }, { x: 2, y: 0, r: 3, color: '#0000ff' }]);
+    close(mistAt(two, 0, 0, none).rgb, [0.5, 0, 0.5]);
+    const left = mistAt(two, -1, 0, none).rgb;
+    expect(left[0]).toBeGreaterThan(left[2]);
+    // über einer Grundfarbe: in der Mitte deckt der Nebel, außerhalb bleibt die Grundfarbe
+    const base: ZoneFill = { type: 'color', color: '#00ff00', blend: 'normal', opacity: 1 };
+    close(evalLayers([base, one], 0, 0, none).rgb, [1, 0, 0]);
+    close(evalLayers([base, one], 5, 0, none).rgb, [0, 1, 0]);
+  });
+
+  it('Drehen nimmt die Tupfer mit, eine Kopie teilt keine; ein gelöschtes Palettenfeld bekommt seinen Wert auch im Nebel', () => {
+    const m = nebel([{ x: 1, y: 2, color: '@c1' }]);
+    const copy = cloneFill(m) as MistFill;
+    mapFillPoints([copy], (x, y) => [-y, x]);
+    expect(copy.dabs[0]).toMatchObject({ x: -2, y: 1 });
+    expect(m.dabs[0]).toMatchObject({ x: 1, y: 2 });
+    const sw: ZoneSwatch = { id: 'c1', kind: 'swatch', name: 'Rot', color: '#c02010' };
+    const nodes: ZoneNode[] = [sw, newPlane([], 0)];
+    const shape = newShape(nodes, planesOf(nodes)[0].id, rectPath(10, 10), 0, 0, '#445566');
+    shape.fills = [m];
+    nodes.push(shape);
+    bakeSwatch(nodes, 'c1');
+    expect(m.dabs[0].color).toBe('#c02010');
+  });
+
+  it('die Folge nennt die Plätze (nächste Zweierpotenz), der Shader schreibt jeden Tupfer aus; ohne Kantenabstand; die Tupfer landen in der Nebeltextur', () => {
+    expect([1, 2, 3, 4, 5, 9, 16, 40].map(mistSlots)).toEqual([1, 2, 4, 4, 8, 16, 16, 16]);
+    const mist = nebel([{ x: 3, y: 1, r: 4, color: '#ff8800', a: 0.8 }]);
+    const fills: ZoneFill[] = [{ type: 'color', color: '#445566', blend: 'normal', opacity: 1 }, mist];
+    expect(layerTokens(fills)).toBe('c.N1');
+    expect(layerTokens([fills[0], nebel([{}, {}, {}])])).toBe('c.N4');
+    expect(layersNeedEdge(fills)).toBe(false);
+    const main = specialFragment('c.N4|').split('void main()')[1];
+    expect(main.match(/mistDab\(mr, \d+, vLocal, ms, mw, mk\)/g)).toHaveLength(4);
+    expect(main).not.toContain('mistAt(');
+    const nodes: ZoneNode[] = [newPlane([], 0)];
+    const a = newShape(nodes, planesOf(nodes)[0].id, rectPath(20, 10), 0, 0, '#445566');
+    nodes.push(a);
+    setFacePaint(a, shapeFaces(a)[0], { fill: '#445566', fills: [mist] });
+    const layer = new PlaneLayer();
+    layer.build(nodes);
+    expect(layer.stats.edges).toBe(0);
+    const tex = (layer as unknown as { mistTex: { image: { data: Float32Array } } }).mistTex.image.data;
+    close([...tex.slice(0, 7)], [3, 1, 4, 0.8, 1, 0x88 / 255, 0]);
+  });
+});
+
+describe('Shader je Folge ohne Schleifen', () => {
+  it('keine Art Schicht bringt eine Schleife in den Shader (unter ANGLE/Metal kostet jede einige Millisekunden je Bild)', () => {
+    const main = specialFragment('c.glbw.frw.fe.L.S.D0.D3.K.N16.P|c.gl.N2').split('void main()')[1];
+    expect(main).not.toMatch(/\bfor\s*\(|\bwhile\s*\(/);
+    expect(main).not.toContain('mistAt(');
+    expect(main).not.toMatch(/\blayers\(/);
+    expect(specialFragment('c.N16|', true).split('void main()')[1]).not.toMatch(/\bfor\s*\(/);
   });
 });

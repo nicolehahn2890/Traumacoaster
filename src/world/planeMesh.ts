@@ -24,7 +24,7 @@
  */
 import { BufferAttribute, BufferGeometry, DataTexture, DoubleSide, FloatType, Group, Mesh, NearestFilter, RGBAFormat, ShaderMaterial, ShapeUtils, UniformsLib, UniformsUtils, Vector2, Vector3, type IUniform, type Raycaster } from 'three';
 import { airAmount, airOf, facePaint, lightIn, lightOf, planeHidden, planesOf, shapeFaces, shapesOf, styleMap, swatchMap, type ZoneLight, type ZoneNode, type ZonePlane, type ZoneShape } from '@/zone/nodes';
-import { BLEND_MODES, DOT_SOURCES, MAX_LAYERS, RAMP, hexToRgb, isGradient, layersClear, layersNeedEdge, paintLayers, rampOf, resolveColor, visibleLayers, type Box, type SwatchMap, type ZoneFill } from '@/zone/paint';
+import { BLEND_MODES, DOT_SOURCES, MAX_LAYERS, MIST_MAX, RAMP, hexToRgb, isGradient, layersClear, layersNeedEdge, paintLayers, rampOf, resolveColor, visibleLayers, type Box, type MistDab, type SwatchMap, type ZoneFill } from '@/zone/paint';
 import { faceBox, type Face } from '@/zone/faces';
 import { EDGE_IN, EDGE_OUT, faceEdge, type EdgeRaster } from '@/zone/edgeDistance';
 import { EdgeAtlas, grainTexture, rankTexture, RANK_N } from './earleTextures';
@@ -53,7 +53,7 @@ const PER_LAYER = 4;
 const ROW_W = 1 + PER_LAYER * MAX_LAYERS;
 
 /** Arten im Shader (Texel A.x) */
-const CODE = { color: 0, linear: 1, radial: 2, fadeLinear: 3, fadeRadial: 4, edge: 5, fadeEdge: 6, light: 7, shade: 8, dots: 9, grain: 10, sparkle: 11 } as const;
+const CODE = { color: 0, linear: 1, radial: 2, fadeLinear: 3, fadeRadial: 4, edge: 5, fadeEdge: 6, light: 7, shade: 8, dots: 9, grain: 10, sparkle: 11, mist: 12 } as const;
 
 interface Triangulated {
   /** Ecken in Pfad-Koordinaten (x, y abwechselnd) */
@@ -167,6 +167,7 @@ void main() {
 const PRELUDE = /* glsl */ `
 uniform highp sampler2D uPaint;
 uniform highp sampler2D uRamp;
+uniform highp sampler2D uMist;
 uniform sampler2D uEdge;
 uniform highp sampler2D uRank;
 uniform sampler2D uGrain;
@@ -247,6 +248,30 @@ float sparkleAt(vec2 pat, vec4 C, vec4 D, float px) {
   float star = max(max(1.0 - a.x - 7.0 * a.y, 1.0 - a.y - 7.0 * a.x), 1.0 - length(a) * 2.5);
   float aa = px / (cell * r);
   return step(T.z, C.z) * pulse * smoothstep(-aa, aa, star) * smoothstep(0.35, 0.8, r * cell / max(px, 1e-6));
+}
+// Farbnebel: Tupfer i einer Zeile (zwei Texel: Mitte, Halbmesser, Deckkraft; Farbe), wie mistAt in src/zone/paint.ts.
+// Die Shader je Folge rufen ihn je Tupfer ausgeschrieben auf: eine Schleife im Flächen-Shader kostet unter ANGLE/Metal
+// am Mac einige Millisekunden je Bild, auch mit fester Länge (gemessen 29.10.)
+void mistDab(int row, int i, vec2 p, inout vec3 sum, inout float wsum, inout float keep) {
+  vec4 P = texelFetch(uMist, ivec2(2 * i, row), 0);
+  vec3 Q = texelFetch(uMist, ivec2(2 * i + 1, row), 0).rgb;
+  float t = min(1.0, length(p - P.xy) / max(P.z, 1e-4));
+  float w = 1.0 - t * t * (3.0 - 2.0 * t);
+  w = P.w * w * w * (3.0 - 2.0 * w);
+  sum += Q * w;
+  wsum += w;
+  keep *= 1.0 - w;
+}
+// (nur der allgemeine Shader: Schleife über die n Tupfer)
+vec4 mistAt(int row, int n, vec2 p) {
+  vec3 sum = vec3(0.0);
+  float wsum = 0.0;
+  float keep = 1.0;
+  for (int i = 0; i < ${MIST_MAX}; i++) {
+    if (i >= n) break;
+    mistDab(row, i, p, sum, wsum, keep);
+  }
+  return vec4(wsum > 1e-5 ? sum / wsum : vec3(0.0), 1.0 - keep);
 }
 float vnoise(vec2 p) {
   vec2 i = floor(p);
@@ -356,6 +381,11 @@ vec4 layers(int row, int n, vec2 p, vec2 pat, vec2 dx, vec2 dy, float px, vec4 a
       as = step(T.z, C.z * k) * (1.0 - smoothstep(r - aa, r + aa, d)) * smoothstep(0.35, 0.8, r / max(aa, 1e-6));
       // Ton: eine hellere Stufe der eigenen Farbe (Farbton bleibt, warm zum Licht) oder eine tiefere zum Schatten
       if (B.a < 0.5) cs = D.x >= 0.0 ? min(vec3(1.0), cb * (1.0 + 1.6 * D.x) + 0.12 * D.x) * mix(vec3(1.0), uLightColor, 0.6 * D.x) : mix(cb * (1.0 + 0.55 * D.x), uShadeColor, -0.35 * D.x);
+    } else if (code == ${CODE.mist}) {
+      vec4 C = texelFetch(uPaint, ivec2(base + 2, row), 0);
+      vec4 m = mistAt(int(A.w + 0.5), int(C.x + 0.5), p);
+      cs = m.rgb;
+      as = m.a;
     } else if (code == ${CODE.sparkle}) {
       vec4 C = texelFetch(uPaint, ivec2(base + 2, row), 0);
       vec4 D = texelFetch(uPaint, ivec2(base + 3, row), 0);
@@ -395,8 +425,11 @@ ${TAIL}
 /**
  * Schichtfolge einer Zeile als Kürzel (je Schicht eins, mit Punkt getrennt): c Farbe; g oder f (Deckkraft) mit l linear,
  * r radial, e Kante, dazu b für Bänder und w für Welle; L Lichtkante, S Innenschatten, D0 bis D4 Pünktchen je Quelle,
- * K Funkeln, P Papier oder Gouache. Was die Folge nicht festlegt (Farben, Griffe, Maße, Mischmodus), steht in der Datentextur
+ * K Funkeln, N1 bis N16 Farbnebel (Tupfer auf die nächste Zweierpotenz aufgerundet), P Papier oder Gouache. Was die Folge nicht festlegt (Farben, Griffe, Maße, Mischmodus), steht in der Datentextur
  */
+/** Plätze im Shader für n Tupfer eines Farbnebels: die nächste Zweierpotenz (1, 2, 4, 8, 16), damit es wenige Shader gibt */
+export const mistSlots = (n: number): number => 2 ** Math.ceil(Math.log2(Math.max(1, Math.min(MIST_MAX, n))));
+
 export function layerTokens(layers: readonly ZoneFill[]): string {
   return layers
     .map((f) => {
@@ -406,6 +439,7 @@ export function layerTokens(layers: readonly ZoneFill[]): string {
       if (f.type === 'shade') return 'S';
       if (f.type === 'dots') return `D${Math.max(0, DOT_SOURCES.indexOf(f.source))}`;
       if (f.type === 'sparkle') return 'K';
+      if (f.type === 'mist') return `N${mistSlots(f.dabs.length)}`;
       return 'P';
     })
     .join('.');
@@ -458,6 +492,11 @@ function layerGlsl(token: string, k: number, row: string, p: string, pat: string
       as = step(T.z, C.z * k) * (1.0 - smoothstep(rr - aa, rr + aa, length((q - id - 0.5) * vec2(1.0, 0.866) - T.xy * vec2(0.5 - rr, 0.433 - rr)))) * smoothstep(0.35, 0.8, rr / max(aa, 1e-6));
       cs = B.a > 0.5 ? B.rgb : D.x >= 0.0 ? min(vec3(1.0), cb * (1.0 + 1.6 * D.x) + 0.12 * D.x) * mix(vec3(1.0), uLightColor, 0.6 * D.x) : mix(cb * (1.0 + 0.55 * D.x), uShadeColor, -0.35 * D.x);
       ${done} }`;
+  }
+  if (token[0] === 'N') {
+    // je Tupfer ausgeschrieben (keine Schleife); die Plätze über der Zahl der Tupfer sind leer und tragen nichts bei
+    const dabs = Array.from({ length: Number(token.slice(1)) }, (_, i) => `mistDab(mr, ${i}, ${p}, ms, mw, mk);`).join(' ');
+    return `{ ${head} int mr = int(A.w + 0.5); vec3 ms = vec3(0.0); float mw = 0.0; float mk = 1.0; ${dabs} cs = mw > 1e-5 ? ms / mw : vec3(0.0); as = 1.0 - mk; ${done} }`;
   }
   if (token === 'K') return `{ ${head} B = ${fetch(1)}; C = ${fetch(2)}; D = ${fetch(3)}; as = sparkleAt(${pat}, C, D, px); cs = B.a > 0.5 ? B.rgb : uLightColor; ${done} }`;
   // Papier oder Gouache
@@ -553,6 +592,8 @@ export class PlaneLayer {
   private light: ZoneLight | undefined;
   private paintTex = dataTexture(ROW_W, 8);
   private rampTex = dataTexture(RAMP, 8);
+  /** Tupfer der Farbnebel, eine Zeile je Farbnebel (2 Texel je Tupfer) */
+  private mistTex = dataTexture(2 * MIST_MAX, 8);
   private readonly atlas = new EdgeAtlas();
   /** Punktkronen (Stufe 5): alle Kronenpunkte der Zone in einem Mesh; dazu, was ihre Farben braucht */
   private readonly crowns = new CrownLayer();
@@ -571,6 +612,7 @@ export class PlaneLayer {
     this.uniforms = UniformsUtils.merge([UniformsLib.fog]);
     this.uniforms.uPaint = { value: this.paintTex };
     this.uniforms.uRamp = { value: this.rampTex };
+    this.uniforms.uMist = { value: this.mistTex };
     this.uniforms.uAir = { value: new Vector3(1, 1, 1) };
     this.uniforms.uEdge = { value: this.atlas.texture };
     // Rang- und Papierkachel erst, wenn eine Fläche sie braucht (die Rangfolge kostet einmal einige zehn ms)
@@ -865,6 +907,8 @@ export class PlaneLayer {
     data.fill(0);
     const ramps: Float32Array[] = [];
     const rampOfKey = new Map<string, number>();
+    const mists: MistDab[][] = [];
+    const mistOfKey = new Map<string, number>();
     const rgb = (c: string) => hexToRgb(resolveColor(c, this.swatches, this.look));
     /** Farbe nach B (mit Merker 1) oder ohne Farbe: Merker 0, der Shader nimmt Licht oder Schatten der Zone */
     const own = (b: number, c: string | undefined) => {
@@ -932,6 +976,18 @@ export class PlaneLayer {
           data[d + 2] = f.seed;
           return;
         }
+        if (f.type === 'mist') {
+          data[a] = CODE.mist;
+          const k = JSON.stringify(f.dabs);
+          let m = mistOfKey.get(k);
+          if (m === undefined) {
+            m = mists.push(f.dabs) - 1;
+            mistOfKey.set(k, m);
+          }
+          data[a + 3] = m;
+          data[c] = Math.min(MIST_MAX, f.dabs.length);
+          return;
+        }
         if (f.type === 'sparkle') {
           data[a] = CODE.sparkle;
           own(b, f.color);
@@ -960,6 +1016,21 @@ export class PlaneLayer {
     rd.fill(0);
     ramps.forEach((ramp, i) => rd.set(ramp, i * RAMP * 4));
     this.rampTex.needsUpdate = true;
+    const mh = capacity(mists.length);
+    if (this.mistTex.image.height !== mh) {
+      this.mistTex.dispose();
+      this.mistTex = dataTexture(2 * MIST_MAX, mh);
+      this.uniforms.uMist.value = this.mistTex;
+    }
+    const md = this.mistTex.image.data as Float32Array;
+    md.fill(0);
+    mists.forEach((dabs, r) =>
+      dabs.slice(0, MIST_MAX).forEach((d, i) => {
+        const o = (r * 2 * MIST_MAX + 2 * i) * 4;
+        md.set([d.x, d.y, d.r, d.a, ...hexToRgb(resolveColor(d.color, this.swatches, this.look)), 0], o);
+      }),
+    );
+    this.mistTex.needsUpdate = true;
     this.stats.gradients = ramps.length;
   }
 
