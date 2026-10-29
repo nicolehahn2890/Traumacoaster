@@ -130,6 +130,8 @@ export class WorldRenderer {
     this.lookOverride = opts.look ?? null;
     this.scene.add(this.lights.group);
     this.scene.fog = this.fog;
+    // Handy-Messung der Earle-Schichten (Stufe 5): ?earle=messen, nur dann geladen
+    if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('earle') === 'messen') void import('./earleMessung').then((m) => m.startEarleMessung(this));
     this.setLook('day');
   }
 

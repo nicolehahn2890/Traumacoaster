@@ -35,7 +35,9 @@ describe('Ebenen im Weltrenderer', () => {
     expect(layer.stats.planes).toBe(2);
     expect(layer.stats.shapes).toBe(2);
     expect(layer.stats.triangles).toBeGreaterThan(4);
-    expect(layer.group.children.length).toBe(1);
+    // (die Gruppe hat dazu immer das Mesh der Punktkronen, ohne Kronen unsichtbar)
+    expect(layer.group.children.filter((c) => c.name.startsWith('ebenen-formen')).length).toBe(1);
+    expect(layer.group.children.find((c) => c.name === 'ebenen-kronen')?.visible).toBe(false);
     expect(layer.pick(centerRay())?.id).toBe(s.b);
   });
 

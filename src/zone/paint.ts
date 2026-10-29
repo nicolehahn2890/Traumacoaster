@@ -60,9 +60,151 @@ export interface GradientFill extends FillBase {
   y0: number;
   x1: number;
   y1: number;
+  /**
+   * Kantenverlauf (Stufe 5): die Lage im Verlauf kommt aus dem Abstand zur Kante der Fläche, nicht aus der Richtung der
+   * Griffe; die Länge der Griffe ist die Tiefe (0 an der Kante, 1 so weit drinnen). Ringe entlang der Kante wie in den
+   * Höhlenbögen der Parallax-Szenen
+   */
+  edge?: boolean;
+  /** Bänder (Stufe 5, Earles gebänderte Hügel): so viele harte Stufen (2 bis 16); ohne Angabe stufenlos */
+  steps?: number;
+  /** Verlauf in der Stufe: Anteil des Abstands zur Nachbarstufe (0 flach bis 1; ohne Angabe 0,35) */
+  inner?: number;
+  /** Welle: die Stufengrenzen schwingen um diesen Anteil einer Stufe (0 bis 1) */
+  wave?: number;
+  /** als Pünktchen (Dot Shading): die Deckkraft des Verlaufs wird zur Dichte der Punkte */
+  dots?: GradientDots;
 }
 
-export type ZoneFill = ColorFill | GradientFill;
+/**
+ * Verlauf als Pünktchen (Stufe 5, Florian 29.10.2026: „ein Verlauf über Pünktchen wie beim Dot Shading“): wo der Verlauf
+ * voll deckt, wachsen die Punkte zur geschlossenen Fläche zusammen; wo er dünner wird, werden sie seltener und kleiner;
+ * wo er durchsichtig ist, ist keiner. Ein Deckkraftverlauf löst die Fläche so in Punkte auf
+ */
+export interface GradientDots {
+  /** Durchmesser der Punkte (Meter der Ebene) */
+  size: number;
+  /** Zellgröße als Vielfaches des Durchmessers (1,05 dicht bis 6 locker) */
+  gap: number;
+  /** Größenstreuung (0 bis 1) */
+  jitter: number;
+  /** Muster */
+  seed: number;
+}
+export const GRADIENT_DOTS: GradientDots = { size: 0.3, gap: 1.5, jitter: 0.3, seed: 1 };
+
+/** Woher die Pünktchen ihre Dichte nehmen: gleichmäßig, an der Lichtkante, an der Schattenseite, an allen Kanten, im Dunklen */
+export type DotSource = 'even' | 'light' | 'shade' | 'edge' | 'dark';
+export const DOT_SOURCES: readonly DotSource[] = ['even', 'light', 'shade', 'edge', 'dark'];
+/** Kacheln für Papier und Gouache (Platzhalter: erzeugt, bis Florians Scans da sind) */
+export type GrainTile = 'paper' | 'gouache';
+export const GRAIN_TILES: readonly GrainTile[] = ['paper', 'gouache'];
+
+/**
+ * Lichtkante (`light`) oder Innenschatten (`shade`) aus dem Kantenabstand (Stufe 5, Plan 3.2): eine Sichel an den Kanten,
+ * die zum Licht der Zone zeigen (oder von ihm weg); ihre innere Grenze ist der Umriss, um width zum Licht verschoben.
+ * width und soft in Metern der Ebene; width 0 gibt einen Saum rundum (so breit wie soft), negativ liegt die Sichel auf der
+ * anderen Seite (Florian 29.10.2026: auch negativ, für Verläufe vom Rand)
+ */
+interface EdgeBase extends FillBase {
+  width: number;
+  /** weiche innere Grenze (0 = hart wie im Siebdruck) */
+  soft: number;
+  /** eigene Farbe; ohne Angabe die Licht- bzw. Schattenfarbe der Zone */
+  color?: PaintColor;
+}
+export interface LightFill extends EdgeBase {
+  type: 'light';
+}
+export interface ShadeFill extends EdgeBase {
+  type: 'shade';
+}
+export type EdgeFill = LightFill | ShadeFill;
+
+/**
+ * Pünktchen (Stufe 5, Plan 3.2): je Zelle höchstens ein Punkt aus einer Rang-Kachel; ein Punkt erscheint, wenn sein Rang
+ * unter der Dichte am Ort liegt, darum kommen und gehen Punkte, wenn sich die Dichte ändert, statt zu springen. Maße in
+ * Metern der Ebene; die Punkte haften an der Form
+ */
+export interface DotsFill extends FillBase {
+  type: 'dots';
+  /** Durchmesser */
+  size: number;
+  /** Zellgröße als Vielfaches des Durchmessers (1,1 dicht bis 4 locker) */
+  gap: number;
+  /** Anteil der Zellen mit Punkt, wo die Quelle voll ist */
+  density: number;
+  /** Größenstreuung (0 bis 1) */
+  jitter: number;
+  source: DotSource;
+  /** Reichweite der Quelle (Meter von der Kante) */
+  reach: number;
+  /** Farbe aus dem Untergrund: zur Lichtfarbe (+) oder zur Schattenfarbe (−) der Zone, −1 bis 1 */
+  tone: number;
+  /** feste Farbe statt tone */
+  color?: PaintColor;
+  /** Zufallssamen (ganze Zahl): ein anderes Muster gleicher Art */
+  seed: number;
+}
+
+/** Papier oder Gouache als Kachel (Stufe 5): Grauwerte um die Mitte, gedacht für Weiches Licht; Kachelgröße in Metern */
+export interface GrainFill extends FillBase {
+  type: 'grain';
+  tile: GrainTile;
+  scale: number;
+  /** Drehung in Grad */
+  angle: number;
+}
+
+/**
+ * Funkeln (Stufe 5, Paket 0 Regel 4 und 0.3: „ein Funkeln-Shader auf markierten Stellen“, nur für Wasser, Schnee,
+ * Kristalle und Coins): je Zelle höchstens ein Glanzpunkt aus der Rang-Kachel, der in eigener Phase kurz als Kreuz
+ * aufleuchtet und wieder verlischt. Maße in Metern der Ebene
+ */
+export interface SparkleFill extends FillBase {
+  type: 'sparkle';
+  /** Größe eines Glanzpunkts */
+  size: number;
+  /** Zellgröße als Vielfaches der Größe (groß = selten) */
+  gap: number;
+  /** Anteil der Zellen mit Glanzpunkt (0 bis 1) */
+  density: number;
+  /** Aufleuchten je Sekunde (Tempo) */
+  speed: number;
+  /** eigene Farbe; ohne Angabe die Lichtfarbe der Zone */
+  color?: PaintColor;
+  seed: number;
+}
+
+export type EarleFill = EdgeFill | DotsFill | GrainFill | SparkleFill;
+
+/** ein Tupfer des Farbnebels: Mitte und Halbmesser (Pfad-Koordinaten wie Verlaufsgriffe), Farbe, Deckkraft */
+export interface MistDab {
+  x: number;
+  y: number;
+  r: number;
+  color: PaintColor;
+  a: number;
+}
+
+/**
+ * Farbnebel (Plan 4.6, Werkzeug N): weiche Farbtupfer in eine Fläche, intern ein Freiform-Verlauf wie in Illustrator. Die
+ * Farbe ist das nach Nähe gewichtete Mittel der Tupfer, die Deckkraft die Vereinigung ihrer weichen Kreise
+ */
+export interface MistFill extends FillBase {
+  type: 'mist';
+  dabs: MistDab[];
+}
+
+/** höchstens so viele Tupfer je Farbnebel (der Shader liest sie aus einer Zeile) */
+export const MIST_MAX = 16;
+
+export type ZoneFill = ColorFill | GradientFill | EarleFill | MistFill;
+
+export const isGradient = (f: ZoneFill): f is GradientFill => f.type === 'gradient' || f.type === 'fade';
+export const isEarle = (f: ZoneFill): f is EarleFill => f.type === 'light' || f.type === 'shade' || f.type === 'dots' || f.type === 'grain' || f.type === 'sparkle';
+/** braucht die Schicht den Kantenabstand der Fläche? */
+export const needsEdge = (f: ZoneFill): boolean => (isGradient(f) && !!f.edge) || f.type === 'light' || f.type === 'shade' || (f.type === 'dots' && f.source !== 'even' && f.source !== 'dark');
 
 /** höchstens so viele Schichten je Fläche (Grundfarbe mitgezählt; der Shader hat feste Plätze) */
 export const MAX_LAYERS = 8;
@@ -140,6 +282,7 @@ export function rgbToHex(r: number, g: number, b: number): string {
 
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
+const clampTo = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 const r3 = (v: number): number => Math.round(v * 1000) / 1000 || 0;
 const r4 = (v: number): number => Math.round(v * 10000) / 10000 || 0;
 
@@ -172,9 +315,80 @@ export function parseFill(v: unknown): ZoneFill | null {
   } else if (o.type === 'gradient' || o.type === 'fade') {
     const stops = parseStops(o.stops);
     if (stops && num(o.x0) && num(o.y0) && num(o.x1) && num(o.y1)) {
-      f = { type: o.type, stops, x0: o.x0, y0: o.y0, x1: o.x1, y1: o.y1, blend: o.type === 'fade' ? 'normal' : blend, opacity };
-      if (o.radial === true) f.radial = true;
+      const g: GradientFill = { type: o.type, stops, x0: o.x0, y0: o.y0, x1: o.x1, y1: o.y1, blend: o.type === 'fade' ? 'normal' : blend, opacity };
+      if (o.radial === true) g.radial = true;
+      if (o.edge === true) {
+        g.edge = true;
+        delete g.radial;
+      }
+      if (num(o.steps) && o.steps >= 2) g.steps = Math.min(16, Math.round(o.steps));
+      if (num(o.inner)) g.inner = clamp01(o.inner);
+      if (num(o.wave) && o.wave > 0) g.wave = clamp01(o.wave);
+      if (o.dots && typeof o.dots === 'object') {
+        const d = o.dots as Record<string, unknown>;
+        g.dots = {
+          size: num(d.size) ? clampTo(d.size, 0.02, 20) : GRADIENT_DOTS.size,
+          gap: num(d.gap) ? clampTo(d.gap, 1.05, 6) : GRADIENT_DOTS.gap,
+          jitter: num(d.jitter) ? clamp01(d.jitter) : GRADIENT_DOTS.jitter,
+          seed: num(d.seed) ? Math.round(clampTo(d.seed, 0, 9999)) : GRADIENT_DOTS.seed,
+        };
+      }
+      f = g;
     }
+  } else if (o.type === 'light' || o.type === 'shade') {
+    const e: EdgeFill = { type: o.type, width: num(o.width) ? clampTo(o.width, -40, 40) : 1, soft: num(o.soft) ? clampTo(o.soft, 0, 40) : 0, blend, opacity };
+    const color = parseColor(o.color);
+    if (color) e.color = color;
+    f = e;
+  } else if (o.type === 'dots') {
+    const d: DotsFill = {
+      type: 'dots',
+      size: num(o.size) ? clampTo(o.size, 0.02, 20) : 0.3,
+      gap: num(o.gap) ? clampTo(o.gap, 1.05, 6) : 1.8,
+      density: num(o.density) ? clamp01(o.density) : 0.6,
+      jitter: num(o.jitter) ? clamp01(o.jitter) : 0.3,
+      source: (DOT_SOURCES as readonly string[]).includes(String(o.source)) ? (o.source as DotSource) : 'even',
+      reach: num(o.reach) ? clampTo(o.reach, 0.05, 40) : 3,
+      tone: num(o.tone) ? clampTo(o.tone, -1, 1) : 0,
+      seed: num(o.seed) ? Math.round(clampTo(o.seed, 0, 9999)) : 1,
+      blend,
+      opacity,
+    };
+    const color = parseColor(o.color);
+    if (color) d.color = color;
+    f = d;
+  } else if (o.type === 'sparkle') {
+    const k: SparkleFill = {
+      type: 'sparkle',
+      size: num(o.size) ? clampTo(o.size, 0.05, 10) : 0.5,
+      gap: num(o.gap) ? clampTo(o.gap, 1.5, 20) : 5,
+      density: num(o.density) ? clamp01(o.density) : 0.5,
+      speed: num(o.speed) ? clampTo(o.speed, 0.05, 10) : 0.8,
+      seed: num(o.seed) ? Math.round(clampTo(o.seed, 0, 9999)) : 1,
+      blend,
+      opacity,
+    };
+    const color = parseColor(o.color);
+    if (color) k.color = color;
+    f = k;
+  } else if (o.type === 'mist' && Array.isArray(o.dabs)) {
+    const dabs: MistDab[] = [];
+    for (const raw of o.dabs.slice(0, MIST_MAX)) {
+      const d = raw as Record<string, unknown>;
+      const color = d ? parseColor(d.color) : null;
+      if (!d || !color || !num(d.x) || !num(d.y) || !num(d.r) || d.r <= 0) continue;
+      dabs.push({ x: d.x, y: d.y, r: d.r, color, a: num(d.a) ? clamp01(d.a) : 1 });
+    }
+    if (dabs.length) f = { type: 'mist', dabs, blend, opacity };
+  } else if (o.type === 'grain') {
+    f = {
+      type: 'grain',
+      tile: (GRAIN_TILES as readonly string[]).includes(String(o.tile)) ? (o.tile as GrainTile) : 'paper',
+      scale: num(o.scale) ? clampTo(o.scale, 0.2, 400) : 6,
+      angle: num(o.angle) ? o.angle % 360 : 0,
+      blend,
+      opacity,
+    };
   }
   if (f && hidden) f.hidden = true;
   return f;
@@ -193,8 +407,9 @@ export function parseFills(v: unknown): ZoneFill[] | undefined {
 export function serializeFill(f: ZoneFill): Record<string, unknown> {
   const o: Record<string, unknown> = { type: f.type };
   if (f.type === 'color') o.color = f.color;
-  else {
+  else if (isGradient(f)) {
     if (f.radial) o.radial = true;
+    if (f.edge) o.edge = true;
     o.x0 = r3(f.x0);
     o.y0 = r3(f.y0);
     o.x1 = r3(f.x1);
@@ -205,7 +420,22 @@ export function serializeFill(f: ZoneFill): Record<string, unknown> {
       if (s.mid !== undefined) q.mid = r3(s.mid);
       return q;
     });
-  }
+    if (f.steps) o.steps = f.steps;
+    if (f.inner !== undefined) o.inner = r3(f.inner);
+    if (f.wave) o.wave = r3(f.wave);
+    if (f.dots) o.dots = { size: r3(f.dots.size), gap: r3(f.dots.gap), jitter: r3(f.dots.jitter), seed: f.dots.seed };
+  } else if (f.type === 'light' || f.type === 'shade') {
+    o.width = r3(f.width);
+    o.soft = r3(f.soft);
+    if (f.color) o.color = f.color;
+  } else if (f.type === 'dots') {
+    Object.assign(o, { size: r3(f.size), gap: r3(f.gap), density: r3(f.density), jitter: r3(f.jitter), source: f.source, reach: r3(f.reach), tone: r3(f.tone), seed: f.seed });
+    if (f.color) o.color = f.color;
+  } else if (f.type === 'grain') Object.assign(o, { tile: f.tile, scale: r3(f.scale), angle: r3(f.angle) });
+  else if (f.type === 'sparkle') {
+    Object.assign(o, { size: r3(f.size), gap: r3(f.gap), density: r3(f.density), speed: r3(f.speed), seed: f.seed });
+    if (f.color) o.color = f.color;
+  } else if (f.type === 'mist') o.dabs = f.dabs.map((d) => ({ x: r3(d.x), y: r3(d.y), r: r3(d.r), color: d.color, a: r3(d.a) }));
   if (f.type !== 'fade') o.blend = f.blend;
   o.opacity = r3(f.opacity);
   if (f.hidden) o.hidden = true;
@@ -213,7 +443,8 @@ export function serializeFill(f: ZoneFill): Record<string, unknown> {
 }
 
 export function cloneFill(f: ZoneFill): ZoneFill {
-  return f.type === 'color' ? { ...f } : { ...f, stops: f.stops.map((s) => ({ ...s })) };
+  if (f.type === 'mist') return { ...f, dabs: f.dabs.map((d) => ({ ...d })) };
+  return isGradient(f) ? { ...f, stops: f.stops.map((s) => ({ ...s })), ...(f.dots ? { dots: { ...f.dots } } : {}) } : { ...f };
 }
 
 export const cloneFills = (fills: readonly ZoneFill[] | undefined): ZoneFill[] | undefined => (fills ? fills.map(cloneFill) : undefined);
@@ -221,7 +452,15 @@ export const cloneFills = (fills: readonly ZoneFill[] | undefined): ZoneFill[] |
 /** Anfang und Ende jedes Verlaufs abbilden (Drehen, Spiegeln, Umrechnen zwischen Formen); ändert in place */
 export function mapFillPoints(fills: readonly ZoneFill[] | undefined, fn: (x: number, y: number) => [number, number]): void {
   for (const f of fills ?? []) {
-    if (f.type === 'color') continue;
+    if (f.type === 'mist') {
+      for (const d of f.dabs) {
+        [d.x, d.y] = fn(d.x, d.y);
+        d.x = r3(d.x);
+        d.y = r3(d.y);
+      }
+      continue;
+    }
+    if (!isGradient(f)) continue;
     [f.x0, f.y0] = fn(f.x0, f.y0);
     [f.x1, f.y1] = fn(f.x1, f.y1);
     f.x0 = r3(f.x0);
@@ -286,9 +525,24 @@ export function visibleLayers(layers: readonly ZoneFill[]): ZoneFill[] {
   let from = 0;
   layers.forEach((f, i) => {
     if (f.hidden || f.type === 'fade' || f.blend !== 'normal' || f.opacity < 1) return;
-    if (f.type === 'color' || f.stops.every((st) => st.a >= 1)) from = i;
+    // (ein Verlauf als Pünktchen deckt nie ganz: zwischen den Punkten scheint durch)
+    if (f.type === 'color' || (f.type === 'gradient' && !f.dots && f.stops.every((st) => st.a >= 1))) from = i;
   });
   return layers.slice(from);
+}
+
+/** braucht eine der Schichten den Kantenabstand der Fläche? */
+export const layersNeedEdge = (layers: readonly ZoneFill[]): boolean => layers.some((f) => !f.hidden && needsEdge(f));
+
+/**
+ * Bänder (Stufe 5): Lage im Verlauf auf steps harte Stufen bringen; Stufe k zeigt den Verlauf bei k / (steps − 1), dazu
+ * läuft in ihr inner des Abstands zur Nachbarstufe (Earles Siebdruck: harte Stufe, Verlauf in der Stufe). Wie im Shader
+ */
+export function bandT(t: number, steps: number, inner = 0.35): number {
+  if (steps < 2) return t;
+  const p = clamp01(t) * steps;
+  const k = Math.min(steps - 1, Math.floor(p));
+  return clamp01((k + inner * (p - k - 0.5)) / (steps - 1));
 }
 
 /** kann die Fläche durchsichtig werden (Deckkraft unter 1 oder ein Deckkraftverlauf)? */
@@ -387,27 +641,37 @@ export function blendRgb(mode: BlendMode, cb: RGB, cs: RGB): RGB {
 /**
  * Schichten am Punkt auswerten wie der Shader: von unten nach oben über „nichts“ (durchsichtig), je Schicht Mischmodus
  * und Deckkraft (W3C: Quelle mit dem gemischten Wert über den Hintergrund); ein Deckkraftverlauf nimmt dem bisherigen
- * Ergebnis Deckkraft. Ergebnis: Farbe (sRGB, nicht vormultipliziert) und Deckkraft
+ * Ergebnis Deckkraft. Ergebnis: Farbe (sRGB, nicht vormultipliziert) und Deckkraft. Die Earle-Schichten (Lichtkante,
+ * Innenschatten, Pünktchen, Papier) brauchen Kantenabstand und Licht und fehlen hier; ein Kantenverlauf rechnet mit dem
+ * Abstand edge (Meter, ohne Angabe 0 = an der Kante), Bänder ohne Welle
  */
-export function evalLayers(layers: readonly ZoneFill[], x: number, y: number, swatches: SwatchMap, look: LookName = 'day', below: { rgb: RGB; a: number } = { rgb: [0, 0, 0], a: 0 }): { rgb: RGB; a: number } {
+export function evalLayers(layers: readonly ZoneFill[], x: number, y: number, swatches: SwatchMap, look: LookName = 'day', below: { rgb: RGB; a: number } = { rgb: [0, 0, 0], a: 0 }, edge = 0): { rgb: RGB; a: number } {
   // vormultipliziert
   let pr: RGB = [below.rgb[0] * below.a, below.rgb[1] * below.a, below.rgb[2] * below.a];
   let pa = below.a;
   for (const f of layers) {
-    if (f.hidden) continue;
+    if (f.hidden || isEarle(f)) continue;
     let cs: RGB;
     let as: number;
-    if (f.type === 'color') {
+    if (f.type === 'mist') {
+      const m = mistAt(f, x, y, swatches, look);
+      cs = m.rgb;
+      as = m.a;
+    } else if (f.type === 'color') {
       cs = hexToRgb(resolveColor(f.color, swatches, look));
       as = 1;
     } else {
       const ramp = rampOf(f.stops, swatches, look);
-      const p = gradientT(f, x, y) * (RAMP - 1);
+      const len = Math.hypot(f.x1 - f.x0, f.y1 - f.y0);
+      const t0 = f.edge ? (len > 1e-9 ? clamp01(edge / len) : 0) : gradientT(f, x, y);
+      const p = (f.steps ? bandT(t0, f.steps, f.inner) : t0) * (RAMP - 1);
       const i = Math.min(RAMP - 2, Math.floor(p));
       const u = p - i;
       const at = (k: number) => ramp[i * 4 + k] + (ramp[(i + 1) * 4 + k] - ramp[i * 4 + k]) * u;
       cs = [at(0), at(1), at(2)];
       as = at(3);
+      // Pünktchen: im Mittel deckt der Verlauf weniger (Näherung für Pipette und Vorschau)
+      if (f.dots) as *= as;
     }
     if (f.type === 'fade') {
       const m = 1 - f.opacity + f.opacity * as;
@@ -423,6 +687,26 @@ export function evalLayers(layers: readonly ZoneFill[], x: number, y: number, sw
     pa = as + pa * (1 - as);
   }
   return { rgb: pa > 1e-6 ? [pr[0] / pa, pr[1] / pa, pr[2] / pa] : [0, 0, 0], a: pa };
+}
+
+/**
+ * Farbnebel am Punkt (wie der Shader): Gewicht je Tupfer weich zum Rand (eins in der Mitte, null am Halbmesser) mal seine
+ * Deckkraft; Farbe nach Gewicht gemittelt, Deckkraft als Vereinigung der Tupfer
+ */
+export function mistAt(f: MistFill, x: number, y: number, swatches: SwatchMap, look: LookName = 'day'): { rgb: RGB; a: number } {
+  const sum: RGB = [0, 0, 0];
+  let wsum = 0;
+  let keep = 1;
+  for (const d of f.dabs) {
+    const t = Math.min(1, Math.hypot(x - d.x, y - d.y) / Math.max(1e-4, d.r));
+    let w = 1 - t * t * (3 - 2 * t);
+    w = d.a * w * w * (3 - 2 * w);
+    const c = hexToRgb(resolveColor(d.color, swatches, look));
+    for (let i = 0; i < 3; i++) sum[i] += c[i] * w;
+    wsum += w;
+    keep *= 1 - w;
+  }
+  return { rgb: wsum > 1e-5 ? [sum[0] / wsum, sum[1] / wsum, sum[2] / wsum] : [0, 0, 0], a: 1 - keep };
 }
 
 // ------------------------------------------------------------------ Vorgaben

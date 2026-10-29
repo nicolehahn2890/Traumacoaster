@@ -13,7 +13,10 @@
  */
 import { flattenPath, insideWithHoles, simplifyPoly, type Poly, type ZonePath } from './path';
 import { computeFaces, type Face } from './faces';
-import { cloneFills, mapFillPoints, parseColor, parseFills, samePaint, serializeFill, type Paint, type PaintColor, type ZoneFill, type ZoneStyle, type ZoneSwatch } from './paint';
+import { cloneFills, isGradient, mapFillPoints, parseColor, parseFills, samePaint, serializeFill, type Paint, type PaintColor, type ZoneFill, type ZoneStyle, type ZoneSwatch } from './paint';
+import type { LookName } from '@/world/looks';
+import { parseCrown, parseDotsOff, parseSetDots, serializeCrown, type CrownParams, type DotOff, type SetDot } from './crown';
+import { parseWave, serializeWave, type EdgeWave } from './edgeWave';
 import { LANE_DEPTH } from '@/track/stage';
 import type { SliceRole, SliceStack } from './slices';
 
@@ -60,6 +63,26 @@ export interface ZoneAir {
   far: number;
   amount: number;
 }
+
+/** Licht eines Looks: Richtung (Grad im Bild, aus der das Licht kommt: 0 von rechts, 90 von oben), Licht- und Schattenfarbe */
+export interface LightValues {
+  angle: number;
+  color: PaintColor;
+  shade: PaintColor;
+}
+
+/**
+ * Licht der Zone (Stufe 5, Plan 4.7): Lichtkanten, Innenschatten und die Pünktchen an Kanten folgen seiner Richtung;
+ * Tag, Abend, Nacht und Neon dürfen eigene Werte haben (looks), sonst gilt die Vorgabe. Eine je Zone (Kennung light)
+ */
+export interface ZoneLight extends LightValues {
+  id: string;
+  kind: 'light';
+  looks?: Partial<Record<LookName, Partial<LightValues>>>;
+}
+
+/** Licht, wenn die Zone noch keins hat. Platzhalter: Licht von links oben, warmes Licht, tiefblauer Schatten */
+export const LIGHT_DEFAULT: LightValues = { angle: 125, color: '#fff1c8', shade: '#1f2a5c' };
 
 /**
  * Gruppe von Ebenen (nach Tor S2, wie ein Ordner in Photoshop): fasst Ebenen zusammen, die in der Tiefe beieinander
@@ -150,6 +173,13 @@ export interface ZoneShape {
   dockOff?: Array<[number, number]>;
   /** Formgruppen, in denen sie liegt, von außen nach innen (src/zone/shapeGroups.ts) */
   groups?: string[];
+  /** Punktkrone (Stufe 5, src/zone/crown.ts): echte Punkte über der Form, dicht an der Lichtkante, mit Wind */
+  crown?: CrownParams;
+  /** Kantenwelle (Stufe 5, src/zone/edgeWave.ts): Kontur unregelmäßig wie gemalt, nur im Bild */
+  wave?: EdgeWave;
+  /** mit dem Punktpinsel gesetzte Punkte und weggenommene Stellen der Punktkrone (Stufe 5, src/zone/crown.ts) */
+  dots?: SetDot[];
+  dotsOff?: DotOff[];
   hidden?: boolean;
   locked?: boolean;
 }
@@ -185,7 +215,7 @@ export interface ZoneFieldNode {
   rest?: Record<string, unknown>;
 }
 
-export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup | ZoneSketch | ZoneSwatch | ZoneStyle | ZoneAir | ZoneStationNode | ZoneFieldNode;
+export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup | ZoneSketch | ZoneSwatch | ZoneStyle | ZoneAir | ZoneLight | ZoneStationNode | ZoneFieldNode;
 
 export const isPlane = (n: ZoneNode): n is ZonePlane => n.kind === 'plane';
 export const isShape = (n: ZoneNode): n is ZoneShape => n.kind === 'shape';
@@ -194,6 +224,7 @@ export const isSketch = (n: ZoneNode): n is ZoneSketch => n.kind === 'sketch';
 export const isSwatch = (n: ZoneNode): n is ZoneSwatch => n.kind === 'swatch';
 export const isStyle = (n: ZoneNode): n is ZoneStyle => n.kind === 'style';
 export const isAir = (n: ZoneNode): n is ZoneAir => n.kind === 'air';
+export const isLight = (n: ZoneNode): n is ZoneLight => n.kind === 'light';
 export const isStationNode = (n: ZoneNode): n is ZoneStationNode => n.kind === 'station';
 export const isFieldNode = (n: ZoneNode): n is ZoneFieldNode => n.kind === 'field';
 
@@ -230,6 +261,18 @@ export function fieldFrames(f: { x0: number; x1: number; y0: number; y1: number 
 /** Luftperspektive der Zone, falls gesetzt */
 export function airOf(nodes: readonly ZoneNode[]): ZoneAir | undefined {
   return nodes.find(isAir);
+}
+
+/** Licht der Zone, falls gesetzt */
+export function lightOf(nodes: readonly ZoneNode[]): ZoneLight | undefined {
+  return nodes.find(isLight);
+}
+
+/** Licht im Look: eigene Werte des Looks, sonst die des Lichts, ohne Licht die Vorgabe */
+export function lightIn(light: ZoneLight | undefined, look: LookName = 'day'): LightValues {
+  const base = light ?? LIGHT_DEFAULT;
+  const own = light?.looks?.[look];
+  return { angle: own?.angle ?? base.angle, color: own?.color ?? base.color, shade: own?.shade ?? base.shade };
 }
 
 /** Anteil der Luftfarbe für eine Ebene (weich zwischen near und far, mal Stärke und Anteil der Ebene) */
@@ -603,8 +646,10 @@ export function bakeSwatch(nodes: readonly ZoneNode[], id: string): void {
   const fix = (c: PaintColor): PaintColor => (c === ref ? sw.color : c);
   const fixFills = (fills: ZoneFill[] | undefined) => {
     for (const f of fills ?? []) {
-      if (f.type === 'color') f.color = fix(f.color);
-      else for (const st of f.stops) st.color = fix(st.color);
+      if (isGradient(f)) for (const st of f.stops) st.color = fix(st.color);
+      else if (f.type === 'color') f.color = fix(f.color);
+      else if (f.type === 'mist') for (const d of f.dabs) d.color = fix(d.color);
+      else if (f.type !== 'grain' && f.color) f.color = fix(f.color);
     }
   };
   for (const n of nodes) {
@@ -619,6 +664,14 @@ export function bakeSwatch(nodes: readonly ZoneNode[], id: string): void {
     else if (isStyle(n)) {
       n.fill = fix(n.fill);
       fixFills(n.fills);
+    } else if (isAir(n)) n.color = fix(n.color);
+    else if (isLight(n)) {
+      n.color = fix(n.color);
+      n.shade = fix(n.shade);
+      for (const v of Object.values(n.looks ?? {})) {
+        if (v.color) v.color = fix(v.color);
+        if (v.shade) v.shade = fix(v.shade);
+      }
     }
   }
 }
@@ -984,6 +1037,28 @@ export function parseNodes(v: unknown): ZoneNode[] {
       const a: ZoneAir = { id: o.id, kind: 'air', color, near: o.near, far: Math.max(o.near + 0.1, o.far), amount: Math.max(0, Math.min(1, o.amount)) };
       out.push(a);
       ids.add(a.id);
+    } else if (o.kind === 'light' && !out.some(isLight)) {
+      const color = parseColor(o.color);
+      const shade = parseColor(o.shade);
+      if (!color || !shade) continue;
+      const l: ZoneLight = { id: o.id, kind: 'light', angle: num(o.angle) ? o.angle % 360 : LIGHT_DEFAULT.angle, color, shade };
+      if (o.looks && typeof o.looks === 'object') {
+        const looks: Partial<Record<LookName, Partial<LightValues>>> = {};
+        for (const [k, v] of Object.entries(o.looks as Record<string, unknown>)) {
+          if (!LOOK_KEYS.includes(k) || !v || typeof v !== 'object') continue;
+          const q = v as Record<string, unknown>;
+          const own: Partial<LightValues> = {};
+          if (num(q.angle)) own.angle = q.angle % 360;
+          const c = parseColor(q.color);
+          if (c) own.color = c;
+          const sh = parseColor(q.shade);
+          if (sh) own.shade = sh;
+          if (Object.keys(own).length) looks[k as LookName] = own;
+        }
+        if (Object.keys(looks).length) l.looks = looks;
+      }
+      out.push(l);
+      ids.add(l.id);
     } else if (o.kind === 'style' && /^y\d{1,6}$/.test(o.id)) {
       const fill = parseColor(o.fill);
       if (!fill) continue;
@@ -1051,6 +1126,14 @@ export function parseNodes(v: unknown): ZoneNode[] {
         const pts = o.dockOff.filter((q): q is [number, number] => Array.isArray(q) && q.length === 2 && num(q[0]) && num(q[1])).slice(0, 500);
         if (pts.length) s.dockOff = pts.map(([x, y]) => [x, y]);
       }
+      const crown = parseCrown(o.crown);
+      if (crown) s.crown = crown;
+      const wave = parseWave(o.wave);
+      if (wave) s.wave = wave;
+      const dots = parseSetDots(o.dots);
+      if (dots) s.dots = dots;
+      const dotsOff = parseDotsOff(o.dotsOff);
+      if (dotsOff) s.dotsOff = dotsOff;
       if (o.hidden === true) s.hidden = true;
       if (o.locked === true) s.locked = true;
       out.push(s);
@@ -1060,7 +1143,7 @@ export function parseNodes(v: unknown): ZoneNode[] {
   const planeIds = new Set(out.filter(isPlane).map((p) => p.id));
   const groupIds = new Set(out.filter(isGroup).map((g) => g.id));
   for (const p of out) if (isPlane(p) && p.group && !groupIds.has(p.group)) delete p.group;
-  return out.filter((n) => isPlane(n) || isGroup(n) || isSwatch(n) || isStyle(n) || isAir(n) || isFieldNode(n) || planeIds.has(n.parent));
+  return out.filter((n) => isPlane(n) || isGroup(n) || isSwatch(n) || isStyle(n) || isAir(n) || isLight(n) || isFieldNode(n) || planeIds.has(n.parent));
 }
 
 const LOOK_KEYS = ['day', 'dusk', 'night', 'neon'];
@@ -1109,6 +1192,12 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
   }
   const air = airOf(nodes);
   if (air) out.push({ id: air.id, kind: 'air', color: air.color, near: round(air.near, 2), far: round(air.far, 2), amount: round(air.amount, 3) });
+  const light = lightOf(nodes);
+  if (light) {
+    const o: Record<string, unknown> = { id: light.id, kind: 'light', angle: round(light.angle, 1), color: light.color, shade: light.shade };
+    if (light.looks && Object.keys(light.looks).length) o.looks = JSON.parse(JSON.stringify(light.looks)) as unknown;
+    out.push(o);
+  }
   for (const g of groupsOf(nodes)) {
     const o: Record<string, unknown> = { id: g.id, kind: 'group', name: g.name };
     if (g.collapsed) o.collapsed = true;
@@ -1141,6 +1230,10 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
           return q;
         });
       if (s.groups?.length) o.groups = [...s.groups];
+      if (s.crown) o.crown = serializeCrown(s.crown);
+      if (s.wave) o.wave = serializeWave(s.wave);
+      if (s.dots?.length) o.dots = s.dots.map(([x, y, sz, k]) => [round(x, 3), round(y, 3), round(sz, 3), k]);
+      if (s.dotsOff?.length) o.dotsOff = s.dotsOff.map(([x, y, r]) => [round(x, 3), round(y, 3), round(r, 3)]);
       if (s.hidden) o.hidden = true;
       if (s.locked) o.locked = true;
       out.push(o);
@@ -1162,6 +1255,7 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
 export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
   return nodes.map((n): ZoneNode => {
     if (isGroup(n) || isSketch(n) || isAir(n) || isStationNode(n)) return { ...n };
+    if (isLight(n)) return { ...n, ...(n.looks ? { looks: JSON.parse(JSON.stringify(n.looks)) as ZoneLight['looks'] } : {}) };
     if (isFieldNode(n)) return { ...n, ...(n.rest ? { rest: JSON.parse(JSON.stringify(n.rest)) as Record<string, unknown> } : {}) };
     if (isPlane(n)) return { ...n, ...(n.fills ? { fills: cloneFills(n.fills) } : {}) };
     if (isSwatch(n)) return { ...n, ...(n.looks ? { looks: { ...n.looks } } : {}) };
@@ -1175,6 +1269,10 @@ export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
       ...(n.fills ? { fills: cloneFills(n.fills) } : {}),
       ...(n.groups ? { groups: [...n.groups] } : {}),
       ...(n.dockOff ? { dockOff: n.dockOff.map(([x, y]): [number, number] => [x, y]) } : {}),
+      ...(n.crown ? { crown: { ...n.crown } } : {}),
+      ...(n.wave ? { wave: { ...n.wave } } : {}),
+      ...(n.dots ? { dots: n.dots.map((d): SetDot => [d[0], d[1], d[2], d[3]]) } : {}),
+      ...(n.dotsOff ? { dotsOff: n.dotsOff.map((d): DotOff => [d[0], d[1], d[2]]) } : {}),
     };
   });
 }

@@ -8,7 +8,7 @@
 import type { Face } from './faces';
 import { faceBox } from './faces';
 import { copyPaint, facePaint, setFacePaint, shapeFaces, type ZonePlane, type ZoneShape } from './nodes';
-import { cloneFills, colorAt, fillsInBox, MAX_LAYERS, MAX_STOPS, type GradientFill, type GradientStop, type Paint, type PaintColor, type SwatchMap, type ZoneFill, type ZoneStyle } from './paint';
+import { cloneFills, colorAt, fillsInBox, MAX_LAYERS, MAX_STOPS, type GradientDots, type GradientFill, type GradientStop, type Paint, type PaintColor, type SwatchMap, type ZoneFill, type ZoneStyle } from './paint';
 import type { LookName } from '@/world/looks';
 
 export type GradKind = 'gradient' | 'fade';
@@ -113,11 +113,21 @@ export function readGradient(t: GradTarget, kind: GradKind, styles: ReadonlyMap<
   return { ...g, line: { x0, y0, x1, y1 }, index: i };
 }
 
+/** Änderung an einem Verlauf (Verlaufswerkzeug) */
+export interface GradPatch {
+  line?: GradLine;
+  stops?: GradientStop[];
+  radial?: boolean;
+  /** Verlauf als Pünktchen; null nimmt sie weg */
+  dots?: GradientDots | null;
+}
+
 /**
  * Verlauf auf das Ziel legen: den obersten der Art kind ändern oder (wenn keiner da ist und Platz ist) neu anlegen.
- * line in Ebenen-Koordinaten; stops und radial nur, wenn angegeben. Gibt false, wenn der Füllstapel voll ist
+ * line in Ebenen-Koordinaten; stops, radial und dots nur, wenn angegeben (dots null: keine Pünktchen). Gibt false, wenn der
+ * Füllstapel voll ist
  */
-export function writeGradient(t: GradTarget, kind: GradKind, styles: ReadonlyMap<string, ZoneStyle>, patch: { line?: GradLine; stops?: GradientStop[]; radial?: boolean }, fresh: () => GradientStop[], layer: number | null = null): boolean {
+export function writeGradient(t: GradTarget, kind: GradKind, styles: ReadonlyMap<string, ZoneStyle>, patch: GradPatch, fresh: () => GradientStop[], layer: number | null = null): boolean {
   const p = ownPaint(t, styles);
   const fills = p.fills ?? [];
   let i = gradIndex(fills, kind, layer);
@@ -135,6 +145,10 @@ export function writeGradient(t: GradTarget, kind: GradKind, styles: ReadonlyMap
   if (patch.radial !== undefined) {
     if (patch.radial) g.radial = true;
     else delete g.radial;
+  }
+  if (patch.dots !== undefined) {
+    if (patch.dots) g.dots = { ...patch.dots };
+    else delete g.dots;
   }
   p.fills = fills;
   writePaint(t, p);

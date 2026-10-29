@@ -53,9 +53,11 @@ export interface OverlayState {
   fields: Array<{ pts: Pt[]; on: boolean; name: string }>;
   /** Handy-Rahmen des gewählten Felds (quer, hoch): was die Kamera ganz herausgezoomt zeigt */
   frames: Array<{ pts: Pt[]; name: string }>;
+  /** Größe des Pinsels (Farbnebel, Punktpinsel) als Ring um den Zeiger, auf die Ebene darunter gelegt */
+  brush: Pt[] | null;
 }
 
-export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [], target: null, loupe: null, gradient: null, dock: [], hatch: [], station: null, fields: [], frames: [] });
+export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [], target: null, loupe: null, gradient: null, dock: [], hatch: [], station: null, fields: [], frames: [], brush: null });
 
 const ring = (pts: Pt[]): string => (pts.length ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z` : '');
 const open = (pts: Pt[]): string => (pts.length > 1 ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}` : '');
@@ -72,6 +74,7 @@ export class EditorOverlay {
   private readonly groupPath = document.createElementNS(NS, 'path');
   private readonly gridPath = document.createElementNS(NS, 'path');
   private readonly snapRing = document.createElementNS(NS, 'circle');
+  private readonly brushPath = document.createElementNS(NS, 'path');
   private readonly tangentPath = document.createElementNS(NS, 'path');
   private readonly anchorGroup = document.createElementNS(NS, 'g');
   private readonly knobGroup = document.createElementNS(NS, 'g');
@@ -104,6 +107,7 @@ export class EditorOverlay {
     this.gridPath.setAttribute('class', 'ze-grid');
     this.snapRing.setAttribute('class', 'ze-snap');
     this.snapRing.setAttribute('r', '7');
+    this.brushPath.setAttribute('class', 'ze-brush');
     this.tangentPath.setAttribute('class', 'ze-tangent');
     this.targetPath.setAttribute('class', 'ze-target');
     this.targetPath.setAttribute('fill-rule', 'evenodd');
@@ -127,7 +131,7 @@ export class EditorOverlay {
     this.fieldOnPath.setAttribute('class', 'ze-field on');
     this.framePath.setAttribute('class', 'ze-frame');
     this.el.append(defs, this.hatchPaths.solid, this.hatchPaths.dig, this.hatchPaths.airy, this.dockOff, this.dockOn, this.stationPath, this.framePath, this.fieldPath, this.fieldOnPath, this.labelGroup);
-    this.el.append(this.targetPath, this.gradGroup, this.loupeRing, this.gridPath, this.groupPath, this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.regionPath, this.tangentPath, this.anchorGroup, this.knobGroup, this.handleGroup, this.snapRing);
+    this.el.append(this.targetPath, this.gradGroup, this.loupeRing, this.gridPath, this.groupPath, this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.regionPath, this.tangentPath, this.anchorGroup, this.knobGroup, this.handleGroup, this.snapRing, this.brushPath);
   }
 
   set visible(on: boolean) {
@@ -209,6 +213,7 @@ export class EditorOverlay {
     this.regionPath.setAttribute('d', s.region && s.region.length > 1 ? ring(s.region) : '');
     this.groupPath.setAttribute('d', s.group ? ring(s.group) : '');
     this.gridPath.setAttribute('d', s.grid.map(([a, b]) => `M${a.x.toFixed(1)} ${a.y.toFixed(1)}L${b.x.toFixed(1)} ${b.y.toFixed(1)}`).join(''));
+    this.brushPath.setAttribute('d', s.brush ? ring(s.brush) : '');
     this.snapRing.style.display = s.snap ? '' : 'none';
     if (s.snap) {
       this.snapRing.setAttribute('cx', s.snap.x.toFixed(1));

@@ -5,7 +5,9 @@ Stufe 0 und Stufe 1 gebaut, Tor S1 bestanden (Florian, 27.10.2026); Stufe 2 ganz
 (Florian, 27.10.2026; ein paar Kleinigkeiten meldet er nach); Stufe 3 gebaut (Farbmenü, Verläufe, Füllstapel,
 Ebenenstapel, Luftperspektive, Stile, Looks, SVG), Tor S3 am Mac bestanden („Es scheint alles erstmal zu
 funktionieren“; Kleinigkeiten aus S2 und S3 sammelt Florian und geht sie später mit uns durch); weiter mit Stufe 4.
-Der Editor muss zuerst am Mac laufen, iPad und Tablet optimieren wir später (Florian, 27.10.2026).** Gebaut wird Stufe für
+Der Editor muss zuerst am Mac laufen, iPad und Tablet optimieren wir später (Florian, 27.10.2026). Stufe 5 (Earle-Schichten) ist seit 29.10.2026 in
+`zoneneditor` (gebaut auf `zoneneditor-tor2`); an Tor S5 hat Florian die Werkzeuge freigegeben und Regel 4 neu gefasst, die Testzone bleibt Vorschlag (29.10.2026).**
+Gebaut wird Stufe für
 Stufe mit Tor, auf dem Branch `zoneneditor`. Der große Plan (`docs/GROSSER-PLAN.md`)
 ruht seit heute auf Florians Wunsch; Etappe 2 steht nach Schritt 7, dem Freiraumfeld und der Freigabe der Ebenen-Probe,
 Tor 2b ist offen. Die Session von Etappe 2 hat die Pause per Nachricht bekommen (27.10.2026).
@@ -34,7 +36,8 @@ aussieht oder vorläufige Werte trägt; **System** ist, was bleibt.
 - **Die wichtigsten Befunde in deinen Vorgaben** (Abschnitt 2):
   - Ein Abstand ändert in der Perspektive das Bild: 20 m weiter hinten heißt bis 24 % kleiner und bis 64 px höher.
     Deshalb ist „Bild halten“ der Standard.
-  - Pünktchen als Filter widersprechen Paket 0, Regel 4. Das entscheidest du neu, an Tor S5.
+  - Pünktchen als Filter widersprechen Paket 0, Regel 4. Das entscheidest du neu, an Tor S5. **Entschieden (29.10.2026):**
+    Regel 4 gilt neu, Pünktchen und Textur dürfen im Editor Shader-Schichten sein.
   - „Überall abtauchen“ widerspricht „Fels ist fest“ und den Rätseln darauf. Deshalb hat jede Fläche ein Material.
   - Markierungen braucht es, aber automatisch vorbelegt (Rolle, Material, Andockkanten). Ohne sie hält der Pinsel
     jede Kante für Boden.
@@ -87,7 +90,7 @@ Viele Punkte des großen Plans behalten ihre Bedeutung; der Editor ändert, wo u
 | Paket 2.2, Editor Option A in drei Stufen | Stufe 1 (Klötzchen) gebaut, Tor 1b bestanden | Der Zonen-Editor ersetzt die Stufen 2 (Grafik-Slots) und 3 (Zonenwerkzeuge); die Spielobjekte aus Stufe 1 ziehen in ihn um (Stufe 4 hier) |
 | Paket 5, Ebenen-Probe und Formvorlagen (Freigabe 25.10.) | Körper aus Kurvenpfaden halb gebaut | Der Editor ist die Ebenen-Probe in groß; Szene 06 „Kathedrale im Fels“ wird Torübung |
 | Paket 5, „Fels ist fest, nur Öffnungen und Baustellen“; Etappe 2 Schritt 9 Tunnelkapsel | bestätigt 24.10. | Material je Fläche und Portal-Vorlagen (Befund 16, Entscheidung B2 und B3) |
-| Paket 0, Regeln 1, 2, 4, 6, 9; Funkeln 0.3; Stilprobe E4 | vorläufig bis zur Stilprobe | Der Editor liefert die Werkzeuge dafür; Regel 4 muss neu entschieden werden (Befund 12) |
+| Paket 0, Regeln 1, 2, 4, 6, 9; Funkeln 0.3; Stilprobe E4 | vorläufig bis zur Stilprobe | Der Editor liefert die Werkzeuge dafür; Regel 4 neu gefasst an Tor S5 (29.10.2026): Pünktchen und Textur dürfen Shader-Schichten sein (Befund 12) |
 | Paket 8a und 8b, Teile, Aufträge, Prüfung „passt es genau“ | Erzeugung über Figma oder Generator | Malvorlage und SVG aus dem Editor sind die genaue Form jedes Auftrags (Abschnitt 4.10) |
 | Paket 3.4, Stützen-Werkstatt | E4 | Stützen stehen auf Andockkanten der Ebenen (Abschnitt 4.9) |
 | Paket 10, Etappen | E2 bei Schritt 7, Tor 2b offen | E2 ruht; nach Stufe 4 hier wird der Rest von E2 auf Ebenen neu geschnitten (Abschnitt 8) |
@@ -182,7 +185,7 @@ für eine ganze Zone besser sind **verknüpfte Stile** (einmal ändern, überall
 Shader.**
 - **Widerspruch:** Paket 0, Regel 4 sagt bisher „Punktraster nur gemalt, an Kronenkanten und Schattenrändern wie in
   Bild 04, nie als Filter“ (Bild 04 ist das Visual „Ornamentwald“; Florians Vorgabe vom 24.10.2026). Der neue Wunsch
-  ändert diese Regel (Entscheidung B1).
+  ändert diese Regel (Entscheidung B1). **Entschieden an Tor S5 (Florian, 29.10.2026):** „Ja, Regel 4 gilt neu: Pünktchen und Textur dürfen im Editor Shader-Schichten sein.“
 - Machbarkeit: ja. Die Kamerasession zeichnet schon Punkte im Shader (Zellen mit Zufallsversatz in Weltmetern, Radius
   aus der Schattierung). Wie weit das trägt und was dynamisch sinnvoll ist, steht in Abschnitt 3.2 und 4.7.
 
@@ -1115,6 +1118,139 @@ mit Wind, Knopf „Earle“ mit Presets; die vier Mängel des Test-Shaders behob
 Platzhalter: alle Presets, Farbregeln und Kacheln bis zur Stilprobe.
 **Tor S5:** ein Satz Körper (Wiese, Bogen, Baum) als Standbild vom Handy neben Earles Favoriten (01 rote Scheune, 03
 organischer Stamm, 05 Tannenwald) und Florians Bildern 6 bis 8; Florian entscheidet Regel 4 neu (B1).
+**Stufe 5 begonnen (29.10.2026, Florian: „mit Earle-Look anfangen“; Zweig `zoneneditor-tor2`, der Pinsel läuft
+parallel in der Pinsel-Studie).** Paket 1 gebaut: Earle-Schichten als Füllungen im Füllstapel (`src/zone/paint.ts`):
+**Lichtkante** und **Innenschatten** (Sichel aus dem Kantenabstand, um die Lichtrichtung verschoben, hart oder weich),
+**Pünktchen** (Rang-Kachel 64 × 64 mit blau verteilten Rängen, Wabenraster, Punkt bleibt in seiner Zelle; Dichte aus
+Lichtkante, Schattenseite, allen Kanten, dem Dunklen oder gleichmäßig; Farbe als hellere bzw. tiefere Stufe der eigenen
+Farbe oder fest), **Papier** und **Gouache** (Kachel), **Bänder** (Stufen, Verlauf in der Stufe, Welle) und
+**Kantenverlauf** (Ringe entlang der Kante) als Arten des Verlaufs. **Licht der Zone** als Knoten `light` (Richtung,
+Licht- und Schattenfarbe, eigene Werte je Look), im Füllstapel als Zeile. **Kantenabstand** je Fläche genau gerechnet
+(`src/zone/edgeDistance.ts`, Strecken weitergereicht wie Dead Reckoning) und in einem Atlas (`src/world/earleTextures.ts`).
+**Knopf „Earle“** im Füllstapel hinter „Earle …“: Automatisch, Hügel, Fels, Wiese, Krone, Wasser, Ganze Zone
+(`src/zone/earle.ts`); ein zweiter Druck ersetzt statt zu verdoppeln. Werte je Schicht in einer Zeile unter der gewählten
+Schicht (Wort waagrecht ziehen oder Zahl tippen, `src/zoneeditor/fillParams.ts`). Die vier Mängel des Test-Shaders sind
+im Ebenen-Material behoben (Punkt in der Zelle, Zufall ohne Sinus, Muster je Form und Ebene versetzt, keine Schatten).
+**Leistung:** Der eine Shader mit Schleife über alle Arten kostete am Mac in Handy-Auflösung je Schicht rund 2 ms (die GPU
+schleppt den ganzen Schleifenrumpf mit); jetzt bekommt jede Schichtfolge ihren eigenen geraden Shader (ein Draw Call je
+Folge, Testszenen 6 bis 7), durchsichtige Flächen in Läufen gleicher Folge. Messung `scripts/earle-bildzeiten.mjs`
+(Mac M3 Pro, Metal, Spielblick 1688 × 780): Ebenen ohne Earle 1,0 bis 1,2 ms je Bild, mit Earle auf allen Flächen
+1,4 bis 1,9 ms; Gegenprobe gegen den allgemeinen Shader: kein Bildpunkt weicht um mehr als 1 ab. Kantenabstand beim
+Laden 30 bis 120 ms je Testszene, danach nur für geänderte Flächen. Die Vorgaben halten die eigene Farbgebung der Fläche
+(Bänder gehen an den eigenen Verlauf, die Felsringe liegen durchscheinend darüber). Vorher und nachher als Standbild in
+Handy-Auflösung: `docs/research/earle/2026-10-29-earle-paket1.jpg`. **Platzhalter:** alle Vorgaben und Zahlen der
+Presets, die Regel für „Automatisch“, die Papier- und Gouache-Kacheln (erzeugt, bis Florian scannt), die Licht- und
+Schattenfarbe. **Nicht geprüft:** Bildrate am echten Handy (Messung am Mac), Pinsel und Fahrt mit Earle-Flächen. **Offen
+aus Stufe 5:** Sonne als Griff im Bild, Kantenwelle, Farbnebel, Funkeln, Punktkronen mit Wind, Punktpinsel, Kosten je
+Schicht in der Leistungsanzeige; in zwei künstlichen Messvarianten (Testszenen ohne Kantenverlauf bzw. ohne Lichtkante)
+wurde es langsamer statt schneller, das wird bei der Handy-Messung mit angesehen.
+**Paket 2 (29.10.2026, nach dem Fast-Forward der Pinsel-Studie b658b07 nach `zoneneditor`; Earle-Zweig darauf gesetzt).**
+**Punktkronen** (`src/zone/crown.ts`, `src/world/crownMesh.ts`): echte Punkte als Achtecke in einem Draw Call, deckend
+ohne discard, Poisson-Scheibe in der Form und bis 15 cm darüber hinaus (gebuckelter Umriss wie Bild 6), dicht und hell
+zur Lichtkante, auf der Schattenseite lichter und dunkler, drei Tonstufen bis gelbgrün, in der Tiefe gestaffelt, Wind je
+Punkt, unter etwa einem Bildpunkt fallen sie weg; Zeile „Punktkrone“ im Füllstapel mit Werten, „+ Punktkrone“ unter
+„Earle …“, die Vorgabe „Krone“ setzt sie (hohe, schmale Formen wie Stämme nicht). **Kantenwelle**
+(`src/zone/edgeWave.ts`): ein ruhiges Rauschfeld verschiebt alle Punkte der Form gleich, geteilte Flächen bleiben
+lückenlos; nur im Bild, Stützen und Station stehen auf der glatten Kante, darum setzen die Vorgaben sie nicht
+automatisch („+ Kantenwelle“). **Sonne als Griff**: der Sonnenpfeil in der Lichtzeile dreht das Licht. **Handy-Messung**:
+`&earle=messen` am Spiel (zweiter Link im „Handy“-Feld) misst auf dem Gerät ohne Ebenen, wie gesichert, ohne Earle, mit
+Earle auf allen Flächen, je Schicht weniger und eine Kontrollzeile (`src/world/earleMessung.ts`). **Fehler gefunden und
+behoben:** Der Zwischenspeicher der Shader legte das durchsichtige Material unter dem Schlüssel des deckenden ab; nach
+einem Wechsel der Schichtfolgen zeichnete eine deckende Fläche dann durchsichtig (blass, ohne Tiefe, doppelt so teuer).
+Das waren die Ausreißer aus Paket 1; Regressionstest in `tests/earle.test.ts`. **Messung** (Mac, Metal, Spielblick
+1688 × 780, Earle auf allen Flächen mit Punktkronen): 1,4 bis 1,7 ms je Bild gegen 0,9 bis 1,2 ms ohne Earle;
+Gegenprobe pixelgleich. Vorher und nachher: `docs/research/earle/2026-10-29-earle-paket2.jpg`, Krone neben Bild 6:
+`docs/research/earle/2026-10-29-punktkrone.jpg`. **Platzhalter:** Werte der Punktkronen, Tonstufen, Kantenwelle,
+die Regel „Stämme ohne Krone“. **Am Handy gemessen (Florian, 29.10.2026, iPhone, Apple GPU, Hochformat 786 × 1262 px,
+Hügel-Szene mit `&earle=messen`):** ohne Ebenen 0,87 ms je Bild, wie gesichert 0,73, ohne Earle 0,80, Earle auf allen
+Flächen mit 1309 Kronenpunkten 1,77, Kontrolle am Ende 1,80 (stabil). Je Schicht weniger: Pünktchen −0,30 ms,
+Papier/Gouache −0,24, Innenschatten −0,17, Lichtkante −0,10, Kantenverlauf −0,04, Punktkronen ±0. Earle kostet am Handy
+also rund 1 ms der 16,7 ms je Bild; die Anzeige zeigte dabei 59 fps. Damit ist „Kosten je Schicht am Handy gemessen“
+für Tor S5 erfüllt. **Nicht geprüft:** Punktkronen mit Bahn und Fahrt davor, Kantenwelle an spielbaren Kanten. **Offen aus Stufe 5:** Punktpinsel, Farbnebel, Funkeln, Papier und
+Gouache aus Florians Scans.
+**Paket 3 (29.10.2026).** **Funkeln** (Schicht im Füllstapel): Glanzkreuze je Zelle aus der Rang-Kachel, die in eigener
+Phase aufleuchten; „+ Funkeln“ unter „Earle …“, die Vorgabe Wasser setzt es. **Punktpinsel** (Werkzeug E): über eine
+Form ziehen setzt Punkte dicht an dicht wie Earles Reihen entlang von Graten; Größe, Ton und „Wegnehmen“ (auch mit
+Wahltaste, auf allen Formen unter dem Pinsel, auch Punkte der Punktkrone); gezeichnet mit dem Mesh der Punktkronen.
+**Farbnebel** (Werkzeug N, Abschnitt 4.3): in eine Fläche tupfen oder ziehen gibt weiche Tupfer in der aktuellen Farbe
+(der Farbe des Farbknopfs). Die Tupfer sammeln sich als Schicht „Farbnebel“ im Füllstapel der Fläche, bis 16 je Schicht,
+dann beginnt eine neue; die Farbe ist nach Nähe gemischt, die Deckkraft die Vereinigung der weichen Kreise
+(Freiform-Verlauf); Palettenfarben bleiben Verweise und ändern sich mit dem Feld. Ein Ring am Zeiger zeigt die Größe von
+Farbnebel und Punktpinsel, die Tasten [ und ] ändern sie. **Fehler gefunden und behoben:** Eine Schleife im
+Flächen-Shader kostet unter ANGLE/Metal (Chromium am Mac) einige Millisekunden je Bild, auch mit fester Länge: der
+Farbnebel mit einem Tupfer auf allen Flächen kostete +3,5 ms, mit 16 Tupfern +19 ms. Die Shader je Schichtfolge
+schreiben die Tupfer jetzt einzeln aus (Plätze 1, 2, 4, 8 oder 16 je Folge), ein Test hält sie schleifenfrei. Das
+erklärt wohl auch, warum der allgemeine Shader aus Paket 1 je Schicht rund 2 ms kostete (er läuft in einer Schleife
+über die Schichten). **Messung** (Mac, Metal, Spielblick 1688 × 780): Farbnebel mit 1 bis 4 Tupfern auf allen Flächen
+kostet nichts Messbares, mit 16 Tupfern auf jeder Form rund +0,8 ms, über Earle auf allen Flächen rund +1 ms;
+Gegenprobe gegen den allgemeinen Shader pixelgleich (größte Abweichung 1 Stufe). Die Handy-Messung hat dafür die Zeile
+„+ Farbnebel (16 Tupfer)“. Vorher und nachher: `docs/research/earle/2026-10-29-farbnebel.jpg` (Demo-Tupfer, keine
+Vorgabe). **Platzhalter:** Startgröße 6 m und Stärke 70 % des Farbnebels, Abstand der Tupfer beim Ziehen, Größen- und
+Tonschritte des Punktpinsels, Werte des Funkelns. **Am Handy gemessen (Florian, 29.10.2026, iPhone, Apple GPU,
+786 × 1390 px, Hügel-Szene mit `&earle=messen`):** ohne Earle 0,83 ms je Bild, Earle auf allen Flächen 1,83 (Kontrolle am
+Ende 1,73), dazu Farbnebel mit 16 Tupfern auf jeder Form 2,70 ms, also rund +0,9 ms im teuersten Fall. Je Schicht
+weniger: Pünktchen −0,36 ms, Papier/Gouache −0,33, Lichtkante und Innenschatten je −0,23, Funkeln −0,16, Kantenverlauf
+und Punktkronen je −0,10 (Schwankung etwa 0,1 ms, siehe Kontrolle); die Anzeige zeigte 60 fps. Florian: die neuen
+Werkzeuge „sehen vielversprechend aus“. **Nicht geprüft:** Malen mit Farbnebel und Punktpinsel am iPad mit dem Pencil
+(der Editor ist zuerst für den Mac). **Offen aus Stufe 5:** Papier
+und Gouache aus Florians Scans; dann Tor S5 (Standbilder vom Handy neben Earles Favoriten, Florians Freigabe).
+**Tor S5 vorbereitet (29.10.2026, Florian: „Bereite Tor S5 vor: eine Testszene mit Wiese, Bogen und Baum im Earle-Look
+und ein Vergleichsblatt neben Earles Favoriten. Inhalte und Farben nur als Vorschlag markieren.“)** Testzone `tor-s5` aus
+`scripts/testzonen.ts` (`npx tsx scripts/testzonen.ts tor-s5` schreibt nur sie): vorn eine Wiese mit der Station, in der
+Mitte eine goldgrüne Wiese mit einem großen Baum (Stamm mit vier Ästen unter einer Schirmkrone mit Punktkrone, nach Bild 6
+und Earle 03), rechts ein Felsbogen aus Sandstein mit Grasdecke und zwei nach innen dunkler werdenden Ringen (Bild 8,
+Baukasten 05 und 06), dahinter eine helle Wiese mit Baumgruppen, ferne Hügel, Berge und eine Wolke. Die Earle-Vorgaben
+liegen schon in der Datei (Wiesen: Hügel, Krone: Krone, Stamm und Bogen: Fels, hinten: Wiese). **Standbild** `&bild` am
+Zonen-Editor: ohne Leisten, der Spielblick nimmt den ganzen Bildschirm, ein Finger verschiebt nur das Bild, zwei Finger
+zoomen; für die Standbilder vom Handy (quer): `?zone=tor-s5&editor=2&bild`. **Vergleichsblatt** (unsere Bilder neben Earles
+01, 03, 05 und Florians Bildern 6 bis 8) nur lokal, weil es fremde Bilder enthält; unsere Bilder allein:
+`docs/research/earle/2026-10-29-tor-s5-vorschlag.jpg`. **Befund am Blatt:** Krone und Wiesenbänder treffen die Technik
+(echte Punkte in der Krone, harte Stufen, Pünktchen an der Lichtkante). Gegenüber Earle und Bild 8 sind unsere Bilder
+heller und weicher (wenig Tonwert-Kontrast, blasser Himmel, Dunst über den Bergen), der Bogen ist regelmäßiger als die
+geschwungenen Bänder in Bild 8 und seine Kantenpünktchen sind lichter, der Baum hat vier dicke Äste statt vieler feiner.
+**Platzhalter:** die ganze Szene (Formen, Farben, Wahl der Vorgaben). **Offen für das Tor:** Standbilder vom Handy,
+Florians Urteil und Regel 4 (B1).
+**Nachgeschärft (29.10.2026, Florian: „mehr Tonwert-Kontrast, dichtere Kantenpünktchen am Bogen, geschwungenere Bänder
+und feinere Äste. Alles weiter als Vorschlag markieren.“)** Eigene Palettenfelder der Szene für die Tiefen (Wiese tief,
+Ocker tief, Nachtblau, Berg tief, Creme); die Wiesen laufen von hellem Rand bis tief, ihre Bänder folgen als Kantenverlauf
+dem Umriss, dazu S-förmige Bänder. Der Bogen hat innen Bänder in Hellblau, Creme und Nachtblau, schräg verzogen, sodass sie
+ungleich breit schwingen, und dichte, feine Kantenpünktchen (Pünktchen-Werte nur in dieser Szene). Der Baum ist eine flache
+Silhouette in Nachtblau aus Stamm, vier Ästen und acht Zweigen. Die Kulisse liegt näher (Berge bei 70 statt 120 m), weil der
+Nebel der Welt ab 24 m hinter der Bühne zunimmt und bei 140 m ganz deckt; die Berge waren darin fast weiß. Der Generator
+hat dafür Palettenfelder je Szene und einen Nachschliff je Form nach der Earle-Vorgabe. Vorher und nachher:
+`docs/research/earle/2026-10-29-tor-s5-vorschlag.jpg`. **Befund nach dem Nachschärfen:** Kontrast, Bänder und Äste sind
+deutlich näher an Bild 6 bis 8; anders bleiben der blasse Himmel (Look der Welt, nicht der Zone), die Größe der Punkte in
+der Krone (größer und gleichmäßiger als in Bild 6), die Zahl der Äste (12 statt eines feinen Netzes) und der Bogen als
+ruhige Form in der Landschaft statt der großen Schwünge aus der Nähe in Bild 8. **Platzhalter:** weiterhin die ganze Szene
+samt Nachschliff.
+**Pünktchen als Verlauf, negative Kantenbreite, zweites Nachschärfen (29.10.2026, Florian: „Können die Pünktchen mehr
+einen Verlauf bilden wie beim Dot Shading … Die Breite von Innenkanten muss auch negativ sein können … Schärfe nochmal
+nach, versuche auch größere harmonische Grasflächen hinzubekommen“).** **Verlauf als Pünktchen** (`dots` am Verlauf,
+Knopf „Pünktchen“ beim Verlaufswerkzeug G, Größe und Abstand in der Wertezeile): jeder Verlauf (linear, radial, an der
+Kante, Farbe oder Deckkraft) lässt sich als Punkte zeichnen; wo er voll deckt, wachsen die Punkte zur geschlossenen Fläche
+zusammen, wo er dünner wird, werden sie seltener und kleiner, wo er durchsichtig ist, ist keiner. Ein Deckkraftverlauf
+löst die Fläche so in Punkte auf. Die Pünktchen-Schicht nutzt dieselbe Funktion (`dotCover` im Shader) und wird zum
+dünnen Ende ihrer Reichweite jetzt auch kleiner (gleichmäßige bleiben wie bisher). **Lichtkante und Innenschatten** dürfen
+die Breite 0 (Saum rundum, so breit wie „weich“) und negativ haben (Sichel auf der anderen Seite), Grenzen ±40 m.
+Gegenprobe Shader je Folge gegen den allgemeinen Shader pixelgleich (größte Abweichung 1 Stufe). **Szene:** die Wiesen
+als große Flächen in harmonischem Grün (Gold, Wiese hell, Wiese, tief), drei breite weiche Bänder am Umriss, ein heller
+Punktsaum am Rand und ein Pünktchen-Verlauf ins Tiefe statt der S-Bänder. **Messung** (Mac, Metal, 1688 × 780, Zone
+`tor-s5` mit `&earle=messen`): wie gesichert 1,84 ms je Bild, ohne Earle-Schichten 0,91 ms. **Platzhalter:** Werte der
+Pünktchen-Verläufe und der ganze Nachschliff der Szene. **Nicht geprüft:** am Handy.
+**Tor S5: Werkzeuge freigegeben (Florian, 29.10.2026):** „Ich muss keine Fotos für Vergleiche machen. Es sieht gut
+aus. Deine Vergleichszone kommt nicht ran, aber die Werkzeuge sehen schon mal gut aus. Das passt.“ Die Werkzeuge der
+Stufe 5 sind damit angenommen; Standbilder vom Handy und ein Vergleichsblatt mit seinen Fotos entfallen. Die Testzone
+`tor-s5` erreicht Earle nicht und bleibt mit ihrem ganzen Nachschliff Vorschlag; den Look selbst entscheidet die
+Stilprobe (Etappe 4 im großen Plan, Abschnitt 8). **Regel 4 (B1), entschieden:** Den Vergleich gemalt gegen Shader
+braucht Florian nicht; „Ja, Regel 4 gilt neu: Pünktchen und Textur dürfen im Editor Shader-Schichten sein.“ (29.10.2026). Paket 0 im großen Plan ist entsprechend
+geändert. **Offen aus Stufe 5:** Papier und
+Gouache aus Florians Scans (bis dahin Platzhalter-Kacheln). **Nicht geprüft:** Pünktchen-Verläufe am Handy gemessen;
+Farbnebel, Funkeln und Punktpinsel am iPad mit dem Pencil; Punktkronen mit Bahn und Fahrt davor; Kantenwelle an
+spielbaren Kanten. **Earle in `zoneneditor` (29.10.2026, Florian: „Ja, bring Earle nach zoneneditor und stimm
+dich dafür mit der Pinsel-Studie ab.“):** Fast-Forward von 11454fb (Pinsel-Studie Paket 2) auf den Earle-Zweig, damit
+:5183 Pinsel und Earle zusammen zeigt. Ab jetzt liefern beide Zweige gleich: Die Pinsel-Studie und der Earle-Zweig
+(`zoneneditor-tor2`, :5184) holen vor jedem neuen Stand `zoneneditor` herein, dann geht es per Fast-Forward nach
+`zoneneditor`. Die Pinsel-Studie hat das per Nachricht bekommen. Nichts ist gepusht.
 
 **Stufe 6: Bilder, Schnittmasken, Säume, Austausch (M).** Bildschichten, Schnittmaske, Saum entlang einer Kante,
 Malvorlage mit Fingerabdruck und Größenangabe, Umriss aus Bild, Import gemalter Teile mit Passmarken, KTX2 beim
@@ -1147,7 +1283,7 @@ als Vorlagenwerkzeug für gemalte Teile.
 | Pinsel springt in dichten Stapeln | Rollen und Andockkanten; Replay und Prüfstriche aus der Kamerasession | Tor S4 |
 | Portale zur Laufzeit (Loch, Tiefenwechsel, Vorlage passt nicht in die Lücke) | Portal-Werkstatt, Prüfung „passt in die Lücke“; Rückfall: nur feste Öffnungen | Tor S7 |
 | Zwei ungesicherte Stände (Etappe-2-Worktree, Kamerawinkel nur lokal) | Stufe 0 sichert beide, bevor gebaut wird (erledigt am 27.10.: `b30bb71` und Branch `zoneneditor`, beide lokal) | Stufe 0 |
-| Shader-Pünktchen wirken gefiltert statt gemalt | Vergleich gemalt gegen Shader am Handy; Florian entscheidet Regel 4 | Tor S5 |
+| Shader-Pünktchen wirken gefiltert statt gemalt | Vergleich gemalt gegen Shader am Handy; Florian entscheidet Regel 4 (entschieden 29.10.: Shader-Schichten erlaubt; wie sie im fertigen Bild wirken, zeigt die Stilprobe) | Tor S5 |
 | Gemalte Teile passen nicht mehr nach Formänderungen | Fingerabdruck der Malvorlage, Warnung im Editor | Tor S6 |
 
 ## 8. Was aus dem großen Plan danach weiterläuft
@@ -1174,7 +1310,8 @@ als Vorlagenwerkzeug für gemalte Teile.
 - **Startfragen:** „Ja zu A1 bis A7“; die Oberfläche des Editors **so minimalistisch und ruhig wie möglich**.
 - **Abstand (Befund 1):** „Dann muss der hintere Shape in der Größe verändert werden“, also „Bild halten“ wie empfohlen.
 - **Pünktchen als Filter (Befund 12, B1):** „Muss man ausprobieren. Ich würde es gerne als Shader sehen.“ Die Stufe 5
-  baut die Pünktchen als Shader; ob Regel 4 in Paket 0 fällt, entscheidet der Vergleich an Tor S5.
+  baut die Pünktchen als Shader; ob Regel 4 in Paket 0 fällt, entscheidet der Vergleich an Tor S5. An Tor S5
+  (29.10.) ohne Vergleich entschieden: Regel 4 gilt neu.
 - **Fels ist fest (Befund 16, B2):** gilt nach Florians letzten Recherchen erst einmal nicht mehr; das Material
   „grabbar“ wird gebaut, dann schauen wir.
 - **Portale (Befund 16, B3):** werden dynamisch gesetzt. Wie Durchfahrten gemacht werden, ob sie sichtbar sind und ob
@@ -1200,7 +1337,7 @@ als Vorlagenwerkzeug für gemalte Teile.
 
 | Nr. | Frage | wann |
 |---|---|---|
-| B1 | Paket 0 Regel 4 neu: Pünktchen und Textur als Schicht im Editor erlaubt? Nach Vergleich gemalt gegen Shader (Florian will es als Shader sehen, 27.10.) | Tor S5 |
+| B1 | ~~Paket 0 Regel 4 neu: Pünktchen und Textur als Schicht im Editor erlaubt?~~ **Beantwortet (29.10., Tor S5):** „Ja, Regel 4 gilt neu: Pünktchen und Textur dürfen im Editor Shader-Schichten sein.“ Den Vergleich gemalt gegen Shader brauchte Florian nicht („Ich muss keine Fotos für Vergleiche machen“) | Tor S5 |
 | B2 | ~~Abtauchen nur in grabbare Flächen, Fels bleibt fest?~~ **Teilweise beantwortet (27.10.):** „Fels ist fest“ gilt erst einmal nicht mehr, „grabbar“ wird gebaut; ob es daneben noch „fest“ braucht, zeigt der Test | Tor S4 |
 | B3 | ~~Portale automatisch oder nur von Hand?~~ **Beantwortet (27.10.):** dynamisch. Offen bleibt, wie Durchfahrten gemacht werden, ob sie sichtbar sind und ob der Pinsel dynamisch gräbt | Tor S7 |
 | B4 | Pinsel „Ebenen: Bodenhöhe“ als Grundlage für die Tiefe aus Ebenen? | Tor S4 |
