@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { LANE_DEPTH, rayToWorld, toStage, type StagePoint } from '@/track/stage';
-import { buildPlaneStack, PLANE_THICK, PlaneField, PlaneFoundation, planeDeepestDock, planeGroundDepth, planeLanding } from '@/zone/planeStack';
+import { readFileSync } from 'node:fs';
+import { buildPlaneStack, inArea, inAreas, PLANE_THICK, PlaneField, PlaneFoundation, planeDeepestDock, planeGroundDepth, planeLanding, type PlaneStack } from '@/zone/planeStack';
+import { parseZone } from '@/zone/types';
 import { DOCK_GAP } from '@/zone/slices';
 import { ellipsePath, newPlane, newShape, rectPath, type PlaneRole, type ZoneNode } from '@/zone/nodes';
 
@@ -170,3 +172,65 @@ describe('Freiraumfeld aus Flächen', () => {
   });
 });
 
+
+describe('Rasterindex der Flächen (Kantenfeld je Ebene)', () => {
+  const lcg = (seed: number) => () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  /** je Ebene und Flächenliste zufällige Punkte in der Hülle (mit Rand) gegen die direkte Rechnung */
+  const checkStack = (stack: PlaneStack, perList: number, seed: number) => {
+    const r = lcg(seed);
+    let n = 0;
+    for (const sp of stack.planes) {
+      for (const kind of ['solids', 'filled', 'shells'] as const) {
+        const areas = sp[kind];
+        if (!areas.length) {
+          expect(inAreas(sp, kind, 0, 0)).toBe(false);
+          continue;
+        }
+        const b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+        for (const a of areas) {
+          b.minX = Math.min(b.minX, a.box.minX);
+          b.minY = Math.min(b.minY, a.box.minY);
+          b.maxX = Math.max(b.maxX, a.box.maxX);
+          b.maxY = Math.max(b.maxY, a.box.maxY);
+        }
+        const mx = (b.maxX - b.minX) * 0.1 + 1;
+        const my = (b.maxY - b.minY) * 0.1 + 1;
+        for (let i = 0; i < perList; i++) {
+          const x = b.minX - mx + r() * (b.maxX - b.minX + 2 * mx);
+          const y = b.minY - my + r() * (b.maxY - b.minY + 2 * my);
+          expect(inAreas(sp, kind, x, y)).toBe(inArea(areas, x, y));
+          n++;
+        }
+        // Eckpunkte der Flächen selbst und Punkte dicht daneben (Kanten liegen in Kandidatenzellen)
+        for (const a of areas) {
+          for (let i = 0; i < a.outline.length; i += Math.max(1, Math.floor(a.outline.length / 25))) {
+            const [px, py] = a.outline[i];
+            for (const [dx, dy] of [[0.01, 0.01], [-0.01, 0.02], [0.03, -0.01]]) expect(inAreas(sp, kind, px + dx, py + dy)).toBe(inArea(areas, px + dx, py + dy));
+            n += 3;
+          }
+        }
+      }
+    }
+    return n;
+  };
+
+  it('antwortet auf den Testfixturen (Rechteck mit Loch) genau wie die direkte Rechnung', () => {
+    const nodes: ZoneNode[] = [];
+    addPlane(nodes, 0.5, 'play', [10, 5, 30, 14], [6, 4]);
+    addPlane(nodes, 1.2, 'play', [-5, 2, 18, 9]);
+    addPlane(nodes, 2, 'backdrop', [0, 0, 60, 30]);
+    const stack = buildPlaneStack(nodes)!;
+    expect(checkStack(stack, 600, 3)).toBeGreaterThan(1000);
+  });
+
+  it('antwortet in den drei Testzonen genau wie die direkte Rechnung', () => {
+    for (const name of ['test-huegel', 'test-grotte', 'test-boegen']) {
+      const zone = parseZone(JSON.parse(readFileSync(`public/zones/${name}/zone.json`, 'utf8')));
+      const stack = buildPlaneStack(zone!.nodes)!;
+      expect(checkStack(stack, 300, name.length)).toBeGreaterThan(2000);
+    }
+  });
+});

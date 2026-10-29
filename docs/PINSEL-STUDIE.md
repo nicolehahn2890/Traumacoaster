@@ -76,6 +76,12 @@ nach hinten in Metern (eine Spur = 8,4 m). **Loslassen** = der Finger geht hoch,
    Schleifenhaufen: rund 1000 Konfliktpunkte je Strich (vor dem einen, hinter dem anderen Strang), zwei Rückfälle
    gemessen und verworfen; die Zahl schwankt dort schon durch Rundung um ±10 %. Mehr geht nur mit mehr Raum (Stufe P2)
    oder ohne kleine Schleifen (Entscheidung).
+13. Siebter Nachtrag (Abschnitt 13h): Kantenfelder je Ebene, abgestimmt mit der Editor-Session. Das Freiraumfeld prüfte
+   je Strahlschritt alle Flächen (12 000 bis 16 500 Eckpunkte je Zone), 1,2 bis 2,4 ms je Aufruf. Ein Rasterindex je
+   Ebene und Flächenliste (Zellen sicher innen, sicher außen oder mit Kante; nur dort exakt) macht daraus 0,02 bis
+   0,03 ms, mit identischen Ergebnissen (Test gegen die direkte Rechnung auf Fixturen und allen Testzonen). Die
+   Vorschau von Strich 2 liegt damit auf den 31 Schleifen-Strichen bei 0,9 ms im Median (90 %: 2,8 ms), bei
+   identischen Knoten, Knicken und Fahrten.
 
 ## 2. Befund am heutigen Pinsel
 
@@ -891,3 +897,43 @@ einmalige Abfragen ändern die Tiefenlösung nur über Rundung und den Abfrage-C
 seit 0d07c0f ist); Szenarien 1–28 gegen den Messserver :5188 alle 200 Prüfungen bestanden, nur Zahlenrauschen gegenüber
 dem Lauf von b954df7. Nicht geprüft: das Gefühl am Mac (Atmen des letzten Segments, Spur-Rampen), das Handy, Zonen ohne
 Ebenen. Stand: Commit auf `claude/pinsel-studie-8f0777` nach b954df7, Fast-Forward nach `zoneneditor` möglich.
+
+### 13h. Kantenfelder je Ebene: das Freiraumfeld wird billig (Florians dritter Auftrag, abgestimmt mit der Editor-Session)
+
+**Befund:** `PlaneField.freeLanes` tastet je Strichpunkt den Strahl in 200 Spurschritten ab und prüfte je Schritt (zweimal,
+Punkt und Punkt unter der Mindesthöhe) alle Flächen jeder Ebene mit Punkt-in-Polygon; die aus Kurven abgeflachten
+Flächen der Testzonen haben zusammen 12 000 bis 16 500 Eckpunkte. Gemessen (300 Zufallspunkte je Zone, ohne
+Perspektive): 2,4 ms (`test-huegel`), 1,4 ms (`test-grotte`), 1,2 ms (`test-boegen`) je Aufruf; `solid` bis 25 µs,
+Landung und Bodenhöhe 0,05 ms.
+
+**Gebaut** (`src/zone/planeStack.ts`, `AreaIndex`, `inAreas`): ein Rasterindex je Ebene und Flächenliste (feste, gefüllte,
+Hüllen mit Öffnung), 128 Zellen auf der längsten Seite, beim ersten Zugriff gebaut und am Ebenenstapel gespeichert
+(er wird mit dem Stapel neu gebaut, `level.ts` tut das je Ebenenänderung). Jede Zelle weiß, ob sie sicher in einer
+Fläche liegt, sicher in keiner, oder ob eine Kante durch sie läuft; nur dann wird exakt geprüft, und nur gegen die
+Flächen, die dort eine Kante haben. Zellen ohne Kante sind einheitlich innen oder außen: Flutfüllung je Fläche ab einer
+exakt geprüften Zellmitte; Kanten markieren alle Zellen ihrer Hülle, eher zu viele als zu wenige. Die Antwort ist damit
+identisch mit der direkten Rechnung, die als `inArea` für den Vergleich bleibt. Alle Abfragen der Ebenen gehen darüber:
+Landung, Bodenhöhe, Höhlenmund, Freiraum, Boden unter dem Punkt, Decke.
+
+**Die vier Bedingungen der Editor-Session:** (1) Landung, Bodenhöhe, tiefste Andockkante und Fundament liefern dieselben
+Ergebnisse: Sie rufen dieselbe Punkt-in-Fläche-Frage, und ein Test prüft den Index gegen die direkte Rechnung auf den
+Fixturen (Rechteck mit Loch) und auf allen Ebenen und Listen der drei Testzonen (Zufallspunkte mit Rand, dazu Punkte
+dicht an Eckpunkten); die bestehenden Tests zu Landung, Bodenhöhe und Stützen bleiben grün. (2) `freeLanes` behält
+Bedeutung und Rückgabe, beide Aufrufer sind unverändert. (3) Der Index lebt am Stapel, nicht global; er entsteht beim
+ersten Zugriff nach jedem Neubau des Stapels. (4) Szenarien und Tests siehe Absicherung unten.
+
+**Gemessen danach:** `freeLanes` 0,02 bis 0,03 ms je Aufruf (60- bis 100-mal weniger), `solid` 0,1 µs, Landung und
+Bodenhöhe 0,01 ms. Der Aufbau aller Indizes einer Zone kostet einmal 30 bis 80 ms (bei 256 Zellen je Seite 55 bis 128
+ms, darum 128), beim ersten Strich nach einer Ebenenänderung; der Aufbau des Stapels selbst kostet 25 bis 80 ms.
+
+**Nachspiel** (31 Schleifen-Striche, Stand 13g gegen Stand mit Rasterindex, freie Maschine): Vorschau 3,0 → **0,9 ms** im
+Median, 90 % 11,5 → 2,8 ms; davon Abfragen 2,5 → 0,2 ms, Knoten-Fit 0,3, Löser 0,1. Knoten 83 → 83, Knicke 310 → 310,
+Rollen, Tiefenspanne, Sprung und Fahrten gleich; Kreuzungen 179 → 178 (eine Vorschau mehr im Takt der Messung). Tor P1
+„Vorschau unter 5 ms im Median“ ist damit am Mac mit Abstand erfüllt; die Handy-Messung bei 1000 m steht noch aus.
+
+**Absicherung:** 466 Tests (zwei neu: Rasterindex gegen direkte Rechnung auf den Fixturen und in den drei Testzonen) und
+`npm run build` grün; Szenarien 1–28 gegen den Messserver :5188 alle 200 Prüfungen bestanden, darunter 24–28 (Andockkanten,
+Stützen in der Höhle, Felder) mit denselben Werten wie ohne Index, sonst nur Zahlenrauschen. Nicht geprüft: das Handy,
+der Aufbau des Index im Editor nach einer Ebenenänderung (30 bis 80 ms beim ersten Strich danach), Zonen mit sehr viel
+mehr Ebenen (der Index wächst mit Ebenen mal Flächenlisten mal 128²). Stand: Commit auf `claude/pinsel-studie-8f0777`
+nach 5bca0a7, Fast-Forward nach `zoneneditor` möglich.

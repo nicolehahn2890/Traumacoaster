@@ -35,7 +35,7 @@ interface Area {
   box: Box;
 }
 
-interface StackPlane {
+export interface StackPlane {
   plane: ZonePlane;
   /** Tiefe in Spuren */
   lane: number;
@@ -48,6 +48,8 @@ interface StackPlane {
   shells: Area[];
   /** eingeschaltete Andockkanten */
   docks: DockEdge[];
+  /** Rasterindex je Flächenliste (Kantenfeld je Ebene), beim ersten Zugriff gebaut; lebt mit dem Stapel */
+  index?: { solids?: AreaIndex; filled?: AreaIndex; shells?: AreaIndex };
 }
 
 export interface PlaneStack {
@@ -67,7 +69,133 @@ const boxOf = (poly: Poly): Box => {
 };
 
 const inBox = (b: Box, x: number, y: number): boolean => x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY;
-const inArea = (areas: readonly Area[], x: number, y: number): boolean => areas.some((a) => inBox(a.box, x, y) && insideWithHoles(a.outline, a.holes, x, y));
+/** Punkt in einer der Flächen, direkt gerechnet (Vergleichsmaß für den Rasterindex) */
+export const inArea = (areas: readonly Area[], x: number, y: number): boolean => areas.some((a) => inBox(a.box, x, y) && insideWithHoles(a.outline, a.holes, x, y));
+
+/** Zellen je Achse des Rasterindex (längste Seite der Flächen); feiner lohnt nicht, die Kanten sind aus FLATTEN_STEP kurz */
+const INDEX_CELLS = 128;
+
+/**
+ * Rasterindex einer Flächenliste (Kantenfeld je Ebene, Pinsel-Studie Stufe P1): Das Freiraumfeld tastet je Strichpunkt
+ * den Strahl in 200 Schritten ab und prüfte je Schritt alle Flächen einer Ebene (12 000 bis 16 000 Eckpunkte in den
+ * Testzonen, 1,2 bis 2,4 ms je Aufruf). Jede Zelle weiß, ob sie sicher in einer Fläche liegt, sicher in keiner, oder ob
+ * eine Kante durch sie läuft; nur dann wird exakt geprüft, und nur gegen die Flächen mit einer Kante dort. Die Ergebnisse
+ * sind identisch mit der direkten Rechnung: Zellen ohne Kante sind einheitlich innen oder außen (Flutfüllung ab einer
+ * exakt geprüften Zellmitte), Kanten markieren alle Zellen ihrer Hülle (eher zu viele als zu wenige)
+ */
+export class AreaIndex {
+  private readonly x0: number = 0;
+  private readonly y0: number = 0;
+  private readonly cell: number = 1;
+  private readonly cols: number = 0;
+  private readonly rows: number = 0;
+  /** je Zelle: 0 sicher außerhalb aller Flächen, 1 sicher in einer Fläche, 2 Kante in der Zelle (Kandidaten exakt prüfen) */
+  private readonly state: Uint8Array;
+  private readonly cand = new Map<number, number[]>();
+
+  constructor(private readonly areas: readonly Area[]) {
+    if (!areas.length) {
+      this.state = new Uint8Array(0);
+      return;
+    }
+    const b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    for (const a of areas) {
+      b.minX = Math.min(b.minX, a.box.minX);
+      b.minY = Math.min(b.minY, a.box.minY);
+      b.maxX = Math.max(b.maxX, a.box.maxX);
+      b.maxY = Math.max(b.maxY, a.box.maxY);
+    }
+    const span = Math.max(b.maxX - b.minX, b.maxY - b.minY, 1e-6);
+    this.cell = span / INDEX_CELLS;
+    this.x0 = b.minX;
+    this.y0 = b.minY;
+    this.cols = Math.floor((b.maxX - b.minX) / this.cell) + 1;
+    this.rows = Math.floor((b.maxY - b.minY) / this.cell) + 1;
+    const n = this.cols * this.rows;
+    this.state = new Uint8Array(n);
+    const boundary = new Uint8Array(n);
+    const seen = new Uint8Array(n);
+    const col = (x: number) => Math.max(0, Math.min(this.cols - 1, Math.floor((x - this.x0) / this.cell)));
+    const row = (y: number) => Math.max(0, Math.min(this.rows - 1, Math.floor((y - this.y0) / this.cell)));
+    const queue = new Int32Array(n);
+    for (let ai = 0; ai < areas.length; ai++) {
+      const a = areas[ai];
+      boundary.fill(0);
+      seen.fill(0);
+      for (const poly of [a.outline, ...a.holes]) {
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          const [px, py] = poly[i];
+          const [qx, qy] = poly[j];
+          const c0 = col(Math.min(px, qx));
+          const c1 = col(Math.max(px, qx));
+          const r0 = row(Math.min(py, qy));
+          const r1 = row(Math.max(py, qy));
+          for (let r = r0; r <= r1; r++)
+            for (let c = c0; c <= c1; c++) {
+              const k = r * this.cols + c;
+              if (!boundary[k]) {
+                boundary[k] = 1;
+                if (this.state[k] !== 1) this.state[k] = 2;
+                const list = this.cand.get(k);
+                if (list) list.push(ai);
+                else this.cand.set(k, [ai]);
+              }
+            }
+        }
+      }
+      // Zellen ohne Kante: zusammenhängende Gebiete sind einheitlich innen oder außen (eine exakte Prüfung je Gebiet)
+      for (let k0 = 0; k0 < n; k0++) {
+        if (boundary[k0] || seen[k0]) continue;
+        const cx = (k0 % this.cols + 0.5) * this.cell + this.x0;
+        const cy = (Math.floor(k0 / this.cols) + 0.5) * this.cell + this.y0;
+        const inside = inBox(a.box, cx, cy) && insideWithHoles(a.outline, a.holes, cx, cy);
+        let head = 0;
+        let tail = 0;
+        queue[tail++] = k0;
+        seen[k0] = 1;
+        while (head < tail) {
+          const k = queue[head++];
+          if (inside) this.state[k] = 1;
+          const c: number = k % this.cols;
+          const r: number = (k - c) / this.cols;
+          for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+            const cc: number = c + dc;
+            const rr: number = r + dr;
+            if (cc < 0 || rr < 0 || cc >= this.cols || rr >= this.rows) continue;
+            const kk = rr * this.cols + cc;
+            if (boundary[kk] || seen[kk]) continue;
+            seen[kk] = 1;
+            queue[tail++] = kk;
+          }
+        }
+      }
+    }
+  }
+
+  /** Punkt in einer der Flächen (identisch mit `inArea`) */
+  inside(x: number, y: number): boolean {
+    if (!this.cols) return false;
+    const c = Math.floor((x - this.x0) / this.cell);
+    const r = Math.floor((y - this.y0) / this.cell);
+    if (c < 0 || r < 0 || c >= this.cols || r >= this.rows) return false;
+    const k = r * this.cols + c;
+    const s = this.state[k];
+    if (s === 1) return true;
+    if (s === 0) return false;
+    for (const ai of this.cand.get(k)!) {
+      const a = this.areas[ai];
+      if (inBox(a.box, x, y) && insideWithHoles(a.outline, a.holes, x, y)) return true;
+    }
+    return false;
+  }
+}
+
+/** Punkt in den Flächen einer Liste der Ebene, über den Rasterindex (beim ersten Zugriff gebaut) */
+export function inAreas(sp: StackPlane, kind: 'solids' | 'filled' | 'shells', x: number, y: number): boolean {
+  const idx = (sp.index ??= {});
+  const ix = idx[kind] ?? (idx[kind] = new AreaIndex(sp[kind]));
+  return ix.inside(x, y);
+}
 
 /** Fläche einer Form in Ebenen-Koordinaten */
 function toPlane(s: ZoneShape, poly: Poly): Poly {
@@ -150,18 +278,18 @@ export function planeLanding(stack: PlaneStack, p: StagePoint): Landing | null {
   for (const [k, sp] of stack.planes.entries()) {
     if (seeThrough(sp)) continue;
     const q = planePoint(sp, p);
-    if (inArea(sp.filled, q.x, q.y)) {
-      if (opening && sp.role === 'play' && inArea(sp.solids, q.x, q.y)) return { ...at(k, 0), cave: true };
+    if (inAreas(sp, 'filled', q.x, q.y)) {
+      if (opening && sp.role === 'play' && inAreas(sp, 'solids', q.x, q.y)) return { ...at(k, 0), cave: true };
       break;
     }
-    if (sp.role === 'play' && inArea(sp.shells, q.x, q.y)) opening = true;
+    if (sp.role === 'play' && inAreas(sp, 'shells', q.x, q.y)) opening = true;
   }
   for (const [k, sp] of stack.planes.entries()) {
     if (seeThrough(sp)) continue;
     const q = planePoint(sp, p);
     const scale = sp.plane.scale;
-    if (inArea(sp.filled, q.x, q.y)) {
-      if (sp.role !== 'play' || !inArea(sp.solids, q.x, q.y)) return null;
+    if (inAreas(sp, 'filled', q.x, q.y)) {
+      if (sp.role !== 'play' || !inAreas(sp, 'solids', q.x, q.y)) return null;
       const top = edgeAbove(sp.docks, q.x, q.y);
       return top !== null && (top - q.y) * scale <= LAND_BELOW ? at(k, (q.y - top) * scale) : null;
     }
@@ -299,15 +427,15 @@ export class PlaneField {
       const sp = this.layers[k];
       if (sp.plane.z > d) break;
       const q = planePoint(sp, p);
-      if (!inArea(sp.filled, q.x, q.y)) continue;
+      if (!inAreas(sp, 'filled', q.x, q.y)) continue;
       last = sp;
-      firm = sp.role === 'backdrop' || inArea(sp.solids, q.x, q.y);
+      firm = sp.role === 'backdrop' || inAreas(sp, 'solids', q.x, q.y);
     }
     if (!last || !firm) return false;
     if (last.role === 'backdrop' || d < last.plane.z + PLANE_THICK) return true;
     for (; k < this.layers.length; k++) {
       const q = planePoint(this.layers[k], p);
-      if (inArea(this.layers[k].filled, q.x, q.y)) return true;
+      if (inAreas(this.layers[k], 'filled', q.x, q.y)) return true;
     }
     return false;
   }
