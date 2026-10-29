@@ -1110,6 +1110,30 @@ mit Wind, Knopf „Earle“ mit Presets; die vier Mängel des Test-Shaders behob
 Platzhalter: alle Presets, Farbregeln und Kacheln bis zur Stilprobe.
 **Tor S5:** ein Satz Körper (Wiese, Bogen, Baum) als Standbild vom Handy neben Earles Favoriten (01 rote Scheune, 03
 organischer Stamm, 05 Tannenwald) und Florians Bildern 6 bis 8; Florian entscheidet Regel 4 neu (B1).
+**Stufe 5 begonnen (29.10.2026, Florian: „mit Earle-Look anfangen“; Zweig `zoneneditor-tor2`, der Pinsel läuft
+parallel in der Pinsel-Studie).** Paket 1 gebaut: Earle-Schichten als Füllungen im Füllstapel (`src/zone/paint.ts`):
+**Lichtkante** und **Innenschatten** (Sichel aus dem Kantenabstand, um die Lichtrichtung verschoben, hart oder weich),
+**Pünktchen** (Rang-Kachel 64 × 64 mit blau verteilten Rängen, Wabenraster, Punkt bleibt in seiner Zelle; Dichte aus
+Lichtkante, Schattenseite, allen Kanten, dem Dunklen oder gleichmäßig; Farbe als hellere bzw. tiefere Stufe der eigenen
+Farbe oder fest), **Papier** und **Gouache** (Kachel), **Bänder** (Stufen, Verlauf in der Stufe, Welle) und
+**Kantenverlauf** (Ringe entlang der Kante) als Arten des Verlaufs. **Licht der Zone** als Knoten `light` (Richtung,
+Licht- und Schattenfarbe, eigene Werte je Look), im Füllstapel als Zeile. **Kantenabstand** je Fläche genau gerechnet
+(`src/zone/edgeDistance.ts`, Strecken weitergereicht wie Dead Reckoning) und in einem Atlas (`src/world/earleTextures.ts`).
+**Knopf „Earle“** im Füllstapel hinter „Earle …“: Automatisch, Hügel, Fels, Wiese, Krone, Wasser, Ganze Zone
+(`src/zone/earle.ts`); ein zweiter Druck ersetzt statt zu verdoppeln. Werte je Schicht in einer Zeile unter der gewählten
+Schicht (Wort waagrecht ziehen oder Zahl tippen, `src/zoneeditor/fillParams.ts`). Die vier Mängel des Test-Shaders sind
+im Ebenen-Material behoben (Punkt in der Zelle, Zufall ohne Sinus, Muster je Form und Ebene versetzt, keine Schatten).
+**Leistung:** Der eine Shader mit Schleife über alle Arten kostete am Mac in Handy-Auflösung je Schicht rund 2 ms (die GPU
+schleppt den ganzen Schleifenrumpf mit); jetzt bekommt jede Schichtfolge ihren eigenen geraden Shader (ein Draw Call je
+Folge, Testszenen 6 bis 7), durchsichtige Flächen in Läufen gleicher Folge. Messung `scripts/earle-bildzeiten.mjs`
+(Mac M3 Pro, Metal, Spielblick 1688 × 780): Ebenen ohne Earle 1,0 bis 1,2 ms je Bild, mit Earle auf allen Flächen
+1,5 bis 1,9 ms; Gegenprobe gegen den allgemeinen Shader: kein Bildpunkt weicht um mehr als 1 ab. Kantenabstand beim
+Laden 30 bis 85 ms je Testszene, danach nur für geänderte Flächen. **Platzhalter:** alle Vorgaben und Zahlen der
+Presets, die Regel für „Automatisch“, die Papier- und Gouache-Kacheln (erzeugt, bis Florian scannt), die Licht- und
+Schattenfarbe. **Nicht geprüft:** Bildrate am echten Handy (Messung am Mac), Pinsel und Fahrt mit Earle-Flächen. **Offen
+aus Stufe 5:** Sonne als Griff im Bild, Kantenwelle, Farbnebel, Funkeln, Punktkronen mit Wind, Punktpinsel, Kosten je
+Schicht in der Leistungsanzeige; in zwei künstlichen Messvarianten (Testszenen ohne Kantenverlauf bzw. ohne Lichtkante)
+wurde es langsamer statt schneller, das wird bei der Handy-Messung mit angesehen.
 
 **Stufe 6: Bilder, Schnittmasken, Säume, Austausch (M).** Bildschichten, Schnittmaske, Saum entlang einer Kante,
 Malvorlage mit Fingerabdruck und Größenangabe, Umriss aus Bild, Import gemalter Teile mit Passmarken, KTX2 beim

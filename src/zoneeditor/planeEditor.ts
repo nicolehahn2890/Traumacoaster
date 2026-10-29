@@ -30,6 +30,9 @@ import {
   archPath,
   ellipsePath,
   airOf,
+  lightOf,
+  lightIn,
+  LIGHT_DEFAULT,
   bakeSwatch,
   facePaint,
   findPlane,
@@ -86,9 +89,11 @@ import { EditorOverlay, emptyOverlay } from './overlay';
 import { SketchLayer } from './sketches';
 import { constrain45, NO_MODS, PathTools, regionRing, regionTest, simplifyShape, type Mods, type PathTool } from './pathTools';
 import { booleanShapes, type BoolOp } from '@/zone/pathfinder';
-import { evalLayers, gradientT, hexToRgb, isHex, MAX_LAYERS, paintLayers, rampOf, RAMP, resolveColor, rgbToHex, type GradientFill, type GradientStop, type PaintColor, type ZoneFill } from '@/zone/paint';
+import { evalLayers, gradientT, hexToRgb, isEarle, isGradient, isHex, MAX_LAYERS, paintLayers, rampOf, RAMP, resolveColor, rgbToHex, type GradientFill, type GradientStop, type PaintColor, type ZoneFill } from '@/zone/paint';
+import { applyPreset, autoPreset, freshEarle, type EarlePreset } from '@/zone/earle';
+import { fillParams, setFillParam } from './fillParams';
 import { addStop, lineT, moveStop, ownPaint, readGradient, removeGradient, removeStop, reverseStops, setMid, targetBox, topGradient, writeGradient, writePaint, type GradKind, type GradLine, type GradTarget } from '@/zone/gradients';
-import type { StackRow, StackView } from './stackPanel';
+import type { StackAddKind, StackRow, StackView } from './stackPanel';
 import { bakeStyle, linkedStyle, linkStyle, paintToStyle, pasteStyle, styleFromClip, unlinkStyle, type StyleClip } from '@/zone/styles';
 import { DEFAULT_MATERIAL, dockEdges, faceMaterial, setFaceMaterial, stationOf, toggleDock, type DockEdge } from '@/zone/dock';
 import { faceAt, faceBox, type Face } from '@/zone/faces';
@@ -1133,10 +1138,17 @@ export class PlaneEditor {
       stackGradient: (i) => {
         const t = this.stackTarget();
         const f = t ? ownPaint(t, styleMap(this.nodes)).fills?.[i] : undefined;
-        if (!t || !f || f.type === 'color') return;
+        if (!t || !f || !isGradient(f)) return;
         this.grad = { targets: [this.gradRefOf(t)], kind: f.type, stop: null, layer: i };
         this.setTool('gradient');
       },
+      stackParam: (i, key, v, phase) => this.stackParam(i, key, v, phase),
+      stackZoneColor: (i) => this.stackEdit((p) => {
+        const f = p.fills?.[i];
+        if (f && f.type !== 'grain' && isEarle(f)) delete f.color;
+      }),
+      stackEarle: (preset) => this.stackEarle(preset),
+      stackLight: (patch, phase) => this.stackLight(patch, phase),
       stackAir: (patch, phase) => this.stackAir(patch, phase),
       stackStyle: (what) => this.styleCommand(what),
       duplicate: () => this.duplicate(),
@@ -3203,6 +3215,14 @@ export class PlaneEditor {
     const sw = swatchMap(this.nodes);
     const look = this.host.world.currentLook;
     if (f.type === 'color') return resolveColor(f.color, sw, look);
+    if (!isGradient(f)) {
+      const light = lightIn(lightOf(this.nodes), look);
+      const own = f.type !== 'grain' && f.color ? resolveColor(f.color, sw, look) : null;
+      if (f.type === 'light') return `linear-gradient(135deg,${own ?? resolveColor(light.color, sw, look)} 0 35%,#3a3f4a 35%)`;
+      if (f.type === 'shade') return `linear-gradient(135deg,#8a8f9a 0 62%,${own ?? resolveColor(light.shade, sw, look)} 62%)`;
+      if (f.type === 'dots') return `radial-gradient(circle,${own ?? '#efe6c8'} 0 28%,transparent 32%) 0 0/7px 7px,#4a5060`;
+      return f.tile === 'gouache' ? 'repeating-linear-gradient(170deg,#8d8a83 0 3px,#a29e96 3px 5px,#7f7c76 5px 8px)' : 'repeating-radial-gradient(circle at 30% 40%,#a9a59c 0 1px,#bdb9b0 1px 3px)';
+    }
     const ramp = rampOf(f.stops, sw, look);
     const parts: string[] = [];
     for (let k = 0; k <= 8; k++) {
@@ -3227,15 +3247,20 @@ export class PlaneEditor {
     const rows: StackRow[] = [];
     for (let i = fills.length - 1; i >= 0; i--) {
       const f = fills[i];
-      rows.push({ index: i, kind: f.type, preview: this.fillPreview(f), blend: f.type === 'fade' ? null : f.blend, opacity: f.opacity, hidden: !!f.hidden });
+      const row: StackRow = { index: i, kind: f.type, preview: this.fillPreview(f), blend: f.type === 'fade' ? null : f.blend, opacity: f.opacity, hidden: !!f.hidden, ...fillParams(f, 'plane' in t ? { sx: 1, sy: 1 } : t.shape) };
+      if (f.type !== 'color' && f.type !== 'grain' && !isGradient(f)) row.ownColor = !!f.color;
+      rows.push(row);
     }
     if (!('plane' in t) && p.fill !== null) rows.push({ index: -1, kind: 'base', preview: this.resolve(p.fill), blend: null, opacity: p.opacity ?? 1, hidden: false });
     const air = airOf(this.nodes);
+    const lightNode = lightOf(this.nodes);
+    const usesLight = fills.some((f) => f.type === 'light' || f.type === 'shade' || f.type === 'dots');
     return {
       title: 'plane' in t ? `Ebenenstapel · ${t.plane.name}` : t.face ? `Füllungen · Fläche von ${t.shape.name}` : `Füllungen · ${t.shape.name}`,
       rows,
       selected: this.stackSel,
       air: 'plane' in t ? { color: this.resolve(air?.color ?? AIR_DEFAULT.color), amount: air?.amount ?? 0, near: air?.near ?? AIR_DEFAULT.near, far: air?.far ?? AIR_DEFAULT.far, plane: t.plane.air ?? 1 } : null,
+      light: 'plane' in t || usesLight ? (() => { const l = lightIn(lightNode, this.host.world.currentLook); return { angle: l.angle, color: this.resolve(l.color), shade: this.resolve(l.shade) }; })() : null,
       full: fills.length >= MAX_LAYERS - 1,
       styles: 'plane' in t ? null : { linked: (() => { const id = linkedStyle(t, styleMap(this.nodes)); return id ? (styleMap(this.nodes).get(id)?.name ?? null) : null; })(), canPaste: !!this.styleClip },
     };
@@ -3256,7 +3281,7 @@ export class PlaneEditor {
   }
 
   /** neue Füllung oben auf den Stapel: Farbe (aktuelle), Verlauf oder Deckkraftverlauf quer über den Rahmen */
-  private stackAdd(kind: 'color' | 'gradient' | 'fade'): void {
+  private stackAdd(kind: StackAddKind): void {
     const t = this.stackTarget();
     if (!t) return;
     let box: { minX: number; minY: number; maxX: number; maxY: number };
@@ -3270,7 +3295,12 @@ export class PlaneEditor {
       const fills = p.fills ?? [];
       if (fills.length >= MAX_LAYERS - 1) return;
       if (kind === 'color') fills.push({ type: 'color', color: this.color ?? '#ffffff', blend: 'normal', opacity: 1 });
-      else fills.push({ type: kind, stops: this.freshStops(t, kind), x0: box.minX, y0: y, x1: box.maxX, y1: y, blend: 'normal', opacity: 1 });
+      else if (kind === 'light' || kind === 'shade' || kind === 'dots' || kind === 'grain') fills.push(freshEarle(kind));
+      else if (kind === 'edge') {
+        // Kantenverlauf: 3 m tief (Griff waagrecht in Pfad-Koordinaten), vier Stufen als Ringe
+        const sx = 'plane' in t ? 1 : Math.abs(t.shape.sx) || 1;
+        fills.push({ type: 'gradient', edge: true, steps: 4, inner: 0.3, stops: this.freshStops(t, 'gradient'), x0: box.minX, y0: y, x1: box.minX + 3 / sx, y1: y, blend: 'normal', opacity: 1 });
+      } else fills.push({ type: kind, stops: this.freshStops(t, kind), x0: box.minX, y0: y, x1: box.maxX, y1: y, blend: 'normal', opacity: 1 });
       p.fills = fills;
       added = fills.length - 1;
     });
@@ -3309,6 +3339,18 @@ export class PlaneEditor {
   private stackColor(): { get(): PaintColor | null; set(c: PaintColor): void } | null {
     if (!this.stackOpen || this.stackSel === null) return null;
     const i = this.stackSel;
+    if (i === -3 || i === -4)
+      return {
+        get: () => {
+          const l = lightIn(lightOf(this.nodes), 'day');
+          return i === -3 ? l.color : l.shade;
+        },
+        set: (c) => {
+          const light = this.ensureLight();
+          if (i === -3) light.color = c;
+          else light.shade = c;
+        },
+      };
     if (i === -2)
       return {
         get: () => airOf(this.nodes)?.color ?? AIR_DEFAULT.color,
@@ -3334,16 +3376,92 @@ export class PlaneEditor {
         },
       };
     const f = p.fills?.[i];
-    if (f?.type !== 'color') return null;
+    if (!f || isGradient(f) || f.type === 'grain') return null;
     return {
-      get: () => f.color,
+      get: () => f.color ?? null,
       set: (c) => {
         const q = ownPaint(t, styleMap(this.nodes));
         const g = q.fills?.[i];
-        if (g?.type === 'color') g.color = c;
+        if (g && !isGradient(g) && g.type !== 'grain') g.color = c;
         writePaint(t, q);
       },
     };
+  }
+
+  /** einen Wert der Schicht i ändern (Zahlen gekappt wie beim Lesen der Datei) */
+  private stackParam(i: number, key: string, v: number | string, phase: PickPhase): void {
+    const t = this.stackTarget();
+    this.stackEdit((p) => {
+      const f = p.fills?.[i];
+      if (f && t) setFillParam(f, key, v, 'plane' in t ? { sx: 1, sy: 1 } : t.shape);
+    }, phase);
+  }
+
+  /** Licht der Zone (wird beim ersten Ändern angelegt): Richtung; Farben über das Farbmenü (Zeile -3 Licht, -4 Schatten) */
+  private stackLight(patch: { angle?: number; color?: true; shade?: true }, phase: PickPhase): void {
+    if (patch.color || patch.shade) {
+      this.stackSel = patch.color ? -3 : -4;
+      this.uiDirty = true;
+      if (!this.ui.colorOpen) this.ui.toast(patch.color ? 'Lichtfarbe: im Farbmenü wählen' : 'Schattenfarbe: im Farbmenü wählen');
+      return;
+    }
+    if (phase === 'start' || phase === 'tap') this.history.begin(this.nodes);
+    const light = this.ensureLight();
+    if (patch.angle !== undefined) light.angle = Math.round(patch.angle * 10) / 10;
+    if (phase === 'end' || phase === 'tap') {
+      if (this.history.commit(this.nodes)) this.changed();
+    } else this.changed();
+    this.uiDirty = true;
+  }
+
+  private ensureLight(): NonNullable<ReturnType<typeof lightOf>> {
+    let light = lightOf(this.nodes);
+    if (!light) {
+      light = { id: 'light', kind: 'light', ...LIGHT_DEFAULT };
+      this.nodes.push(light);
+    }
+    return light;
+  }
+
+  /**
+   * Knopf „Earle“: Vorgabe auf die Auswahl (Formen oder die gewählte Fläche); „auto“ wählt je Fläche nach Material und
+   * Farbe; „zone“ macht das für alle Flächen aller sichtbaren, nicht gesperrten Ebenen. Ein Schritt im Arbeitsverlauf
+   */
+  private stackEarle(preset: EarlePreset | 'auto' | 'zone'): void {
+    const sw = swatchMap(this.nodes);
+    const light = lightIn(lightOf(this.nodes), 'day');
+    const resolved = { angle: light.angle, color: resolveColor(light.color, sw, 'day'), shade: resolveColor(light.shade, sw, 'day') };
+    const targets: Array<{ shape: ZoneShape; face: Face | null }> = [];
+    if (preset === 'zone') {
+      for (const plane of planesOf(this.nodes)) {
+        if (planeHidden(this.nodes, plane) || planeLocked(this.nodes, plane) || plane.role === 'air') continue;
+        for (const shape of shapesOf(this.nodes, plane.id)) if (!shape.locked && !shape.hidden) targets.push({ shape, face: null });
+      }
+    } else targets.push(...this.styleTargets());
+    if (!targets.length) {
+      this.ui.toast('Earle: erst Formen oder eine Fläche wählen');
+      return;
+    }
+    this.history.begin(this.nodes);
+    let n = 0;
+    for (const { shape, face } of targets) {
+      // jede Fläche für sich (eigene Grundfarbe und eigenes Material), außer eine einzelne gewählte Fläche
+      const faces = face ? [face] : shapeFaces(shape);
+      const one = faces.length === 1;
+      for (const f of faces) {
+        const paint = facePaint(shape, f);
+        if (paint.fill === null || paint.style) continue;
+        const base = resolveColor(paint.fill, sw, 'day');
+        const which = preset === 'auto' || preset === 'zone' ? autoPreset(faceMaterial(shape, f), base) : preset;
+        const own = { fill: paint.fill, ...(paint.fills ? { fills: paint.fills.map((x) => ({ ...x })) as ZoneFill[] } : {}), ...(paint.opacity !== undefined ? { opacity: paint.opacity } : {}) };
+        applyPreset(own, which, { box: faceBox(f), base, light: resolved, sx: shape.sx, sy: shape.sy });
+        writePaint({ shape, face: one ? null : f }, own);
+        n++;
+      }
+    }
+    if (this.history.commit(this.nodes)) this.changed();
+    this.uiDirty = true;
+    this.ui.toast(n ? `Earle auf ${n} ${n === 1 ? 'Fläche' : 'Flächen'} (Platzhalter-Vorgaben)` : 'Earle: keine Fläche ohne Stil gefunden');
   }
 
   // ------------------------------------------------------------------ Verlauf (Stufe 3)
