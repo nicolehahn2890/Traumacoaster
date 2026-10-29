@@ -24,7 +24,7 @@ weiterlaufen, steht dort in Abschnitt 8.
 | 8a | Teile und Elemente | **bestätigt**: Elementkatalog als Platzhalter-Satz, Ablauf Platzhalter → Auftrag → Grafik; die Grafikliste folgt aus der Basiszone, Referenzen in Paket 0 | 24.10.2026 |
 | 6 | Figuren, Schlange, Fahrgäste | **bestätigt**: Rig mit klappendem Oberschädel, zwei Ansichten, Visuals als Stilvorlage, Schlange mit Freiraum, Editor bleibt und wächst, zwei je Wagen gemischt | 24.10.2026 |
 | 5 | Untergrund, Tunnel, Baustellen | **bestätigt**: Fels fest, Baustellen in zwei Varianten, Freilegung auf zwei Wegen, Autoscroll als Schalter zum Ausprobieren, Graben in Stufen (Vorbehalt), Wasser mit Schaltern | 24.10.2026 |
-| 0 | Art Direction v2 (Look) | **bestätigt**: alle Visuals als Pool (Stil 04 und 09, Maßstab 15 und 16), zehn Regeln nur vorläufig bis zur Stilprobe, keine Konturen, Punktraster gemalt plus Funkeln-Shader, Alpen als erster Look, Stilprobe als Tor; UI-Richtung Baustellen-Brutalismus, Nachtrag: noch viel verrückter, UI-Werkstatt mit drei Varianten | 24.10.2026 |
+| 0 | Art Direction v2 (Look) | **bestätigt**: alle Visuals als Pool (Stil 04 und 09, Maßstab 15 und 16), zehn Regeln nur vorläufig bis zur Stilprobe, keine Konturen, Punktraster gemalt plus Funkeln-Shader (29.10.: Regel 4 neu, Punktraster und Textur auch als Shader-Schicht im Zonen-Editor), Alpen als erster Look, Stilprobe als Tor; UI-Richtung Baustellen-Brutalismus, Nachtrag: noch viel verrückter, UI-Werkstatt mit drei Varianten | 24.10.2026 |
 | 7 | Werkzeuge und Bedienung | **bestätigt**: 18 Grad, Richtlinien-Größen, drei Lesarten, Spur-Filter und 150 Level weg, Bug-Backlog, HUD in der Sprache der UI; Nachtrag: Kreuzungstausch bleibt als Rückfall im Bogenmenü, „Boden formen“ später als Fähigkeit der Basiszone | 24.10.2026 |
 | 1 | Weltrenderer (Technik, Richtlinie Schritt 2) | **bestätigt**: Technik aus der Richtlinie, Module unter `src/world/`, Tore; Etappe 1 | 24.10.2026 |
 | 8b | Asset-Pipeline und Aufträge | **bestätigt**: Session erzeugt über Florians Figma-Konto (am ersten Auftrag geprüft), automatische Prüfung gegen Auftrag und Leitbilder, eigene Teile je Zone, Katalog, Aufträge in Sätzen | 24.10.2026 |
@@ -1291,8 +1291,10 @@ Arbeitsregeln für Platzhalter-Ersatz und Aufträge):
    Volumen und die Staffelung; keine Mikrodetails, die auf dem Handy unter drei Pixel fallen.
 3. **Die Bahn ist die klarste Form.** Sie hebt sich durch Helligkeit vom Grund ab (warme Schiene auf kühlem Grund oder
    umgekehrt), die Landschaft hinter der Bahn ist ruhig (Bild 15 und 16).
-4. **Punktraster nur gemalt**, an Kronenkanten und Schattenrändern wie in Bild 04, nie als Filter; dazu ein
-   **Funkeln-Shader** auf markierten Stellen (0.3).
+4. **Punktraster gemalt oder als Shader-Schicht**, an Kronenkanten und Schattenrändern wie in Bild 04; Pünktchen und
+   Textur dürfen im Zonen-Editor Shader-Schichten sein; dazu ein **Funkeln-Shader** auf markierten Stellen (0.3).
+   Neu gefasst an Tor S5 des Zonen-Editors (Florian, 29.10.2026: „Ja, Regel 4 gilt neu: Pünktchen und Textur dürfen im Editor Shader-Schichten sein.“); bisher hieß sie
+   „Punktraster nur gemalt …, nie als Filter“ (`docs/ZONENEDITOR-PLAN.md`, Befund 12, Entscheidung B1).
 5. **Licht von hinten oben links**, die Schatten fallen nach vorn auf den Boden (Richtlinie 5); die Kulissen tragen ihr
    Licht gemalt, das Richtungslicht dient nur dem Schatten.
 6. **Farbrollen je Tiefe:** Ferne hell und entsättigt, Mitte satt, Vordergrund dunkel und kontrastreich; eine

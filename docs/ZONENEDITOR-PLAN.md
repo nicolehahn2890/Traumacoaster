@@ -6,7 +6,7 @@ Stufe 0 und Stufe 1 gebaut, Tor S1 bestanden (Florian, 27.10.2026); Stufe 2 ganz
 Ebenenstapel, Luftperspektive, Stile, Looks, SVG), Tor S3 am Mac bestanden („Es scheint alles erstmal zu
 funktionieren“; Kleinigkeiten aus S2 und S3 sammelt Florian und geht sie später mit uns durch); weiter mit Stufe 4.
 Der Editor muss zuerst am Mac laufen, iPad und Tablet optimieren wir später (Florian, 27.10.2026). Stufe 5 (Earle-Schichten) steht auf dem Branch
-`zoneneditor-tor2`; an Tor S5 hat Florian die Werkzeuge freigegeben, die Testzone bleibt Vorschlag (29.10.2026).**
+`zoneneditor-tor2`; an Tor S5 hat Florian die Werkzeuge freigegeben und Regel 4 neu gefasst, die Testzone bleibt Vorschlag (29.10.2026).**
 Gebaut wird Stufe für
 Stufe mit Tor, auf dem Branch `zoneneditor`. Der große Plan (`docs/GROSSER-PLAN.md`)
 ruht seit heute auf Florians Wunsch; Etappe 2 steht nach Schritt 7, dem Freiraumfeld und der Freigabe der Ebenen-Probe,
@@ -36,7 +36,8 @@ aussieht oder vorläufige Werte trägt; **System** ist, was bleibt.
 - **Die wichtigsten Befunde in deinen Vorgaben** (Abschnitt 2):
   - Ein Abstand ändert in der Perspektive das Bild: 20 m weiter hinten heißt bis 24 % kleiner und bis 64 px höher.
     Deshalb ist „Bild halten“ der Standard.
-  - Pünktchen als Filter widersprechen Paket 0, Regel 4. Das entscheidest du neu, an Tor S5.
+  - Pünktchen als Filter widersprechen Paket 0, Regel 4. Das entscheidest du neu, an Tor S5. **Entschieden (29.10.2026):**
+    Regel 4 gilt neu, Pünktchen und Textur dürfen im Editor Shader-Schichten sein.
   - „Überall abtauchen“ widerspricht „Fels ist fest“ und den Rätseln darauf. Deshalb hat jede Fläche ein Material.
   - Markierungen braucht es, aber automatisch vorbelegt (Rolle, Material, Andockkanten). Ohne sie hält der Pinsel
     jede Kante für Boden.
@@ -89,7 +90,7 @@ Viele Punkte des großen Plans behalten ihre Bedeutung; der Editor ändert, wo u
 | Paket 2.2, Editor Option A in drei Stufen | Stufe 1 (Klötzchen) gebaut, Tor 1b bestanden | Der Zonen-Editor ersetzt die Stufen 2 (Grafik-Slots) und 3 (Zonenwerkzeuge); die Spielobjekte aus Stufe 1 ziehen in ihn um (Stufe 4 hier) |
 | Paket 5, Ebenen-Probe und Formvorlagen (Freigabe 25.10.) | Körper aus Kurvenpfaden halb gebaut | Der Editor ist die Ebenen-Probe in groß; Szene 06 „Kathedrale im Fels“ wird Torübung |
 | Paket 5, „Fels ist fest, nur Öffnungen und Baustellen“; Etappe 2 Schritt 9 Tunnelkapsel | bestätigt 24.10. | Material je Fläche und Portal-Vorlagen (Befund 16, Entscheidung B2 und B3) |
-| Paket 0, Regeln 1, 2, 4, 6, 9; Funkeln 0.3; Stilprobe E4 | vorläufig bis zur Stilprobe | Der Editor liefert die Werkzeuge dafür; Regel 4 muss neu entschieden werden (Befund 12) |
+| Paket 0, Regeln 1, 2, 4, 6, 9; Funkeln 0.3; Stilprobe E4 | vorläufig bis zur Stilprobe | Der Editor liefert die Werkzeuge dafür; Regel 4 neu gefasst an Tor S5 (29.10.2026): Pünktchen und Textur dürfen Shader-Schichten sein (Befund 12) |
 | Paket 8a und 8b, Teile, Aufträge, Prüfung „passt es genau“ | Erzeugung über Figma oder Generator | Malvorlage und SVG aus dem Editor sind die genaue Form jedes Auftrags (Abschnitt 4.10) |
 | Paket 3.4, Stützen-Werkstatt | E4 | Stützen stehen auf Andockkanten der Ebenen (Abschnitt 4.9) |
 | Paket 10, Etappen | E2 bei Schritt 7, Tor 2b offen | E2 ruht; nach Stufe 4 hier wird der Rest von E2 auf Ebenen neu geschnitten (Abschnitt 8) |
@@ -184,7 +185,7 @@ für eine ganze Zone besser sind **verknüpfte Stile** (einmal ändern, überall
 Shader.**
 - **Widerspruch:** Paket 0, Regel 4 sagt bisher „Punktraster nur gemalt, an Kronenkanten und Schattenrändern wie in
   Bild 04, nie als Filter“ (Bild 04 ist das Visual „Ornamentwald“; Florians Vorgabe vom 24.10.2026). Der neue Wunsch
-  ändert diese Regel (Entscheidung B1).
+  ändert diese Regel (Entscheidung B1). **Entschieden an Tor S5 (Florian, 29.10.2026):** „Ja, Regel 4 gilt neu: Pünktchen und Textur dürfen im Editor Shader-Schichten sein.“
 - Machbarkeit: ja. Die Kamerasession zeichnet schon Punkte im Shader (Zellen mit Zufallsversatz in Weltmetern, Radius
   aus der Schattierung). Wie weit das trägt und was dynamisch sinnvoll ist, steht in Abschnitt 3.2 und 4.7.
 
@@ -1235,9 +1236,9 @@ Pünktchen-Verläufe und der ganze Nachschliff der Szene. **Nicht geprüft:** am
 aus. Deine Vergleichszone kommt nicht ran, aber die Werkzeuge sehen schon mal gut aus. Das passt.“ Die Werkzeuge der
 Stufe 5 sind damit angenommen; Standbilder vom Handy und ein Vergleichsblatt mit seinen Fotos entfallen. Die Testzone
 `tor-s5` erreicht Earle nicht und bleibt mit ihrem ganzen Nachschliff Vorschlag; den Look selbst entscheidet die
-Stilprobe (Etappe 4 im großen Plan, Abschnitt 8). **Regel 4 (B1):** Florian hat die Pünktchen als Shader gesehen und
-die Werkzeuge freigegeben, den Vergleich gemalt gegen Shader braucht er nicht; ob Regel 4 in Paket 0 damit neu gilt
-(Pünktchen und Textur als Schicht im Editor erlaubt), bestätigt er noch ausdrücklich. **Offen aus Stufe 5:** Papier und
+Stilprobe (Etappe 4 im großen Plan, Abschnitt 8). **Regel 4 (B1), entschieden:** Den Vergleich gemalt gegen Shader
+braucht Florian nicht; „Ja, Regel 4 gilt neu: Pünktchen und Textur dürfen im Editor Shader-Schichten sein.“ (29.10.2026). Paket 0 im großen Plan ist entsprechend
+geändert. **Offen aus Stufe 5:** Papier und
 Gouache aus Florians Scans (bis dahin Platzhalter-Kacheln). **Nicht geprüft:** Pünktchen-Verläufe am Handy gemessen;
 Farbnebel, Funkeln und Punktpinsel am iPad mit dem Pencil; Punktkronen mit Bahn und Fahrt davor; Kantenwelle an
 spielbaren Kanten. Earle liegt weiter nur auf `zoneneditor-tor2` (jetzt auf `zoneneditor` 11454fb, Pinsel-Studie
@@ -1275,7 +1276,7 @@ als Vorlagenwerkzeug für gemalte Teile.
 | Pinsel springt in dichten Stapeln | Rollen und Andockkanten; Replay und Prüfstriche aus der Kamerasession | Tor S4 |
 | Portale zur Laufzeit (Loch, Tiefenwechsel, Vorlage passt nicht in die Lücke) | Portal-Werkstatt, Prüfung „passt in die Lücke“; Rückfall: nur feste Öffnungen | Tor S7 |
 | Zwei ungesicherte Stände (Etappe-2-Worktree, Kamerawinkel nur lokal) | Stufe 0 sichert beide, bevor gebaut wird (erledigt am 27.10.: `b30bb71` und Branch `zoneneditor`, beide lokal) | Stufe 0 |
-| Shader-Pünktchen wirken gefiltert statt gemalt | Vergleich gemalt gegen Shader am Handy; Florian entscheidet Regel 4 | Tor S5 |
+| Shader-Pünktchen wirken gefiltert statt gemalt | Vergleich gemalt gegen Shader am Handy; Florian entscheidet Regel 4 (entschieden 29.10.: Shader-Schichten erlaubt; wie sie im fertigen Bild wirken, zeigt die Stilprobe) | Tor S5 |
 | Gemalte Teile passen nicht mehr nach Formänderungen | Fingerabdruck der Malvorlage, Warnung im Editor | Tor S6 |
 
 ## 8. Was aus dem großen Plan danach weiterläuft
@@ -1302,7 +1303,8 @@ als Vorlagenwerkzeug für gemalte Teile.
 - **Startfragen:** „Ja zu A1 bis A7“; die Oberfläche des Editors **so minimalistisch und ruhig wie möglich**.
 - **Abstand (Befund 1):** „Dann muss der hintere Shape in der Größe verändert werden“, also „Bild halten“ wie empfohlen.
 - **Pünktchen als Filter (Befund 12, B1):** „Muss man ausprobieren. Ich würde es gerne als Shader sehen.“ Die Stufe 5
-  baut die Pünktchen als Shader; ob Regel 4 in Paket 0 fällt, entscheidet der Vergleich an Tor S5.
+  baut die Pünktchen als Shader; ob Regel 4 in Paket 0 fällt, entscheidet der Vergleich an Tor S5. An Tor S5
+  (29.10.) ohne Vergleich entschieden: Regel 4 gilt neu.
 - **Fels ist fest (Befund 16, B2):** gilt nach Florians letzten Recherchen erst einmal nicht mehr; das Material
   „grabbar“ wird gebaut, dann schauen wir.
 - **Portale (Befund 16, B3):** werden dynamisch gesetzt. Wie Durchfahrten gemacht werden, ob sie sichtbar sind und ob
@@ -1328,7 +1330,7 @@ als Vorlagenwerkzeug für gemalte Teile.
 
 | Nr. | Frage | wann |
 |---|---|---|
-| B1 | Paket 0 Regel 4 neu: Pünktchen und Textur als Schicht im Editor erlaubt? Nach Vergleich gemalt gegen Shader (Florian will es als Shader sehen, 27.10.) **An Tor S5 (29.10.):** Werkzeuge freigegeben, den Vergleich braucht er nicht („Ich muss keine Fotos für Vergleiche machen“); Regel 4 neu fassen wartet auf sein ausdrückliches Ja | Tor S5 |
+| B1 | ~~Paket 0 Regel 4 neu: Pünktchen und Textur als Schicht im Editor erlaubt?~~ **Beantwortet (29.10., Tor S5):** „Ja, Regel 4 gilt neu: Pünktchen und Textur dürfen im Editor Shader-Schichten sein.“ Den Vergleich gemalt gegen Shader brauchte Florian nicht („Ich muss keine Fotos für Vergleiche machen“) | Tor S5 |
 | B2 | ~~Abtauchen nur in grabbare Flächen, Fels bleibt fest?~~ **Teilweise beantwortet (27.10.):** „Fels ist fest“ gilt erst einmal nicht mehr, „grabbar“ wird gebaut; ob es daneben noch „fest“ braucht, zeigt der Test | Tor S4 |
 | B3 | ~~Portale automatisch oder nur von Hand?~~ **Beantwortet (27.10.):** dynamisch. Offen bleibt, wie Durchfahrten gemacht werden, ob sie sichtbar sind und ob der Pinsel dynamisch gräbt | Tor S7 |
 | B4 | Pinsel „Ebenen: Bodenhöhe“ als Grundlage für die Tiefe aus Ebenen? | Tor S4 |
