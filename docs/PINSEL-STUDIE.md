@@ -937,3 +937,8 @@ Stützen in der Höhle, Felder) mit denselben Werten wie ohne Index, sonst nur Z
 der Aufbau des Index im Editor nach einer Ebenenänderung (30 bis 80 ms beim ersten Strich danach), Zonen mit sehr viel
 mehr Ebenen (der Index wächst mit Ebenen mal Flächenlisten mal 128²). Stand: Commit auf `claude/pinsel-studie-8f0777`
 nach 5bca0a7, Fast-Forward nach `zoneneditor` möglich.
+
+**Nachtrag:** Der Index wird jetzt in einem Leerlauf-Tick nach jedem Neubau des Ebenenstapels vorgebaut
+(`indexPlaneStack` in `level.ts`, `requestIdleCallback` mit 500 ms Frist, sonst nach 50 ms; ein inzwischen neu gebauter
+Stapel baut seinen eigenen), damit auch der erste Strich nach einer Ebenenänderung nicht wartet. Die Editor-Session hat
+aa5810a geholt und die Bedingungen im Diff bestätigt. Geprüft: 466 Tests, Build, Szenarien 11 und 24–28 (43 Prüfungen).

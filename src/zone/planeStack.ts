@@ -190,6 +190,14 @@ export class AreaIndex {
   }
 }
 
+/** alle Rasterindizes des Stapels bauen (Leerlauf nach einem Neubau des Stapels, damit der erste Strich nicht wartet) */
+export function indexPlaneStack(stack: PlaneStack): void {
+  for (const sp of stack.planes) {
+    const idx = (sp.index ??= {});
+    for (const kind of ['solids', 'filled', 'shells'] as const) idx[kind] ??= new AreaIndex(sp[kind]);
+  }
+}
+
 /** Punkt in den Flächen einer Liste der Ebene, über den Rasterindex (beim ersten Zugriff gebaut) */
 export function inAreas(sp: StackPlane, kind: 'solids' | 'filled' | 'shells', x: number, y: number): boolean {
   const idx = (sp.index ??= {});

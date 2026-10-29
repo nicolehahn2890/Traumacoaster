@@ -229,7 +229,7 @@ describe('Rasterindex der Flächen (Kantenfeld je Ebene)', () => {
   it('antwortet in den drei Testzonen genau wie die direkte Rechnung', () => {
     for (const name of ['test-huegel', 'test-grotte', 'test-boegen']) {
       const zone = parseZone(JSON.parse(readFileSync(`public/zones/${name}/zone.json`, 'utf8')));
-      const stack = buildPlaneStack(zone!.nodes)!;
+      const stack = buildPlaneStack(zone?.nodes ?? [])!;
       expect(checkStack(stack, 300, name.length)).toBeGreaterThan(2000);
     }
   });

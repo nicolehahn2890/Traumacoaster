@@ -60,7 +60,7 @@ import { captureLevel, type LevelLayers } from '../mapTransition';
 import type { SkyState } from '@/render/sky';
 import { brushHoldsLane, brushUsesSliceGround, brushUsesSlices, CameraTiltPanel, initialFov, initialTiltDeg, preferSliceBrush } from '@/ui/cameraTiltPanel';
 import { buildSliceStack, deepestDock, groundDepth, landingAt, type SliceStack } from '@/zone/slices';
-import { buildPlaneStack, PlaneField, PlaneFoundation, planeDeepestDock, planeGroundDepth, planeLanding, type PlaneStack } from '@/zone/planeStack';
+import { buildPlaneStack, indexPlaneStack, PlaneField, PlaneFoundation, planeDeepestDock, planeGroundDepth, planeLanding, type PlaneStack } from '@/zone/planeStack';
 import { buildSliceElement } from '@/world/sliceMesh';
 /** Ebenen-Test: Bezugskamera der Fahrphysik (m), etwa die Kamera bei 10 px/m und 30° Bildwinkel im Querformat */
 const SLICE_PHYSICS_D = 70;
@@ -2246,6 +2246,16 @@ export class LevelScene implements Scene {
   private refreshPlaneStack(rock = true): void {
     const nodes = this.sandbox?.zone?.nodes ?? [];
     this.planeStack = nodes.length ? buildPlaneStack(nodes) : null;
+    // Kantenfelder (Rasterindex je Ebene) im Leerlauf vorbauen, damit der erste Strich nach einer Ebenenänderung nicht die
+    // 30 bis 80 ms des Aufbaus wartet; ein inzwischen neu gebauter Stapel baut seinen eigenen
+    const stack = this.planeStack;
+    if (stack) {
+      const build = () => {
+        if (this.planeStack === stack) indexPlaneStack(stack);
+      };
+      if (typeof requestIdleCallback === 'function') requestIdleCallback(build, { timeout: 500 });
+      else setTimeout(build, 50);
+    }
     const field = this.planeStack ? new PlaneField(this.planeStack) : null;
     this.planeField = field && !field.empty ? field : null;
     this.game.world?.setPlaneFoundation(this.planeStack ? new PlaneFoundation(this.planeStack, this.planeField) : null);
