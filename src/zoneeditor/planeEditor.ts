@@ -89,7 +89,7 @@ import { EditorOverlay, emptyOverlay } from './overlay';
 import { SketchLayer } from './sketches';
 import { constrain45, NO_MODS, PathTools, regionRing, regionTest, simplifyShape, type Mods, type PathTool } from './pathTools';
 import { booleanShapes, type BoolOp } from '@/zone/pathfinder';
-import { evalLayers, gradientT, hexToRgb, isEarle, isGradient, isHex, MAX_LAYERS, MIST_MAX, paintLayers, rampOf, RAMP, resolveColor, rgbToHex, type GradientFill, type GradientStop, type PaintColor, type ZoneFill } from '@/zone/paint';
+import { evalLayers, gradientT, GRADIENT_DOTS, hexToRgb, isEarle, isGradient, isHex, MAX_LAYERS, MIST_MAX, paintLayers, rampOf, RAMP, resolveColor, rgbToHex, type GradientFill, type GradientStop, type PaintColor, type ZoneFill } from '@/zone/paint';
 import { crownFor, earleShape, freshEarle, type EarlePreset } from '@/zone/earle';
 import { crownParamsOf, fillParams, setCrownParam, setFillParam, setWaveParam, waveParamsOf } from './fillParams';
 import { WAVE_DEFAULT } from '@/zone/edgeWave';
@@ -97,7 +97,7 @@ import { WAVE_DEFAULT } from '@/zone/edgeWave';
 /** Zeilen der Punktkrone und der Kantenwelle im Füllstapel (keine Füllungen, sondern Merkmale der Form) */
 const CROWN_ROW = -10;
 const WAVE_ROW = -11;
-import { addStop, lineT, moveStop, ownPaint, readGradient, removeGradient, removeStop, reverseStops, setMid, targetBox, topGradient, writeGradient, writePaint, type GradKind, type GradLine, type GradTarget } from '@/zone/gradients';
+import { addStop, lineT, moveStop, ownPaint, readGradient, removeGradient, removeStop, reverseStops, setMid, targetBox, topGradient, writeGradient, writePaint, type GradKind, type GradLine, type GradPatch, type GradTarget } from '@/zone/gradients';
 import type { StackAddKind, StackRow, StackView } from './stackPanel';
 import { bakeStyle, linkedStyle, linkStyle, paintToStyle, pasteStyle, styleFromClip, unlinkStyle, type StyleClip } from '@/zone/styles';
 import { DEFAULT_MATERIAL, dockEdges, faceMaterial, setFaceMaterial, stationOf, toggleDock, type DockEdge } from '@/zone/dock';
@@ -1088,6 +1088,7 @@ export class PlaneEditor {
       },
       gradRadial: (radial) => this.gradEdit((g) => ({ radial: radial && !g.radial ? true : radial ? undefined : false })),
       gradReverse: () => this.gradEdit((g) => ({ stops: reverseStops(g.stops) })),
+      gradDots: () => this.gradEdit((g) => ({ dots: g.dots ? null : { ...GRADIENT_DOTS } })),
       gradStopAlpha: () =>
         this.gradEdit((g) => {
           const i = this.grad?.stop ?? -1;
@@ -3836,7 +3837,7 @@ export class PlaneEditor {
   }
 
   /** Verlauf aller Ziele ändern (ein Schritt im Arbeitsverlauf); fn bekommt den Verlauf des ersten */
-  private gradEdit(fn: (g: GradientFill) => { line?: GradLine; stops?: GradientStop[]; radial?: boolean }): void {
+  private gradEdit(fn: (g: GradientFill) => GradPatch): void {
     const st = this.gradState();
     if (!st || !this.grad) return;
     const patch = fn(st.g);
@@ -3849,7 +3850,7 @@ export class PlaneEditor {
   }
 
   /** Verlauf aller Ziele während einer Geste ändern (ohne eigenen Schritt) */
-  private gradApply(patch: { line?: GradLine; stops?: GradientStop[]; radial?: boolean }): boolean {
+  private gradApply(patch: GradPatch): boolean {
     if (!this.grad) return false;
     const { kind, layer } = this.grad;
     const styles = styleMap(this.nodes);
@@ -3864,7 +3865,7 @@ export class PlaneEditor {
     const st = this.gradState();
     const kind = this.grad?.kind ?? this.gradKind;
     const stop = st && this.grad?.stop !== null && this.grad?.stop !== undefined ? st.g.stops[this.grad.stop] : undefined;
-    return { kind, has: !!st, radial: !!st?.g.radial, stop: stop ? { a: stop.a } : null, stops: st?.g.stops.length ?? 0, targets: this.gradTargets().length };
+    return { kind, has: !!st, radial: !!st?.g.radial, dots: !!st?.g.dots, stop: stop ? { a: stop.a } : null, stops: st?.g.stops.length ?? 0, targets: this.gradTargets().length };
   }
 
   /** Regler und Ziele zeichnen */

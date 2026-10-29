@@ -232,6 +232,24 @@ float hash12(vec2 p) {
   p3 += dot(p3, p3.yzx + 33.33);
   return fract((p3.x + p3.y) * p3.z);
 }
+// Pünktchen im Wabenraster (Reihen 0,866 Zellen hoch, jede zweite um eine halbe Zelle versetzt, dicht gepackt wie gemalte
+// Punkte; Rang-Kachel): ein Punkt, wo der Rang der Zelle unter cov liegt, zum dünnen Ende (fall gegen 0) kleiner; grow 1
+// lässt die Punkte zum vollen Ende zur geschlossenen Fläche zusammenwachsen (Verlauf als Pünktchen, Dot Shading).
+// size: Durchmesser, gap: Zelle als Vielfaches davon, seed: Muster, jit: Größenstreuung
+float dotCover(vec2 pat, float size, float gap, float seed, float jit, float cov, float fall, float grow, float px) {
+  float cell = size * gap;
+  vec2 q = pat / vec2(cell, cell * 0.866) + floor(vec2(hash12(vec2(seed, 3.1)), hash12(vec2(seed, 7.7))) * ${RANK_N}.0);
+  q.x += 0.5 * mod(floor(q.y), 2.0);
+  vec2 id = floor(q);
+  vec4 T = texelFetch(uRank, ivec2(mod(id, ${RANK_N}.0)), 0);
+  // Radius und Versatz in Zellbreiten; der Punkt bleibt in seiner Zelle (auch in der flacheren Reihe)
+  float r = min(0.43, 0.5 / gap) * (1.0 - jit * T.w) * (0.55 + 0.45 * fall);
+  r = mix(r, 0.67, grow * smoothstep(0.65, 1.0, cov));
+  vec2 f = (q - id - 0.5) * vec2(1.0, 0.866) - T.xy * max(vec2(0.0), vec2(0.5 - r, 0.433 - r));
+  float aa = px / cell;
+  // Punkte unter etwa einem Bildpunkt blenden aus (sonst flimmern sie bei fahrender Kamera)
+  return step(T.z, cov * (1.0 + 0.35 * grow)) * (1.0 - smoothstep(r - aa, r + aa, length(f))) * smoothstep(0.35, 0.8, r / max(aa, 1e-6));
+}
 // Funkeln: je Zelle höchstens ein Glanzpunkt (Rang-Kachel, Wabenraster), der in eigener Phase kurz als Kreuz aufleuchtet.
 // C: Größe, Zelle (× Größe), Dichte, Tempo (je Sekunde); D.x: Samen
 float sparkleAt(vec2 pat, vec4 C, vec4 D, float px) {
@@ -346,6 +364,9 @@ vec4 layers(int row, int n, vec2 p, vec2 pat, vec2 dx, vec2 dy, float px, vec4 a
       vec4 r = rampAt(int(A.w + 0.5), t);
       cs = r.rgb;
       as = r.a;
+      // als Pünktchen: die Deckkraft wird zur Dichte (D: Durchmesser, Zelle, Samen, Streuung; Durchmesser 0 = aus)
+      vec4 D = texelFetch(uPaint, ivec2(base + 3, row), 0);
+      if (D.x > 0.0) as = dotCover(pat, D.x, D.y, D.z, D.w, as, as, 1.0, px);
       if (code == ${CODE.fadeLinear} || code == ${CODE.fadeRadial} || code == ${CODE.fadeEdge}) {
         acc *= 1.0 - A.z + A.z * as;
         continue;
@@ -366,19 +387,8 @@ vec4 layers(int row, int n, vec2 p, vec2 pat, vec2 dx, vec2 dy, float px, vec4 a
       else if (src == 2) k = 1.0 - smoothstep(0.0, D.y, edgeAt(-uLight * D.y));
       else if (src == 3) k = 1.0 - smoothstep(0.0, D.y, edgeAt(vec2(0.0)));
       else if (src == 4) k = clamp((0.72 - lumOf(cb)) / 0.55, 0.0, 1.0);
-      // Wabenraster: Reihen 0,866 Zellen hoch, jede zweite um eine halbe Zelle versetzt (dicht gepackt wie gemalte Punkte)
-      float cell = C.x * C.y;
-      vec2 q = pat / vec2(cell, cell * 0.866) + floor(vec2(hash12(vec2(D.z, 3.1)), hash12(vec2(D.z, 7.7))) * ${RANK_N}.0);
-      q.x += 0.5 * mod(floor(q.y), 2.0);
-      vec2 id = floor(q);
-      vec4 T = texelFetch(uRank, ivec2(mod(id, ${RANK_N}.0)), 0);
-      // Radius und Versatz in Zellbreiten; der Punkt bleibt in seiner Zelle (auch in der flacheren Reihe)
-      float r = min(0.43, 0.5 / C.y) * (1.0 - C.w * T.w);
-      vec2 f = (q - id - 0.5) * vec2(1.0, 0.866) - T.xy * vec2(0.5 - r, 0.433 - r);
-      float d = length(f);
-      float aa = px / cell;
-      // Punkte unter etwa einem Bildpunkt blenden aus (sonst flimmern sie bei fahrender Kamera)
-      as = step(T.z, C.z * k) * (1.0 - smoothstep(r - aa, r + aa, d)) * smoothstep(0.35, 0.8, r / max(aa, 1e-6));
+      // zum dünnen Ende der Quelle seltener und kleiner
+      as = dotCover(pat, C.x, C.y, D.z, C.w, C.z * k, k, 0.0, px);
       // Ton: eine hellere Stufe der eigenen Farbe (Farbton bleibt, warm zum Licht) oder eine tiefere zum Schatten
       if (B.a < 0.5) cs = D.x >= 0.0 ? min(vec3(1.0), cb * (1.0 + 1.6 * D.x) + 0.12 * D.x) * mix(vec3(1.0), uLightColor, 0.6 * D.x) : mix(cb * (1.0 + 0.55 * D.x), uShadeColor, -0.35 * D.x);
     } else if (code == ${CODE.mist}) {
@@ -424,7 +434,7 @@ ${TAIL}
 
 /**
  * Schichtfolge einer Zeile als Kürzel (je Schicht eins, mit Punkt getrennt): c Farbe; g oder f (Deckkraft) mit l linear,
- * r radial, e Kante, dazu b für Bänder und w für Welle; L Lichtkante, S Innenschatten, D0 bis D4 Pünktchen je Quelle,
+ * r radial, e Kante, dazu b für Bänder, w für Welle und d für Pünktchen; L Lichtkante, S Innenschatten, D0 bis D4 Pünktchen je Quelle,
  * K Funkeln, N1 bis N16 Farbnebel (Tupfer auf die nächste Zweierpotenz aufgerundet), P Papier oder Gouache. Was die Folge nicht festlegt (Farben, Griffe, Maße, Mischmodus), steht in der Datentextur
  */
 /** Plätze im Shader für n Tupfer eines Farbnebels: die nächste Zweierpotenz (1, 2, 4, 8, 16), damit es wenige Shader gibt */
@@ -434,7 +444,7 @@ export function layerTokens(layers: readonly ZoneFill[]): string {
   return layers
     .map((f) => {
       if (f.type === 'color') return 'c';
-      if (isGradient(f)) return (f.type === 'fade' ? 'f' : 'g') + (f.edge ? 'e' : f.radial ? 'r' : 'l') + (f.steps ? 'b' : '') + (f.steps && f.wave ? 'w' : '');
+      if (isGradient(f)) return (f.type === 'fade' ? 'f' : 'g') + (f.edge ? 'e' : f.radial ? 'r' : 'l') + (f.steps ? 'b' : '') + (f.steps && f.wave ? 'w' : '') + (f.dots ? 'd' : '');
       if (f.type === 'light') return 'L';
       if (f.type === 'shade') return 'S';
       if (f.type === 'dots') return `D${Math.max(0, DOT_SOURCES.indexOf(f.source))}`;
@@ -461,8 +471,10 @@ function layerGlsl(token: string, k: number, row: string, p: string, pat: string
     if (token.includes('w')) t += ` t += C.z / C.x * (0.65 * vnoise(${pat} * 0.2) + 0.35 * vnoise(${pat} * 0.6 + 17.0) - 0.5);`;
     if (token.includes('b')) t += ' t = bandT(t, C.x, C.y);';
     const ramp = 'r = rampAt(int(A.w + 0.5), t); cs = r.rgb; as = r.a;';
+    // als Pünktchen (Dot Shading): die Deckkraft wird zur Dichte, zum vollen Ende wachsen die Punkte zusammen
+    const dots = token.includes('d') ? ` D = ${fetch(3)}; as = dotCover(${pat}, D.x, D.y, D.z, D.w, as, as, 1.0, px);` : '';
     const end = token[0] === 'f' ? 'acc *= 1.0 - A.z + A.z * as;' : done;
-    return `{ ${head} B = ${fetch(1)}; C = ${fetch(2)}; ${t} ${ramp} ${end} }`;
+    return `{ ${head} B = ${fetch(1)}; C = ${fetch(2)}; ${t} ${ramp}${dots} ${end} }`;
   }
   if (token === 'L' || token === 'S') {
     const dir = token === 'L' ? 'uLight' : '-uLight';
@@ -482,14 +494,7 @@ function layerGlsl(token: string, k: number, row: string, p: string, pat: string
               ? 'k = clamp((0.72 - lumOf(cb)) / 0.55, 0.0, 1.0);'
               : 'k = 1.0;';
     return `{ ${head} B = ${fetch(1)}; C = ${fetch(2)}; D = ${fetch(3)}; ${k_}
-      float cell = C.x * C.y;
-      vec2 q = ${pat} / vec2(cell, cell * 0.866) + floor(vec2(hash12(vec2(D.z, 3.1)), hash12(vec2(D.z, 7.7))) * ${RANK_N}.0);
-      q.x += 0.5 * mod(floor(q.y), 2.0);
-      vec2 id = floor(q);
-      vec4 T = texelFetch(uRank, ivec2(mod(id, ${RANK_N}.0)), 0);
-      float rr = min(0.43, 0.5 / C.y) * (1.0 - C.w * T.w);
-      float aa = px / cell;
-      as = step(T.z, C.z * k) * (1.0 - smoothstep(rr - aa, rr + aa, length((q - id - 0.5) * vec2(1.0, 0.866) - T.xy * vec2(0.5 - rr, 0.433 - rr)))) * smoothstep(0.35, 0.8, rr / max(aa, 1e-6));
+      as = dotCover(${pat}, C.x, C.y, D.z, C.w, C.z * k, k, 0.0, px);
       cs = B.a > 0.5 ? B.rgb : D.x >= 0.0 ? min(vec3(1.0), cb * (1.0 + 1.6 * D.x) + 0.12 * D.x) * mix(vec3(1.0), uLightColor, 0.6 * D.x) : mix(cb * (1.0 + 0.55 * D.x), uShadeColor, -0.35 * D.x);
       ${done} }`;
   }
@@ -740,7 +745,7 @@ export class PlaneLayer {
     const note = (layers: readonly ZoneFill[]) => {
       for (const f of layers) {
         if (f.hidden) continue;
-        if (f.type === 'dots' || f.type === 'sparkle') rankNeeded = true;
+        if (f.type === 'dots' || f.type === 'sparkle' || (isGradient(f) && f.dots)) rankNeeded = true;
         else if (f.type === 'grain') grainNeeded = true;
       }
     };
@@ -954,6 +959,12 @@ export class PlaneLayer {
           data[c + 1] = f.inner ?? 0.35;
           data[c + 2] = f.wave ?? 0;
           data[c + 3] = row.edgeLen[i] ?? 0;
+          if (f.dots) {
+            data[d] = f.dots.size;
+            data[d + 1] = f.dots.gap;
+            data[d + 2] = f.dots.seed;
+            data[d + 3] = f.dots.jitter;
+          }
           return;
         }
         if (f.type === 'light' || f.type === 'shade') {

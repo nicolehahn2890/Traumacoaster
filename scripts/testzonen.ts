@@ -542,6 +542,23 @@ const contourBands = (depth: number, steps: number, wave: number) => (s: ZoneSha
   Object.assign(g, { edge: true, steps, inner: 0.3, wave, x0: x, y0: g.y1, x1: x + depth / Math.abs(s.sx), y1: g.y1 });
 };
 
+/**
+ * Nachschliff Wiese (Florian 29.10.2026: „größere harmonische Grasflächen“, Pünktchen „wie beim Dot Shading“): wenige
+ * breite, weiche Bänder entlang des Umrisses; statt der Pünktchen der Vorgabe ein heller Punktsaum am Rand und nach innen
+ * eine Pünktchen-Schattierung ins Tiefe (Verlauf als Pünktchen: zum vollen Ende wachsen die Punkte zur Fläche zusammen)
+ */
+const meadowLook = (o: { depth: number; steps: number; rim: string; deep: string; from: number; to: number }) => (s: ZoneShape): void => {
+  contourBands(o.depth, o.steps, 0.35)(s);
+  const k = 1 / Math.abs(s.sx);
+  const fills = (s.fills ?? []).filter((f) => f.type !== 'dots');
+  for (const f of fills) if (f.type === 'gradient' && f.edge) f.inner = 0.6;
+  fills.push(
+    { type: 'gradient', edge: true, stops: [{ t: 0, color: o.rim, a: 0.9 }, { t: 1, color: o.rim, a: 0 }], x0: 0, y0: 0, x1: 2.4 * k, y1: 0, blend: 'normal', opacity: 1, dots: { size: 0.22, gap: 1.5, jitter: 0.3, seed: 4 } },
+    { type: 'gradient', edge: true, stops: [{ t: 0, color: o.deep, a: 0 }, { t: o.from / o.to, color: o.deep, a: 0 }, { t: 1, color: o.deep, a: 1 }], x0: 0, y0: 0, x1: o.to * k, y1: 0, blend: 'normal', opacity: 1, dots: { size: 0.34, gap: 1.45, jitter: 0.3, seed: 7 } },
+  );
+  s.fills = fills;
+};
+
 /** Nachschliff: Pünktchen dichter und feiner (Bild 8: dichte Punktbänder an den Kanten) */
 const denseDots = (o: Partial<DotsFill>) => (s: ZoneShape): void => {
   for (const f of s.fills ?? []) if (f.type === 'dots') Object.assign(f, o);
@@ -618,8 +635,6 @@ function torS5(): SceneSpec {
   // (die Ringe sind schmal: die Punkte bleiben an ihren Kanten, die Mitte der Bänder bleibt frei)
   const ringDots = denseDots({ density: 1, gap: 1.3, size: 0.15, reach: 1.1, jitter: 0.45, tone: 0.6 });
   const grove = (cx: number, cy: number, rx: number, ry: number): ShapeSpec => ({ name: 'Baumgruppe', outline: blob(cx, cy, rx, ry, 11, 0.1), fill: C['Wald'], material: 'airy', grad: { stops: [[C['Wiese dunkel'], 0], [X['Wiese tief'], 1]], from: [cx, cy + ry], to: [cx, cy - ry] }, earle: 'crown' });
-  // S-förmige Bänder in den Wiesen (Bild 7), ganz unter der Oberkante
-  const swoosh = (pts: Pt[], d: number): Pt[] => stripe(pts, 0, d);
   return {
     name: 'tor-s5',
     groups: ['Wiese', 'Bogen', 'Kulisse'],
@@ -635,8 +650,7 @@ function torS5(): SceneSpec {
         role: 'play',
         group: 'Wiese',
         shapes: [
-          { name: 'Wiese vorn', outline: band(front), fill: C['Wiese'], grad: { stops: [[C['Wiese hell'], 0], [C['Wiese'], 0.4], [X['Wiese tief'], 1]], from: [0, 13], to: [0, -10] }, earle: 'hill', look: contourBands(14, 5, 0.7) },
-          { name: 'Band vorn', outline: swoosh([[30, 4.4], [44, 7], [58, 5.2], [72, 3.4], [86, 5], [100, 7.2], [114, 5.4], [130, 4.6]], 2.6), fill: X['Wiese tief'], opacity: 0.55, earle: 'none' },
+          { name: 'Wiese vorn', outline: band(front), fill: C['Wiese'], grad: { stops: [[C['Wiese hell'], 0], [C['Wiese'], 0.5], [C['Wiese dunkel'], 1]], from: [0, 13], to: [0, -10] }, earle: 'hill', look: meadowLook({ depth: 15, steps: 3, rim: X['Creme'], deep: X['Wiese tief'], from: 5, to: 15 }) },
         ],
       },
       {
@@ -645,8 +659,7 @@ function torS5(): SceneSpec {
         role: 'play',
         group: 'Wiese',
         shapes: [
-          { name: 'Wiese Mitte', outline: band(mid), fill: C['Gold'], grad: { stops: [[C['Gold'], 0], [C['Ocker'], 0.5], [X['Ocker tief'], 1]], from: [0, 21], to: [0, 4] }, earle: 'hill', look: contourBands(10, 4, 0.7) },
-          { name: 'Band Mitte', outline: swoosh([[40, 14.6], [52, 16.2], [64, 14.6], [76, 12.6], [88, 13.2], [100, 15.4], [114, 14], [130, 13.4]], 2.2), fill: X['Ocker tief'], opacity: 0.5, earle: 'none' },
+          { name: 'Wiese Mitte', outline: band(mid), fill: C['Gold'], grad: { stops: [[C['Gold'], 0], [C['Wiese hell'], 0.45], [C['Wiese'], 1]], from: [0, 21], to: [0, 4] }, earle: 'hill', look: meadowLook({ depth: 12, steps: 3, rim: X['Creme'], deep: C['Wiese dunkel'], from: 4, to: 11 }) },
           ...tree,
         ],
       },

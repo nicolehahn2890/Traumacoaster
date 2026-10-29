@@ -4,7 +4,7 @@
  * Prozent. Die Tiefe eines Kantenverlaufs ist in Metern der Ebene; gespeichert ist sie als Länge der Griffe in
  * Pfad-Koordinaten, darum braucht es den Maßstab der Form. Ohne DOM.
  */
-import { DOT_SOURCES, GRAIN_TILES, isGradient, type DotSource, type GrainTile, type ZoneFill } from '@/zone/paint';
+import { DOT_SOURCES, GRADIENT_DOTS, GRAIN_TILES, isGradient, type DotSource, type GrainTile, type ZoneFill } from '@/zone/paint';
 import type { StackParam } from './stackPanel';
 import type { CrownParams } from '@/zone/crown';
 import type { EdgeWave } from '@/zone/edgeWave';
@@ -31,7 +31,7 @@ export function fillParams(f: ZoneFill, s: ParamScale = { sx: 1, sy: 1 }): { nam
   if (f.type === 'color') return {};
   if (isGradient(f)) {
     const fade = f.type === 'fade';
-    const name = f.edge ? (fade ? 'Deckkraft an der Kante' : 'Kantenverlauf') : f.steps ? (fade ? 'Deckkraft in Stufen' : 'Bänder') : undefined;
+    const name = f.dots ? (fade ? 'Deckkraft als Pünktchen' : 'Verlauf als Pünktchen') : f.edge ? (fade ? 'Deckkraft an der Kante' : 'Kantenverlauf') : f.steps ? (fade ? 'Deckkraft in Stufen' : 'Bänder') : undefined;
     const params: StackParam[] = [
       { key: 'kind', label: 'Art', title: 'Richtung der Griffe (linear, radial) oder Abstand zur Kante', value: f.edge ? 'edge' : f.radial ? 'radial' : 'linear', options: [{ value: 'linear', word: 'linear' }, { value: 'radial', word: 'radial' }, { value: 'edge', word: 'Kante' }] },
     ];
@@ -41,12 +41,14 @@ export function fillParams(f: ZoneFill, s: ParamScale = { sx: 1, sy: 1 }): { nam
       params.push({ key: 'inner', label: 'innen %', title: 'Verlauf in der Stufe: Anteil des Abstands zur Nachbarstufe', value: Math.round((f.inner ?? 0.35) * 100), step: 0.5, min: 0, max: 100, digits: 0 });
       params.push({ key: 'wave', label: 'Welle %', title: 'Die Stufengrenzen schwingen um diesen Anteil einer Stufe', value: Math.round((f.wave ?? 0) * 100), step: 0.5, min: 0, max: 100, digits: 0 });
     }
+    params.push({ key: 'dots', label: 'Pünktchen m', title: 'Verlauf als Pünktchen (Dot Shading): Durchmesser der Punkte, 0 = aus; die Deckkraft des Verlaufs wird zur Dichte', value: f.dots ? r(f.dots.size) : 0, step: 0.005, min: 0, max: 20, digits: 2 });
+    if (f.dots) params.push({ key: 'dotgap', label: 'Abstand ×', title: 'Zellgröße als Vielfaches des Durchmessers (klein = dicht)', value: r(f.dots.gap), step: 0.01, min: 1.05, max: 6, digits: 2 });
     return { name, params };
   }
   if (f.type === 'light' || f.type === 'shade')
     return {
       params: [
-        { key: 'width', label: 'Breite m', title: 'Breite der Sichel (Meter)', value: r(f.width), step: 0.02, min: 0.02, max: 40, digits: 2 },
+        { key: 'width', label: 'Breite m', title: 'Breite der Sichel (Meter); 0 = Saum rundum so breit wie „weich“, negativ = Sichel auf der anderen Seite', value: r(f.width), step: 0.02, min: -40, max: 40, digits: 2 },
         { key: 'soft', label: 'weich m', title: 'Weiche innere Grenze (0 = hart wie im Siebdruck)', value: r(f.soft), step: 0.02, min: 0, max: 40, digits: 2 },
       ],
     };
@@ -119,11 +121,14 @@ export function setFillParam(f: ZoneFill, key: string, v: number | string, s: Pa
     else if (key === 'wave' && ok) {
       if (n > 0) f.wave = clamp(n / 100, 0, 1);
       else delete f.wave;
-    }
+    } else if (key === 'dots' && ok) {
+      if (n > 0) f.dots = { ...(f.dots ?? GRADIENT_DOTS), size: clamp(n, 0.02, 20) };
+      else delete f.dots;
+    } else if (key === 'dotgap' && ok && f.dots) f.dots.gap = clamp(n, 1.05, 6);
     return;
   }
   if (f.type === 'light' || f.type === 'shade') {
-    if (key === 'width' && ok) f.width = clamp(n, 0.02, 40);
+    if (key === 'width' && ok) f.width = clamp(n, -40, 40);
     else if (key === 'soft' && ok) f.soft = clamp(n, 0, 40);
     return;
   }

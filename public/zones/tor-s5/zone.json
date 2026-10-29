@@ -1104,7 +1104,7 @@
           "edge": true,
           "x0": -65,
           "y0": 18.79,
-          "x1": -51,
+          "x1": -50,
           "y1": 18.79,
           "stops": [
             {
@@ -1112,17 +1112,17 @@
               "color": "@c1"
             },
             {
-              "t": 0.4,
+              "t": 0.5,
               "color": "@c2"
             },
             {
               "t": 1,
-              "color": "@c22"
+              "color": "@c3"
             }
           ],
-          "steps": 5,
-          "inner": 0.3,
-          "wave": 0.7,
+          "steps": 3,
+          "inner": 0.6,
+          "wave": 0.35,
           "blend": "normal",
           "opacity": 1
         },
@@ -1141,175 +1141,78 @@
           "opacity": 0.5
         },
         {
-          "type": "dots",
-          "size": 0.22,
-          "gap": 2,
-          "density": 0.55,
-          "jitter": 0.35,
-          "source": "light",
-          "reach": 1.6,
-          "tone": 0.45,
-          "seed": 1,
-          "blend": "normal",
-          "opacity": 1
-        },
-        {
           "type": "grain",
           "tile": "paper",
           "scale": 6,
           "angle": 0,
           "blend": "softLight",
           "opacity": 0.4
+        },
+        {
+          "type": "gradient",
+          "edge": true,
+          "x0": 0,
+          "y0": 0,
+          "x1": 2.4,
+          "y1": 0,
+          "stops": [
+            {
+              "t": 0,
+              "color": "@c26",
+              "a": 0.9
+            },
+            {
+              "t": 1,
+              "color": "@c26",
+              "a": 0
+            }
+          ],
+          "dots": {
+            "size": 0.22,
+            "gap": 1.5,
+            "jitter": 0.3,
+            "seed": 4
+          },
+          "blend": "normal",
+          "opacity": 1
+        },
+        {
+          "type": "gradient",
+          "edge": true,
+          "x0": 0,
+          "y0": 0,
+          "x1": 15,
+          "y1": 0,
+          "stops": [
+            {
+              "t": 0,
+              "color": "@c22",
+              "a": 0
+            },
+            {
+              "t": 0.3333,
+              "color": "@c22",
+              "a": 0
+            },
+            {
+              "t": 1,
+              "color": "@c22"
+            }
+          ],
+          "dots": {
+            "size": 0.34,
+            "gap": 1.45,
+            "jitter": 0.3,
+            "seed": 7
+          },
+          "blend": "normal",
+          "opacity": 1
         }
       ],
       "material": "dig"
     },
     {
       "id": "s3",
-      "kind": "shape",
-      "parent": "p2",
-      "order": 2,
-      "name": "Band vorn",
-      "x": 80.01,
-      "y": 4,
-      "sx": 1,
-      "sy": 1,
-      "fill": "@c22",
-      "path": [
-        {
-          "x": -50.01,
-          "y": -2.2,
-          "inX": -1.04,
-          "inY": 0,
-          "outX": 1.04,
-          "outY": 0
-        },
-        {
-          "x": -36.01,
-          "y": 0.4,
-          "inX": -4.67,
-          "inY": -0.13,
-          "outX": 4.67,
-          "outY": 0.13
-        },
-        {
-          "x": -22.01,
-          "y": -1.4,
-          "inX": -4.67,
-          "inY": 0.6,
-          "outX": 4.67,
-          "outY": -0.6
-        },
-        {
-          "x": -8.01,
-          "y": -3.2,
-          "inX": -4.67,
-          "inY": 0.03,
-          "outX": 4.67,
-          "outY": -0.03
-        },
-        {
-          "x": 5.99,
-          "y": -1.6,
-          "inX": -4.67,
-          "inY": -0.63,
-          "outX": 4.67,
-          "outY": 0.63
-        },
-        {
-          "x": 19.99,
-          "y": 0.6,
-          "inX": -4.67,
-          "inY": -0.07,
-          "outX": 4.67,
-          "outY": 0.07
-        },
-        {
-          "x": 33.99,
-          "y": -1.2,
-          "inX": -5,
-          "inY": 0.43,
-          "outX": 5,
-          "outY": -0.43
-        },
-        {
-          "x": 49.99,
-          "y": -2,
-          "inX": -1.03,
-          "inY": -0.12,
-          "outX": 1.03,
-          "outY": 0.12
-        },
-        {
-          "x": 49.99,
-          "y": 0.6,
-          "inX": 1.02,
-          "inY": -0.22,
-          "outX": -1.02,
-          "outY": 0.22
-        },
-        {
-          "x": 33.99,
-          "y": 1.4,
-          "inX": 5,
-          "inY": -0.43,
-          "outX": -5,
-          "outY": 0.43
-        },
-        {
-          "x": 19.99,
-          "y": 3.2,
-          "inX": 4.67,
-          "inY": 0.07,
-          "outX": -4.67,
-          "outY": -0.07
-        },
-        {
-          "x": 5.99,
-          "y": 1,
-          "inX": 4.67,
-          "inY": 0.63,
-          "outX": -4.67,
-          "outY": -0.63
-        },
-        {
-          "x": -8.01,
-          "y": -0.6,
-          "inX": 4.67,
-          "inY": -0.03,
-          "outX": -4.67,
-          "outY": 0.03
-        },
-        {
-          "x": -22.01,
-          "y": 1.2,
-          "inX": 4.67,
-          "inY": -0.6,
-          "outX": -4.67,
-          "outY": 0.6
-        },
-        {
-          "x": -36.01,
-          "y": 3,
-          "inX": 4.67,
-          "inY": 0.13,
-          "outX": -4.67,
-          "outY": -0.13
-        },
-        {
-          "x": -50.01,
-          "y": 0.4,
-          "inX": 0.97,
-          "inY": 0.36,
-          "outX": -0.97,
-          "outY": -0.36
-        }
-      ],
-      "opacity": 0.55,
-      "material": "dig"
-    },
-    {
-      "id": "s4",
       "kind": "shape",
       "parent": "p3",
       "order": 1,
@@ -1959,7 +1862,7 @@
           "edge": true,
           "x0": -65,
           "y0": 28.58,
-          "x1": -55,
+          "x1": -53,
           "y1": 28.58,
           "stops": [
             {
@@ -1967,17 +1870,17 @@
               "color": "@c19"
             },
             {
-              "t": 0.5,
-              "color": "@c7"
+              "t": 0.45,
+              "color": "@c1"
             },
             {
               "t": 1,
-              "color": "@c23"
+              "color": "@c2"
             }
           ],
-          "steps": 4,
-          "inner": 0.3,
-          "wave": 0.7,
+          "steps": 3,
+          "inner": 0.6,
+          "wave": 0.35,
           "blend": "normal",
           "opacity": 1
         },
@@ -1996,178 +1899,81 @@
           "opacity": 0.5
         },
         {
-          "type": "dots",
-          "size": 0.22,
-          "gap": 2,
-          "density": 0.55,
-          "jitter": 0.35,
-          "source": "light",
-          "reach": 1.6,
-          "tone": 0.45,
-          "seed": 1,
-          "blend": "normal",
-          "opacity": 1
-        },
-        {
           "type": "grain",
           "tile": "paper",
           "scale": 6,
           "angle": 0,
           "blend": "softLight",
           "opacity": 0.4
+        },
+        {
+          "type": "gradient",
+          "edge": true,
+          "x0": 0,
+          "y0": 0,
+          "x1": 2.4,
+          "y1": 0,
+          "stops": [
+            {
+              "t": 0,
+              "color": "@c26",
+              "a": 0.9
+            },
+            {
+              "t": 1,
+              "color": "@c26",
+              "a": 0
+            }
+          ],
+          "dots": {
+            "size": 0.22,
+            "gap": 1.5,
+            "jitter": 0.3,
+            "seed": 4
+          },
+          "blend": "normal",
+          "opacity": 1
+        },
+        {
+          "type": "gradient",
+          "edge": true,
+          "x0": 0,
+          "y0": 0,
+          "x1": 11,
+          "y1": 0,
+          "stops": [
+            {
+              "t": 0,
+              "color": "@c3",
+              "a": 0
+            },
+            {
+              "t": 0.3636,
+              "color": "@c3",
+              "a": 0
+            },
+            {
+              "t": 1,
+              "color": "@c3"
+            }
+          ],
+          "dots": {
+            "size": 0.34,
+            "gap": 1.45,
+            "jitter": 0.3,
+            "seed": 7
+          },
+          "blend": "normal",
+          "opacity": 1
         }
       ],
       "material": "dig"
     },
     {
-      "id": "s5",
+      "id": "s4",
       "kind": "shape",
       "parent": "p3",
       "order": 2,
-      "name": "Band Mitte",
-      "x": 85,
-      "y": 13.26,
-      "sx": 1,
-      "sy": 1,
-      "fill": "@c23",
-      "path": [
-        {
-          "x": -45,
-          "y": -0.86,
-          "inX": -0.88,
-          "inY": 0.04,
-          "outX": 0.88,
-          "outY": -0.04
-        },
-        {
-          "x": -33,
-          "y": 0.74,
-          "inX": -4,
-          "inY": 0,
-          "outX": 4,
-          "outY": 0
-        },
-        {
-          "x": -21,
-          "y": -0.86,
-          "inX": -4,
-          "inY": 0.6,
-          "outX": 4,
-          "outY": -0.6
-        },
-        {
-          "x": -9,
-          "y": -2.86,
-          "inX": -4,
-          "inY": 0.23,
-          "outX": 4,
-          "outY": -0.23
-        },
-        {
-          "x": 3,
-          "y": -2.26,
-          "inX": -4,
-          "inY": -0.47,
-          "outX": 4,
-          "outY": 0.47
-        },
-        {
-          "x": 15,
-          "y": -0.06,
-          "inX": -4.33,
-          "inY": -0.13,
-          "outX": 4.33,
-          "outY": 0.13
-        },
-        {
-          "x": 29,
-          "y": -1.46,
-          "inX": -5,
-          "inY": 0.33,
-          "outX": 5,
-          "outY": -0.33
-        },
-        {
-          "x": 45,
-          "y": -2.06,
-          "inX": -0.88,
-          "inY": -0.09,
-          "outX": 0.88,
-          "outY": 0.09
-        },
-        {
-          "x": 45,
-          "y": 0.14,
-          "inX": 0.87,
-          "inY": -0.15,
-          "outX": -0.87,
-          "outY": 0.15
-        },
-        {
-          "x": 29,
-          "y": 0.74,
-          "inX": 5,
-          "inY": -0.33,
-          "outX": -5,
-          "outY": 0.33
-        },
-        {
-          "x": 15,
-          "y": 2.14,
-          "inX": 4.33,
-          "inY": 0.13,
-          "outX": -4.33,
-          "outY": -0.13
-        },
-        {
-          "x": 3,
-          "y": -0.06,
-          "inX": 4,
-          "inY": 0.47,
-          "outX": -4,
-          "outY": -0.47
-        },
-        {
-          "x": -9,
-          "y": -0.66,
-          "inX": 4,
-          "inY": -0.23,
-          "outX": -4,
-          "outY": 0.23
-        },
-        {
-          "x": -21,
-          "y": 1.34,
-          "inX": 4,
-          "inY": -0.6,
-          "outX": -4,
-          "outY": 0.6
-        },
-        {
-          "x": -33,
-          "y": 2.94,
-          "inX": 4,
-          "inY": 0,
-          "outX": -4,
-          "outY": 0
-        },
-        {
-          "x": -45,
-          "y": 1.34,
-          "inX": 0.84,
-          "inY": 0.27,
-          "outX": -0.84,
-          "outY": -0.27
-        }
-      ],
-      "opacity": 0.5,
-      "material": "dig"
-    },
-    {
-      "id": "s6",
-      "kind": "shape",
-      "parent": "p3",
-      "order": 3,
       "name": "Stamm",
       "x": 26.17,
       "y": 21.02,
@@ -2259,10 +2065,10 @@
       "material": "airy"
     },
     {
-      "id": "s7",
+      "id": "s5",
       "kind": "shape",
       "parent": "p3",
-      "order": 4,
+      "order": 3,
       "name": "Ast 1",
       "x": 18.19,
       "y": 30.25,
@@ -2386,10 +2192,10 @@
       "material": "airy"
     },
     {
-      "id": "s8",
+      "id": "s6",
       "kind": "shape",
       "parent": "p3",
-      "order": 5,
+      "order": 4,
       "name": "Ast 2",
       "x": 22.48,
       "y": 31.06,
@@ -2513,10 +2319,10 @@
       "material": "airy"
     },
     {
-      "id": "s9",
+      "id": "s7",
       "kind": "shape",
       "parent": "p3",
-      "order": 6,
+      "order": 5,
       "name": "Ast 3",
       "x": 29.11,
       "y": 31.18,
@@ -2640,10 +2446,10 @@
       "material": "airy"
     },
     {
-      "id": "s10",
+      "id": "s8",
       "kind": "shape",
       "parent": "p3",
-      "order": 7,
+      "order": 6,
       "name": "Ast 4",
       "x": 34.16,
       "y": 30.15,
@@ -2767,10 +2573,10 @@
       "material": "airy"
     },
     {
-      "id": "s11",
+      "id": "s9",
       "kind": "shape",
       "parent": "p3",
-      "order": 8,
+      "order": 7,
       "name": "Zweig 1",
       "x": 16.71,
       "y": 32.3,
@@ -2878,10 +2684,10 @@
       "material": "airy"
     },
     {
-      "id": "s12",
+      "id": "s10",
       "kind": "shape",
       "parent": "p3",
-      "order": 9,
+      "order": 8,
       "name": "Zweig 2",
       "x": 11.35,
       "y": 33.03,
@@ -2989,10 +2795,10 @@
       "material": "airy"
     },
     {
-      "id": "s13",
+      "id": "s11",
       "kind": "shape",
       "parent": "p3",
-      "order": 10,
+      "order": 9,
       "name": "Zweig 3",
       "x": 22.26,
       "y": 33.38,
@@ -3100,10 +2906,10 @@
       "material": "airy"
     },
     {
-      "id": "s14",
+      "id": "s12",
       "kind": "shape",
       "parent": "p3",
-      "order": 11,
+      "order": 10,
       "name": "Zweig 4",
       "x": 29.17,
       "y": 33.46,
@@ -3211,10 +3017,10 @@
       "material": "airy"
     },
     {
-      "id": "s15",
+      "id": "s13",
       "kind": "shape",
       "parent": "p3",
-      "order": 12,
+      "order": 11,
       "name": "Zweig 5",
       "x": 35.75,
       "y": 32.35,
@@ -3322,10 +3128,10 @@
       "material": "airy"
     },
     {
-      "id": "s16",
+      "id": "s14",
       "kind": "shape",
       "parent": "p3",
-      "order": 13,
+      "order": 12,
       "name": "Zweig 6",
       "x": 41.15,
       "y": 33.05,
@@ -3433,10 +3239,10 @@
       "material": "airy"
     },
     {
-      "id": "s17",
+      "id": "s15",
       "kind": "shape",
       "parent": "p3",
-      "order": 14,
+      "order": 13,
       "name": "Zweig 7",
       "x": 19.85,
       "y": 31.15,
@@ -3544,10 +3350,10 @@
       "material": "airy"
     },
     {
-      "id": "s18",
+      "id": "s16",
       "kind": "shape",
       "parent": "p3",
-      "order": 15,
+      "order": 14,
       "name": "Zweig 8",
       "x": 32.09,
       "y": 31.3,
@@ -3655,10 +3461,10 @@
       "material": "airy"
     },
     {
-      "id": "s19",
+      "id": "s17",
       "kind": "shape",
       "parent": "p3",
-      "order": 16,
+      "order": 15,
       "name": "Krone",
       "x": 25.55,
       "y": 39.53,
@@ -3864,7 +3670,7 @@
       }
     },
     {
-      "id": "s20",
+      "id": "s18",
       "kind": "shape",
       "parent": "p4",
       "order": 1,
@@ -4328,7 +4134,7 @@
       "material": "solid"
     },
     {
-      "id": "s21",
+      "id": "s19",
       "kind": "shape",
       "parent": "p4",
       "order": 2,
@@ -4520,7 +4326,7 @@
       "material": "dig"
     },
     {
-      "id": "s22",
+      "id": "s20",
       "kind": "shape",
       "parent": "p5",
       "order": 1,
@@ -4824,7 +4630,7 @@
       "material": "solid"
     },
     {
-      "id": "s23",
+      "id": "s21",
       "kind": "shape",
       "parent": "p6",
       "order": 1,
@@ -5105,7 +4911,7 @@
       "material": "solid"
     },
     {
-      "id": "s24",
+      "id": "s22",
       "kind": "shape",
       "parent": "p7",
       "order": 1,
@@ -5405,7 +5211,7 @@
       "material": "solid"
     },
     {
-      "id": "s25",
+      "id": "s23",
       "kind": "shape",
       "parent": "p8",
       "order": 1,
@@ -6021,7 +5827,7 @@
       "material": "dig"
     },
     {
-      "id": "s26",
+      "id": "s24",
       "kind": "shape",
       "parent": "p8",
       "order": 2,
@@ -6170,7 +5976,7 @@
       }
     },
     {
-      "id": "s27",
+      "id": "s25",
       "kind": "shape",
       "parent": "p8",
       "order": 3,
@@ -6319,7 +6125,7 @@
       }
     },
     {
-      "id": "s28",
+      "id": "s26",
       "kind": "shape",
       "parent": "p8",
       "order": 4,
@@ -6468,7 +6274,7 @@
       }
     },
     {
-      "id": "s29",
+      "id": "s27",
       "kind": "shape",
       "parent": "p8",
       "order": 5,
@@ -6617,7 +6423,7 @@
       }
     },
     {
-      "id": "s30",
+      "id": "s28",
       "kind": "shape",
       "parent": "p9",
       "order": 1,
@@ -7361,7 +7167,7 @@
       "material": "solid"
     },
     {
-      "id": "s31",
+      "id": "s29",
       "kind": "shape",
       "parent": "p10",
       "order": 1,
@@ -7448,7 +7254,7 @@
       "material": "free"
     },
     {
-      "id": "s32",
+      "id": "s30",
       "kind": "shape",
       "parent": "p11",
       "order": 1,
@@ -8078,7 +7884,7 @@
       "material": "solid"
     },
     {
-      "id": "s33",
+      "id": "s31",
       "kind": "shape",
       "parent": "p11",
       "order": 2,
@@ -8214,7 +8020,7 @@
       "material": "solid"
     },
     {
-      "id": "s34",
+      "id": "s32",
       "kind": "shape",
       "parent": "p11",
       "order": 3,

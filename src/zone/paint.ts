@@ -72,7 +72,26 @@ export interface GradientFill extends FillBase {
   inner?: number;
   /** Welle: die Stufengrenzen schwingen um diesen Anteil einer Stufe (0 bis 1) */
   wave?: number;
+  /** als Pünktchen (Dot Shading): die Deckkraft des Verlaufs wird zur Dichte der Punkte */
+  dots?: GradientDots;
 }
+
+/**
+ * Verlauf als Pünktchen (Stufe 5, Florian 29.10.2026: „ein Verlauf über Pünktchen wie beim Dot Shading“): wo der Verlauf
+ * voll deckt, wachsen die Punkte zur geschlossenen Fläche zusammen; wo er dünner wird, werden sie seltener und kleiner;
+ * wo er durchsichtig ist, ist keiner. Ein Deckkraftverlauf löst die Fläche so in Punkte auf
+ */
+export interface GradientDots {
+  /** Durchmesser der Punkte (Meter der Ebene) */
+  size: number;
+  /** Zellgröße als Vielfaches des Durchmessers (1,05 dicht bis 6 locker) */
+  gap: number;
+  /** Größenstreuung (0 bis 1) */
+  jitter: number;
+  /** Muster */
+  seed: number;
+}
+export const GRADIENT_DOTS: GradientDots = { size: 0.3, gap: 1.5, jitter: 0.3, seed: 1 };
 
 /** Woher die Pünktchen ihre Dichte nehmen: gleichmäßig, an der Lichtkante, an der Schattenseite, an allen Kanten, im Dunklen */
 export type DotSource = 'even' | 'light' | 'shade' | 'edge' | 'dark';
@@ -84,7 +103,8 @@ export const GRAIN_TILES: readonly GrainTile[] = ['paper', 'gouache'];
 /**
  * Lichtkante (`light`) oder Innenschatten (`shade`) aus dem Kantenabstand (Stufe 5, Plan 3.2): eine Sichel an den Kanten,
  * die zum Licht der Zone zeigen (oder von ihm weg); ihre innere Grenze ist der Umriss, um width zum Licht verschoben.
- * width und soft in Metern der Ebene
+ * width und soft in Metern der Ebene; width 0 gibt einen Saum rundum (so breit wie soft), negativ liegt die Sichel auf der
+ * anderen Seite (Florian 29.10.2026: auch negativ, für Verläufe vom Rand)
  */
 interface EdgeBase extends FillBase {
   width: number;
@@ -304,10 +324,19 @@ export function parseFill(v: unknown): ZoneFill | null {
       if (num(o.steps) && o.steps >= 2) g.steps = Math.min(16, Math.round(o.steps));
       if (num(o.inner)) g.inner = clamp01(o.inner);
       if (num(o.wave) && o.wave > 0) g.wave = clamp01(o.wave);
+      if (o.dots && typeof o.dots === 'object') {
+        const d = o.dots as Record<string, unknown>;
+        g.dots = {
+          size: num(d.size) ? clampTo(d.size, 0.02, 20) : GRADIENT_DOTS.size,
+          gap: num(d.gap) ? clampTo(d.gap, 1.05, 6) : GRADIENT_DOTS.gap,
+          jitter: num(d.jitter) ? clamp01(d.jitter) : GRADIENT_DOTS.jitter,
+          seed: num(d.seed) ? Math.round(clampTo(d.seed, 0, 9999)) : GRADIENT_DOTS.seed,
+        };
+      }
       f = g;
     }
   } else if (o.type === 'light' || o.type === 'shade') {
-    const e: EdgeFill = { type: o.type, width: num(o.width) ? clampTo(o.width, 0.02, 40) : 1, soft: num(o.soft) ? clampTo(o.soft, 0, 40) : 0, blend, opacity };
+    const e: EdgeFill = { type: o.type, width: num(o.width) ? clampTo(o.width, -40, 40) : 1, soft: num(o.soft) ? clampTo(o.soft, 0, 40) : 0, blend, opacity };
     const color = parseColor(o.color);
     if (color) e.color = color;
     f = e;
@@ -394,6 +423,7 @@ export function serializeFill(f: ZoneFill): Record<string, unknown> {
     if (f.steps) o.steps = f.steps;
     if (f.inner !== undefined) o.inner = r3(f.inner);
     if (f.wave) o.wave = r3(f.wave);
+    if (f.dots) o.dots = { size: r3(f.dots.size), gap: r3(f.dots.gap), jitter: r3(f.dots.jitter), seed: f.dots.seed };
   } else if (f.type === 'light' || f.type === 'shade') {
     o.width = r3(f.width);
     o.soft = r3(f.soft);
@@ -414,7 +444,7 @@ export function serializeFill(f: ZoneFill): Record<string, unknown> {
 
 export function cloneFill(f: ZoneFill): ZoneFill {
   if (f.type === 'mist') return { ...f, dabs: f.dabs.map((d) => ({ ...d })) };
-  return isGradient(f) ? { ...f, stops: f.stops.map((s) => ({ ...s })) } : { ...f };
+  return isGradient(f) ? { ...f, stops: f.stops.map((s) => ({ ...s })), ...(f.dots ? { dots: { ...f.dots } } : {}) } : { ...f };
 }
 
 export const cloneFills = (fills: readonly ZoneFill[] | undefined): ZoneFill[] | undefined => (fills ? fills.map(cloneFill) : undefined);
@@ -495,7 +525,8 @@ export function visibleLayers(layers: readonly ZoneFill[]): ZoneFill[] {
   let from = 0;
   layers.forEach((f, i) => {
     if (f.hidden || f.type === 'fade' || f.blend !== 'normal' || f.opacity < 1) return;
-    if (f.type === 'color' || (f.type === 'gradient' && f.stops.every((st) => st.a >= 1))) from = i;
+    // (ein Verlauf als Pünktchen deckt nie ganz: zwischen den Punkten scheint durch)
+    if (f.type === 'color' || (f.type === 'gradient' && !f.dots && f.stops.every((st) => st.a >= 1))) from = i;
   });
   return layers.slice(from);
 }
@@ -639,6 +670,8 @@ export function evalLayers(layers: readonly ZoneFill[], x: number, y: number, sw
       const at = (k: number) => ramp[i * 4 + k] + (ramp[(i + 1) * 4 + k] - ramp[i * 4 + k]) * u;
       cs = [at(0), at(1), at(2)];
       as = at(3);
+      // Pünktchen: im Mittel deckt der Verlauf weniger (Näherung für Pipette und Vorschau)
+      if (f.dots) as *= as;
     }
     if (f.type === 'fade') {
       const m = 1 - f.opacity + f.opacity * as;

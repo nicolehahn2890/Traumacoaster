@@ -94,6 +94,8 @@ export interface UiActions extends StackActions {
   mistBrushSet(patch: Partial<{ size: number; strength: number }>): void;
   gradRadial(radial: boolean): void;
   gradReverse(): void;
+  /** Verlauf als Pünktchen (Dot Shading) an oder aus */
+  gradDots(): void;
   gradStopAlpha(): void;
   gradStopDelete(): void;
   gradRemove(): void;
@@ -143,7 +145,7 @@ export interface ContextExtra {
   /** „Weiter füllen“ läuft (Farbe aufgelöst) */
   filling?: string | null;
   /** Verlaufswerkzeug: bearbeitete Art, ob es einen Verlauf gibt, radial, gewählter Stopp (Deckkraft), Stopps, Ziele */
-  grad?: { kind: 'gradient' | 'fade'; has: boolean; radial: boolean; stop: { a: number } | null; stops: number; targets: number } | null;
+  grad?: { kind: 'gradient' | 'fade'; has: boolean; radial: boolean; dots: boolean; stop: { a: number } | null; stops: number; targets: number } | null;
   /** Farbe fiel auf eine Fläche mit Verlauf (Farbe aufgelöst) */
   dropChoice?: string | null;
   /** Punktpinsel: Durchmesser (Meter), Tonstufe 0–2, Wegnehmen */
@@ -1241,6 +1243,7 @@ export class EditorUi {
           button('Linear', 'Linearer Verlauf', () => this.a.gradRadial(false), grad.radial ? '' : 'on'),
           button('Radial', 'Kreisförmig um den Anfang', () => this.a.gradRadial(true), grad.radial ? 'on' : ''),
           button('Umkehren', 'Stopps in umgekehrter Reihenfolge', () => this.a.gradReverse()),
+          button('Pünktchen', 'Verlauf als Pünktchen (Dot Shading): wo er voll deckt, wachsen die Punkte zur Fläche zusammen, wo er durchsichtig wird, werden sie seltener und kleiner; Größe und Abstand im Füllstapel', () => this.a.gradDots(), grad.dots ? 'on' : ''),
         );
         if (grad.stop) {
           this.context.append(el('span', 'ze-sep'), button(`Stopp ${Math.round(grad.stop.a * 100)} %`, 'Deckkraft des gewählten Stopps weiterschalten (100, 75, 50, 25, 0 %); seine Farbe kommt aus dem Farbmenü', () => this.a.gradStopAlpha()));

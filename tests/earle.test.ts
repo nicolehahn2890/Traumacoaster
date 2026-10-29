@@ -321,8 +321,10 @@ describe('Shader je Schichtfolge', () => {
     expect(main('c|')).toContain('vSolid.rgb');
     expect(main('c|')).not.toContain('texelFetch(uPaint');
     expect(main('gl|')).not.toContain('uRank');
+    expect(main('gl|')).not.toContain('dotCover(');
     expect(main('gl|')).not.toContain('textureGrad');
-    expect(main('c.D1|')).toContain('texelFetch(uRank');
+    // (die Pünktchen lesen die Rang-Kachel in der gemeinsamen Funktion dotCover)
+    expect(main('c.D1|')).toContain('dotCover(');
     expect(main('c.D1|')).toContain('edgeAt(uLight * D.y)');
     expect(main('c|P')).toContain('vRows.y');
     // durchsichtige Flächen rechnen auch eine einzelne Farbe aus der Datentextur
@@ -474,10 +476,69 @@ describe('Farbnebel', () => {
 
 describe('Shader je Folge ohne Schleifen', () => {
   it('keine Art Schicht bringt eine Schleife in den Shader (unter ANGLE/Metal kostet jede einige Millisekunden je Bild)', () => {
-    const main = specialFragment('c.glbw.frw.fe.L.S.D0.D3.K.N16.P|c.gl.N2').split('void main()')[1];
+    const main = specialFragment('c.glbw.frw.fe.L.S.D0.D3.K.N16.P.gld.fed|c.gl.N2').split('void main()')[1];
     expect(main).not.toMatch(/\bfor\s*\(|\bwhile\s*\(/);
     expect(main).not.toContain('mistAt(');
     expect(main).not.toMatch(/\blayers\(/);
     expect(specialFragment('c.N16|', true).split('void main()')[1]).not.toMatch(/\bfor\s*\(/);
   });
 });
+
+describe('Verlauf als Pünktchen (Dot Shading)', () => {
+  const grad = (o: Partial<GradientFill> = {}): GradientFill => ({ type: 'gradient', stops: [{ t: 0, color: '#2e5f2a', a: 1 }, { t: 1, color: '#2e5f2a', a: 0 }], x0: 0, y0: 0, x1: 4, y1: 0, blend: 'normal', opacity: 1, ...o });
+
+  it('liest und schreibt die Pünktchen, kappt Unsinn, eine Kopie teilt sie nicht', () => {
+    const g = grad({ dots: { size: 0.25, gap: 1.4, jitter: 0.2, seed: 3 } });
+    expect(parseFill(JSON.parse(JSON.stringify(serializeFill(g))))).toEqual(g);
+    expect((parseFill({ ...serializeFill(g), dots: { size: 99, gap: 0.2 } }) as GradientFill).dots).toEqual({ size: 20, gap: 1.05, jitter: 0.3, seed: 1 });
+    expect((parseFill(serializeFill(grad())) as GradientFill).dots).toBeUndefined();
+    const copy = cloneFill(g) as GradientFill;
+    copy.dots!.size = 1;
+    expect(g.dots!.size).toBe(0.25);
+  });
+
+  it('ein Verlauf als Pünktchen deckt nie ganz; die Folge nennt d, der Shader wächst die Punkte zusammen', () => {
+    const base: ZoneFill = { type: 'color', color: '#8fc24a', blend: 'normal', opacity: 1 };
+    const solid = grad({ stops: [{ t: 0, color: '#2e5f2a', a: 1 }, { t: 1, color: '#cfe05c', a: 1 }] });
+    expect(visibleLayers([base, solid])).toHaveLength(1);
+    expect(visibleLayers([base, { ...solid, dots: { size: 0.3, gap: 1.5, jitter: 0.3, seed: 1 } }])).toHaveLength(2);
+    expect(layerTokens([base, grad({ dots: { size: 0.3, gap: 1.5, jitter: 0.3, seed: 1 } })])).toBe('c.gld');
+    expect(layerTokens([base, { ...grad({ edge: true, dots: { size: 0.3, gap: 1.5, jitter: 0.3, seed: 1 } }), type: 'fade' }])).toBe('c.fed');
+    const main = specialFragment('c.gld|').split('void main()')[1];
+    expect(main).toContain('dotCover(vPat.xy, D.x, D.y, D.z, D.w, as, as, 1.0, px)');
+    // die Pünktchen-Schicht nutzt dieselbe Funktion, ohne Zusammenwachsen
+    expect(specialFragment('c.D3|').split('void main()')[1]).toContain('dotCover(vPat.xy, C.x, C.y, D.z, C.w, C.z * k, k, 0.0, px)');
+  });
+
+  it('Wertezeile: Pünktchen an und aus, Abstand; das Material braucht die Rang-Kachel', () => {
+    const g = grad();
+    expect(fillParams(g).params!.map((p) => p.key)).toContain('dots');
+    setFillParam(g, 'dots', 0.4);
+    expect(g.dots).toMatchObject({ size: 0.4, gap: 1.5 });
+    expect(fillParams(g).name).toBe('Verlauf als Pünktchen');
+    setFillParam(g, 'dotgap', 2.2);
+    expect(g.dots!.gap).toBe(2.2);
+    setFillParam(g, 'dots', 0);
+    expect(g.dots).toBeUndefined();
+    const nodes: ZoneNode[] = [newPlane([], 0)];
+    const a = newShape(nodes, planesOf(nodes)[0].id, rectPath(20, 10), 0, 0, '#445566');
+    nodes.push(a);
+    setFacePaint(a, shapeFaces(a)[0], { fill: '#445566', fills: [grad({ dots: { size: 0.3, gap: 1.5, jitter: 0.3, seed: 1 } })] });
+    const layer = new PlaneLayer();
+    layer.build(nodes);
+    expect((layer as unknown as { uniforms: Record<string, { value: unknown }> }).uniforms.uRank.value).toBeTruthy();
+  });
+});
+
+describe('Lichtkante und Innenschatten mit Breite 0 oder negativ', () => {
+  it('die Breite darf 0 (Saum rundum) und negativ (andere Seite) sein, in den Grenzen ±40 m', () => {
+    expect(parseFill({ type: 'shade', width: -2, soft: 1 })).toMatchObject({ width: -2 });
+    expect(parseFill({ type: 'light', width: 0, soft: 1 })).toMatchObject({ width: 0 });
+    expect(parseFill({ type: 'light', width: -99 })).toMatchObject({ width: -40 });
+    const s = parseFill({ type: 'shade', width: 1 })!;
+    setFillParam(s, 'width', -3);
+    expect(s).toMatchObject({ width: -3 });
+    expect(fillParams(s).params!.find((p) => p.key === 'width')!.min).toBe(-40);
+  });
+});
+

@@ -1215,6 +1215,20 @@ deutlich näher an Bild 6 bis 8; anders bleiben der blasse Himmel (Look der Welt
 der Krone (größer und gleichmäßiger als in Bild 6), die Zahl der Äste (12 statt eines feinen Netzes) und der Bogen als
 ruhige Form in der Landschaft statt der großen Schwünge aus der Nähe in Bild 8. **Platzhalter:** weiterhin die ganze Szene
 samt Nachschliff.
+**Pünktchen als Verlauf, negative Kantenbreite, zweites Nachschärfen (29.10.2026, Florian: „Können die Pünktchen mehr
+einen Verlauf bilden wie beim Dot Shading … Die Breite von Innenkanten muss auch negativ sein können … Schärfe nochmal
+nach, versuche auch größere harmonische Grasflächen hinzubekommen“).** **Verlauf als Pünktchen** (`dots` am Verlauf,
+Knopf „Pünktchen“ beim Verlaufswerkzeug G, Größe und Abstand in der Wertezeile): jeder Verlauf (linear, radial, an der
+Kante, Farbe oder Deckkraft) lässt sich als Punkte zeichnen; wo er voll deckt, wachsen die Punkte zur geschlossenen Fläche
+zusammen, wo er dünner wird, werden sie seltener und kleiner, wo er durchsichtig ist, ist keiner. Ein Deckkraftverlauf
+löst die Fläche so in Punkte auf. Die Pünktchen-Schicht nutzt dieselbe Funktion (`dotCover` im Shader) und wird zum
+dünnen Ende ihrer Reichweite jetzt auch kleiner (gleichmäßige bleiben wie bisher). **Lichtkante und Innenschatten** dürfen
+die Breite 0 (Saum rundum, so breit wie „weich“) und negativ haben (Sichel auf der anderen Seite), Grenzen ±40 m.
+Gegenprobe Shader je Folge gegen den allgemeinen Shader pixelgleich (größte Abweichung 1 Stufe). **Szene:** die Wiesen
+als große Flächen in harmonischem Grün (Gold, Wiese hell, Wiese, tief), drei breite weiche Bänder am Umriss, ein heller
+Punktsaum am Rand und ein Pünktchen-Verlauf ins Tiefe statt der S-Bänder. **Messung** (Mac, Metal, 1688 × 780, Zone
+`tor-s5` mit `&earle=messen`): wie gesichert 1,84 ms je Bild, ohne Earle-Schichten 0,91 ms. **Platzhalter:** Werte der
+Pünktchen-Verläufe und der ganze Nachschliff der Szene. **Nicht geprüft:** am Handy.
 
 **Stufe 6: Bilder, Schnittmasken, Säume, Austausch (M).** Bildschichten, Schnittmaske, Saum entlang einer Kante,
 Malvorlage mit Fingerabdruck und Größenangabe, Umriss aus Bild, Import gemalter Teile mit Passmarken, KTX2 beim
