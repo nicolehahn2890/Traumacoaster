@@ -1202,6 +1202,19 @@ heller und weicher (wenig Tonwert-Kontrast, blasser Himmel, Dunst über den Berg
 geschwungenen Bänder in Bild 8 und seine Kantenpünktchen sind lichter, der Baum hat vier dicke Äste statt vieler feiner.
 **Platzhalter:** die ganze Szene (Formen, Farben, Wahl der Vorgaben). **Offen für das Tor:** Standbilder vom Handy,
 Florians Urteil und Regel 4 (B1).
+**Nachgeschärft (29.10.2026, Florian: „mehr Tonwert-Kontrast, dichtere Kantenpünktchen am Bogen, geschwungenere Bänder
+und feinere Äste. Alles weiter als Vorschlag markieren.“)** Eigene Palettenfelder der Szene für die Tiefen (Wiese tief,
+Ocker tief, Nachtblau, Berg tief, Creme); die Wiesen laufen von hellem Rand bis tief, ihre Bänder folgen als Kantenverlauf
+dem Umriss, dazu S-förmige Bänder. Der Bogen hat innen Bänder in Hellblau, Creme und Nachtblau, schräg verzogen, sodass sie
+ungleich breit schwingen, und dichte, feine Kantenpünktchen (Pünktchen-Werte nur in dieser Szene). Der Baum ist eine flache
+Silhouette in Nachtblau aus Stamm, vier Ästen und acht Zweigen. Die Kulisse liegt näher (Berge bei 70 statt 120 m), weil der
+Nebel der Welt ab 24 m hinter der Bühne zunimmt und bei 140 m ganz deckt; die Berge waren darin fast weiß. Der Generator
+hat dafür Palettenfelder je Szene und einen Nachschliff je Form nach der Earle-Vorgabe. Vorher und nachher:
+`docs/research/earle/2026-10-29-tor-s5-vorschlag.jpg`. **Befund nach dem Nachschärfen:** Kontrast, Bänder und Äste sind
+deutlich näher an Bild 6 bis 8; anders bleiben der blasse Himmel (Look der Welt, nicht der Zone), die Größe der Punkte in
+der Krone (größer und gleichmäßiger als in Bild 6), die Zahl der Äste (12 statt eines feinen Netzes) und der Bogen als
+ruhige Form in der Landschaft statt der großen Schwünge aus der Nähe in Bild 8. **Platzhalter:** weiterhin die ganze Szene
+samt Nachschliff.
 
 **Stufe 6: Bilder, Schnittmasken, Säume, Austausch (M).** Bildschichten, Schnittmaske, Saum entlang einer Kante,
 Malvorlage mit Fingerabdruck und Größenangabe, Umriss aus Bild, Import gemalter Teile mit Passmarken, KTX2 beim

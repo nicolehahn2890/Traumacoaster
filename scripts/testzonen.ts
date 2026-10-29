@@ -22,7 +22,7 @@ import { join } from 'node:path';
 import { cleanPath, flattenPath, smoothPath, translatePath, type Poly, type ZonePath } from '../src/zone/path';
 import { holdPicture, LIGHT_DEFAULT, swatchMap, type HoldView, type Material, type PlaneRole, type ZoneAir, type ZoneFieldNode, type ZoneGroup, type ZoneNode, type ZonePlane, type ZoneShape, type ZoneStationNode } from '../src/zone/nodes';
 import { earleShape, type EarlePreset } from '../src/zone/earle';
-import type { GradientFill, ZoneSwatch } from '../src/zone/paint';
+import type { DotsFill, GradientFill, ZoneSwatch } from '../src/zone/paint';
 import { dockEdges, stationOf } from '../src/zone/dock';
 import { emptyZone, parseZone, serializeZone } from '../src/zone/types';
 import { DEFAULT_CAMERA_TILT } from '../src/track/stage';
@@ -102,6 +102,8 @@ interface ShapeSpec {
   opacity?: number;
   /** Earle-Vorgabe der Form, wenn die Szene Earle trägt (sonst „Automatisch“ wie der Knopf; none: keine) */
   earle?: EarlePreset | 'auto' | 'none';
+  /** Nachschliff nach der Earle-Vorgabe (Werte der Schichten), wie von Hand in der Wertezeile */
+  look?: (shape: ZoneShape) => void;
 }
 
 interface PlaneSpec {
@@ -123,6 +125,8 @@ interface SceneSpec {
   earle?: boolean;
   /** Name des Felds */
   field?: string;
+  /** eigene Palettenfelder der Szene (nach den gemeinsamen, Kennungen ab c22) */
+  swatches?: Array<[string, string]>;
 }
 
 /** Umriss gegen den Uhrzeigersinn (y nach oben, wie presetPath), Löcher mit ihm */
@@ -198,7 +202,7 @@ const fieldView = (): HoldView => {
 
 function build(scene: SceneSpec): ZoneNode[] {
   const nodes: ZoneNode[] = [];
-  PALETTE.forEach(([name, color], i) => nodes.push({ id: `c${i + 1}`, kind: 'swatch', name, color } satisfies ZoneSwatch));
+  [...PALETTE, ...(scene.swatches ?? [])].forEach(([name, color], i) => nodes.push({ id: `c${i + 1}`, kind: 'swatch', name, color } satisfies ZoneSwatch));
   const air: ZoneAir = { id: 'air', kind: 'air', color: '#d8ebf6', near: 15, far: 130, amount: 0.55 };
   nodes.push(air);
   const groupIds = new Map<string, string>();
@@ -210,7 +214,7 @@ function build(scene: SceneSpec): ZoneNode[] {
   const view = fieldView();
   const planeIds = new Map<string, string>();
   let shapeNo = 0;
-  const looks: Array<[ZoneShape, EarlePreset | 'auto']> = [];
+  const looks: Array<[ZoneShape, EarlePreset | 'auto' | 'none', ShapeSpec['look']]> = [];
   // vorne zuerst (die Liste zeigt die Ebenen nach Tiefe; die Reihenfolge hier ist nur für die Kennungen)
   [...scene.planes]
     .sort((a, b) => a.z - b.z)
@@ -227,12 +231,15 @@ function build(scene: SceneSpec): ZoneNode[] {
       spec.shapes.forEach((s, k) => {
         const shape = makeShape(s, `s${++shapeNo}`, plane.id, k + 1);
         nodes.push(shape);
-        if (scene.earle && spec.role !== 'air' && s.earle !== 'none') looks.push([shape, s.earle ?? 'auto']);
+        if (scene.earle && spec.role !== 'air') looks.push([shape, s.earle ?? 'auto', s.look]);
       });
     });
   // Earle-Look wie der Knopf „Earle“ je Form (Luft-Ebenen nicht), mit dem vorgegebenen Licht der Zone
   const sw = swatchMap(nodes);
-  for (const [shape, preset] of looks) earleShape(shape, null, preset, sw, LIGHT_DEFAULT);
+  for (const [shape, preset, look] of looks) {
+    if (preset !== 'none') earleShape(shape, null, preset, sw, LIGHT_DEFAULT);
+    look?.(shape);
+  }
   const st = planeIds.get(scene.station.plane);
   if (!st) throw new Error(`Station: Ebene ${scene.station.plane} fehlt`);
   nodes.push({ id: 'station', kind: 'station', parent: st, x: scene.station.x, dir: 1, length: 14 } satisfies ZoneStationNode);
@@ -487,26 +494,77 @@ function boegen(): SceneSpec {
   };
 }
 
+/** Palettenfelder nur der Szene Tor S5: die Tiefen für mehr Tonwert-Kontrast (Vorschlag) */
+const S5_SWATCHES: Array<[string, string]> = [
+  ['Wiese tief', '#2e5f2a'],
+  ['Ocker tief', '#a8722a'],
+  ['Nachtblau', '#14244a'],
+  ['Berg tief', '#2f4b8a'],
+  ['Creme', '#fbf3dc'],
+];
+const X = Object.fromEntries(S5_SWATCHES.map(([name], i) => [name, `@c${PALETTE.length + i + 1}`])) as Record<string, string>;
+
+/** Ast als spitz zulaufender Bogen von a nach b: Breite w0 bis w1, Biegung bend (Meter quer zur Richtung, links positiv) */
+function branch(a: Pt, b: Pt, w0: number, w1: number, bend: number, n = 6): Pt[] {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy);
+  const nx = -dy / len;
+  const ny = dx / len;
+  const left: Pt[] = [];
+  const right: Pt[] = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const off = bend * 4 * t * (1 - t);
+    const cx = a[0] + dx * t + nx * off;
+    const cy = a[1] + dy * t + ny * off;
+    const w = (w0 + (w1 - w0) * t) / 2;
+    left.push([cx + nx * w, cy + ny * w]);
+    right.push([cx - nx * w, cy - ny * w]);
+  }
+  return [...left, ...right.reverse()];
+}
+
+/** Punkt auf dem Bogen von branch (Mittellinie) bei t */
+function along(a: Pt, b: Pt, bend: number, t: number): Pt {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy);
+  const off = bend * 4 * t * (1 - t);
+  return [a[0] + dx * t + (-dy / len) * off, a[1] + dy * t + (dx / len) * off];
+}
+
+/** Nachschliff: der Verlauf der Vorgabe wird zum Kantenverlauf (Bänder folgen dem Umriss, geschwungen), depth in Metern */
+const contourBands = (depth: number, steps: number, wave: number) => (s: ZoneShape): void => {
+  const g = [...(s.fills ?? [])].reverse().find((f): f is GradientFill => f.type === 'gradient' && !f.edge);
+  if (!g) return;
+  const x = Math.min(g.x0, g.x1);
+  Object.assign(g, { edge: true, steps, inner: 0.3, wave, x0: x, y0: g.y1, x1: x + depth / Math.abs(s.sx), y1: g.y1 });
+};
+
+/** Nachschliff: Pünktchen dichter und feiner (Bild 8: dichte Punktbänder an den Kanten) */
+const denseDots = (o: Partial<DotsFill>) => (s: ZoneShape): void => {
+  for (const f of s.fills ?? []) if (f.type === 'dots') Object.assign(f, o);
+};
+
+/** Nachschliff: Innenschatten kräftiger */
+const deeperShade = (opacity: number) => (s: ZoneShape): void => {
+  for (const f of s.fills ?? []) if (f.type === 'shade') f.opacity = opacity;
+};
+
 /**
  * Tor S5 (Stufe 5): ein Satz Körper im Earle-Look. Vorn eine Wiese mit der Station, in der Mitte eine goldgrüne Wiese mit
- * einem großen Baum (dunkler Stamm, dessen Äste unter einer Schirmkrone mit Punktkrone auseinandergehen: Florians Bild 6,
- * Earle 03), rechts ein Felsbogen in Blau mit einem cremefarbenen Ring dahinter (Bild 8, Baukasten 05 und 06), durch ihn
- * eine helle Wiese mit Baumgruppen (Earle 03), dahinter ferne Hügel, Berge und eine Wolke. Vorschlag: Formen, Farben und
- * die Wahl der Vorgaben je Form sind nicht festgelegt
+ * einem großen Baum (Stamm, vier Äste und feine Zweige unter einer Schirmkrone mit Punktkrone: Florians Bild 6, Earle 03),
+ * rechts ein Felsbogen aus Sandstein mit Grasdecke, innen schräg verzogene Ringe in Blau und Creme bis ins Nachtblau mit
+ * dichten Kantenpünktchen (Bild 8, Baukasten 05 und 06), durch ihn eine helle Wiese mit Baumgruppen, dahinter dunklere
+ * Hügel, blaue Berge und eine Wolke. Die Wiesenbänder folgen dem Umriss, dazu S-förmige Bänder (Bild 7). Nachgeschärft auf
+ * Florians Wunsch (29.10.2026): mehr Tonwert-Kontrast, dichtere Kantenpünktchen, geschwungenere Bänder, feinere Äste.
+ * Vorschlag: Formen, Farben, die Wahl der Vorgaben und der Nachschliff sind nicht festgelegt
  */
 function torS5(): SceneSpec {
-  const front: Pt[] = [[-60, 4], [-24, 5.2], [-4, 6], [6, 6.2], [14, 6.4], [24, 7.6], [36, 9.8], [48, 9.4], [60, 7.6], [72, 8], [84, 10.2], [96, 9.4], [108, 8], [124, 8.6], [190, 8]];
-  const mid: Pt[] = [[-60, 12], [-24, 13.4], [0, 15], [14, 16.4], [26, 16.8], [38, 16.2], [52, 17.8], [66, 16.6], [80, 18.4], [94, 17.2], [108, 18.8], [124, 17.6], [190, 17]];
+  const front: Pt[] = [[-60, 3], [-24, 4.6], [-4, 6], [6, 6.2], [14, 6.6], [24, 8.6], [34, 12], [44, 12.4], [56, 9.2], [68, 8], [80, 10.6], [92, 13], [104, 11], [116, 8.6], [140, 9.4], [190, 9]];
+  const mid: Pt[] = [[-60, 12], [-24, 13.6], [0, 15.6], [14, 17.6], [26, 18.2], [38, 16.6], [50, 19.6], [62, 21], [74, 18], [86, 17.2], [98, 19.8], [110, 21.4], [124, 18.6], [190, 17]];
   const back: Pt[] = [[-60, 20], [-20, 21.6], [10, 23.4], [36, 22.6], [58, 25.2], [76, 23.8], [92, 26], [112, 24.4], [140, 25.6], [190, 24]];
-  // Stamm mit vier Ästen, die unter der Krone fächerartig auseinandergehen (Bild 6)
-  const trunk: Pt[] = [
-    [24.2, 14.6], [24.8, 19], [24.6, 23.6], [23.6, 26.6],
-    [19.4, 29.6], [14.4, 32.6], [10.6, 35.2], [11.2, 35.8], [15.2, 33.6], [20.2, 30.8], [23.4, 29.2],
-    [23.2, 31.6], [21.4, 35.6], [22.2, 36], [24.6, 31.8],
-    [25.8, 31.4], [27.4, 36.2], [28.2, 35.8], [27.2, 30.6],
-    [29.4, 29.6], [34.6, 32.2], [40.4, 35.2], [41, 34.6], [35.4, 31.2], [29.8, 27.4],
-    [27.8, 24], [27.4, 19], [28.2, 14.6],
-  ];
   /** Schirmkrone: gewölbt oben, flacher, leicht gewellter Boden (Bild 6) */
   const dome = (cx: number, y0: number, rx: number, ry: number): Pt[] => {
     const out: Pt[] = [];
@@ -518,33 +576,78 @@ function torS5(): SceneSpec {
     out.push([cx - rx * 0.8, y0 - ry * 0.12], [cx - rx * 0.45, y0 - ry * 0.2], [cx - rx * 0.1, y0 - ry * 0.14], [cx + rx * 0.3, y0 - ry * 0.22], [cx + rx * 0.7, y0 - ry * 0.12]);
     return out;
   };
-  // Felsbogen als Masse: außen heller Sandstein mit Grasdecke, nach innen zwei Ringe, die dunkler werden und nach rechts
-  // zusammenlaufen wie ein Tunnel (Bänder ungleicher Breite wie in Bild 8 und den Baukasten-Szenen 05 und 06)
+  // Baum: Stamm bis zur Gabel, vier Äste, an jedem ein bis zwei feine Zweige bis in die Krone (Bild 6)
+  const trunk: Pt[] = [[24.2, 14.6], [24.8, 19], [24.9, 23.6], [24.6, 26.4], [25.4, 27.8], [26.8, 27.8], [27.6, 26.2], [27.2, 23.6], [27.2, 19], [28.2, 14.6]];
+  const limbs: Array<[Pt, Pt, number, number, number]> = [
+    [[25, 26.4], [11, 34.6], 1.5, 0.35, 1.2],
+    [[25.6, 27], [19, 35.4], 1.2, 0.3, 0.6],
+    [[26.6, 27], [32, 35.6], 1.2, 0.3, -0.6],
+    [[27.2, 26.4], [41.5, 34.4], 1.5, 0.35, -1.2],
+  ];
+  const twigs: Array<[number, number, Pt, number]> = [
+    [0, 0.45, [15.2, 35.6], 0.4],
+    [0, 0.75, [8.6, 34.4], -0.3],
+    [1, 0.5, [22.8, 36], -0.3],
+    [2, 0.5, [28.4, 36], 0.3],
+    [3, 0.45, [37.4, 35.8], -0.4],
+    [3, 0.75, [44, 34.6], 0.3],
+    [1, 0.3, [16.4, 33.2], 0.2],
+    [2, 0.3, [35.6, 33.4], -0.2],
+  ];
+  const navy = { fill: X['Nachtblau'], material: 'airy' as Material, earle: 'none' as const };
+  const tree: ShapeSpec[] = [
+    // (flach wie die Äste: ein Kantenring auf dem Stamm zeichnete an der Gabel eine helle Naht)
+    { name: 'Stamm', outline: trunk, ...navy },
+    ...limbs.map(([a, b, w0, w1, bend], i): ShapeSpec => ({ name: `Ast ${i + 1}`, outline: branch(a, b, w0, w1, bend), ...navy })),
+    ...twigs.map(([k, t, end, bend], i): ShapeSpec => {
+      const [a, b, , , lb] = limbs[k];
+      return { name: `Zweig ${i + 1}`, outline: branch(along(a, b, lb, t), end, 0.38, 0.12, bend, 5), ...navy };
+    }),
+    { name: 'Krone', outline: dome(26, 35, 18, 11), fill: C['Wiese'], material: 'airy', grad: { stops: [[C['Wiese hell'], 0], [C['Wiese'], 0.45], [X['Wiese tief'], 1]], from: [26, 46], to: [26, 33] }, earle: 'crown', look: deeperShade(0.7) },
+  ];
+  // Felsbogen: außen heller Sandstein mit Grasdecke; innen Ringe in Hellblau, Creme und Nachtblau, schräg verzogen
+  // (oben nach rechts geneigt), damit die Bänder ungleich breit schwingen wie in Bild 8
   const archTop: Pt[] = [[55.4, 20], [58.6, 29.6], [64.4, 37.6], [72.6, 43], [82, 46], [92.6, 46.6], [101.6, 44], [108.6, 38.4], [112.8, 30], [114.6, 20]];
   const archOuter: Pt[] = [[54, -40], [55.6, 0], [54.4, 10], ...archTop, [115, 8], [116, -40]];
   const archGrass: Pt[] = [...archTop.slice(1, -1).map(([x, y]): Pt => [x, y + 0.9]), ...archTop.slice(1, -1).reverse().map(([x, y], i): Pt => [x + (i % 2 ? 0.6 : -0.5), y - 2.8])];
   const archHole: Pt[] = [[69.6, 4], [69.2, 14], [70.8, 22.8], [74.8, 29.6], [81, 33.8], [88.4, 35.4], [95.6, 33.6], [100.4, 27.8], [102.6, 19.4], [102.8, 9.4], [102, 3], [86, 2.2], [74, 2.8]];
   const M: Pt = [86.5, 18];
   const at = (pts: Pt[], k: number, dx: number, dy: number, ky = k): Pt[] => grow(pts, M[0], M[1], k, ky).map(([x, y]): Pt => [x + dx, y + dy]);
-  const grove = (cx: number, cy: number, rx: number, ry: number): ShapeSpec => ({ name: 'Baumgruppe', outline: blob(cx, cy, rx, ry, 11, 0.1), fill: C['Wald'], material: 'airy', grad: { stops: [[C['Wiese dunkel'], 0], [C['Wald'], 1]], from: [cx, cy + ry], to: [cx, cy - ry] }, earle: 'crown' });
+  const lean = (pts: Pt[], k: number): Pt[] => pts.map(([x, y]): Pt => [x + (y - M[1]) * k, y]);
+  const rockDots = denseDots({ density: 1, gap: 1.3, size: 0.16, reach: 2.8, jitter: 0.45, tone: 0.6 });
+  // (die Ringe sind schmal: die Punkte bleiben an ihren Kanten, die Mitte der Bänder bleibt frei)
+  const ringDots = denseDots({ density: 1, gap: 1.3, size: 0.15, reach: 1.1, jitter: 0.45, tone: 0.6 });
+  const grove = (cx: number, cy: number, rx: number, ry: number): ShapeSpec => ({ name: 'Baumgruppe', outline: blob(cx, cy, rx, ry, 11, 0.1), fill: C['Wald'], material: 'airy', grad: { stops: [[C['Wiese dunkel'], 0], [X['Wiese tief'], 1]], from: [cx, cy + ry], to: [cx, cy - ry] }, earle: 'crown' });
+  // S-förmige Bänder in den Wiesen (Bild 7), ganz unter der Oberkante
+  const swoosh = (pts: Pt[], d: number): Pt[] => stripe(pts, 0, d);
   return {
     name: 'tor-s5',
     groups: ['Wiese', 'Bogen', 'Kulisse'],
     station: { plane: 'Wiese vorn', x: 7 },
     earle: true,
     field: 'Tor S5 (Vorschlag)',
+    swatches: S5_SWATCHES,
     planes: [
-      { name: 'Vorn Busch', z: -6, role: 'front', shapes: [{ name: 'Busch', outline: blob(106, -11, 14, 8, 11, 0.12), fill: C['Busch'], material: 'airy', grad: { stops: [[C['Wiese dunkel'], 0], [C['Busch'], 1]], from: [106, -3], to: [106, -15] }, earle: 'crown' }] },
-      { name: 'Wiese vorn', z: 4, role: 'play', group: 'Wiese', shapes: [{ name: 'Wiese vorn', outline: band(front), fill: C['Wiese'], grad: hillGrad(10.2, C['Wiese hell'], C['Wiese dunkel']), earle: 'hill' }] },
+      { name: 'Vorn Busch', z: -6, role: 'front', shapes: [{ name: 'Busch', outline: blob(106, -11, 14, 8, 11, 0.12), fill: C['Busch'], material: 'airy', grad: { stops: [[C['Wiese dunkel'], 0], [X['Wiese tief'], 1]], from: [106, -3], to: [106, -15] }, earle: 'crown', look: deeperShade(0.7) }] },
+      {
+        name: 'Wiese vorn',
+        z: 4,
+        role: 'play',
+        group: 'Wiese',
+        shapes: [
+          { name: 'Wiese vorn', outline: band(front), fill: C['Wiese'], grad: { stops: [[C['Wiese hell'], 0], [C['Wiese'], 0.4], [X['Wiese tief'], 1]], from: [0, 13], to: [0, -10] }, earle: 'hill', look: contourBands(14, 5, 0.7) },
+          { name: 'Band vorn', outline: swoosh([[30, 4.4], [44, 7], [58, 5.2], [72, 3.4], [86, 5], [100, 7.2], [114, 5.4], [130, 4.6]], 2.6), fill: X['Wiese tief'], opacity: 0.55, earle: 'none' },
+        ],
+      },
       {
         name: 'Wiese Mitte',
         z: 12,
         role: 'play',
         group: 'Wiese',
         shapes: [
-          { name: 'Wiese Mitte', outline: band(mid), fill: C['Gold'], grad: hillGrad(18.8, C['Gold'], C['Wiese']), earle: 'hill' },
-          { name: 'Stamm', outline: trunk, fill: C['Höhle tief'], material: 'airy', earle: 'rock' },
-          { name: 'Krone', outline: dome(26, 35, 18, 11), fill: C['Wiese'], material: 'airy', grad: { stops: [[C['Wiese hell'], 0], [C['Wiese dunkel'], 1]], from: [26, 46], to: [26, 33] }, earle: 'crown' },
+          { name: 'Wiese Mitte', outline: band(mid), fill: C['Gold'], grad: { stops: [[C['Gold'], 0], [C['Ocker'], 0.5], [X['Ocker tief'], 1]], from: [0, 21], to: [0, 4] }, earle: 'hill', look: contourBands(10, 4, 0.7) },
+          { name: 'Band Mitte', outline: swoosh([[40, 14.6], [52, 16.2], [64, 14.6], [76, 12.6], [88, 13.2], [100, 15.4], [114, 14], [130, 13.4]], 2.2), fill: X['Ocker tief'], opacity: 0.5, earle: 'none' },
+          ...tree,
         ],
       },
       {
@@ -553,8 +656,8 @@ function torS5(): SceneSpec {
         role: 'play',
         group: 'Bogen',
         shapes: [
-          { name: 'Bogen', outline: archOuter, holes: [archHole], fill: C['Sandstein hell'], material: 'solid', grad: { stops: [[C['Sandstein hell'], 0], [C['Sandstein'], 0.55], [C['Ocker'], 1]], from: [86, 46], to: [86, 0] }, earle: 'rock' },
-          { name: 'Grasdecke', outline: archGrass, fill: C['Wiese'], grad: hillGrad(47, C['Wiese hell'], C['Wiese']), earle: 'meadow' },
+          { name: 'Bogen', outline: archOuter, holes: [archHole], fill: C['Sandstein hell'], material: 'solid', grad: { stops: [[X['Creme'], 0], [C['Sandstein'], 0.5], [C['Ocker'], 1]], from: [86, 46], to: [86, 0] }, earle: 'rock', look: rockDots },
+          { name: 'Grasdecke', outline: archGrass, fill: C['Wiese'], grad: hillGrad(47, C['Wiese hell'], C['Wiese dunkel']), earle: 'meadow' },
         ],
       },
       {
@@ -562,14 +665,21 @@ function torS5(): SceneSpec {
         z: 25,
         role: 'play',
         group: 'Bogen',
-        shapes: [{ name: 'Ring hell', outline: at(archHole, 1.1, 0, 0, 1.06), holes: [at(archHole, 0.8, 2.4, 0.4, 0.78)], fill: C['Fels blau hell'], material: 'solid', grad: { stops: [[C['Fels blau hell'], 0], [C['Fels blau'], 1]], from: [86, 36], to: [86, 2] }, earle: 'rock' }],
+        shapes: [{ name: 'Ring hellblau', outline: at(archHole, 1.1, 0, 0, 1.06), holes: [lean(at(archHole, 0.78, 2, 0.4, 0.76), 0.1)], fill: C['Fels blau'], material: 'solid', grad: { stops: [[C['Fels blau hell'], 0], [C['Fels blau'], 0.5], [C['Fels blau tief'], 1]], from: [86, 36], to: [86, 2] }, earle: 'rock', look: ringDots }],
+      },
+      {
+        name: 'Bogen Creme',
+        z: 27,
+        role: 'play',
+        group: 'Bogen',
+        shapes: [{ name: 'Band Creme', outline: lean(at(archHole, 0.8, 2, 0.4, 0.78), 0.1), holes: [lean(at(archHole, 0.63, 3.6, 0.6, 0.61), 0.2)], fill: X['Creme'], material: 'solid', earle: 'rock', look: ringDots }],
       },
       {
         name: 'Bogen Ring 2',
         z: 29,
         role: 'play',
         group: 'Bogen',
-        shapes: [{ name: 'Ring tief', outline: at(archHole, 0.84, 2.4, 0.4, 0.82), holes: [at(archHole, 0.58, 4.6, 0.8, 0.56)], fill: C['Fels blau'], material: 'solid', grad: { stops: [[C['Fels blau'], 0], [C['Fels blau tief'], 1]], from: [88, 30], to: [88, 4] }, earle: 'rock' }],
+        shapes: [{ name: 'Ring Nachtblau', outline: lean(at(archHole, 0.65, 3.6, 0.6, 0.63), 0.2), holes: [lean(at(archHole, 0.46, 5.4, 0.8, 0.44), 0.3)], fill: X['Nachtblau'], material: 'solid', grad: { stops: [[C['Höhle tief'], 0], [X['Nachtblau'], 1]], from: [88, 30], to: [88, 4] }, earle: 'rock', look: ringDots }],
       },
       {
         name: 'Wiese hinten',
@@ -584,9 +694,18 @@ function torS5(): SceneSpec {
           grove(95.5, 26.6, 2.4, 2),
         ],
       },
-      { name: 'Wolke', z: 80, role: 'air', group: 'Kulisse', shapes: [cloud(40, 51, 24)] },
-      { name: 'Hügel fern', z: 90, role: 'backdrop', group: 'Kulisse', air: 0.7, shapes: [{ ...farHills([[-60, 30], [-20, 32], [12, 33.6], [44, 32], [76, 34.4], [110, 33], [190, 32]]), earle: 'meadow' }] },
-      { name: 'Berge', z: 120, role: 'backdrop', group: 'Kulisse', air: 0.5, shapes: mountains([[64, 50], [118, 47]]).map((s): ShapeSpec => ({ ...s, earle: s.name === 'Berge' ? 'hill' : 'meadow' })) },
+      // (Kulisse näher als in den Testzonen: der Nebel der Welt beginnt 24 m hinter der Bühne und deckt bei 140 m ganz, die
+      // Berge bei 120 m waren darin fast weiß)
+      { name: 'Wolke', z: 65, role: 'air', group: 'Kulisse', shapes: [cloud(40, 51, 24)] },
+      { name: 'Hügel fern', z: 55, role: 'backdrop', group: 'Kulisse', air: 0.45, shapes: [{ ...farHills([[-60, 30], [-20, 32], [12, 33.6], [44, 32], [76, 34.4], [110, 33], [190, 32]]), fill: C['Wiese dunkel'], grad: { stops: [[C['Wiese'], 0], [C['Wiese dunkel'], 1]], from: [0, 34.4], to: [0, 22] }, earle: 'meadow' }] },
+      {
+        name: 'Berge',
+        z: 70,
+        role: 'backdrop',
+        group: 'Kulisse',
+        air: 0.25,
+        shapes: mountains([[64, 50], [118, 47]]).map((s): ShapeSpec => (s.name === 'Berge' ? { ...s, fill: X['Berg tief'], grad: { stops: [[X['Berg tief'], 0], [C['Berg'], 0.55], [C['Berg Schatten'], 1]], from: [0, 50], to: [0, 20] }, earle: 'hill' } : { ...s, earle: 'meadow' })),
+      },
     ],
   };
 }
