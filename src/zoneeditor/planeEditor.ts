@@ -17,7 +17,7 @@ import type { WorldView } from '@/render/worldView';
 import type { CameraTiltPanel } from '@/ui/cameraTiltPanel';
 import { CAMERA_TILT, viewState } from '@/track/stage';
 import { loadZone, onZoneChange, saveZone, uploadZoneFile } from '@/zone/io';
-import { fieldsOf, fieldToNode, type ZoneFile } from '@/zone/types';
+import { fieldsOf, fieldToNode, formatGoals, parseField, parseGoals, type ZoneFile } from '@/zone/types';
 import { buildSliceStack } from '@/zone/slices';
 import { flattenPath, type ZonePath } from '@/zone/path';
 import { planesToSvg, slug, svgToPlanes } from '@/zone/svgPlanes';
@@ -69,6 +69,11 @@ import {
   slicesToNodes,
   isFieldNode,
   isStationNode,
+  isCoinNode,
+  isPlayNode,
+  isQueueNode,
+  isSiteNode,
+  type ZonePlayNode,
   styleMap,
   stylesOf,
   swatchesOf,
@@ -100,10 +105,14 @@ const WAVE_ROW = -11;
 import { addStop, lineT, moveStop, ownPaint, readGradient, removeGradient, removeStop, reverseStops, setMid, targetBox, topGradient, writeGradient, writePaint, type GradKind, type GradLine, type GradPatch, type GradTarget } from '@/zone/gradients';
 import type { StackAddKind, StackRow, StackView } from './stackPanel';
 import { bakeStyle, linkedStyle, linkStyle, paintToStyle, pasteStyle, styleFromClip, unlinkStyle, type StyleClip } from '@/zone/styles';
-import { DEFAULT_MATERIAL, dockEdges, faceMaterial, setFaceMaterial, stationOf, toggleDock, type DockEdge } from '@/zone/dock';
+import { DEFAULT_MATERIAL, dockEdges, faceMaterial, groundAt, setFaceMaterial, toggleDock, type DockEdge } from '@/zone/dock';
+import { edgeSpan } from '@/zone/playObjects';
+import { coinsOfGroup, type CoinShape } from '@/zone/groups';
+import { ABILITY_WORDS, formatFieldLine, parseFieldLine, ZONE_ABILITIES, zoneUpgrades } from '@/zone/abilities';
+import { LOOK_NAMES } from '@/world/looks';
 import { faceAt, faceBox, type Face } from '@/zone/faces';
 import type { ColorMenuHost, PickPhase } from './colorMenu';
-import { dotSize, EditorUi, mistSize, type Isolate, type LayerRow, type Tool } from './ui';
+import { dotSize, EditorUi, mistSize, PLAY_WORDS, type Isolate, type LayerRow, type PlayKind, type PlaySel, type Tool } from './ui';
 import { EditorViews, type ViewMode } from './views';
 
 export interface PlaneEditorHost {
@@ -156,7 +165,9 @@ type Gesture =
   /** Punktpinsel (Stufe 5): Punkte entlang des Wegs setzen (auf die Form shape) oder wegnehmen (alle Formen unter dem Pinsel) */
   | { kind: 'dots'; pointerId: number; shape: string | null; last: Pt | null; erase: boolean }
   /** Feld (Stufe 4): verschieben (innen) oder an Kante oder Ecke ziehen; Weg in Metern der Spur-0-Ebene, vom Anfang aus */
-  | { kind: 'field'; pointerId: number; id: string; mode: FieldGrip; start: Pt; orig: { x0: number; x1: number; y0: number; y1: number } };
+  | { kind: 'field'; pointerId: number; id: string; mode: FieldGrip; start: Pt; orig: { x0: number; x1: number; y0: number; y1: number } }
+  /** Spielobjekt (Stufe 4): verschieben (entlang der Andockkanten, Coins in ihrer Ebene) oder ein Ende der Schlange ziehen */
+  | { kind: 'play'; pointerId: number; id: string; mode: 'move' | 'x0' | 'x1'; start: Pt; orig: ZonePlayNode; moved: boolean };
 
 /** Griff eines Felds: innen (verschieben), Kanten n, s, o, w und Ecken (Himmelsrichtungen, n oben) */
 type FieldGrip = 'move' | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -192,6 +203,32 @@ const PATH_TOOLS: readonly Tool[] = ['direct', 'lasso', 'pen', 'curve', 'brush',
 const isPathTool = (t: Tool): t is PathTool => PATH_TOOLS.includes(t);
 
 const fmtDeg = (v: number): string => String(Math.round(v * 10) / 10).replace('.', ',');
+
+/** Bildpunkt in einem Umriss aus Bildpunkten (gerade-ungerade) */
+function inRing(ring: readonly Pt[], p: Pt): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i];
+    const b = ring[j];
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/** Abstand eines Bildpunkts zum Rand eines Umrisses */
+function ringDist(ring: readonly Pt[], p: Pt): number {
+  let best = Infinity;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const l2 = dx * dx + dy * dy;
+    const t = l2 > 1e-9 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
+    best = Math.min(best, Math.hypot(a.x + dx * t - p.x, a.y + dy * t - p.y));
+  }
+  return best;
+}
 
 /** Pfad einer Grundform im Rahmen w × h um den Ursprung */
 function primitivePath(kind: 'rect' | 'ellipse' | 'arch', w: number, h: number): ZonePath {
@@ -282,8 +319,9 @@ export class PlaneEditor {
   private dockCache: { version: number; edges: DockEdge[] } | null = null;
   /** im Werkzeug Andockkanten angetippte Fläche (Form, Punkt im Pfad) */
   private dockFace: { shape: string; at: Pt } | null = null;
-  /** Station setzen: die nächste angetippte Andockkante bekommt sie */
-  private stationPlacing = false;
+  /** Werkzeug Spielobjekte: gewähltes Objekt; was gesetzt wird (die nächste angetippte Andockkante bekommt es) */
+  private playSel: string | null = null;
+  private playPlacing: PlayKind | null = null;
   /** gewähltes Feld im Werkzeug Felder */
   private fieldSel: string | null = null;
   /** Spur-0-Ebene als Bezug für Felder (Meter der Bühne, wie die Felder des Klötzchen-Editors) */
@@ -691,6 +729,7 @@ export class PlaneEditor {
       dropChoice: this.building && this.dropChoice ? this.resolve(this.dropChoice.color) : null,
       material: this.building ? this.selectionMaterial() : null,
       dock: this.building && this.tool === 'dock' && !this.fillMode ? this.dockInfo() : null,
+      play: this.building && this.tool === 'play' && !this.fillMode ? this.playInfo() : null,
       field: this.building && this.tool === 'field' && !this.fillMode ? this.fieldInfo() : null,
     });
     this.ui.setStack(this.stackView());
@@ -822,6 +861,7 @@ export class PlaneEditor {
     if (this.building && this.tool === 'gradient') this.gradOverlay(st);
     if (this.building && this.tool === 'dock') this.dockOverlay(st);
     if (this.building && this.tool === 'field') this.fieldOverlay(st);
+    if (this.building && this.tool === 'play') this.playOverlay(st);
     if (this.building && (this.tool === 'mist' || this.tool === 'dotbrush') && this.brushAt) st.brush = this.brushRing(this.brushAt);
     const tf = this.dropAt ? this.faceAtScreen(this.dropAt) : null;
     if (tf) st.target = [tf.face.outline, ...tf.face.holes].map((r) => r.map(([x, y]) => this.screenOf(tf.plane, shapeToPlane(tf.shape, x, y), tf.shape)).filter((q): q is Pt => !!q));
@@ -1037,20 +1077,14 @@ export class PlaneEditor {
       deletePlane: () => this.deletePlane(),
       fillDone: () => this.endFill(),
       setMaterial: (m) => this.setMaterial(m),
-      stationPlace: () => {
-        this.stationPlacing = !this.stationPlacing;
+      playPlace: (kind) => {
+        this.playPlacing = this.playPlacing === kind ? null : kind;
         this.uiDirty = true;
+        this.drawOverlay();
       },
-      stationFlip: () => this.edit(() => {
-        const st = this.nodes.find(isStationNode);
-        if (st) st.dir = st.dir === 1 ? -1 : 1;
-      }),
-      stationRemove: () => {
-        this.edit(() => {
-          this.nodes = this.nodes.filter((n) => !isStationNode(n));
-          this.zone.nodes = this.nodes;
-        });
-      },
+      playEdit: (change) => this.playEdit(change),
+      playRemove: () => this.playRemove(),
+      fieldEdit: (what) => this.fieldEdit(what),
       fieldAdd: () => this.fieldAdd(),
       fieldRename: () => {
         const f = this.nodes.find((n): n is ZoneFieldNode => isFieldNode(n) && n.id === this.fieldSel);
@@ -1236,7 +1270,7 @@ export class PlaneEditor {
     this.sketchEdit = null;
     if (this.fillMode) this.endFill();
     if (this.grad) this.grad.stop = null;
-    this.stationPlacing = false;
+    this.playPlacing = null;
     this.brushAt = null;
     this.paths.setTool(isPathTool(t) ? t : null);
     this.ui.setTool(t);
@@ -1448,7 +1482,7 @@ export class PlaneEditor {
     const last = planes.findIndex((p) => p.id === sel[sel.length - 1].id);
     const nextActive = planes.slice(last + 1).find((p) => !ids.has(p.id)) ?? [...planes.slice(0, last)].reverse().find((p) => !ids.has(p.id));
     this.edit(() => {
-      this.nodes = this.nodes.filter((n) => !ids.has(n.id) && !((n.kind === 'shape' || n.kind === 'sketch') && ids.has(n.parent)));
+      this.nodes = this.nodes.filter((n) => !ids.has(n.id) && !((n.kind === 'shape' || n.kind === 'sketch' || isPlayNode(n)) && ids.has(n.parent)));
       this.zone.nodes = this.nodes;
       this.active = nextActive?.id ?? null;
       this.planeSel = this.active ? [this.active] : [];
@@ -2150,6 +2184,10 @@ export class PlaneEditor {
       this.fieldDown(pointerId, p);
       return;
     }
+    if (this.tool === 'play') {
+      this.playDown(pointerId, p);
+      return;
+    }
     if (this.tool === 'pipette' && this.mods.alt) {
       // Pipette mit Wahltaste: den ganzen Anstrich aufnehmen (und auf die Auswahl legen, wie in Illustrator)
       const f = this.faceAtScreen(p, true);
@@ -2331,6 +2369,10 @@ export class PlaneEditor {
       this.fieldMove(g, p);
       return;
     }
+    if (g.kind === 'play') {
+      this.playMove(g, p);
+      return;
+    }
     if (g.kind === 'gradNew' || g.kind === 'gradEnd' || g.kind === 'gradStop' || g.kind === 'gradMid') {
       this.gradMove(g, p);
       return;
@@ -2432,7 +2474,7 @@ export class PlaneEditor {
     // (der Punktpinsel setzt noch bis zum Punkt des Loslassens)
     if (g.kind === 'dots') this.dotDab(g, p);
     if (g.kind === 'mist') this.mistDab(g, p);
-    if (g.kind === 'fill' || g.kind === 'field' || g.kind === 'dots' || g.kind === 'mist') {
+    if (g.kind === 'fill' || g.kind === 'field' || g.kind === 'dots' || g.kind === 'mist' || g.kind === 'play') {
       if (this.history.commit(this.nodes)) this.changed();
       return;
     }
@@ -2999,8 +3041,7 @@ export class PlaneEditor {
   private dockInfo(): NonNullable<import('./ui').ContextExtra['dock']> {
     const e = this.docks();
     const t = this.dockTarget();
-    const has = this.nodes.some(isStationNode);
-    return { edges: e.length, off: e.filter((x) => x.off).length, face: t ? { name: t.shape.name, material: faceMaterial(t.shape, t.face) } : null, station: { has, placing: this.stationPlacing, ok: !has || !!stationOf(this.nodes) } };
+    return { edges: e.length, off: e.filter((x) => x.off).length, face: t ? { name: t.shape.name, material: faceMaterial(t.shape, t.face) } : null };
   }
 
   /** Andockkanten (grün, aus gestrichelt) und Material der Flächen spielbarer Ebenen als Schraffur */
@@ -3024,21 +3065,8 @@ export class PlaneEditor {
         }
       }
     }
-    // Station: Bahnsteig von ihrem Punkt auf der Kante in Fahrtrichtung, 2 m hoch
-    const sn = this.nodes.find(isStationNode);
-    const sp = sn ? findPlane(this.nodes, sn.parent) : undefined;
-    const ws = sn ? stationOf(this.nodes) : null;
-    if (sn && sp && ws) {
-      const y0 = (ws.y - 1 - sp.y) / sp.scale;
-      const x1 = sn.x + (sn.dir * sn.length) / sp.scale;
-      const corners = [
-        { x: sn.x, y: y0 },
-        { x: x1, y: y0 },
-        { x: x1, y: y0 + 2 / sp.scale },
-        { x: sn.x, y: y0 + 2 / sp.scale },
-      ].map((q) => this.screenOf(sp, q));
-      if (corners.every(Boolean)) st.station = corners as Pt[];
-    }
+    // Station und Spielobjekte zur Orientierung (gesetzt und gewählt werden sie im Werkzeug S)
+    st.play = this.playItems().map((it) => ({ ...it, on: false }));
     const t = this.dockTarget();
     const tp = t ? findPlane(this.nodes, t.shape.parent) : undefined;
     if (t && tp) st.face = [t.face.outline, ...t.face.holes].map((r) => r.map(([x, y]) => this.screenOf(tp, shapeToPlane(t.shape, x, y), t.shape)).filter((q): q is Pt => !!q));
@@ -3063,26 +3091,6 @@ export class PlaneEditor {
         if (d <= r && (!best || d < best.d)) best = { e, d };
       }
     }
-    // Station setzen: auf die getroffene Kante, an der Stelle unter dem Zeiger
-    if (this.stationPlacing) {
-      const plane = best ? findPlane(this.nodes, best.e.plane) : undefined;
-      const q = plane ? this.planePoint(plane, p) : null;
-      if (!best || !plane || !q) {
-        this.ui.toast('Eine grüne Andockkante antippen');
-        return;
-      }
-      const old = this.nodes.find(isStationNode);
-      this.edit(() => {
-        this.nodes = this.nodes.filter((n) => !isStationNode(n));
-        this.nodes.push({ id: 'station', kind: 'station', parent: plane.id, x: Math.round(q.x * 1000) / 1000, dir: old?.dir ?? 1, length: old?.length ?? 14 });
-        this.zone.nodes = this.nodes;
-      });
-      this.stationPlacing = false;
-      this.ui.toast('Station gesetzt: „Spielen“ zeigt sie mit Vorgabestück');
-      this.uiDirty = true;
-      this.drawOverlay();
-      return;
-    }
     if (best) {
       const shape = findShape(this.nodes, best.e.shape);
       const plane = shape ? findPlane(this.nodes, shape.parent) : undefined;
@@ -3100,12 +3108,368 @@ export class PlaneEditor {
     this.drawOverlay();
   }
 
+  // ------------------------------------------------------------------ Spielobjekte (Stufe 4)
+
+  private playNodes(): ZonePlayNode[] {
+    return this.nodes.filter(isPlayNode);
+  }
+
+  /** Boden einer Ebene unter x (Ebenen-Koordinaten): die höchste eingeschaltete Andockkante, null ohne */
+  private edgeY(planeId: string, x: number): number | null {
+    return groundAt(this.docks().filter((e) => e.plane === planeId), x);
+  }
+
+  /**
+   * Spielobjekte im Bild (Umriss in Bildpunkten, Name, Coins als Punkte). Station: Bahnsteig von ihrem Punkt in
+   * Fahrtrichtung, 2 m hoch; Schlange: Streifen auf der Kante, 2 m hoch; Baustelle: 2,8 m breit, 1,6 m hoch; Coins: Rahmen
+   * um ihre Punkte. Ohne Kante darunter steht ein Objekt auf der Höhe 0 seiner Ebene (die Leiste sagt „ohne Kante“)
+   */
+  private playItems(): Array<{ id: string; kind: PlayKind; ring: Pt[]; label: string; at: Pt; dots?: Pt[]; ends?: [Pt, Pt] }> {
+    const out: Array<{ id: string; kind: PlayKind; ring: Pt[]; label: string; at: Pt; dots?: Pt[]; ends?: [Pt, Pt] }> = [];
+    for (const n of this.playNodes()) {
+      const plane = findPlane(this.nodes, n.parent);
+      if (!plane || !this.planeShown(plane)) continue;
+      const k = 1 / plane.scale;
+      let ring: Pt[];
+      let label: string = PLAY_WORDS[n.kind];
+      let dots: Pt[] | undefined;
+      let ends: [Pt, Pt] | undefined;
+      if (isStationNode(n)) {
+        const y = this.edgeY(plane.id, n.x) ?? 0;
+        const x1 = n.x + n.dir * n.length * k;
+        ring = [
+          { x: n.x, y },
+          { x: x1, y },
+          { x: x1, y: y + 2 * k },
+          { x: n.x, y: y + 2 * k },
+        ];
+        label = `Station ${n.dir === 1 ? '→' : '←'}`;
+      } else if (isQueueNode(n)) {
+        // der Streifen folgt der Kante
+        const steps = 8;
+        const bottom: Pt[] = [];
+        for (let i = 0; i <= steps; i++) {
+          const x = n.x0 + ((n.x1 - n.x0) * i) / steps;
+          bottom.push({ x, y: this.edgeY(plane.id, x) ?? 0 });
+        }
+        ring = [...bottom, ...bottom.map((q) => ({ x: q.x, y: q.y + 2 * k })).reverse()];
+        label = `Schlange ${n.dir === 1 ? '→' : '←'}`;
+        const a = this.screenOf(plane, bottom[0]);
+        const b = this.screenOf(plane, bottom[steps]);
+        if (a && b) ends = [a, b];
+      } else if (isSiteNode(n)) {
+        const y = this.edgeY(plane.id, n.x) ?? 0;
+        ring = [
+          { x: n.x - 1.4 * k, y },
+          { x: n.x + 1.4 * k, y },
+          { x: n.x + 1.4 * k, y: y + 1.6 * k },
+          { x: n.x - 1.4 * k, y: y + 1.6 * k },
+        ];
+        label = n.variant === 'breakthrough' ? `Durchbruch ${Math.round(n.energy ?? 10)} m/s` : 'Baustelle';
+      } else {
+        // Coins: Lage aus der Gruppe (Meter der Welt) in Ebenen-Koordinaten
+        const pts = coinsOfGroup({ id: n.id, shape: n.shape, x: 0, y: 0, z: 0, count: n.count, spacing: n.spacing }).map((c) => ({ x: n.x + c.x * k, y: n.y + c.y * k }));
+        const pad = 0.9 * k;
+        const xs = pts.map((q) => q.x);
+        const ys = pts.map((q) => q.y);
+        const [x0, x1, y0, y1] = [Math.min(...xs) - pad, Math.max(...xs) + pad, Math.min(...ys) - pad, Math.max(...ys) + pad];
+        ring = [
+          { x: x0, y: y0 },
+          { x: x1, y: y0 },
+          { x: x1, y: y1 },
+          { x: x0, y: y1 },
+        ];
+        dots = pts.map((q) => this.screenOf(plane, q)).filter((q): q is Pt => !!q);
+        label = `Coins ${n.count}`;
+      }
+      const scr = ring.map((q) => this.screenOf(plane, q));
+      if (!scr.every(Boolean)) continue;
+      const pts = scr as Pt[];
+      const at = { x: Math.min(...pts.map((q) => q.x)), y: Math.min(...pts.map((q) => q.y)) };
+      out.push({ id: n.id, kind: n.kind, ring: pts, label, at, ...(dots ? { dots } : {}), ...(ends ? { ends } : {}) });
+    }
+    return out;
+  }
+
+  private playInfo(): NonNullable<import('./ui').ContextExtra['play']> {
+    const n = this.playNodes().find((x) => x.id === this.playSel);
+    let sel: PlaySel | null = null;
+    if (n) {
+      const plane = findPlane(this.nodes, n.parent);
+      const playable = !!plane && plane.role === 'play';
+      if (isStationNode(n)) sel = { kind: 'station', ok: playable && this.edgeY(n.parent, n.x) !== null, dir: n.dir, length: n.length };
+      else if (isQueueNode(n)) sel = { kind: 'queue', ok: playable && this.edgeY(n.parent, (n.x0 + n.x1) / 2) !== null, dir: n.dir, length: (n.x1 - n.x0) * (plane?.scale ?? 1) };
+      else if (isSiteNode(n)) sel = { kind: 'site', ok: playable && this.edgeY(n.parent, n.x) !== null, variant: n.variant, energy: n.energy ?? 10 };
+      else sel = { kind: 'coins', ok: playable, shape: n.shape, count: n.count, spacing: n.spacing };
+    }
+    return { edges: this.docks().filter((e) => !e.off).length, placing: this.playPlacing, station: this.nodes.some(isStationNode), sel };
+  }
+
+  /** Andockkanten (zum Setzen) und die Spielobjekte, das gewählte hervorgehoben, an der gewählten Schlange ihre Enden */
+  private playOverlay(st: ReturnType<typeof emptyOverlay>): void {
+    for (const e of this.docks()) {
+      const plane = findPlane(this.nodes, e.plane);
+      if (!plane || !this.planeShown(plane)) continue;
+      const pts = e.pts.map((q) => this.screenOf(plane, q)).filter((q): q is Pt => !!q);
+      if (pts.length > 1) st.dock.push({ pts, off: e.off });
+    }
+    const items = this.playItems();
+    st.play = items.map((it) => ({ kind: it.kind, ring: it.ring, on: it.id === this.playSel, label: it.label, at: it.at, ...(it.dots ? { dots: it.dots } : {}) }));
+    const sel = items.find((it) => it.id === this.playSel);
+    if (sel?.ends) st.handles.push(...sel.ends);
+  }
+
+  /**
+   * nächster Punkt einer eingeschalteten, sichtbaren Andockkante im Bild, höchstens maxPx entfernt: Kante, Ebene, Punkt in
+   * Ebenen-Koordinaten (auf dem Kantenstück an derselben Stelle wie im Bild)
+   */
+  private edgeNearScreen(p: Pt, maxPx: number): { edge: DockEdge; plane: ZonePlane; at: Pt; d: number } | null {
+    let best: { edge: DockEdge; plane: ZonePlane; at: Pt; d: number } | null = null;
+    for (const e of this.docks()) {
+      if (e.off) continue;
+      const plane = findPlane(this.nodes, e.plane);
+      if (!plane || !this.planeShown(plane)) continue;
+      const scr = e.pts.map((q) => this.screenOf(plane, q));
+      for (let i = 0; i + 1 < scr.length; i++) {
+        const a = scr[i];
+        const b = scr[i + 1];
+        if (!a || !b) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const l2 = dx * dx + dy * dy;
+        const t = l2 > 1e-9 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
+        const d = Math.hypot(a.x + dx * t - p.x, a.y + dy * t - p.y);
+        if (d > maxPx || (best && d >= best.d)) continue;
+        const qa = e.pts[i];
+        const qb = e.pts[i + 1];
+        best = { edge: e, plane, at: { x: qa.x + (qb.x - qa.x) * t, y: qa.y + (qb.y - qa.y) * t }, d };
+      }
+    }
+    return best;
+  }
+
+  /** Werkzeug Spielobjekte: setzen, sonst ein Ende der gewählten Schlange oder ein Objekt greifen, sonst abwählen */
+  private playDown(pointerId: number, p: Pt): void {
+    if (this.playPlacing) {
+      this.playPlaceAt(p);
+      return;
+    }
+    const items = this.playItems();
+    const r = this.overlay.handleSize + 6;
+    const near = (q: Pt) => Math.hypot(q.x - p.x, q.y - p.y) <= r;
+    const sel = items.find((it) => it.id === this.playSel);
+    let mode: 'move' | 'x0' | 'x1' = 'move';
+    let hit = sel?.ends && (near(sel.ends[0]) || near(sel.ends[1])) ? sel : undefined;
+    if (hit?.ends) mode = near(hit.ends[0]) ? 'x0' : 'x1';
+    // sonst das oberste Objekt unter dem Zeiger (im Umriss, an seinem Rand oder an einem Coin)
+    hit ??= [...items].reverse().find((it) => inRing(it.ring, p) || ringDist(it.ring, p) <= r || !!it.dots?.some(near));
+    const n = hit ? this.playNodes().find((x) => x.id === hit!.id) : undefined;
+    if (!n) {
+      this.playSel = null;
+      this.uiDirty = true;
+      this.drawOverlay();
+      return;
+    }
+    this.playSel = n.id;
+    this.history.begin(this.nodes);
+    this.gesture = { kind: 'play', pointerId, id: n.id, mode, start: p, orig: { ...n }, moved: false };
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
+  /** ziehen: Station, Baustelle und Schlange rasten auf die nächste Andockkante (auch einer anderen Ebene), Coins bleiben in ihrer Ebene */
+  private playMove(g: Extract<Gesture, { kind: 'play' }>, p: Pt): void {
+    const n = this.playNodes().find((x) => x.id === g.id);
+    if (!n) return;
+    if (!g.moved && Math.hypot(p.x - g.start.x, p.y - g.start.y) < TAP_DIST) return;
+    g.moved = true;
+    const o = g.orig;
+    const r3 = (v: number) => Math.round(v * 1000) / 1000;
+    if (isCoinNode(n) && isCoinNode(o)) {
+      const plane = findPlane(this.nodes, n.parent);
+      const a = plane ? this.planePoint(plane, g.start) : null;
+      const b = plane ? this.planePoint(plane, p) : null;
+      if (a && b) {
+        n.x = r3(o.x + b.x - a.x);
+        n.y = r3(o.y + b.y - a.y);
+      }
+    } else if (isQueueNode(n) && g.mode !== 'move') {
+      const plane = findPlane(this.nodes, n.parent);
+      const q = plane ? this.planePoint(plane, p) : null;
+      if (plane && q) {
+        const min = 2 / plane.scale;
+        if (g.mode === 'x0') n.x0 = r3(Math.min(q.x, n.x1 - min));
+        else n.x1 = r3(Math.max(q.x, n.x0 + min));
+      }
+    } else {
+      const hit = this.edgeNearScreen(p, 90);
+      if (!hit) return;
+      if (isQueueNode(n) && isQueueNode(o)) {
+        const from = findPlane(this.nodes, o.parent);
+        const half = ((o.x1 - o.x0) * (from?.scale ?? 1)) / 2 / hit.plane.scale;
+        n.parent = hit.plane.id;
+        n.x0 = r3(hit.at.x - half);
+        n.x1 = r3(hit.at.x + half);
+      } else if (isStationNode(n) || isSiteNode(n)) {
+        n.parent = hit.plane.id;
+        n.x = r3(hit.at.x);
+      }
+    }
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
+  /** Objekt an der angetippten Stelle setzen (Station: die eine der Zone wandert dorthin) */
+  private playPlaceAt(p: Pt): void {
+    const kind = this.playPlacing;
+    if (!kind) return;
+    const hit = this.edgeNearScreen(p, kind === 'coins' ? Infinity : this.overlay.handleSize + 16);
+    if (!hit) {
+      this.ui.toast('Eine grüne Andockkante antippen');
+      return;
+    }
+    const plane = hit.plane;
+    const r3 = (v: number) => Math.round(v * 1000) / 1000;
+    let id = '';
+    this.edit(() => {
+      if (kind === 'station') {
+        const old = this.nodes.find(isStationNode);
+        this.nodes = this.nodes.filter((n) => !isStationNode(n));
+        id = 'station';
+        this.nodes.push({ id, kind: 'station', parent: plane.id, x: r3(hit.at.x), dir: old?.dir ?? 1, length: old?.length ?? 14 });
+      } else if (kind === 'queue') {
+        // 8 m lang (Meter der Welt), auf dem getroffenen Kantenstück
+        const span = edgeSpan(hit.edge);
+        const half = Math.min(4 / plane.scale, (span.hi - span.lo) / 2);
+        const c = Math.max(span.lo + half, Math.min(span.hi - half, hit.at.x));
+        id = nextNodeId(this.nodes, 'q');
+        this.nodes.push({ id, kind: 'queue', parent: plane.id, x0: r3(c - half), x1: r3(c + half), dir: this.nodes.find(isStationNode)?.dir ?? 1 });
+      } else if (kind === 'site') {
+        id = nextNodeId(this.nodes, 'b');
+        this.nodes.push({ id, kind: 'site', parent: plane.id, x: r3(hit.at.x), variant: 'connect' });
+      } else {
+        // Coins: an der angetippten Stelle vor der Ebene der nächsten Kante
+        const q = this.planePoint(plane, p) ?? hit.at;
+        id = nextNodeId(this.nodes, 'm');
+        this.nodes.push({ id, kind: 'coins', parent: plane.id, x: r3(q.x), y: r3(q.y), shape: 'row', count: 5, spacing: 2 });
+      }
+      this.zone.nodes = this.nodes;
+    });
+    this.playSel = id;
+    this.playPlacing = null;
+    this.ui.toast(kind === 'station' ? 'Station gesetzt: „Spielen“ zeigt sie mit Vorgabestück' : `${PLAY_WORDS[kind]} gesetzt${kind === 'coins' ? ` vor „${plane.name}“` : ''}`);
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
+  private playEdit(change: 'flip' | 'longer' | 'shorter' | 'variant' | 'faster' | 'slower' | 'more' | 'fewer' | 'wider' | 'closer' | CoinShape): void {
+    const n = this.playNodes().find((x) => x.id === this.playSel);
+    if (!n) return;
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+    this.edit(() => {
+      if (change === 'flip' && (isStationNode(n) || isQueueNode(n))) n.dir = n.dir === 1 ? -1 : 1;
+      else if (isStationNode(n) && (change === 'longer' || change === 'shorter')) n.length = clamp(n.length + (change === 'longer' ? 2 : -2), 4, 60);
+      else if (isSiteNode(n) && change === 'variant') {
+        n.variant = n.variant === 'connect' ? 'breakthrough' : 'connect';
+        if (n.variant === 'connect') delete n.energy;
+        else n.energy = n.energy ?? 10;
+      } else if (isSiteNode(n) && (change === 'faster' || change === 'slower')) n.energy = clamp((n.energy ?? 10) + (change === 'faster' ? 1 : -1), 2, 60);
+      else if (isCoinNode(n)) {
+        if (change === 'more' || change === 'fewer') n.count = clamp(n.count + (change === 'more' ? 1 : -1), 1, 40);
+        else if (change === 'wider' || change === 'closer') n.spacing = clamp(n.spacing + (change === 'wider' ? 0.5 : -0.5), 0.5, 20);
+        else if (change === 'row' || change === 'arc' || change === 'ring' || change === 'column') n.shape = change;
+      }
+    });
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
+  private playRemove(): void {
+    const id = this.playSel;
+    if (!id) return;
+    this.edit(() => {
+      this.nodes = this.nodes.filter((n) => n.id !== id);
+      this.zone.nodes = this.nodes;
+    });
+    this.playSel = null;
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
+  /**
+   * Level-Angaben des gewählten Felds (wie im Klötzchen-Editor, Plan 2.1, 2.4, 3.1): Ziele und Schalter als Zeile über ein
+   * Eingabefeld, Fortschritts- und Aufwertungsstufe und der Look der Stufe weiterschalten. Sie stehen im rest des
+   * Feldknotens; die Looks der Stufen gehören der Zone
+   */
+  private fieldEdit(what: 'goals' | 'stage' | 'upgrade' | 'switches' | 'look'): void {
+    const f = this.nodes.find((n): n is ZoneFieldNode => isFieldNode(n) && n.id === this.fieldSel);
+    if (!f) return;
+    const zf = parseField({ ...(f.rest ?? {}), id: f.id, x0: f.x0, x1: f.x1, y0: f.y0, y1: f.y1 });
+    if (!zf) return;
+    const words = ZONE_ABILITIES.map((a) => ABILITY_WORDS[a][0]).join(' ');
+    const setRest = (patch: Record<string, unknown>, drop: readonly string[]) =>
+      this.edit(() => {
+        const rest: Record<string, unknown> = { ...(f.rest ?? {}) };
+        for (const k of drop) delete rest[k];
+        Object.assign(rest, JSON.parse(JSON.stringify(patch)));
+        if (Object.keys(rest).length) f.rest = rest;
+        else delete f.rest;
+      });
+    if (what === 'goals') {
+      const text = window.prompt('Ziele des Felds, mit Komma getrennt: Typ und Wert, Stern = Bonus (etwa „finish, height 20, *coins 5“)', formatGoals(zf.goals ?? []));
+      if (text === null) return;
+      const goals = parseGoals(text);
+      setRest(goals.length ? { goals } : {}, ['goals']);
+      const dropped = text.split(/[,;\n]+/).filter((x) => x.trim()).length - goals.length;
+      if (dropped > 0) this.ui.toast(`${dropped} ${dropped === 1 ? 'Ziel' : 'Ziele'} nicht verstanden (Typ unbekannt)`);
+    } else if (what === 'stage') {
+      // alle Elemente → 0 → 1 → 2 → 3 → alle
+      const next = zf.stage === undefined ? 0 : zf.stage + 1;
+      setRest(next > 3 ? {} : { stage: next }, ['stage']);
+    } else if (what === 'upgrade') {
+      const count = zoneUpgrades(this.zone).length;
+      const next = zf.upgrade === undefined ? 0 : zf.upgrade + 1;
+      setRest(next >= count ? {} : { upgrade: next }, ['upgrade']);
+    } else if (what === 'switches') {
+      const text = window.prompt(`Schalter dieses Felds über seine Stufe hinweg: +wort an, -wort aus, gurt 0 bis 4, kette Meter, budget Meter, höhe Meter (leer = wie die Stufe). Wörter: ${words}`, formatFieldLine(zf));
+      if (text === null) return;
+      const { overrides, unknown } = parseFieldLine(text);
+      setRest({ ...overrides }, ['on', 'off', 'belt', 'chain', 'budget', 'maxHeight', 'lift']);
+      if (unknown.length) this.ui.toast(`Nicht verstanden: ${unknown.join(', ')}`);
+    } else if (zf.stage !== undefined) {
+      // Look der Fortschrittsstufe dieses Felds (Plan 2.1, Richtlinie 6): Tag → Abend → Nacht → Neon
+      const looks = [...(this.zone.looks ?? [])];
+      while (looks.length <= zf.stage) looks.push('day');
+      looks[zf.stage] = LOOK_NAMES[(LOOK_NAMES.indexOf(looks[zf.stage]) + 1) % LOOK_NAMES.length];
+      this.zone.looks = looks;
+      this.changed();
+    }
+    this.uiDirty = true;
+  }
+
   // ------------------------------------------------------------------ Felder (Stufe 4)
 
   private fieldInfo(): NonNullable<import('./ui').ContextExtra['field']> {
     const fs = fieldNodesOf(this.nodes);
     const f = fs.find((x) => x.id === this.fieldSel);
-    return { count: fs.length, sel: f ? { name: f.name, w: f.x1 - f.x0, h: f.y1 - f.y0 } : null };
+    const zf = f ? parseField({ ...(f.rest ?? {}), id: f.id, x0: f.x0, x1: f.x1, y0: f.y0, y1: f.y1 }) : null;
+    if (!f || !zf) return { count: fs.length, sel: null };
+    const ups = zoneUpgrades(this.zone);
+    const up = zf.upgrade === undefined ? null : ups[Math.min(zf.upgrade, ups.length - 1)];
+    const LOOK_WORDS: Record<string, string> = { day: 'Tag', dusk: 'Abend', night: 'Nacht', neon: 'Neon' };
+    return {
+      count: fs.length,
+      sel: {
+        name: f.name,
+        w: f.x1 - f.x0,
+        h: f.y1 - f.y0,
+        goals: formatGoals(zf.goals ?? []),
+        stage: zf.stage === undefined ? 'alle' : String(zf.stage),
+        upgrade: up ? `${zf.upgrade}${up.name ? ` ${up.name}` : ''}` : 'alles',
+        switches: formatFieldLine(zf),
+        look: zf.stage === undefined ? null : LOOK_WORDS[this.zone.looks?.[zf.stage] ?? 'day'] ?? 'Tag',
+      },
+    };
   }
 
   /** Ecken eines Rechtecks der Spur-0-Ebene im Bild (unten links, unten rechts, oben rechts, oben links) */
@@ -4079,6 +4443,7 @@ export class PlaneEditor {
     else if (k === 'e') this.setTool('dotbrush');
     else if (k === 'n') this.setTool('mist');
     else if (k === 'd') this.setTool('dock');
+    else if (k === 's') this.setTool('play');
     else if (k === 'r') this.setTool('field');
     else if (k === '1') this.setView('game');
     else if (k === '2') this.setView('front');
@@ -4096,8 +4461,14 @@ export class PlaneEditor {
         this.drawOverlay();
       }
       else if (this.ui.colorOpen) this.ui.closeColor();
-      else this.escape();
+      else if (this.tool === 'play' && (this.playPlacing || this.playSel)) {
+        this.playPlacing = null;
+        this.playSel = null;
+        this.uiDirty = true;
+        this.drawOverlay();
+      } else this.escape();
     }
+    else if ((k === 'delete' || k === 'backspace') && this.tool === 'play') this.playRemove();
     else if (k === 'delete' || k === 'backspace') this.deleteShape();
     else if ((k === ']' || k === '[') && (this.tool === 'mist' || this.tool === 'dotbrush')) {
       const dir = k === ']' ? 1 : -1;

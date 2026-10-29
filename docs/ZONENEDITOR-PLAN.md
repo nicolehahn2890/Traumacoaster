@@ -1129,8 +1129,28 @@ Dazu: „Hör mal mit dem Aufnehmen auf. Ich kritzle wild, um extreme Formen zu 
 dauert ewig. Ich nehme erst auf, wenn es so weit ist. Das hat auch die Strich-Session versaut.“ Der Strich-Rekorder
 schreibt seitdem nur mit `TC_RECORD=1`; die bisherigen Aufnahmen (901 Striche bis 29.10.) sind Kritzeleien für extreme
 Formen und kein Maßstab für den Pinsel.
-**Noch offen aus Stufe 4:** die übrigen Spielobjekte auf Kanten (Schlange, Ziele, Stufen, Schalter, Coins, Baustellen;
-bis dahin der Klötzchen-Editor), Durchblick-Prüfung. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
+**Rest von Stufe 4, Florians Antworten (30.10.2026, „alle 3 Fragen wie du es empfiehlst“):** Szene 06 baue ich als
+Vorschlag in Formen, Florian passt ihn im Editor an; die Bahn fährt durch die große Bogenöffnung in die Höhle, weil die
+beiden Steinportale des Originals Portale sind (Stufe 7). Die Durchblick-Prüfung kommt mit den Portalen in Stufe 7.
+Tor S4 gilt mit eingefrorenem Strich: „Bahn gezeichnet und gefahren“ prüft die Werkzeuge (Landung in der Höhle, Stützen
+auf Kanten, die Fahrt läuft), nicht das Gefühl des Pinsels; „Replay grün“ wartet, bis Florian wieder aufnimmt; B4 bleibt
+offen für die spätere Pinsel-Entscheidung.
+**Spielobjekte auf Kanten (30.10.2026):** neues Werkzeug **Spielobjekte (S)**. Station, Schlange, Baustelle und Coins
+sind Knoten einer spielbaren Ebene (`queue`, `site`, `coins` neben `station`; `src/zone/playObjects.ts`): Knopf in der
+Leiste, dann eine grüne Andockkante antippen (Coins: über einer Kante in die Luft). Antippen wählt, ziehen schiebt
+Station, Schlange und Baustelle entlang der Kanten, auch auf die Kante einer anderen Ebene; die Enden der gewählten
+Schlange ändern ihre Länge; Coins bleiben beim Ziehen in ihrer Ebene. In der Leiste: Richtung und Länge der Station,
+Eingang der Schlange, Verbinden oder Durchbruch mit Tempo, Form, Zahl und Abstand der Coins, Entfernen (auch Entf).
+Höhe und Tiefe folgen aus Kante und Ebene wie bei der Station: Schlange und Baustelle stehen auf der Kante, alles in der
+Spur der Bahn 1 m vor der Ebene. Beim Spielen stehen sie als die Platzhalter des Klötzchen-Editors in der Welt, die Coins
+zählen auf der Bühne, die Durchbruch-Wand geht in die Fahrt. Das Verbinden einer Baustelle legt in Ebenen-Zonen noch nichts
+frei (es braucht eine Öffnung in einer Fläche, also die Portale in Stufe 7). Die Station wohnt jetzt im Werkzeug S (im
+Werkzeug D führt ein Knopf dorthin). **Ziele, Stufen, Schalter:** im Werkzeug Felder am gewählten Feld „Ziele“ (Zeile wie
+im Klötzchen-Editor), „Stufe“ und „Aufwertung“ (weiterschalten), „Schalter“ (Zeile) und „Look“ der Stufe; sie stehen im
+Feldknoten und gelten beim Spielen. Szenario 29. **Platzhalter:** alle Figuren und Formen der Objekte (Bahnsteig,
+Figuren der Schlange, Pfosten und Wand der Baustelle, Coin-Marken), Schlange 8 m beim Setzen, Coins 5 im Abstand 2 m,
+Durchbruch 10 m/s, die Zeilen für Ziele und Schalter (Eingabefeld des Browsers statt eigener Oberfläche).
+**Noch offen aus Stufe 4:** Wand- und Deckenhalter, Szene 06 und Tor S4. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
 lang, die Schraffuren. **Nicht geprüft:** Szene 06 in Formen (Tor S4), Stroke-Replay mit dem Ebenen-Pinsel (der Replay
 kennt den Modus nicht), 60 fps am Handy.
 
@@ -1369,7 +1389,7 @@ Gefühl des Pinsels; „Replay grün“ wartet, bis Florian wieder aufnimmt.
 | B1 | ~~Paket 0 Regel 4 neu: Pünktchen und Textur als Schicht im Editor erlaubt?~~ **Beantwortet (29.10., Tor S5):** „Ja, Regel 4 gilt neu: Pünktchen und Textur dürfen im Editor Shader-Schichten sein.“ Den Vergleich gemalt gegen Shader brauchte Florian nicht („Ich muss keine Fotos für Vergleiche machen“) | Tor S5 |
 | B2 | ~~Abtauchen nur in grabbare Flächen, Fels bleibt fest?~~ **Teilweise beantwortet (27.10.):** „Fels ist fest“ gilt erst einmal nicht mehr, „grabbar“ wird gebaut; ob es daneben noch „fest“ braucht, zeigt der Test | Tor S4 |
 | B3 | ~~Portale automatisch oder nur von Hand?~~ **Beantwortet (27.10.):** dynamisch. Offen bleibt, wie Durchfahrten gemacht werden, ob sie sichtbar sind und ob der Pinsel dynamisch gräbt | Tor S7 |
-| B4 | Pinsel „Ebenen: Bodenhöhe“ als Grundlage für die Tiefe aus Ebenen? | Tor S4 |
+| B4 | Pinsel „Ebenen: Bodenhöhe“ als Grundlage für die Tiefe aus Ebenen? **Offen gelassen (30.10.):** Tor S4 gilt mit eingefrorenem Strich, B4 entscheidet Florian mit dem Pinsel später | Tor S4 |
 | B5 | Neigung und Bildwinkel je Zone oder je Feld? | Tor S1 |
 | B6 | PSD-Import aus Procreate (Ebenen als Bildschichten) nötig? | Tor S6 |
 

@@ -8,12 +8,17 @@
  */
 import { PLANE_ROLE_WORDS, PLANE_ROLES, type Material, type PlaneRole, type ZoneGroup, type ZonePlane, type ZoneShape, type ZoneSketch } from '@/zone/nodes';
 import { MATERIAL_WORDS, MATERIALS } from '@/zone/dock';
+import { COIN_SHAPES, type CoinShape } from '@/zone/groups';
 import type { PathContext } from './pathTools';
 import { VIEW_WORDS, type ViewMode } from './views';
 import { COLOR_CSS, ColorMenu, type ColorMenuHost } from './colorMenu';
 import { STACK_CSS, StackPanel, type StackActions, type StackView } from './stackPanel';
 
-export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch' | 'gradient' | 'mist' | 'dotbrush' | 'pipette' | 'dock' | 'field';
+export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch' | 'gradient' | 'mist' | 'dotbrush' | 'pipette' | 'dock' | 'play' | 'field';
+/** Spielobjekte auf den Ebenen (Werkzeug S) */
+export type PlayKind = 'station' | 'queue' | 'site' | 'coins';
+export const PLAY_WORDS: Record<PlayKind, string> = { station: 'Station', queue: 'Schlange', site: 'Baustelle', coins: 'Coins' };
+const COIN_WORDS: Record<CoinShape, string> = { row: 'Reihe', arc: 'Bogen', ring: 'Ring', column: 'Säule' };
 export type Isolate = 'off' | 'front' | 'only';
 export const ISOLATE_WORDS: Record<Isolate, string> = { off: 'alle Ebenen', front: 'davor ausgeblendet', only: 'nur diese' };
 
@@ -78,14 +83,19 @@ export interface UiActions extends StackActions {
   fillDone(): void;
   /** Material der Auswahl (Fläche oder Formen) oder der im Werkzeug Andockkanten angetippten Fläche */
   setMaterial(m: Material): void;
-  /** Station auf einer Andockkante: setzen (dann eine Kante antippen), Richtung wechseln, entfernen */
-  stationPlace(): void;
-  stationFlip(): void;
-  stationRemove(): void;
+  /**
+   * Spielobjekte (Werkzeug S): eins setzen (dann eine Andockkante antippen; Coins: eine Stelle über einer Kante), am
+   * gewählten Richtung, Länge, Art, Tempo, Form, Zahl und Abstand ändern, es entfernen
+   */
+  playPlace(kind: PlayKind): void;
+  playEdit(change: 'flip' | 'longer' | 'shorter' | 'variant' | 'faster' | 'slower' | 'more' | 'fewer' | 'wider' | 'closer' | CoinShape): void;
+  playRemove(): void;
   /** Felder (Stufe 4): neues Feld aus dem Bildausschnitt, das gewählte umbenennen oder entfernen */
   fieldAdd(): void;
   fieldRename(): void;
   fieldRemove(): void;
+  /** Ziele, Fortschritts- und Aufwertungsstufe, Schalter und Look des gewählten Felds (wie im Klötzchen-Editor) */
+  fieldEdit(what: 'goals' | 'stage' | 'upgrade' | 'switches' | 'look'): void;
   /** Verlaufswerkzeug: Art (Farbe, Deckkraft), linear oder radial, umkehren, Deckkraft des Stopps, Stopp löschen, Verlauf entfernen */
   gradKind(kind: 'gradient' | 'fade'): void;
   /** Punktpinsel (Stufe 5): Größe, Tonstufe, Wegnehmen */
@@ -155,10 +165,22 @@ export interface ContextExtra {
   /** Material der Auswahl (gemischt: null) */
   material?: Material | 'mixed' | null;
   /** Werkzeug Andockkanten: Zahl der Kanten, angetippte Fläche (Name, Material) */
-  dock?: { edges: number; off: number; face: { name: string; material: Material } | null; station: { has: boolean; placing: boolean; ok: boolean } } | null;
-  /** Werkzeug Felder: Zahl der Felder, das gewählte (Name, Breite, Höhe in Metern) */
-  field?: { count: number; sel: { name: string; w: number; h: number } | null } | null;
+  dock?: { edges: number; off: number; face: { name: string; material: Material } | null } | null;
+  /**
+   * Werkzeug Spielobjekte: Zahl der eingeschalteten Andockkanten, was gerade gesetzt wird, das gewählte Objekt mit seinen
+   * Werten (ok: steht auf einer Kante bzw. vor einer spielbaren Ebene)
+   */
+  play?: { edges: number; placing: PlayKind | null; station: boolean; sel: PlaySel | null } | null;
+  /** Werkzeug Felder: Zahl der Felder, das gewählte (Name, Breite, Höhe in Metern, Ziele, Stufen, Schalter, Look) */
+  field?: { count: number; sel: { name: string; w: number; h: number; goals: string; stage: string; upgrade: string; switches: string; look: string | null } | null } | null;
 }
+
+/** gewähltes Spielobjekt in der Leiste */
+export type PlaySel =
+  | { kind: 'station'; ok: boolean; dir: 1 | -1; length: number }
+  | { kind: 'queue'; ok: boolean; dir: 1 | -1; length: number }
+  | { kind: 'site'; ok: boolean; variant: 'connect' | 'breakthrough'; energy: number }
+  | { kind: 'coins'; ok: boolean; shape: CoinShape; count: number; spacing: number };
 
 export interface LayerRow {
   plane: ZonePlane;
@@ -195,6 +217,13 @@ const CSS = `
 .ze-dock.off{stroke:rgba(255,255,255,.55);stroke-width:2;stroke-dasharray:4 5}
 .ze-hatch{stroke:none}
 .ze-station{fill:rgba(255,170,70,.35);stroke:#ffaa46;stroke-width:2}
+.ze-play{fill:rgba(255,255,255,.12);stroke:rgba(255,255,255,.85);stroke-width:1.5;filter:drop-shadow(0 1px 1px rgba(0,0,0,.5))}
+.ze-play.on{stroke-width:2.5;fill:rgba(255,255,255,.22)}
+.ze-play-station{fill:rgba(255,170,70,.35);stroke:#ffaa46}
+.ze-play-queue{fill:rgba(190,140,255,.3);stroke:#c49bff}
+.ze-play-site{fill:rgba(255,214,0,.3);stroke:#ffd600;stroke-dasharray:6 4}
+.ze-play-coins{fill:rgba(255,210,63,.08);stroke:#ffd23f;stroke-dasharray:3 3}
+.ze-play-coin{fill:#ffd23f;stroke:rgba(0,0,0,.45);stroke-width:1}
 .ze-field{fill:none;stroke:rgba(255,255,255,.75);stroke-width:1.5;stroke-dasharray:7 5;filter:drop-shadow(0 1px 1px rgba(0,0,0,.45))}
 .ze-field.on{stroke:#ffd166;stroke-width:2.5;stroke-dasharray:none;fill:rgba(255,209,102,.06)}
 .ze-frame{fill:none;stroke:rgba(255,209,102,.8);stroke-width:1.2;stroke-dasharray:2 4}
@@ -313,6 +342,7 @@ const ICONS: Record<Tool, string> = {
   dotbrush: '<svg viewBox="0 0 24 24"><circle cx="5" cy="17" r="1.8" fill="currentColor"/><circle cx="9.5" cy="13.5" r="1.8" fill="currentColor"/><circle cx="14" cy="11" r="1.8" fill="currentColor"/><circle cx="18.5" cy="9.5" r="1.8" fill="currentColor"/><circle cx="12" cy="18" r="1.2"/></svg>',
   pipette: '<svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5M13 6l5 5-9 9H4v-5z"/><path d="M16.5 2.5a2.1 2.1 0 0 1 3 0l2 2a2.1 2.1 0 0 1 0 3L19 10"/></svg>',
   dock: '<svg viewBox="0 0 24 24"><path d="M3 13c3-3 6-4 9-4s6 1 9 4" stroke-width="2.4"/><path d="M5 21l2-6M12 21v-8M19 21l-2-6" stroke-width="1.4"/></svg>',
+  play: '<svg viewBox="0 0 24 24"><path d="M3 19c3-2 6-3 9-3s6 1 9 3" stroke-width="2.4"/><path d="M7 15V5l8 3-8 3"/><circle cx="17" cy="12" r="1.8" fill="currentColor"/></svg>',
   field: '<svg viewBox="0 0 24 24"><path d="M3 8V4h4M17 4h4v4M21 16v4h-4M7 20H3v-4" stroke-width="2"/><rect x="7" y="8" width="10" height="8" rx="1" stroke-width="1.2" stroke-dasharray="2 2"/></svg>',
 };
 const EYE = '<svg viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>';
@@ -363,9 +393,10 @@ const TOOL_TITLES: Record<Tool, string> = {
   dotbrush: 'Punktpinsel (E): über eine Form ziehen setzt Punkte dicht an dicht wie Earles Reihen entlang von Graten; mit Wahltaste oder „Wegnehmen“ Punkte entfernen, auch aus der Punktkrone',
   pipette: 'Pipette (I): Farbe aus dem Bild aufnehmen; am iPad auch mit dem Finger lange halten',
   dock: 'Andockkanten (D): grüne Oberkanten tragen Bahn und Stützen; eine Kante antippen schaltet ihr Stück aus und an, eine Fläche antippen zeigt ihr Material (Schraffur: fest dicht, grabbar weit, luftig gepunktet)',
+  play: 'Spielobjekte (S): Station, Schlange, Baustelle und Coins auf grüne Andockkanten setzen; antippen wählt, ziehen schiebt sie entlang der Kanten',
   field: 'Felder (R): Spielbereich mit Kamerabegrenzung; ein Feld antippen, Ecken und Kanten ziehen, innen verschieben; die Rahmen zeigen, was das Handy quer und hoch höchstens sieht',
 };
-const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse', 'arch', 'gradient', 'mist', 'dotbrush', 'pipette', 'dock', 'field'];
+const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse', 'arch', 'gradient', 'mist', 'dotbrush', 'pipette', 'dock', 'play', 'field'];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -1147,19 +1178,70 @@ export class EditorUi {
     input.addEventListener('blur', () => done(true));
   }
 
+  /** Leiste des Werkzeugs Spielobjekte: setzen, oder die Werte des gewählten Objekts */
+  private playBar(play: NonNullable<ContextExtra['play']>): void {
+    const c = this.context;
+    if (play.placing) {
+      const what = play.placing === 'coins' ? 'Coins: über einer grünen Kante in die Luft tippen, sie schweben in der Tiefe der Bahn' : `${PLAY_WORDS[play.placing]}: eine grüne Andockkante antippen`;
+      c.append(el('span', 'ze-label', what), button('Abbrechen', 'Nichts setzen (Esc)', () => this.a.playPlace(play.placing!), 'on'));
+      return;
+    }
+    const sel = play.sel;
+    if (!sel) {
+      c.append(el('span', 'ze-label', play.edges ? 'Spielobjekte: antippen wählt, ziehen schiebt entlang der Kanten' : 'Keine Andockkanten: Spielobjekte brauchen eine spielbare Ebene mit Oberkante'));
+      if (!play.edges) return;
+      c.append(el('span', 'ze-sep'), button(play.station ? 'Station versetzen' : 'Station', 'Bahnhof mit Vorgabestück auf eine Andockkante setzen (eine je Zone)', () => this.a.playPlace('station')));
+      for (const k of ['queue', 'site', 'coins'] as const) c.append(button(PLAY_WORDS[k], `${PLAY_WORDS[k]} setzen`, () => this.a.playPlace(k)));
+      return;
+    }
+    const warn = sel.ok ? '' : sel.kind === 'coins' ? ' (Ebene nicht spielbar)' : ' (ohne Kante)';
+    if (sel.kind === 'station') {
+      c.append(
+        el('span', 'ze-label', `Station · ${Math.round(sel.length)} m${warn}`),
+        button('Richtung ⇄', 'Fahrtrichtung der Station wechseln', () => this.a.playEdit('flip')),
+        button('Kürzer', 'Vorgabestück 2 m kürzer', () => this.a.playEdit('shorter')),
+        button('Länger', 'Vorgabestück 2 m länger', () => this.a.playEdit('longer')),
+      );
+    } else if (sel.kind === 'queue') {
+      c.append(
+        el('span', 'ze-label', `Schlange · ${Math.round(sel.length)} m${warn}`),
+        button('Eingang ⇄', 'Eingang ans andere Ende (Reihenfolge der Figuren)', () => this.a.playEdit('flip')),
+        el('span', 'ze-label', 'Enden ziehen ändert die Länge'),
+      );
+    } else if (sel.kind === 'site') {
+      c.append(
+        el('span', 'ze-label', `Baustelle${warn}`),
+        button('Verbinden', 'Strichende rastet hier ein und legt eine Öffnung frei (in Ebenen-Zonen mit den Portalen, Stufe 7)', () => sel.variant === 'connect' || this.a.playEdit('variant'), sel.variant === 'connect' ? 'on' : ''),
+        button('Durchbruch', 'Wand quer zur Bahn, die bei Mindesttempo zersplittert', () => sel.variant === 'breakthrough' || this.a.playEdit('variant'), sel.variant === 'breakthrough' ? 'on' : ''),
+      );
+      if (sel.variant === 'breakthrough') c.append(el('span', 'ze-label', `${Math.round(sel.energy)} m/s`), button('−', 'Weniger Tempo nötig', () => this.a.playEdit('slower')), button('+', 'Mehr Tempo nötig', () => this.a.playEdit('faster')));
+    } else {
+      c.append(el('span', 'ze-label', `Coins · ${sel.count}${warn}`));
+      for (const sh of COIN_SHAPES) c.append(button(COIN_WORDS[sh], `Form: ${COIN_WORDS[sh]}`, () => this.a.playEdit(sh), sel.shape === sh ? 'on' : ''));
+      c.append(
+        el('span', 'ze-sep'),
+        button('Weniger', 'Ein Coin weniger', () => this.a.playEdit('fewer')),
+        button('Mehr', 'Ein Coin mehr', () => this.a.playEdit('more')),
+        button('Enger', `Abstand ${sel.spacing} m kleiner`, () => this.a.playEdit('closer')),
+        button('Weiter', `Abstand ${sel.spacing} m größer`, () => this.a.playEdit('wider')),
+      );
+    }
+    c.append(el('span', 'ze-sep'), button('Entfernen', 'Objekt aus der Zone nehmen (Entf)', () => this.a.playRemove()));
+  }
+
   /**
    * Leiste unten: beim Zeichnen Fertig und Abbrechen, für gewählte Anker, das Lasso oder eine Fläche deren Befehle, für
    * gewählte Formen Farbe und Reihenfolge, sonst für die gewählten Ebenen Rolle und Isolieren
    */
   setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false, extra: ContextExtra = {}): void {
-    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null, filling = null, grad = null, dropChoice = null, material = null, dock = null, field = null, dotBrush = null, mist = null } = extra;
+    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null, filling = null, grad = null, dropChoice = null, material = null, dock = null, play = null, field = null, dotBrush = null, mist = null } = extra;
     const plane = planes.at(-1) ?? null;
     const shape = shapes.at(-1) ?? null;
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
     const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : path.kind === 'band' ? `b|${path.shape}` : `l|${path.form}|${path.count}|${path.smooth}`;
     const gi = units ?? { units: shapes.length, groups: 0, inside: false };
     const numKey = this.sub === 'numbers' && nums ? `${[nums.x, nums.y, nums.w, nums.h].map((v) => v.toFixed(2)).join(',')}|${this.keepRatio}` : `${!!nums}`;
-    const key = dropChoice ? `drop|${dropChoice}` : filling ? `fill|${filling}` : grad ? `grad|${JSON.stringify(grad)}` : dotBrush ? `dots|${JSON.stringify(dotBrush)}` : mist ? `mist|${JSON.stringify(mist)}` : dock ? `dock|${JSON.stringify(dock)}|${this.sub}` : field ? `field|${JSON.stringify(field)}` : path ? `${pk}|${material}|${this.sub}` : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
+    const key = dropChoice ? `drop|${dropChoice}` : filling ? `fill|${filling}` : grad ? `grad|${JSON.stringify(grad)}` : dotBrush ? `dots|${JSON.stringify(dotBrush)}` : mist ? `mist|${JSON.stringify(mist)}` : dock ? `dock|${JSON.stringify(dock)}|${this.sub}` : play ? `play|${JSON.stringify(play)}` : field ? `field|${JSON.stringify(field)}` : path ? `${pk}|${material}|${this.sub}` : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
     this.context.replaceChildren();
@@ -1183,27 +1265,29 @@ export class EditorUi {
       );
     } else if (field) {
       // Werkzeug Felder: das gewählte mit Maßen, sonst ein Hinweis; anlegen immer, umbenennen und entfernen am gewählten
-      if (field.sel) this.context.append(el('span', 'ze-label', `${field.sel.name} · ${Math.round(field.sel.w)} × ${Math.round(field.sel.h)} m · Rahmen: quer und hoch auf dem Handy`));
+      const f = field.sel;
+      if (f) this.context.append(el('span', 'ze-label', `${f.name} · ${Math.round(f.w)} × ${Math.round(f.h)} m`));
       else this.context.append(el('span', 'ze-label', field.count ? 'Ein Feld antippen: Ecken und Kanten ziehen, innen verschieben' : 'Kein Feld: „Feld anlegen“ rahmt den Bildausschnitt'));
       this.context.append(el('span', 'ze-sep'), button('Feld anlegen', 'Neues Feld aus dem Bildausschnitt', () => this.a.fieldAdd()));
-      if (field.sel) this.context.append(button('Umbenennen', 'Name des Felds', () => this.a.fieldRename()), button('Feld entfernen', 'Das gewählte Feld löschen', () => this.a.fieldRemove()));
+      if (f) {
+        this.context.append(
+          button('Umbenennen', 'Name des Felds', () => this.a.fieldRename()),
+          button('Feld entfernen', 'Das gewählte Feld löschen', () => this.a.fieldRemove()),
+          el('span', 'ze-sep'),
+          // Level-Angaben des Felds wie im Klötzchen-Editor (Plan 2.1, 2.4, 3.1); die Zeilen gehen über ein Eingabefeld
+          button(`Ziele: ${f.goals || 'keine'}`, 'Ziele des Felds als Zeile „Typ Wert, Typ Wert“, Stern = Bonusziel; ohne Ziele bleibt das Feld Sandkasten', () => this.a.fieldEdit('goals')),
+          button(`Stufe: ${f.stage}`, 'Fortschrittsstufe der Zone in diesem Level weiterschalten (alle, 0 bis 3)', () => this.a.fieldEdit('stage')),
+          button(`Aufwertung: ${f.upgrade}`, 'Aufwertungsstufe der Zone weiterschalten (Schalter, Gurt, Kette)', () => this.a.fieldEdit('upgrade')),
+          button(`Schalter: ${f.switches || 'wie Stufe'}`, 'Schalter des Felds über seine Stufe hinweg: +wort an, -wort aus, gurt, kette, budget, höhe', () => this.a.fieldEdit('switches')),
+        );
+        if (f.look !== null) this.context.append(button(`Look: ${f.look}`, 'Look der Fortschrittsstufe dieses Felds weiterschalten (Tag, Abend, Nacht, Neon)', () => this.a.fieldEdit('look')));
+      }
+    } else if (play) {
+      this.playBar(play);
     } else if (dock) {
       // Werkzeug Andockkanten: Zahlen, und für die angetippte Fläche ihr Material
-      if (dock.station.placing) {
-        this.context.append(el('span', 'ze-label', 'Station: eine Andockkante antippen, dort beginnt der Bahnsteig'), button('Abbrechen', 'Station nicht setzen', () => this.a.stationPlace(), 'on'));
-        this.context.classList.add('show');
-        return;
-      }
       this.context.append(el('span', 'ze-label', dock.edges ? `${dock.edges} Andockkanten${dock.off ? `, ${dock.off} aus` : ''}: antippen schaltet ein Stück aus und an` : 'Keine Andockkanten: Ebenen mit Rolle „spielbar“ und feste oder grabbare Flächen haben Oberkanten'));
-      this.context.append(el('span', 'ze-sep'));
-      if (dock.station.has) {
-        if (!dock.station.ok) this.context.append(el('span', 'ze-label', 'Station ohne Kante'));
-        this.context.append(
-          button('Station versetzen', 'Station auf eine andere Andockkante setzen', () => this.a.stationPlace()),
-          button('Richtung ⇄', 'Fahrtrichtung der Station wechseln', () => this.a.stationFlip()),
-          button('Station entfernen', 'Station aus der Zone nehmen', () => this.a.stationRemove()),
-        );
-      } else if (dock.edges) this.context.append(button('Station setzen', 'Bahnhof mit Vorgabestück auf eine Andockkante setzen (zum Spielen im Editor)', () => this.a.stationPlace()));
+      this.context.append(el('span', 'ze-sep'), button('Station und Spielobjekte …', 'Station, Schlange, Baustelle und Coins setzen: Werkzeug Spielobjekte (S)', () => this.a.tool('play')));
       if (dock.face) {
         this.context.append(el('span', 'ze-sep'), el('span', 'ze-label', dock.face.name));
         for (const m of MATERIALS) this.context.append(button(MATERIAL_WORDS[m], `Material: ${MATERIAL_WORDS[m]}`, () => this.a.setMaterial(m), dock.face.material === m ? 'on' : ''));
@@ -1486,7 +1570,7 @@ export class EditorUi {
           : button(many ? 'Ebenen löschen' : 'Ebene löschen', many ? 'Die gewählten Ebenen mit allen Formen löschen' : 'Ebene mit allen Formen löschen', () => this.a.deletePlane()),
       );
     }
-    this.context.classList.toggle('show', !!(dropChoice || filling || grad || dock || path || shape || plane));
+    this.context.classList.toggle('show', !!(dropChoice || filling || grad || dock || play || field || path || shape || plane));
     if (this.toastEl.classList.contains('show')) this.placeToast();
     this.placeStack();
   }

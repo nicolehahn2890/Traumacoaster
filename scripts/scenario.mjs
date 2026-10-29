@@ -1934,9 +1934,9 @@ if (want('25')) {
     for (let i = 0; i < 3; i++) window.tcGame.app.ticker.update(performance.now());
     return out;
   });
-  // Station auf die Kante der vorderen Ebene (Werkzeug D, „Station setzen“, links auf die Kante tippen)
-  await page.keyboard.press('d');
-  await page.click('.ze-context .ze-btn:text-is("Station setzen")');
+  // Station auf die Kante der vorderen Ebene (Werkzeug S „Spielobjekte“, „Station“, links auf die Kante tippen)
+  await page.keyboard.press('s');
+  await page.click('.ze-context .ze-btn:text-is("Station")');
   const sAt = await page.evaluate(({ a, top, x0 }) => {
     const ed = window.tcGame.current.planeEditor;
     return ed.screenOf(ed.nodes.find((n) => n.id === a), { x: x0 + 4, y: top });
@@ -2221,6 +2221,127 @@ if (want('28')) {
   await sleep(400);
   const build = await page.evaluate(() => ({ field: window.tcGame.current.activeField?.id ?? null, bounds: window.tcGame.current.view.camera.softBounds }));
   check(build.field === null && !build.bounds, `Bauen: kein Feld aktiv, Kamera frei`);
+}
+
+// 29. Zonen-Editor, Stufe 4: Spielobjekte auf Andockkanten (Werkzeug S) und Level-Angaben eines Felds (Werkzeug R).
+// Schlange, Baustelle und Coins setzen, ziehen und ändern; Ziele und Stufe des Felds über die Leiste; beim Spielen stehen
+// die Objekte in der Welt (Platzhalter), die Coins zählen, die Durchbruch-Wand geht in die Fahrt, die Ziele gelten.
+if (want('29')) {
+  await page.goto(`${BASE}?zone=test-huegel&editor=2&dev=1&fast=6`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  await page.keyboard.press('s');
+  await sleep(200);
+  const st = () => page.evaluate(() => {
+    const e = window.tcGame.current.planeEditor;
+    return { objs: e.nodes.filter((n) => ['station', 'queue', 'site', 'coins'].includes(n.kind)).map((n) => ({ ...n })), sel: e.playSel, bar: document.querySelector('.ze-context')?.textContent ?? '', items: document.querySelectorAll('.ze-play').length };
+  });
+  const s0 = await st();
+  check(s0.objs.length === 1 && s0.objs[0].kind === 'station' && /Station versetzen/.test(s0.bar) && s0.items === 1, `Werkzeug Spielobjekte: die Station der Testszene, Knöpfe zum Setzen (${s0.bar.slice(0, 60)}…)`);
+  // eine Andockkante der Ebene der Station, ein Stück neben ihr, als Bildpunkt
+  const spot = await page.evaluate(() => {
+    const e = window.tcGame.current.planeEditor;
+    const stn = e.nodes.find((n) => n.kind === 'station');
+    const edges = e.docks().filter((d) => !d.off && d.plane === stn.parent);
+    const plane = e.nodes.find((n) => n.id === stn.parent);
+    // die längste Kante der Ebene, ihr Punkt bei 70 % (weg von der Station)
+    const len = (d) => d.pts.slice(1).reduce((a, p, i) => a + Math.hypot(p.x - d.pts[i].x, p.y - d.pts[i].y), 0);
+    const d = edges.sort((a, b) => len(b) - len(a))[0];
+    const i = Math.floor(d.pts.length * 0.7);
+    return { plane: plane.id, at: e.screenOf(plane, d.pts[i]), atR: e.screenOf(plane, d.pts[Math.min(d.pts.length - 1, i + 4)]) };
+  });
+  await page.click('.ze-context .ze-btn:text-is("Schlange")');
+  await page.mouse.click(spot.at.x, spot.at.y);
+  await sleep(200);
+  const s1 = await st();
+  const q = s1.objs.find((n) => n.kind === 'queue');
+  check(!!q && q.parent === spot.plane && s1.sel === q.id && /Schlange · 8 m/.test(s1.bar), `Schlange auf die Kante gesetzt und gewählt (${q?.id} auf ${q?.parent}, ${s1.bar.slice(0, 30)}…)`);
+  // ziehen: die Schlange wandert entlang der Kante
+  const qMid = await page.evaluate(() => {
+    const e = window.tcGame.current.planeEditor;
+    const it = e.playItems().find((i) => i.kind === 'queue');
+    const xs = it.ring.map((p) => p.x);
+    const ys = it.ring.map((p) => p.y);
+    return { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
+  });
+  await page.mouse.move(qMid.x, qMid.y);
+  await page.mouse.down();
+  for (let k = 1; k <= 8; k++) await page.mouse.move(qMid.x + k * 8, qMid.y);
+  await page.mouse.up();
+  await sleep(200);
+  const s2 = await st();
+  const q2 = s2.objs.find((n) => n.kind === 'queue');
+  check(!!q2 && q2.x0 > q.x0 + 0.5 && Math.abs(q2.x1 - q2.x0 - (q.x1 - q.x0)) < 0.05, `Schlange gezogen: weiter rechts auf der Kante, gleiche Länge (x0 ${q.x0.toFixed(1)} → ${q2?.x0?.toFixed(1)})`);
+  await page.click('.ze-context .ze-btn:text-is("Eingang ⇄")');
+  await sleep(150);
+  const s3 = await st();
+  check(s3.objs.find((n) => n.kind === 'queue')?.dir === -q2.dir, `Eingang gewechselt (${q2.dir} → ${s3.objs.find((n) => n.kind === 'queue')?.dir})`);
+  // Baustelle: Durchbruch mit 11 m/s
+  await page.keyboard.press('Escape');
+  await page.click('.ze-context .ze-btn:text-is("Baustelle")');
+  await page.mouse.click(spot.atR.x, spot.atR.y);
+  await sleep(150);
+  await page.click('.ze-context .ze-btn:text-is("Durchbruch")');
+  await sleep(100);
+  await page.click('.ze-context .ze-btn:text-is("+")');
+  await sleep(150);
+  const s4 = await st();
+  const b = s4.objs.find((n) => n.kind === 'site');
+  check(!!b && b.variant === 'breakthrough' && b.energy === 11, `Baustelle gesetzt: Durchbruch mit ${b?.energy} m/s`);
+  // Coins: über der Kante in die Luft, als Ring mit sechs
+  await page.keyboard.press('Escape');
+  await page.click('.ze-context .ze-btn:text-is("Coins")');
+  await page.mouse.click(spot.at.x - 40, spot.at.y - 90);
+  await sleep(150);
+  await page.click('.ze-context .ze-btn:text-is("Ring")');
+  await page.click('.ze-context .ze-btn:text-is("Mehr")');
+  await sleep(150);
+  const s5 = await st();
+  const m = s5.objs.find((n) => n.kind === 'coins');
+  check(!!m && m.shape === 'ring' && m.count === 6 && s5.items === 4, `Coins gesetzt: Ring mit ${m?.count} vor ${m?.parent}, vier Objekte im Bild (${s5.items})`);
+  await page.keyboard.press('Meta+z');
+  await sleep(150);
+  const s6 = await st();
+  check(s6.objs.find((n) => n.kind === 'coins')?.count === 5, `Rückgängig: wieder fünf Coins`);
+  // Feld: Ziele und Stufe über die Leiste
+  await page.keyboard.press('r');
+  await sleep(150);
+  const inner = await page.evaluate(() => {
+    const e = window.tcGame.current.planeEditor;
+    const g = { id: '_t', kind: 'plane', parent: null, name: '', z: 0, x: 0, y: 0, scale: 1, role: 'play' };
+    return e.screenOf(g, { x: 40, y: 20 });
+  });
+  await page.mouse.click(inner.x, inner.y);
+  await sleep(150);
+  page.once('dialog', (d) => d.accept('finish, coins 3, *height 20'));
+  await page.click('.ze-context .ze-btn:has-text("Ziele:")');
+  await sleep(150);
+  await page.click('.ze-context .ze-btn:has-text("Stufe:")');
+  await sleep(150);
+  const f = await page.evaluate(() => ({ rest: window.tcGame.current.planeEditor.nodes.find((n) => n.kind === 'field')?.rest ?? null, bar: document.querySelector('.ze-context')?.textContent ?? '' }));
+  check(f.rest?.goals?.length === 3 && f.rest?.stage === 0 && /Ziele: finish, coins 3, \*height 20/.test(f.bar) && /Look: Tag/.test(f.bar), `Feld: Ziele und Stufe gesetzt (${JSON.stringify(f.rest)})`);
+  // spielen: Objekte in der Welt, Coins zählen, Wand in der Fahrt, Ziele gelten
+  await page.keyboard.press('Tab');
+  await sleep(800);
+  const play = await page.evaluate(() => {
+    const s = window.tcGame.current;
+    return { keys: [...window.tcGame.world.zone.keys()], coins: s.level.coins.length, walls: s.planeSites.filter((x) => x.variant === 'breakthrough').map((x) => x.energy), goals: s.level.goals.map((g) => g.type), field: s.activeField?.id ?? null };
+  });
+  check(['station-ebene', 'ebene-q1', 'ebene-b1', 'ebene-m1'].every((k) => play.keys.includes(k)), `Spielen: Station, Schlange, Baustelle und Coins in der Welt (${play.keys.join(', ')})`);
+  check(play.coins >= 5 && play.walls.join(',') === '11', `Spielen: ${play.coins} Coins auf der Bühne, Durchbruch-Wand mit ${play.walls.join(',')} m/s`);
+  check(play.field === 'f1' && ['finish', 'coins', 'height'].every((g) => play.goals.includes(g)), `Spielen: Feld ${play.field} mit seinen Zielen (${play.goals.join(', ')})`);
+  await page.screenshot({ path: 'screenshots/scenario-29-spielobjekte.png' });
+  // zurück zum Bauen: Coins wählen und mit Entf entfernen
+  await page.keyboard.press('Tab');
+  await sleep(400);
+  await page.keyboard.press('s');
+  await sleep(150);
+  const coin = await page.evaluate(() => window.tcGame.current.planeEditor.playItems().find((i) => i.kind === 'coins')?.dots?.[0] ?? null);
+  if (coin) await page.mouse.click(coin.x, coin.y);
+  await sleep(150);
+  await page.keyboard.press('Delete');
+  await sleep(150);
+  const s7 = await st();
+  check(!s7.objs.some((n) => n.kind === 'coins') && s7.objs.length === 3, `Coins mit Entf entfernt (${s7.objs.map((n) => n.kind).join(', ')})`);
 }
 
 await browser.close();

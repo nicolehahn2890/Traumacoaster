@@ -18,6 +18,7 @@ import type { LookName } from '@/world/looks';
 import { parseCrown, parseDotsOff, parseSetDots, serializeCrown, type CrownParams, type DotOff, type SetDot } from './crown';
 import { parseWave, serializeWave, type EdgeWave } from './edgeWave';
 import { LANE_DEPTH } from '@/track/stage';
+import { COIN_SHAPES, type CoinShape } from './groups';
 import type { SliceRole, SliceStack } from './slices';
 
 /** Rolle einer Ebene für Pinsel und Stützen (Befund 15); in Stufe 1 nur Merkmal, Stufe 4 wertet sie aus */
@@ -199,6 +200,48 @@ export interface ZoneStationNode {
 }
 
 /**
+ * Schlange auf einer Andockkante (Stufe 4, Plan 4.9 und 6.3): Streifen von x0 bis x1 (Ebenen-Koordinaten) auf der Kante
+ * ihrer Ebene, Eingang am Ende in Fahrtrichtung dir; Höhe und Tiefe folgen aus Kante und Ebene (src/zone/playObjects.ts)
+ */
+export interface ZoneQueueNode {
+  id: string;
+  kind: 'queue';
+  parent: string;
+  x0: number;
+  x1: number;
+  dir: 1 | -1;
+}
+
+/**
+ * Baustelle auf einer Andockkante (Stufe 4, Plan 4.9 und 5.1): Anschlusspunkt bei x (Ebenen-Koordinaten) auf der Kante;
+ * Verbinden oder Durchbruch mit Mindesttempo. Das Verbinden öffnet in Ebenen-Zonen erst mit den Portalen (Stufe 7)
+ */
+export interface ZoneSiteNode {
+  id: string;
+  kind: 'site';
+  parent: string;
+  x: number;
+  variant: 'connect' | 'breakthrough';
+  /** Durchbruch: nötiges Tempo (m/s) */
+  energy?: number;
+}
+
+/**
+ * Coin-Gruppe vor einer Ebene (Stufe 4, Plan 4.9 und 4.4): Anker (x, y) in Ebenen-Koordinaten, in der Tiefe der Bahn vor
+ * dieser Ebene; Form, Zahl und Abstand (Meter der Welt) wie die Coin-Gruppen des Klötzchen-Editors
+ */
+export interface ZoneCoinNode {
+  id: string;
+  kind: 'coins';
+  parent: string;
+  x: number;
+  y: number;
+  shape: CoinShape;
+  count: number;
+  spacing: number;
+}
+
+/**
  * Feld (Stufe 4, Plan 4.9 „Felder mit Kamerabegrenzung und Rahmen für Hoch- und Querformat“): ein Spielbereich der Zone
  * in Metern der Spur-0-Ebene wie die Felder des Klötzchen-Editors (`ZoneField`): weiche Kamerabegrenzung, Zoom-Grenze
  * „Feld passt ins Bild“, Absperrband an den Rändern. Ziele, Stufen und Schalter des Felds reisen bis zu ihrem Paket
@@ -215,7 +258,9 @@ export interface ZoneFieldNode {
   rest?: Record<string, unknown>;
 }
 
-export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup | ZoneSketch | ZoneSwatch | ZoneStyle | ZoneAir | ZoneLight | ZoneStationNode | ZoneFieldNode;
+export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup | ZoneSketch | ZoneSwatch | ZoneStyle | ZoneAir | ZoneLight | ZoneStationNode | ZoneFieldNode | ZoneQueueNode | ZoneSiteNode | ZoneCoinNode;
+/** Spielobjekte auf den Ebenen (Stufe 4): Station, Schlange, Baustelle, Coins */
+export type ZonePlayNode = ZoneStationNode | ZoneQueueNode | ZoneSiteNode | ZoneCoinNode;
 
 export const isPlane = (n: ZoneNode): n is ZonePlane => n.kind === 'plane';
 export const isShape = (n: ZoneNode): n is ZoneShape => n.kind === 'shape';
@@ -227,6 +272,10 @@ export const isAir = (n: ZoneNode): n is ZoneAir => n.kind === 'air';
 export const isLight = (n: ZoneNode): n is ZoneLight => n.kind === 'light';
 export const isStationNode = (n: ZoneNode): n is ZoneStationNode => n.kind === 'station';
 export const isFieldNode = (n: ZoneNode): n is ZoneFieldNode => n.kind === 'field';
+export const isQueueNode = (n: ZoneNode): n is ZoneQueueNode => n.kind === 'queue';
+export const isSiteNode = (n: ZoneNode): n is ZoneSiteNode => n.kind === 'site';
+export const isCoinNode = (n: ZoneNode): n is ZoneCoinNode => n.kind === 'coins';
+export const isPlayNode = (n: ZoneNode): n is ZonePlayNode => isStationNode(n) || isQueueNode(n) || isSiteNode(n) || isCoinNode(n);
 
 /** Felder der Zone in ihrer Reihenfolge */
 export function fieldNodesOf(nodes: readonly ZoneNode[]): ZoneFieldNode[] {
@@ -358,9 +407,10 @@ export function newGroup(nodes: readonly ZoneNode[], name?: string): ZoneGroup {
 
 /**
  * nächste freie Kennung mit Vorsilbe (p für Ebenen, s für Formen, g für Gruppen, k für Skizzen, c für Palettenfelder,
- * y für Stile, f für Felder), hochgezählt wie die Kennungen der Zonendatei
+ * y für Stile, f für Felder, q für Schlangen, b für Baustellen, m für Coin-Gruppen), hochgezählt wie die Kennungen der
+ * Zonendatei
  */
-export function nextNodeId(nodes: readonly ZoneNode[], prefix: 'p' | 's' | 'g' | 'k' | 'c' | 'y' | 'f'): string {
+export function nextNodeId(nodes: readonly ZoneNode[], prefix: 'p' | 's' | 'g' | 'k' | 'c' | 'y' | 'f' | 'q' | 'b' | 'm'): string {
   const ids = new Set(nodes.map((n) => n.id));
   let n = nodes.filter((x) => x.id.startsWith(prefix)).length + 1;
   while (ids.has(`${prefix}${n}`)) n++;
@@ -1031,6 +1081,28 @@ export function parseNodes(v: unknown): ZoneNode[] {
       const st: ZoneStationNode = { id: o.id, kind: 'station', parent: o.parent, x: o.x, dir: o.dir === -1 ? -1 : 1, length: num(o.length) && o.length >= 4 && o.length <= 60 ? o.length : 14 };
       out.push(st);
       ids.add(st.id);
+    } else if (o.kind === 'queue' && typeof o.parent === 'string' && num(o.x0) && num(o.x1)) {
+      const q: ZoneQueueNode = { id: o.id, kind: 'queue', parent: o.parent, x0: Math.min(o.x0, o.x1), x1: Math.max(o.x0, o.x1), dir: o.dir === -1 ? -1 : 1 };
+      out.push(q);
+      ids.add(q.id);
+    } else if (o.kind === 'site' && typeof o.parent === 'string' && num(o.x)) {
+      const b: ZoneSiteNode = { id: o.id, kind: 'site', parent: o.parent, x: o.x, variant: o.variant === 'breakthrough' ? 'breakthrough' : 'connect' };
+      if (num(o.energy) && o.energy > 0) b.energy = Math.min(60, o.energy);
+      out.push(b);
+      ids.add(b.id);
+    } else if (o.kind === 'coins' && typeof o.parent === 'string' && num(o.x) && num(o.y)) {
+      const c: ZoneCoinNode = {
+        id: o.id,
+        kind: 'coins',
+        parent: o.parent,
+        x: o.x,
+        y: o.y,
+        shape: (COIN_SHAPES as readonly string[]).includes(String(o.shape)) ? (o.shape as CoinShape) : 'row',
+        count: num(o.count) ? Math.max(1, Math.min(40, Math.round(o.count))) : 5,
+        spacing: num(o.spacing) ? Math.max(0.5, Math.min(20, o.spacing)) : 2,
+      };
+      out.push(c);
+      ids.add(c.id);
     } else if (o.kind === 'air' && !out.some(isAir) && num(o.near) && num(o.far) && num(o.amount)) {
       const color = parseColor(o.color);
       if (!color) continue;
@@ -1240,6 +1312,9 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
     }
   }
   for (const st of nodes.filter(isStationNode)) out.push({ id: st.id, kind: 'station', parent: st.parent, x: round(st.x, 3), dir: st.dir, length: round(st.length, 2) });
+  for (const q of nodes.filter(isQueueNode)) out.push({ id: q.id, kind: 'queue', parent: q.parent, x0: round(q.x0, 3), x1: round(q.x1, 3), dir: q.dir });
+  for (const b of nodes.filter(isSiteNode)) out.push({ id: b.id, kind: 'site', parent: b.parent, x: round(b.x, 3), variant: b.variant, ...(b.energy !== undefined ? { energy: round(b.energy, 2) } : {}) });
+  for (const c of nodes.filter(isCoinNode)) out.push({ id: c.id, kind: 'coins', parent: c.parent, x: round(c.x, 3), y: round(c.y, 3), shape: c.shape, count: c.count, spacing: round(c.spacing, 2) });
   for (const f of fieldNodesOf(nodes)) out.push({ id: f.id, kind: 'field', name: f.name, x0: round(f.x0, 2), x1: round(f.x1, 2), y0: round(f.y0, 2), y1: round(f.y1, 2), ...(f.rest ? JSON.parse(JSON.stringify(f.rest)) : {}) });
   for (const k of nodes.filter(isSketch)) {
     if (!k.src.startsWith('/zones/')) continue;
@@ -1254,7 +1329,7 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
 /** tiefe Kopie (für den Arbeitsverlauf und das Sichern) */
 export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
   return nodes.map((n): ZoneNode => {
-    if (isGroup(n) || isSketch(n) || isAir(n) || isStationNode(n)) return { ...n };
+    if (isGroup(n) || isSketch(n) || isAir(n) || isPlayNode(n)) return { ...n };
     if (isLight(n)) return { ...n, ...(n.looks ? { looks: JSON.parse(JSON.stringify(n.looks)) as ZoneLight['looks'] } : {}) };
     if (isFieldNode(n)) return { ...n, ...(n.rest ? { rest: JSON.parse(JSON.stringify(n.rest)) as Record<string, unknown> } : {}) };
     if (isPlane(n)) return { ...n, ...(n.fills ? { fills: cloneFills(n.fills) } : {}) };

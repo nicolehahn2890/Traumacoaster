@@ -55,9 +55,14 @@ export interface OverlayState {
   frames: Array<{ pts: Pt[]; name: string }>;
   /** Größe des Pinsels (Farbnebel, Punktpinsel) als Ring um den Zeiger, auf die Ebene darunter gelegt */
   brush: Pt[] | null;
+  /**
+   * Spielobjekte (Stufe 4, Werkzeug S): Umriss je Objekt (Bahnsteig, Streifen der Schlange, Baustelle, Rahmen der Coins),
+   * gewählt hervorgehoben, Name an der Stelle at; Coins zusätzlich als Punkte
+   */
+  play: Array<{ kind: 'station' | 'queue' | 'site' | 'coins'; ring: Pt[]; on: boolean; label: string; at: Pt; dots?: Pt[] }>;
 }
 
-export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [], target: null, loupe: null, gradient: null, dock: [], hatch: [], station: null, fields: [], frames: [], brush: null });
+export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [], target: null, loupe: null, gradient: null, dock: [], hatch: [], station: null, fields: [], frames: [], brush: null, play: [] });
 
 const ring = (pts: Pt[]): string => (pts.length ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z` : '');
 const open = (pts: Pt[]): string => (pts.length > 1 ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}` : '');
@@ -90,6 +95,7 @@ export class EditorOverlay {
   private readonly fieldOnPath = document.createElementNS(NS, 'path');
   private readonly framePath = document.createElementNS(NS, 'path');
   private readonly labelGroup = document.createElementNS(NS, 'g');
+  private readonly playGroup = document.createElementNS(NS, 'g');
   /** Kantenlänge der Rahmen-Griffe (Pixel); auf Touch-Geräten größer */
   handleSize = 9;
 
@@ -130,7 +136,7 @@ export class EditorOverlay {
     this.fieldPath.setAttribute('class', 'ze-field');
     this.fieldOnPath.setAttribute('class', 'ze-field on');
     this.framePath.setAttribute('class', 'ze-frame');
-    this.el.append(defs, this.hatchPaths.solid, this.hatchPaths.dig, this.hatchPaths.airy, this.dockOff, this.dockOn, this.stationPath, this.framePath, this.fieldPath, this.fieldOnPath, this.labelGroup);
+    this.el.append(defs, this.hatchPaths.solid, this.hatchPaths.dig, this.hatchPaths.airy, this.dockOff, this.dockOn, this.stationPath, this.framePath, this.fieldPath, this.fieldOnPath, this.labelGroup, this.playGroup);
     this.el.append(this.targetPath, this.gradGroup, this.loupeRing, this.gridPath, this.groupPath, this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.regionPath, this.tangentPath, this.anchorGroup, this.knobGroup, this.handleGroup, this.snapRing, this.brushPath);
   }
 
@@ -173,6 +179,31 @@ export class EditorOverlay {
     }
   }
 
+  /** Spielobjekte: wenige Elemente, darum je Bild neu */
+  private drawPlay(items: OverlayState['play']): void {
+    this.playGroup.replaceChildren();
+    for (const it of items) {
+      const path = document.createElementNS(NS, 'path');
+      path.setAttribute('class', `ze-play ze-play-${it.kind}${it.on ? ' on' : ''}`);
+      path.setAttribute('d', ring(it.ring));
+      this.playGroup.append(path);
+      for (const d of it.dots ?? []) {
+        const c = document.createElementNS(NS, 'circle');
+        c.setAttribute('class', 'ze-play-coin');
+        c.setAttribute('cx', d.x.toFixed(1));
+        c.setAttribute('cy', d.y.toFixed(1));
+        c.setAttribute('r', '4');
+        this.playGroup.append(c);
+      }
+      const t = document.createElementNS(NS, 'text');
+      t.setAttribute('class', 'ze-flabel');
+      t.setAttribute('x', (it.at.x + 4).toFixed(1));
+      t.setAttribute('y', (it.at.y - 6).toFixed(1));
+      t.textContent = it.label;
+      this.playGroup.append(t);
+    }
+  }
+
   draw(s: OverlayState): void {
     this.facePath.setAttribute('d', s.face ? s.face.map(ring).join('') : '');
     this.targetPath.setAttribute('d', s.target ? s.target.map(ring).join('') : '');
@@ -197,6 +228,7 @@ export class EditorOverlay {
       t.setAttribute('y', (l.at.y + 16).toFixed(1));
       t.textContent = l.text;
     });
+    this.drawPlay(s.play);
     this.drawGradient(s.gradient);
     this.loupeRing.style.display = s.loupe ? '' : 'none';
     if (s.loupe) {

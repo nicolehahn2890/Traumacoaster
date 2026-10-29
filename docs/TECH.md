@@ -827,8 +827,20 @@ Plan: `docs/ZONENEDITOR-PLAN.md`, Stufe 4 und 4.9. Ohne DOM: `src/zone/dock.ts`,
   `ZoneStation` (x, Höhe der Kante + 1 m, Spur 1 m vor der Ebene) oder null ohne Kante. `zoneStation()` des Levels nimmt
   sie vor den Stationen des Klötzchen-Editors.
 - **Editor:** Werkzeug D (`dockDown`, `dockOverlay`): Kante antippen schaltet, sonst die Fläche darunter (Material in der
-  Leiste); „Station setzen“ legt den Knoten auf die getroffene Kante. Überlagerung: `OverlayState.dock`, `hatch` (SVG-
-  Muster), `station`. Handy-Link: Dev-Server `/__lan` (IPv4 im WLAN), `ui.togglePhone`.
+  Leiste). Überlagerung: `OverlayState.dock`, `hatch` (SVG-Muster). Handy-Link: Dev-Server `/__lan` (IPv4 im WLAN),
+  `ui.togglePhone`.
+- **Spielobjekte** (30.10., Werkzeug S `play`; `src/zone/playObjects.ts`): Knoten `ZoneQueueNode` (`q…`, x0 bis x1 auf der
+  Kante, Eingang dir), `ZoneSiteNode` (`b…`, x, Verbinden oder Durchbruch mit energy) und `ZoneCoinNode` (`m…`, Anker x, y
+  in Ebenen-Koordinaten, Form, Zahl, Abstand in Metern der Welt) neben `ZoneStationNode`, alle mit `parent` = Ebene
+  (`isPlayNode`; fallen mit ihrer Ebene weg). `planePlayObjects(nodes)` rechnet sie in `ZoneQueue`/`ZoneSite`/
+  `ZoneCoinGroup` der Welt um (Kante über `groundAt`, Spur `trackLaneOf` = DOCK_GAP vor der Ebene; ohne Kante oder auf
+  einer nicht spielbaren Ebene fällt ein Objekt weg). Level: `refreshPlaneObjects` (aus `refreshPlaneStack`) setzt die
+  Platzhalter des Klötzchen-Editors als `ebene-<Kennung>` in die Welt, hängt die Coins an `level.coins` und die
+  Baustellen an `siteWalls` der Fahrt. Editor: `playItems` (Umrisse im Bild), `playDown`/`playMove` (Treffer im Umriss,
+  Ziehen rastet über `edgeNearScreen` auf die nächste Kante, auch einer anderen Ebene; Enden der Schlange als Griffe),
+  `playPlaceAt`, `playEdit`, `playRemove`; Überlagerung `OverlayState.play`. Am gewählten Feld (Werkzeug R) schreibt
+  `fieldEdit` Ziele, Stufe, Aufwertung und Schalter in den `rest` des Feldknotens (Zeilen wie im Klötzchen-Editor über
+  `window.prompt`), den Look der Stufe in `zone.looks`.
 - **Freiraumfeld aus Flächen** (`PlaneField` in `planeStack.ts`, Plan 4.9): im Bild gedacht wie „Bild halten“. Ein Punkt
   (Bildpunkt p, Tiefe d) ist fest, wenn die hinterste spielbare Ebene oder Kulisse vor d, die p deckt (`planePoint`),
   dort eine feste oder grabbare Fläche hat; eine Fläche reicht bis zur nächsten Ebene, die p deckt, die hinterste
@@ -862,11 +874,12 @@ Plan: `docs/ZONENEDITOR-PLAN.md`, Stufe 4 und 4.9. Ohne DOM: `src/zone/dock.ts`,
 - **Startbild:** Hat die Zone Felder, beginnt der Zonen-Editor mit dem ersten Feld im freien Bereich zwischen den Leisten
   (`EditorUi.freeRect`: rechts der Werkzeuge, links der Ebenenliste, unter Kopf- und Ansichtsleiste, über der Leiste
   unten; 8 % Rand), damit seine Kanten greifbar sind; sonst wie bisher an der Station.
-- **Prüfungen:** `tests/dock.test.ts`, `tests/planeStack.test.ts`; Szenario 24 (Andockkanten, Material, Handy-Link),
+- **Prüfungen:** `tests/dock.test.ts`, `tests/planeStack.test.ts`, `tests/playObjects.test.ts`; Szenario 24 (Andockkanten, Material, Handy-Link),
   25 (Station, Strich über der Kante: Tiefe der Ebene, Stützen auf Kanten, Fahrt), 26 (Höhle: Strich durch den Mund
   landet auf der Rückwand, Stützen auf dem unteren Rand der Öffnung), 27 (die drei Testszenen: Startbild, Station,
   Strich in die erwarteten Tiefen, Stützen, Fahrt; der Strich geht als Zeigerereignisse in der Seite, weil Swiftshader
-  die großen Szenen so langsam zeichnet, dass sonst der Langdruck nach 480 ms auslöst).
+  die großen Szenen so langsam zeichnet, dass sonst der Langdruck nach 480 ms auslöst), 29 (Spielobjekte setzen, ziehen und
+  ändern, Ziele und Stufe eines Felds, beim Spielen Welt, Coins, Wand und Ziele).
 
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).

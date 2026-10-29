@@ -48,8 +48,10 @@ import { cachedFreeLanes, FreeField, type FreeLanes } from '@/zone/field';
 import { SITE_OPENING_R, SITE_REACH, siteAnchor, siteTarget, siteWalls, withSiteOpenings } from '@/zone/sites';
 import { groundHoles, openRooms, roomAt, type Room } from '@/zone/underground';
 import type { LookName } from '@/world/looks';
-import { applyZoneExtras, buildZoneStation, itemPosition, stationPath, zoneCoins } from '@/zone/build';
+import { applyZoneExtras, buildZoneCoins, buildZoneQueue, buildZoneSite, buildZoneStation, itemPosition, stationPath, zoneCoins } from '@/zone/build';
 import { stationOf } from '@/zone/dock';
+import { coinsOfGroup } from '@/zone/groups';
+import { planePlayObjects } from '@/zone/playObjects';
 import { ZoneEditor } from '@/app/zoneEditor';
 import { PlaneEditor } from '@/zoneeditor/planeEditor';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
@@ -454,6 +456,10 @@ export class LevelScene implements Scene {
   private planeFree: (((p: StagePoint) => FreeLanes) & { clear(): void }) | null = null;
   /** Station auf einer Andockkante (Knoten des Zonen-Editors), geht der Station des Klötzchen-Editors vor */
   private planeStation: ZoneStation | null = null;
+  /** Schlangen, Baustellen und Coins auf den Ebenen (Stufe 4): Kennungen in der Welt, Baustellen für die Fahrt, Coins */
+  private planeObjectIds: string[] = [];
+  private planeSites: ZoneSite[] = [];
+  private planeCoins: Array<{ x: number; y: number; lane: number }> = [];
   /** aktives Feld der Zone: Kamera bleibt darin (weich), Zoom höchstens „Feld passt ins Bild“, Absperrband an den Rändern */
   private activeField: ZoneField | null = null;
   /** Schalter, Gurt, Kettenzugstärke und Grenzen des aktiven Felds (Etappe 2, Schritt 1; ohne Feld: alles) */
@@ -553,7 +559,7 @@ export class LevelScene implements Scene {
           game.world.setLevelGroundVisible(false);
           this.refreshPlaneStack(false);
         }
-        this.level.coins = zoneCoins(zone);
+        this.level.coins = [...zoneCoins(zone), ...this.planeCoins];
         this.refreshRock();
         if (EDITOR_URL) {
           this.zoneEditor = new ZoneEditor(
@@ -564,7 +570,7 @@ export class LevelScene implements Scene {
               redrawTrack: () => this.redrawTrack(),
               setActiveField: (f) => this.setActiveField(f),
               refreshCoins: () => {
-                this.level.coins = zoneCoins(zone);
+                this.level.coins = [...zoneCoins(zone), ...this.planeCoins];
                 this.view.trackR.setCoins(this.level.coins);
               },
               refreshStation: () => this.resetStationPiece(),
@@ -2295,7 +2301,32 @@ export class LevelScene implements Scene {
       if (this.planeStation) world.addZoneBuilt('station-ebene', buildZoneStation(this.planeStation), itemPosition(this.planeStation));
     }
     if (this.planeStation) this.resetStationPiece();
+    this.refreshPlaneObjects();
     if (rock) this.refreshRock();
+  }
+
+  /**
+   * Schlangen, Baustellen und Coins der Ebenen (Stufe 4, Plan 4.9) in die Welt und ins Spiel: Platzhalter wie im
+   * Klötzchen-Editor, Durchbruch-Wände für die Fahrt, Coins für die Bühne
+   */
+  private refreshPlaneObjects(): void {
+    const zone = this.sandbox?.zone;
+    const world = this.game.world;
+    const objs = planePlayObjects(zone?.nodes ?? []);
+    if (world) {
+      for (const id of this.planeObjectIds) world.removeZoneElement(id);
+      this.planeObjectIds = [];
+      for (const q of objs.queues) world.addZoneBuilt(q.id, buildZoneQueue(q), itemPosition(q));
+      for (const b of objs.sites) world.addZoneBuilt(b.id, buildZoneSite(b), itemPosition(b));
+      for (const c of objs.coins) world.addZoneBuilt(c.id, buildZoneCoins(c), itemPosition(c));
+      this.planeObjectIds = [...objs.queues, ...objs.sites, ...objs.coins].map((o) => o.id);
+    }
+    this.planeSites = objs.sites;
+    this.planeCoins = objs.coins.flatMap((c) => coinsOfGroup(c));
+    if (zone && this.view) {
+      this.level.coins = [...zoneCoins(zone), ...this.planeCoins];
+      this.view.trackR.setCoins(this.level.coins);
+    }
   }
 
   /** Pinsel-Strich: gemalte Linie, das Gummiband zum Finger und der Tropfen unter dem Finger */
@@ -3118,7 +3149,7 @@ export class LevelScene implements Scene {
     const field = this.field;
     const zone = this.sandbox?.zone;
     // Tunnel-Meter (Plan 5.1): unter einer Decke des Freiraumfelds (Innenraum eines Dreiteilers, Höhle)
-    return { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), ...(chain ? { chainHeight: chain } : {}), ...(this.planeField ? { insideRock: (x: number, y: number, z: number) => this.planeField!.ceilingAbove(x, y, z) } : field && !field.empty ? { insideRock: (x: number, y: number, z: number) => field.ceilingAbove(x, y, z) } : {}), ...(zone ? { walls: siteWalls(zone.sites, this.openedSites) } : {}), ...(this.slices || this.planeStack ? { depthPerspective: SLICE_PHYSICS_D } : {}) };
+    return { ...simOptionsForLevel(this.level, path, this.terrain, this.skin, this.allowTunnels), ...(chain ? { chainHeight: chain } : {}), ...(this.planeField ? { insideRock: (x: number, y: number, z: number) => this.planeField!.ceilingAbove(x, y, z) } : field && !field.empty ? { insideRock: (x: number, y: number, z: number) => field.ceilingAbove(x, y, z) } : {}), ...(zone ? { walls: siteWalls([...zone.sites, ...this.planeSites], this.openedSites) } : {}), ...(this.slices || this.planeStack ? { depthPerspective: SLICE_PHYSICS_D } : {}) };
   }
 
   /** Startart im Feld (Etappe 2, Schritt 1): erlaubt die Stufe die gewählte nicht, nimmt die Bahn die erste erlaubte */
