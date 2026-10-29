@@ -31,7 +31,7 @@ import { strokeToTrack, closePath, extendTrack, interpretStroke, lanesTrack, typ
 import { bendSegment } from '@/track/edit';
 import { RubberBrush, chaikin, resamplePolyline } from '@/track/brush';
 import { BrushRefiner, joinLines, lineLength, planBrushTrack, previewBrushTrack, spliceLine, swapCrossing, trackLine, trackLineWithDepth, type BrushPlan, type BrushPreview } from '@/track/brushTrack';
-import { FIT_TUNING, FIX_BEHIND, FREEZE, Strich2, type Strich2End, type Strich2Preview } from '@/track/strich2';
+import { FIT_TUNING, FIX_BEHIND, FREEZE, LOOK_TUNING, Strich2, type Strich2End, type Strich2Preview } from '@/track/strich2';
 import { splitPathAt } from '@/track/pathSplit';
 import { TrackInspector, type WeakSpot } from '@/track/inspect';
 import { findCrossings } from '@/track/crossings';
@@ -193,6 +193,9 @@ FIT_TUNING.tolScale = urlNum('tol', FIT_TUNING.tolScale);
 FIT_TUNING.even = urlNum('even', FIT_TUNING.even ? 1 : 0) !== 0;
 FIT_TUNING.evenSpan = urlNum('span', FIT_TUNING.evenSpan);
 FIT_TUNING.evenTurn = urlNum('turn', FIT_TUNING.evenTurn);
+// Strich 2, Vorlauf zum Ausprobieren: &freezemax=40 (ab so vielen Metern bleibt ein offenes steiles Stück Höhe), &lookstart=6
+LOOK_TUNING.freezeMax = urlNum('freezemax', LOOK_TUNING.freezeMax);
+LOOK_TUNING.lookStart = urlNum('lookstart', LOOK_TUNING.lookStart);
 /**
  * Strich 2: 1 (Vorgabe) zeigt die Schienen nur bis zum festen Teil, der Vorlauf bleibt Tinte und die Bahn zieht weich
  * nach, sobald die Tiefe entschieden ist; 2 zeigt den Vorlauf vorläufig als Schienen bis zur Spitze

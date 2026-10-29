@@ -55,16 +55,28 @@ function run(s: Strich2, pts: StagePoint[], every = 5): Float64Array[] {
 }
 
 describe('Strich 2: kausal mit festem Vorlauf', () => {
-  it('nimmt den Vorlauf als Länge: ein kürzerer Vorlauf wird um genau so viele Meter früher fest', () => {
-    // 60 m Linie (Punkte alle 0,2 m): mit 12 m Vorlauf sind 48 m fest, mit 6 m Vorlauf 54 m
-    const pts = polyline([[0, 10], [60, 10], [120, 10]]);
-    const kurz = new Strich2(() => stepOptions(50), null, 4, 8, FIX_BEHIND, 6);
-    const lang = new Strich2(() => stepOptions(50), null, 4, 8);
-    const pk = kurz.update(pts.slice(0, 301));
-    const pl = lang.update(pts.slice(0, 301));
+  it('Vorlauf dynamisch: auf ruhiger Strecke kurz, vor einem steilen Stück der volle Vorlauf', () => {
+    // 60 m ruhige Gerade auf Starttiefe (Punkte alle 0,2 m): fest bis 3 m hinter der Spitze, egal wie lang der Vorlauf ist
+    const flat = polyline([[0, 10], [60, 10], [120, 10]]);
+    const kurz = new Strich2(() => stepOptions(1000), null, 4, 8, FIX_BEHIND, 6);
+    const lang = new Strich2(() => stepOptions(1000), null, 4, 8);
+    const pk = kurz.update(flat.slice(0, 301));
+    const pl = lang.update(flat.slice(0, 301));
     expect(pk && pl).toBeTruthy();
-    expect(pl!.frozen).toBeGreaterThan(0);
-    expect(pk!.frozen).toBe(pl!.frozen + (FREEZE - 6));
+    expect(pl!.frozen).toBe(pk!.frozen);
+    expect(pl!.frozen).toBeGreaterThanOrEqual(60 - 3 - 3);
+    // Gerade, Kehre, 8 m zurück: die Richtungsumkehr liegt noch im Fenster, also gilt der volle Vorlauf (6 gegen 12 m)
+    const turn = polyline([[0, 10], [60, 10], [60, 20], [52, 20]]);
+    const k2 = new Strich2(() => stepOptions(1000), null, 4, 8, FIX_BEHIND, 6);
+    const l2 = new Strich2(() => stepOptions(1000), null, 4, 8);
+    for (let n = 6; n <= turn.length; n += 10) {
+      k2.update(turn.slice(0, n));
+      l2.update(turn.slice(0, n));
+    }
+    const pk2 = k2.update(turn)!;
+    const pl2 = l2.update(turn)!;
+    expect(pk2.frozen).toBeGreaterThan(pl2.frozen);
+    expect(pk2.frozen - pl2.frozen).toBeLessThanOrEqual(FREEZE - 6);
   });
 
   it('Fortsetzen: die Knoten der alten Bahn bleiben wörtlich stehen, der Anschluss ist G1', () => {

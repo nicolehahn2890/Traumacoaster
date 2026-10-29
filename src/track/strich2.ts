@@ -48,6 +48,19 @@ import { LANE_DEPTH, LANE_MAX, LANE_MIN, TILT_TAN, mixPoint, rayToWorld, toView,
 
 /** so weit (m) hinter der Spitze ist die Tiefe noch frei; davor fest */
 export const FREEZE = 12;
+/**
+ * Dynamischer Vorlauf (Florian 29.10.: „je kürzer, desto besser das Zeichengefühl, und immer so lang, wie es nötig ist“):
+ * Wo nichts zu entscheiden ist (keine steile Stelle, keine Richtungsumkehr, kein anderer Strang in Reichweite in den
+ * letzten FREEZE Metern), wird schon LOOK_SHORT Meter hinter der Spitze fest; ist ein anderer Strang in Reichweite,
+ * LOOK_BASE; bei steilem Stück oder Umkehr der volle Vorlauf FREEZE (&vorlaufm). Die ersten Meter eines Strichs sind
+ * auf die Starttiefe gepinnt, darum folgen die Schienen dort sofort (Platzhalter 3 und 6 m, 29.10.)
+ */
+const LOOK_SHORT = 3;
+const LOOK_BASE = 6;
+/** so nah (m) muss die Tiefe eines freien Punkts an seinem Ziel sein, damit der kurze Vorlauf gilt */
+const LOOK_SETTLED = 0.5;
+/** so viele neue Linienmeter braucht eine Vorschau (vorher 6: die Schienen kamen am Strichanfang spät) */
+const MIN_LINE = 3;
 /** so viele feste Punkte nimmt der Löser als Rand mit (Lage, Neigung und Krümmung schließen stetig an) */
 const BORDER = 3;
 const STEP = 1;
@@ -108,6 +121,14 @@ function PASS_SIDE_CONST(): number {
 }
 /** längster Vorlauf (Punkte): ein steiles Stück, das sich so lange nicht erklärt, friert trotzdem ein (als Höhe) */
 const FREEZE_MAX = 90;
+/**
+ * Einstellbar für die Messung (&freezemax, --freezemax): ab dieser Länge bleibt ein offenes steiles Stück Höhe und wird
+ * fest; LOOK_START: so viele Meter nach dem Anschluss an die alte Bahn (oder die ersten STATION_CALM Meter eines neuen
+ * Strichs) dürfen auch in einem offenen steilen Stück fest werden, ihre Tiefe ist durch den Anschluss ohnehin festgelegt
+ * (Florian 30.10.: „Es dauert sehr lange, bis die Bahn am Anfang meinem Strich folgt“; gemessen: erste Schienen erst
+ * nach 16 Linienmetern, weil seine Striche steil beginnen)
+ */
+export const LOOK_TUNING = { freezeMax: FREEZE_MAX, lookStart: 6 };
 /** Gewicht der Wunschtiefe: flach gelandet, in einer Höhle, Bodenhöhe der Ebenen; ohne Lesung fast nichts */
 const W_LAND = 2;
 const W_CAVE = 4;
@@ -842,18 +863,48 @@ export class Strich2 {
     return out;
   }
 
-  /** bis zu welchem Index (ausschließlich) eingefroren werden darf: lookahead (FREEZE) hinter der Spitze, aber nie in ein offenes steiles Stück hinein */
+  /**
+   * bis zu welchem Index (ausschließlich) eingefroren werden darf: der dynamische Vorlauf hinter der Spitze (LOOK_SHORT,
+   * LOOK_BASE oder lookahead, je nachdem, was in den letzten lookahead Metern offen ist), aber nie in ein offenes steiles
+   * Stück hinein
+   */
   private freezeLimit(final = false): number {
     const n = this.pts.length;
-    let limit = Math.min(this.lineFinal, n - Math.round(this.lookahead / STEP));
+    const long = Math.round(this.lookahead / STEP);
+    let need = Math.round(LOOK_SHORT / STEP);
+    if (!final) {
+      let dir = 0;
+      for (let i = Math.max(this.baseLen, n - long); i < n; i++) {
+        const q = this.pts[i];
+        if (q.wh < STEEP_LIMIT) {
+          need = long;
+          break;
+        }
+        const c = Math.abs(q.dirX) > 0.4 ? Math.sign(q.dirX) : 0;
+        if (c && dir && c !== dir) {
+          need = long;
+          break;
+        }
+        if (c) dir = c;
+        // die Tiefe ist noch unterwegs zu ihrem Ziel (etwa nach einer Stufe der Bodenhöhe): den Weg nicht abschneiden
+        if (!q.frozen && Math.abs(this.target(q, i).t - q.z) > LOOK_SETTLED) {
+          need = long;
+          break;
+        }
+        if (q.near) need = Math.max(need, Math.round(LOOK_BASE / STEP));
+      }
+    }
+    let limit = Math.min(this.lineFinal, n - (final ? long : need));
     if (final) return limit;
     let first = this.baseLen;
     while (first < n && this.pts[first].frozen) first++;
+    const startFree = this.baseLen ? this.baseLen + Math.round(LOOK_TUNING.lookStart / STEP) : Math.round(STATION_CALM / STEP);
     for (const sh of this.shapes(first)) {
       if (sh.kind !== 'open') continue;
-      // offen: nur, wenn der Lauf nicht schon länger als FREEZE_MAX ist (dann bleibt er Höhe)
-      if (n - sh.a > FREEZE_MAX) continue;
-      limit = Math.min(limit, sh.a);
+      // offen: nur, wenn der Lauf nicht schon länger als freezeMax ist (dann bleibt er Höhe); die ersten Meter nach dem
+      // Anschluss dürfen trotzdem fest werden
+      if (n - sh.a > LOOK_TUNING.freezeMax / STEP) continue;
+      limit = Math.min(limit, Math.max(sh.a, startFree));
       break;
     }
     return limit;
@@ -1311,7 +1362,7 @@ export class Strich2 {
     const o = this.options();
     const before = this.pts.length;
     this.feed(points);
-    if (this.pts.length - this.baseLen < 6) return null;
+    if (this.pts.length - this.baseLen < MIN_LINE) return null;
     this.query(o, Math.min(before, this.lineFinal) - 2);
     this.solveTwice(o);
     this.freeze(o);

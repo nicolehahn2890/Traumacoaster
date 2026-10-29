@@ -38,7 +38,7 @@ import { trackFrames } from '../src/world/trackMesh';
 import { buildTrack } from '../src/world/trackBuilder';
 import { planWorldSupports } from '../src/world/supports';
 import { trackTypeForSkin } from '../src/world/trackTypes';
-import { FIT_TUNING, FIX_BEHIND, FREEZE, Strich2, type Strich2Preview } from '../src/track/strich2';
+import { FIT_TUNING, FIX_BEHIND, FREEZE, LOOK_TUNING, Strich2, type Strich2Preview } from '../src/track/strich2';
 import { findCrossings } from '../src/track/crossings';
 
 interface Rec {
@@ -63,7 +63,7 @@ const opt = (f: string): string | null => {
   const i = args.indexOf(f);
   return i >= 0 ? args[i + 1] : null;
 };
-const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest', '--vorlauf', '--tag', '--tol', '--even', '--span', '--turn'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
+const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest', '--vorlauf', '--tag', '--tol', '--even', '--span', '--turn', '--freezemax', '--lookstart'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
 const LAST = Number(opt('--last') ?? 0);
 /** so viele der jüngsten Striche weglassen (ein älterer Satz bleibt vergleichbar, wenn neue dazukamen) */
 const SKIP = Number(opt('--skip') ?? 0);
@@ -80,6 +80,9 @@ if (opt('--tol') !== null) FIT_TUNING.tolScale = Number(opt('--tol'));
 if (opt('--even') !== null) FIT_TUNING.even = Number(opt('--even')) !== 0;
 if (opt('--span') !== null) FIT_TUNING.evenSpan = Number(opt('--span'));
 if (opt('--turn') !== null) FIT_TUNING.evenTurn = Number(opt('--turn'));
+// offenes steiles Stück: ab so vielen Metern Höhe und fest (--freezemax), freie Meter nach dem Anschluss (--lookstart)
+if (opt('--freezemax') !== null) LOOK_TUNING.freezeMax = Number(opt('--freezemax'));
+if (opt('--lookstart') !== null) LOOK_TUNING.lookStart = Number(opt('--lookstart'));
 /** wie in der Level-Szene: Band 22 px, Vorschau höchstens alle 50 ms, sonst nach dem 1,5-Fachen ihrer Dauer */
 const BAND_PX = 22;
 const PREVIEW_MIN_S = 0.05;
@@ -295,6 +298,10 @@ interface PreviewRow {
   s2FitMs: number;
   s2QueryMs: number;
   s2Conflicts: number;
+  /** Strich 2: feste neue Linienpunkte (ohne alte Bahn), feste Linienmeter, Meter der alten Bahn in der Linie (Band = lineM − s2BaseM − s2FrozenM) */
+  s2Frozen: number;
+  s2FrozenM: number;
+  s2BaseM: number;
 }
 
 interface StrokeResult {
@@ -694,7 +701,7 @@ function replay(rec: Rec, idx: number): StrokeResult {
         }
       }
     }
-    previews.push({ t, n: next.z.length, lineM: tipLen, ms, calls, prepareMs, crossingsMs, sampleMs, meshMs, statsMs, devAll, devTouched, devFree, devTipFar, moveZ, movePx, tailZ, tipLagPx, breathPx, s2SolveMs: s2?.stats.solveMs ?? NaN, s2CrossMs: s2?.stats.crossMs ?? NaN, s2FitMs: s2?.stats.fitMs ?? NaN, s2QueryMs: s2?.stats.queryMs ?? NaN, s2Conflicts: s2?.stats.conflicts ?? NaN });
+    previews.push({ t, n: next.z.length, lineM: tipLen, ms, calls, prepareMs, crossingsMs, sampleMs, meshMs, statsMs, devAll, devTouched, devFree, devTipFar, moveZ, movePx, tailZ, tipLagPx, breathPx, s2SolveMs: s2?.stats.solveMs ?? NaN, s2CrossMs: s2?.stats.crossMs ?? NaN, s2FitMs: s2?.stats.fitMs ?? NaN, s2QueryMs: s2?.stats.queryMs ?? NaN, s2Conflicts: s2?.stats.conflicts ?? NaN, s2Frozen: s2 ? (next as Strich2Preview).frozen - (base ? base.line.length : 0) : NaN, s2FrozenM: s2 ? s2.frozenLength : NaN, s2BaseM: s2 && base ? lineLength(base.line) : 0 });
     lastDebug = debugLines;
     pv = next;
     pvPts = nPts;

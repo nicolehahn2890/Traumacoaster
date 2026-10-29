@@ -88,6 +88,14 @@ nach hinten in Metern (eine Spur = 8,4 m). **Loslassen** = der Finger geht hoch,
    der Bahnlänge (24 ms bei 1000 m), nicht durch den Strich (1 ms), sondern weil `setTrack` und die Abtastung je
    Vorschau die ganze Bahn neu bauen (Risiko 4): Für glatte 60 fps bei 1000 m muss der Renderer den festen Teil
    behalten. Nicht gebaut, Entscheidung für Florian, abzustimmen mit der Editor-Session.
+15. Abschnitt 14: Florians Antworten (Vorlauf dynamisch und so kurz wie möglich, Fahrt neu recherchieren und ohne
+   ungewollte Überkopffahrten, Schleifen unter dem Mindestradius aufweiten oder als Looping lesen, Mesh inkrementell mit
+   animiertem Nachziehen, Raum in den Zonen nach meinem Ermessen) und Paket 1: Der Vorlauf ist dynamisch (3 m auf
+   ruhiger Strecke, 6 m mit anderem Strang in Reichweite, 12 m bei steilem Stück, Umkehr oder noch wandernder Tiefe),
+   die erste Vorschau kommt nach 3 statt 6 Linienmetern; im Browser stehen die ersten Schienen nach 0,8 s und 8 m, auf
+   deinen Strichen nach 4 Linienmetern. Form und Fahrt ändern sich nicht. Das Band bleibt auf deinen Strichen im Median
+   14 m lang, weil fast alles steil ist und ein offenes steiles Stück nicht fest wird; `&freezemax=40` halbiert das obere
+   Zehntel, kostet aber Knicke, darum nur als Schalter. Die Antwort für Schleifen ist Paket 3.
 
 ## 2. Befund am heutigen Pinsel
 
@@ -981,3 +989,71 @@ nach dem Loslassen für die Probefahrten ein.
 
 Nicht geprüft: das echte Handy (Metal auf dem M3 Pro ist schneller als ein iPhone; die Zahlen sind eine obere Schranke
 der Bildrate), Hochformat, Striche über 1400 m.
+
+## 14. Nachtrag 30.10. früh: Florians Antworten und Paket 1, der dynamische Vorlauf
+
+Florians Antworten auf die Empfehlung aus Abschnitt 13 (29.10. spät), in seinen Worten: (1) „Der Vorlauf sollte
+dynamisch sein … je kürzer, desto besser ist das Zeichengefühl, und es sollte immer so lange sein, wie es nötig ist, um
+die Strecke optimal zu zeichnen … im Zweifel 6 … Es dauert sehr lange, bis die Bahn am Anfang meinem Strich folgt. Das
+sollte auch dynamischer sein“; dazu: „kann der Anfang der Bahn auch animiert dem Pinsel folgen und nicht solche Sprünge
+machen?“ (2) Fahrt: „Ja auf jeden Fall. Es ist gerade kaum möglich, eine funktionierende Bahn zu machen. Es soll nur
+gewollte Loopings geben, sonst sollte die Bahn keine unnötigen Überkopffahrten erzeugen. Das Entgleisen und
+Zurückrollen passt nicht zur Perspektive. Hier noch mal richtig recherchieren, was die beste Lösung in unserem Fall ist.“
+(3) Schleifen unter dem Mindestradius: „Ok, versuchen wir es so.“ (4) Mesh inkrementell: „OK, Voraussetzung ist, dass
+die Bahn schön smooth und fahrbar bleibt.“ (5) Raum in den Zonen: „Mach das, was das Beste fürs Spiel ist.“
+
+Reihenfolge der Pakete: 1 dynamischer Vorlauf und schneller Start, 2 Fahrt (Recherche, dann Umbau), 3 Schleifen als
+gewollte Loopings mit Mindestradius, 4 Mesh inkrementell mit animiertem Nachziehen des Schienenanfangs (Florians Bitte),
+5 Raum in den Zonen nach dem Ergebnis der ersten vier.
+
+### 14a. Paket 1: Vorlauf dynamisch, Start sofort
+
+**Gebaut** (`src/track/strich2.ts`, `freezeLimit`): Wo in den letzten 12 m nichts zu entscheiden ist, wird schon
+`LOOK_SHORT` 3 m hinter der Spitze fest; liegt ein anderer Strang in Reichweite (Kreuzungsschranke), `LOOK_BASE` 6 m
+(Florians „im Zweifel 6“); bei einem steilen Punkt, einer Richtungsumkehr in x oder einer Tiefe, die noch mehr als
+0,5 m von ihrem Ziel entfernt ist (etwa nach einer Stufe der Bodenhöhe), der volle Vorlauf von 12 m (`&vorlaufm`). Ein
+offenes steiles Stück blockiert das Festwerden wie bisher. Die erste Vorschau kommt nach 3 statt 6 Linienmetern
+(`MIN_LINE`). Beides Platzhalter, bis Florian es gezeichnet hat.
+
+**Warum die Tiefe-Regel:** Mit nur „steil oder Umkehr“ als Auslöser fror die flache Anfahrt vor einem Anstieg zu früh
+fest, bevor die Tiefe ihrem Bodenziel gefolgt war (Test „liest steil Gezeichnetes als Höhe“: Drift 3,96 statt unter
+3 m). Mit der Regel „noch unterwegs zum Ziel → voller Vorlauf“ ist der Test wieder grün, bei gleichem Zeichengefühl auf
+ruhiger Strecke.
+
+**Im Browser** (`test-huegel`, langsam gezogener Strich, zoom 2,3): nach 0,8 s und 8 m Linie stehen die ersten Schienen
+(4 m fest, Band 4 m); auf ruhiger Strecke bleibt das Band 3 bis 6 m, an Stellen mit offener Entscheidung wächst es auf
+13 bis 17 m und fällt danach zurück. Dabei rückt das vordere Schienenende in Sprüngen vor (einmal von 8 auf 31 m fest in
+0,4 s): Das ist Florians „Sprünge“, und es wird in Paket 4 mit dem animierten Nachziehen behandelt, nicht hier.
+
+**Nachspiel auf deinen Strichen** (Median je Strich; „fest 12 m“ = Stand 31c9327, „dynamisch“ = Paket 1, „+ Start frei“
+= dazu die ersten 6 m nach dem Anschluss auch in einem offenen steilen Stück fest, „+ offen ab 40 m“ = dazu ein offenes
+steiles Stück ab 40 statt 90 m als Höhe fest):
+
+| | 31 alte: fest 12 m | dynamisch | + Start frei | + offen ab 40 m | 27 neue: fest | dyn. | + Start | + 40 m | 15 heute: fest | dyn. | + Start | + 40 m |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Kreuzungen (Summe) | 178 | 193 | 196 | 192 | 107 | 99 | 112 | 108 | 3 | 3 | 5 | 4 |
+| Knoten je Strich | 83 | 82 | 82 | 82 | 53 | 53 | 53 | 52 | 35 | 34 | 35 | 36 |
+| Knicke | 310 | 314 | 314 | 317 | 142 | 159 | 159 | 152 | 80 | 83 | 82 | 109 |
+| Rollen je 100 m | 140° | 141° | 141° | 141° | 121° | 116° | 120° | 118° | 125° | 122° | 124° | 127° |
+| Fahrt-Abbrüche an Kreuzung | 12 | 12 | 13 | 12 | 3 | 3 | 4 | 4 | 0 | 0 | 1 | 0 |
+
+**Lesart, ehrlich:** In Form und Fahrt ist der dynamische Vorlauf auf deinen Strichen unsichtbar (alle Unterschiede im
+Rauschen der Regel), er ändert nur, wann die Schienen kommen. Und da zeigte die erste Messung des Bands etwas anderes
+als erwartet: Auf deinen 15 Strichen von gestern früh liegt das Band im Median bei 13,9 m und im oberen Zehntel bei
+54 m, nicht bei den 3 bis 6 m, die der dynamische Vorlauf auf ruhiger Strecke erlaubt; die ersten Schienen kommen nach
+3,9 Linienmetern (vorher waren es 6 m plus Vorlauf). Der Grund für das lange Band ist nicht der Vorlauf, sondern
+die Regel „ein offenes steiles Stück wird nicht fest“ (Abschnitt 6): Deine Striche sind fast durchgehend steil
+(Schleifen), ein steiles Stück gilt erst als gelesen, wenn es sich als Hügel oder Kehre erklärt hat, und bis dahin
+bleibt alles dahinter offen. Mit „offen ab 40 m“ fällt das obere Zehntel des Bands von 54 auf 21 m, auf den
+Hügel-Strichen steigen dafür die Knicke (82 → 109); darum bleibt 90 m die Vorgabe und 40 m ein Schalter zum
+Ausprobieren (`&freezemax=40`). Die freien Startmeter nach dem Anschluss (`&lookstart`) ändern auf deinen Strichen
+nichts Messbares (die ersten Schienen kommen ohnehin nach 4 m), sie bleiben als Sicherung für steile Starts. Die
+eigentliche Antwort auf das lange Band bei Schleifen ist Paket 3: Eine erkannte Schleife kann als Ganzes fest werden,
+sobald sie sich schließt.
+
+**Absicherung (30.10. früh):** 466 Einheitstests in 58 Dateien bestanden (15 davon für Strich 2, der Vorlauf-Test
+neu: ruhige Strecke gleich, Kehre im Fenster anders), `vite build` ohne Fehler, alle 28 Browser-Szenarien mit
+200 Prüfungen bestanden (Server 5188, nach Abschluss der Code-Änderungen gestartet, damit kein Vite-Neuladen die Kette
+abbricht). Schalter: `&vorlaufm` (voller Vorlauf, Vorgabe 12 m), `&freezemax` (offenes steiles Stück, Vorgabe 90 m),
+`&lookstart` (freie Startmeter nach dem Anschluss, Vorgabe 6 m); die Messung nimmt sie als `--vorlauf --freezemax
+--lookstart`.
