@@ -64,7 +64,7 @@ const opt = (f: string): string | null => {
   const i = args.indexOf(f);
   return i >= 0 ? args[i + 1] : null;
 };
-const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest', '--vorlauf', '--tag', '--tol', '--even', '--span', '--turn', '--freezemax', '--lookstart', '--fahrt', '--antrieb', '--loopaspect', '--loopr', '--schleifen'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
+const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest', '--vorlauf', '--tag', '--tol', '--even', '--span', '--turn', '--freezemax', '--lookstart', '--fahrt', '--antrieb', '--loopaspect', '--loopr', '--schleifen', '--kehrewait', '--crossafter'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
 const LAST = Number(opt('--last') ?? 0);
 /** so viele der jüngsten Striche weglassen (ein älterer Satz bleibt vergleichbar, wenn neue dazukamen) */
 const SKIP = Number(opt('--skip') ?? 0);
@@ -89,6 +89,8 @@ if (opt('--fahrt') !== null) RIDE_TUNING.rules = opt('--fahrt') === 'strict' ? '
 if (opt('--antrieb') !== null) RIDE_TUNING.driveSpeed = Number(opt('--antrieb'));
 // Schleifen (Paket 3): --loopaspect Höhe/Breite ab der eine Schleife ein Looping ist, --loopr Mindestradius; --ohnekette ohne Kettenlinie als Deckel
 if (opt('--schleifen') !== null) LOOP_TUNING.on = opt('--schleifen') !== '0';
+if (opt('--kehrewait') !== null) LOOP_TUNING.waitKehre = opt('--kehrewait') !== '0';
+if (opt('--crossafter') !== null) LOOP_TUNING.crossAfter = opt('--crossafter') !== '0';
 if (opt('--loopaspect') !== null) LOOP_TUNING.aspect = Number(opt('--loopaspect'));
 if (opt('--loopr') !== null) LOOP_TUNING.minR = Number(opt('--loopr'));
 const OHNE_KETTE = flag('--ohnekette');
@@ -373,6 +375,11 @@ interface StrokeResult {
     s2Loops: number;
     s2LoopsWidened: number;
     s2LoopsFlat: number;
+    /** Schleifen von Strich 2: Linienindex Einfahrt i, Ausfahrt j, Looping, Aufweitung */
+    s2LoopList: Array<{ i: number; j: number; vertical: boolean; scale: number }>;
+    /** Knicke der Bahn: Bogenlänge und nächster Linienindex */
+    knickeAt: number[];
+    knickeLine: number[];
     s2Capped: number;
     chainTop: number;
     maxHeightM: number;
@@ -386,7 +393,7 @@ interface StrokeResult {
     invHairpin: number;
     invOther: number;
     invShapes: Array<{ k: number; kind: string; dy: number; dz: number }>;
-    crossings?: Array<{ s1: number; s2: number; along: number; dy: number; zTrack: number; z1Line: number; z2Line: number; dzLine: number; near1: boolean | null; near2: boolean | null }>;
+    crossings?: Array<{ i1: number; i2: number; s1: number; s2: number; along: number; dy: number; zTrack: number; z1Line: number; z2Line: number; dzLine: number; near1: boolean | null; near2: boolean | null }>;
     accepted: string[];
   } | null;
 }
@@ -462,14 +469,18 @@ function jumpOf(pv: { pts: { x: number; y: number; z: number }[]; z: Float64Arra
 }
 
 /** Knicke (Krümmungsradius unter 4 m außerhalb von Loopings), Rollrate (°/m, 90 %), Rollen je 100 m, Tiefenspanne und -umkehrungen */
-function shapeStats(path: TrackPath, samples: TrackSamples): { knicke: number; rollRate: number; rollPer100: number; depthSpan: number; depthFlips: number } {
+function shapeStats(path: TrackPath, samples: TrackSamples): { knicke: number; knickeAt: number[]; rollRate: number; rollPer100: number; depthSpan: number; depthFlips: number } {
   const banks = railBanksFor(samples);
   let knicke = 0;
+  const knickeAt: number[] = [];
   const rates: number[] = [];
   let rollSum = 0;
   for (let i = 1; i < samples.count; i++) {
     const k = Math.hypot(samples.k3x[i], samples.k3y[i], samples.k3z[i]);
-    if (k > 0.25 && samples.upy[i] > 0.35) knicke++;
+    if (k > 0.25 && samples.upy[i] > 0.35) {
+      knicke++;
+      knickeAt.push(+samples.s[i].toFixed(1));
+    }
     const dr = (Math.abs(banks[i] - banks[i - 1]) * 180) / Math.PI;
     rates.push(dr / samples.step);
     rollSum += dr;
@@ -504,7 +515,7 @@ function shapeStats(path: TrackPath, samples: TrackSamples): { knicke: number; r
       ref = z;
     }
   }
-  return { knicke, rollRate: q(rates, 0.9), rollPer100: (rollSum / Math.max(1, samples.length)) * 100, depthSpan: hi - lo, depthFlips: flips };
+  return { knicke, knickeAt, rollRate: q(rates, 0.9), rollPer100: (rollSum / Math.max(1, samples.length)) * 100, depthSpan: hi - lo, depthFlips: flips };
 }
 
 interface RideNumbers {
@@ -907,6 +918,8 @@ function replay(rec: Rec, idx: number): StrokeResult {
     s2Loops: s2?.stats.loops ?? NaN,
     s2LoopsWidened: s2?.stats.loopsWidened ?? NaN,
     s2LoopsFlat: s2?.stats.loopsFlat ?? NaN,
+    s2LoopList: s2 ? ((s2 as unknown as { loops: Array<{ i: number; j: number; vertical: boolean; scale: number }> }).loops.map((l) => ({ i: l.i, j: l.j, vertical: l.vertical, scale: +l.scale.toFixed(2) }))) : [],
+    knickeLine: shape.knickeAt.map((sv) => { let k = 0; while (k + 1 < bestSamples.count && bestSamples.s[k + 1] < sv) k++; const wx = bestSamples.x[k], wy = bestSamples.y[k], wz = bestSamples.z[k] * LANE_DEPTH; let bi = -1, bd = Infinity; for (let i = 0; i < bestPts.length; i++) { const d = Math.hypot(bestPts[i].x - wx, bestPts[i].y - wy, bestPts[i].z - wz); if (d < bd) { bd = d; bi = i; } } return bi; }),
     s2Capped: s2?.stats.capped ?? NaN,
     chainTop: opts.chainTop ?? NaN,
     maxHeightM: bestPts.reduce((m, p) => Math.max(m, p.y), -Infinity),

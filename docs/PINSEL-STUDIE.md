@@ -110,11 +110,12 @@ nach hinten in Metern (eine Spur = 8,4 m). **Loslassen** = der Finger geht hoch,
    geometrisch halbe Loopings. Gebaut: Strich 2 erkennt Schleifen (Selbstkreuzung mit ≥ 200° Drehung), liest sie ab
    Höhe/Breite 0,7 als Looping (Tiefe bleibt, eigene Ausfahrt 2,5 m dahinter, Mindestradius 4 m mit Aufweitung, die
    Tinte bleibt), sonst als Bodenschleife; Kehren warten, bis sie keine Schleife mehr werden können; die Kettenlinie
-   ist ein Deckel (`chainTop`, `zAtHeight`). Gemessen: 19 / 72 / 63 Loopings entstehen, aber Kreuzungen auf
-   gleicher Höhe (6 → 19, 112 → 175, 196 → 255) und Knicke nehmen zu, die ungewollten Inversionen sinken nur um 15 bis
-   18 % auf zwei Sätzen; vier Kehren-Lesungen ohne senkrechte Schenkel waren schlechter oder kippten. Schalter
-   `&schleifen=0`; Brücken-Regel nicht gebaut; fünf offene Punkte in 16f, voran die Frage, ob die Loopings den Preis
-   wert sind, und die Kehren als Gestaltungsfrage.
+   ist ein Deckel (`chainTop`, `zAtHeight`). Gemessen: 19 / 72 / 63 Loopings entstehen; vier Kehren-Lesungen ohne
+   senkrechte Schenkel waren schlechter oder kippten. Nachgang 16g (Florian: anlassen und aufklären): Band und ein Teil
+   der Knicke kamen von Nebenänderungen (Kehren warteten, Schranken nach den Formzielen) und sind repariert (Kehre
+   erkennt sich am geraden zweiten Schenkel); die eigenen Schleifenkreuzungen sind in Ordnung, mehr werden Kreuzungen
+   späterer Stränge über festen Schleifen (Stand gegen alt: 6 → 9, 112 → 189, 196 → 297; Knicke 124 → 118, 159 → 218,
+   314 → 374), drei Versuche dagegen ohne Wirkung. Schalter `&schleifen=0`; Brücken-Regel nicht gebaut; offen 16f/16g.
 
 ## 2. Befund am heutigen Pinsel
 
@@ -1394,3 +1395,63 @@ Zahlen an Florian (16f). Ich würde sie heute nicht als Verbesserung verkaufen.
    von Strich 2 statt nach dem alten Pinsel.
 5. **Kettenlinie:** greift erst, wenn ein Feld eine Aufwertungsstufe hat (Plan 2.4); die Testzonen haben keine. Ein
    Feld mit Stufe in `test-huegel` wäre der Test.
+
+### 16g. Nachgang (Florian 30.10.: „Schleifen anlassen und die Kreuzungen aufklären“)
+
+**Zuordnung.** Je Strichsatz drei Läufe ohne Schleifen-Lesung auf dem neuen Code (die Nebenänderungen einzeln) und
+die Messung nach Lage: eigene Schleifenkreuzung (Ausfahrt gegen Einfahrt), Schleife gegen fremden Strang, außerhalb.
+
+| Kreuzungen gleiche Höhe / Knicke-Median / Band 90 % | 21 heute früh | 27 neue | 31 alte |
+|---|---|---|---|
+| alt (11454fb) | 6 / 124 / 80 m | 112 / 159 / 84 m | 196 / 314 / 45 m |
+| nur „Kehren warten, bis sie wieder unten sind“ | 7 / 143 / 95 | 106 / 261 / 105 | 215 / 342 / 101 |
+| nur „Kreuzungsschranken nach den Formzielen“ | 11 / 98 / 79 | 134 / 213 / 84 | 195 / 289 / 45 |
+| beides, ohne Schleifen (Stand 946d9f1) | 10 / 134 / 95 | 135 / 271 / 105 | 171 / 325 / 101 |
+| beides, mit Schleifen (946d9f1) | 20 / 137 / 91 | 172 / 270 / 105 | 281 / 401 / 94 |
+
+- Das **Warten** der Kehren (zweiter Schenkel bis auf halbe Höhe zurück) machte das Band 15 bis 55 m länger und auf dem
+  Satz mit 27 Strichen die Knicke um 64 % mehr; der zweite Schenkel verlor dabei seine eigene Lesung als Lauf.
+- Die **Reihenfolge** (Schranken nach den Formzielen) brachte auf zwei Sätzen mehr Kreuzungen (6 → 11, 112 → 134),
+  dafür weniger ungewollte Inversionen.
+- Die **Schleifen** selbst: Die eigenen Schleifenkreuzungen bleiben gleich (3 → 2, 36 → 35, 47 → 44), mehr werden die
+  Kreuzungen **Schleife gegen fremden Strang** (3 → 8, 68 → 110, 90 → 160); die Knicke häufen sich an den Ausfahrten.
+  Der schlimmste Strich (1900 m, 19 Schleifen, 54 Kreuzungen) zeigt, was das ist: In 42 von 54 Fällen liegt die Linie an
+  der Kreuzung weniger als 1 m in der Tiefe auseinander, die beiden Stellen liegen im Median 930 m auseinander auf der
+  Bahn. Es sind also nicht die Kringel einer Kette, die sich stoßen, sondern spätere Stränge, die Hunderte Meter weiter
+  wieder über eine längst feste Schleife laufen und dort auf deren Tiefe klemmen.
+
+**Umbauten danach (alle gemessen):**
+
+1. Kehren erkennen sich am **geraden zweiten Schenkel** (über die letzten drei Linienstücke weniger als 15° Drehung,
+   seit dem Fuß weniger als 200°) statt am Zurückkommen; ein Kringel dreht weiter und schließt. Das Band ist damit
+   wieder so lang wie vorher (90 %: 81, 84 und 51 m), die Knicke ohne Schleifen gehen auf dem 27er-Satz von 271 auf 213.
+2. Die Kehre endet wieder **drei Punkte hinter der Umkehr**, der zweite Schenkel ist ein eigener Lauf: Knicke ohne
+   Schleifen 213 → 197. Der Hügel braucht nur noch eine klare Richtung dahinter.
+3. **Schranken hybrid:** außerhalb von Schleifen vor den Formzielen (wie vor Paket 3), in Schleifen danach: ohne
+   Schleifen 112 → 92 Kreuzungen auf dem 27er-Satz.
+4. **Ausfahrt** kleiner Schleifen versetzt höchstens die halbe Schleife (vorher rückte eine 17-Punkte-Schleife als
+   Ganzes nach hinten).
+5. Gegen die Kreuzungen mit fremden Strängen drei Versuche: die Schleife als Ganzes auf die nächste Tiefe mit Platz
+   rücken (kein messbarer Unterschied), überlappende Schleifen auf eigene Tiefen legen (kein Unterschied), und eine feste
+   Schleife als **eine Begegnung** mit einer Seite zählen statt je 12-Punkte-Bündel (der schlimmste Strich 54 → 41
+   Kreuzungen, zwei andere schlechter, in Summe +5 bis +10 %, dafür Knicke −7 bis −9 % auf zwei Sätzen). Der letzte
+   Stand ist eingebaut; die anderen beiden sind drin, aber ohne Wirkung.
+
+**Stand jetzt gegen alt** (Schleifen an; `&schleifen=0` ist der Stand davor mit den Kehren-Umbauten):
+
+| | 21 heute früh | 27 neue | 31 alte |
+|---|---|---|---|
+| Kreuzungen gleiche Höhe | 6 → 9 | 112 → 189 | 196 → 297 |
+| Knicke je Strich (Median) | 124 → 118 | 159 → 218 | 314 → 374 |
+| Knoten je Strich (Median) | 36 → 42 | 53 → 62 | 82 → 86 |
+| ungewollte Inversionen (Kehre + sonst) | 77 → 84 | 289 → 288 | 280 → 285 |
+| Band 90 % | 80 → 81 m | 84 → 84 m | 45 → 51 m |
+| Loopings erkannt | 19 | 72 | 63 |
+
+**Lesart, ehrlich:** Die Kehren-Umbauten haben Band und Knicke repariert, soweit sie von den Nebenänderungen kamen. Was
+bleibt, ist der Preis der Schleifen selbst: auf den schleifenreichen Sätzen rund 70 bis 90 Kreuzungen auf gleicher Höhe
+mehr (+50 bis +70 %) und 20 bis 60 Knicke mehr je Strich, weil spätere Stränge über feste Schleifen klemmen. Drei
+Versuche dagegen haben nichts gebracht; der Mechanismus (welche Schranken sich dort widersprechen) ist noch nicht
+verstanden. Auf dem kleinen Satz ohne Kringelketten kostet die Schleifen-Lesung nichts. Nächster Schritt: an einer
+dieser Stellen die Schranken je Punkt ansehen (`lastSolve` liefert sie) statt weiter an Regeln zu drehen; bis dahin
+bleibt die Lesung an, wie Florian es entschieden hat, und `&schleifen=0` ist der Vergleich.
