@@ -12,7 +12,7 @@
  *     Vorschau.
  *  d) Fertige Bahn: Knicke, Rollrate, Tiefenwechsel, Fahrt, Stützen ohne Fuß.
  *
- *   npx tsx scripts/pinsel-messung.ts <strokes.jsonl> [--heute] [--tag JJJJ-MM-TT] [--alt] [--last N] [--skip N] [--json datei] [--strich 2] [--fest N] [--vorlauf M]
+ *   npx tsx scripts/pinsel-messung.ts <strokes.jsonl> [--heute] [--tag JJJJ-MM-TT] [--alt] [--last N] [--skip N] [--json datei] [--strich 2] [--fest N] [--vorlauf M] [--tol F] [--even 0|1] [--span M] [--turn G]
  *
  *   --heute: die Striche vom 28.10.2026 in den Testszenen (Satz des Berichts); --tag: Striche eines anderen Tages in Zonen
  *
@@ -38,7 +38,8 @@ import { trackFrames } from '../src/world/trackMesh';
 import { buildTrack } from '../src/world/trackBuilder';
 import { planWorldSupports } from '../src/world/supports';
 import { trackTypeForSkin } from '../src/world/trackTypes';
-import { FIX_BEHIND, FREEZE, Strich2, type Strich2Preview } from '../src/track/strich2';
+import { FIT_TUNING, FIX_BEHIND, FREEZE, Strich2, type Strich2Preview } from '../src/track/strich2';
+import { findCrossings } from '../src/track/crossings';
 
 interface Rec {
   at: string;
@@ -62,7 +63,7 @@ const opt = (f: string): string | null => {
   const i = args.indexOf(f);
   return i >= 0 ? args[i + 1] : null;
 };
-const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest', '--vorlauf', '--tag'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
+const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest', '--vorlauf', '--tag', '--tol', '--even', '--span', '--turn'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
 const LAST = Number(opt('--last') ?? 0);
 /** so viele der jüngsten Striche weglassen (ein älterer Satz bleibt vergleichbar, wenn neue dazukamen) */
 const SKIP = Number(opt('--skip') ?? 0);
@@ -74,6 +75,11 @@ const DEBUG = Number(opt('--debug') ?? -1);
 const FEST = Number(opt('--fest') ?? FIX_BEHIND);
 /** Strich 2: Vorlauf in Metern hinter der Spitze, ab dem die Tiefe fest wird (FREEZE) */
 const VORLAUF = Number(opt('--vorlauf') ?? FREEZE);
+// Strich 2, Knoten-Fit zum Ausprobieren (siehe FIT_TUNING): --tol 2 --even 0 --span 150 --turn 180
+if (opt('--tol') !== null) FIT_TUNING.tolScale = Number(opt('--tol'));
+if (opt('--even') !== null) FIT_TUNING.even = Number(opt('--even')) !== 0;
+if (opt('--span') !== null) FIT_TUNING.evenSpan = Number(opt('--span'));
+if (opt('--turn') !== null) FIT_TUNING.evenTurn = Number(opt('--turn'));
 /** wie in der Level-Szene: Band 22 px, Vorschau höchstens alle 50 ms, sonst nach dem 1,5-Fachen ihrer Dauer */
 const BAND_PX = 22;
 const PREVIEW_MIN_S = 0.05;
@@ -326,6 +332,7 @@ interface StrokeResult {
     depthFlips: number;
     ride: string;
     rideOk: boolean;
+    crossings?: Array<{ s1: number; s2: number; along: number; dy: number; zTrack: number; z1Line: number; z2Line: number; dzLine: number; near1: boolean | null; near2: boolean | null }>;
     accepted: string[];
   } | null;
 }
@@ -778,6 +785,33 @@ function replay(rec: Rec, idx: number): StrokeResult {
     ride: r.text,
     rideOk: r.ok,
     accepted,
+    // Kreuzungen auf gleicher Höhe (wie die Fahrt sie zählt): Zahl und je Stelle die Bogenlängen, der Abstand auf der
+    // Bahn (klein = Schleife des Strichs selbst) und der Höhenunterschied
+    crossings: findCrossings(bestSamples).map((c) => {
+      // Strich 2: die Linienpunkte (1 m) an beiden Stellen, über die Bildlage der Bahnprobe gesucht (die Bogenlänge der
+      // Bahn weicht vom Linienindex ab): war die Linie dort getrennt (dzLine) und galt die Regel (near)?
+      const lp = s2 ? (s2 as unknown as { pts: Array<{ p: StagePoint; z: number; near: boolean }> }).pts : null;
+      const sampleAt = (sv: number) => { let k = 0; while (k + 1 < bestSamples.count && bestSamples.s[k + 1] < sv) k++; return k; };
+      const lineNear = (sv: number) => {
+        if (!lp) return null;
+        const k = sampleAt(sv);
+        // in der Welt (x, Höhe, Tiefe) suchen: im Bild liegen beide Stränge an der Kreuzung aufeinander
+        const wx = bestSamples.x[k];
+        const wy = bestSamples.y[k];
+        const wz = bestSamples.z[k] * LANE_DEPTH;
+        let bi = -1;
+        let bd = Infinity;
+        for (let i = 0; i < lp.length; i++) {
+          const w = rayToWorld(lp[i].p, lp[i].z / LANE_DEPTH);
+          const d = Math.hypot(w.x - wx, w.y - wy, lp[i].z - wz);
+          if (d < bd) { bd = d; bi = i; }
+        }
+        return bi >= 0 ? { q: lp[bi], i: bi, d: bd } : null;
+      };
+      const a = lineNear(c.s1);
+      const b = lineNear(c.s2);
+      return { s1: +c.s1.toFixed(1), s2: +c.s2.toFixed(1), along: +(c.s2 - c.s1).toFixed(1), dy: +Math.abs(c.y1 - c.y2).toFixed(2), zTrack: +(c.z * LANE_DEPTH).toFixed(2), z1Line: a ? +a.q.z.toFixed(2) : NaN, z2Line: b ? +b.q.z.toFixed(2) : NaN, dzLine: a && b ? +(b.q.z - a.q.z).toFixed(2) : NaN, near1: a?.q.near ?? null, near2: b?.q.near ?? null, i1: a?.i ?? -1, i2: b?.i ?? -1, dPick: a && b ? +Math.max(a.d, b.d).toFixed(2) : NaN };
+    }),
   };
   return result;
 }

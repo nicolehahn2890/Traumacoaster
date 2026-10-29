@@ -49,6 +49,9 @@ export interface ReduceOptions {
    * was Knoten häuft). Knotenarten (Ereignis-Scheitel) gibt es dabei nicht.
    */
   even?: boolean;
+  /** even: längstes Segment in Metern (Standard EVEN_SPAN 90) und größte Drehung je Segment in Grad (Standard EVEN_TURN 120) */
+  evenSpan?: number;
+  evenTurn?: number;
   /** geschlossene Runde (erster und letzter Punkt gleich): Die Tangente an der Naht reicht über sie hinweg */
   closed?: boolean;
   /**
@@ -354,9 +357,11 @@ function evenSplits(pts: Vec3[], cum: Float64Array, prof: Float64Array, T: (i: n
     turn[i + 1] = turn[i] + Math.acos(Math.max(-1, Math.min(1, c)));
   }
   turn[1] = turn[1] || 0;
+  const span = opts.evenSpan ?? EVEN_SPAN;
+  const turnMax = opts.evenTurn !== undefined ? (opts.evenTurn * Math.PI) / 180 : EVEN_TURN;
   const fits = (a: number, b: number): boolean => {
     if (b - a < 2) return true;
-    if (cum[b] - cum[a] > EVEN_SPAN || turn[b] - turn[a] > EVEN_TURN) return false;
+    if (cum[b] - cum[a] > span || turn[b] - turn[a] > turnMax) return false;
     let maxK = 0;
     for (let i = a; i <= b; i++) if (prof[i] > maxK) maxK = prof[i];
     let tol = toleranceFor(maxK, opts);

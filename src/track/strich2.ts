@@ -62,7 +62,11 @@ const SMOOTH_R = Math.ceil((3 * SIGMA) / FINE);
  * Toleranz. Der spätere Strang misst dabei an den festen Schienen des früheren (sein Fit darf bis TOL_LOOSE von der
  * Linie abliegen), nicht an dessen Linienpunkten.
  */
-const TOL_NEAR = 0.12;
+/**
+ * 0,3 statt 0,12 (29.10.): Die Fahrt zählt erst unter 1 m seitlichem Abstand eine Kreuzung; zwei Stränge mit PASS_SIDE
+ * 2,2 m Abstand und je 0,3 m Fit-Abweichung behalten 1,6 m. In der Höhe gilt PASS_OVER 3,8 = 3,2 (Durchfahrt) + 2 · 0,3
+ */
+const TOL_NEAR = 0.3;
 const TOL_LOOSE = 1.2;
 /**
  * Vorgabe: ein Segment wird fest, wenn so viele Linienpunkte (m) hinter seinem Ende schon fest sind. Mindestens 2 (die
@@ -72,6 +76,15 @@ const TOL_LOOSE = 1.2;
 export const FIX_BEHIND = 2;
 /** Überzeichnen: über so viele Pinsel-Meter gleitet das Ende des Strichs auf den Zielpunkt auf der alten Bahn */
 const GLUE = 5;
+/**
+ * Knoten-Fit von Strich 2 zum Ausprobieren (Florian 29.10.: „die weißen Bearbeitungspunkte sollten wirklich nur da
+ * liegen, wo sie nötig sind“): Faktor auf die Toleranz (0,3 m in engen Kurven, 1,2 m auf Geraden), Gleichverteilung
+ * an oder aus, längstes Segment in Metern und größte Drehung je Segment in Grad. Im Spiel &tol=2&even=0&span=90&turn=120,
+ * in der Messung --tol 2 --even 0 --span 90 --turn 120. Gemessen auf Florians 21 Strichen (29.10.): die Toleranz ändert
+ * die Knotenzahl nicht (48 → 48, die Schleifen des Strichs brauchen ihre Segmente), 150 m / 180° gibt 44 statt 48 bei
+ * gleicher Abweichung; das ist jetzt die Vorgabe (vorher 90 m / 120°, wie beim bisherigen Pinsel).
+ */
+export const FIT_TUNING = { tolScale: 1, even: true, evenSpan: 150, evenTurn: 180 };
 /** Grenzwellenlänge (m) der Tiefenglättung; kürzer als beim heutigen Pinsel (40 m), weil die Ebenen Terrassen von 10–20 m haben */
 const CUTOFF = 20;
 const LAMBDA = (CUTOFF / (2 * Math.PI)) ** 4;
@@ -111,8 +124,22 @@ const W_LEVEL = 400;
 const TURN_SPAN = 12;
 /** Kreuzungsregel wie in brushTrack: seitlich mindestens PASS_SIDE auseinander oder in der Höhe PASS_OVER */
 const PASS_SIDE = 2.2;
-const PASS_OVER = 3.5;
+const PASS_OVER = 3.8;
 const NEIGHBOR = 8;
+/**
+ * Kreuzungen (Florian 29.10.: „Stränge um ganze Spuren trennen, wo Platz ist“, „es sollte so gut wie keine Kreuzungen
+ * geben“). Der kleine Versatz (seitlich PASS_SIDE oder in der Höhe PASS_OVER) gilt für jeden früheren Punkt, der im Bild
+ * nah ist, in einem Fenster von ±XWIN Metern in x: So können sich die Tiefenkurven nicht wenige Meter neben der
+ * Bildkreuzung schneiden (Diagnose 29.10.: bei 26 von 43 Kreuzungen auf gleicher Höhe war die Linie an der Stelle selbst
+ * getrennt). Liegt der frühere Punkt noch im Vorlauf (seine Tiefe ändert sich mit), wird zweimal gelöst. Eine ganze Spur
+ * (LANE_DEPTH) gibt es nur an sauberen Kreuzungen: mehr als LOOP_ARC Meter auseinander auf dem Strich (keine Schleife des
+ * Strichs selbst), die Stränge kreuzen sich im Bild schräg (Sinus des Winkels über CROSS_SIN) und der freie Raum hat
+ * Platz. Nahe parallel laufende Stränge und Schleifen behalten den kleinen Versatz: Mit der Spur für alle nahen Paare
+ * wurde die Bahn auf Florians 21 Strichen wilder (Knicke 127 → 142, Tiefenspanne 20 → 28 m) und kreuzte öfter (20 → 26)
+ */
+const XWIN = 6;
+const LOOP_ARC = 40;
+const CROSS_SIN = Math.sin((30 * Math.PI) / 180);
 /** an der Station bleibt die Tiefe so lange (m) die der Station */
 const STATION_CALM = 12;
 /** Schranken-Feder (Vielfaches der größten Diagonale) */
@@ -247,7 +274,9 @@ export class Strich2 {
   private baseSegs = 0;
   /** Richtung am Ende (Überzeichnen: Anschluss an den Rest der alten Bahn), nur beim Loslassen gesetzt */
   private endTangent: Vec3 | null = null;
-  /** Seite je Kreuzung (Schlüssel: Bündel des späteren und des früheren Punkts), bleibt */
+  /** beim Lösen: eine Kreuzungsschranke bezog sich auf einen noch freien Punkt (seine Tiefe ändert sich mit) → zweiter Durchgang */
+  private freePairs = false;
+  /** Seite je Kreuzung (Schlüssel: Bündel des späteren und des früheren Punkts), bleibt und wird an Nachbarbündel vererbt */
   private sides = new Map<string, number>();
   /** feste Punkte nach x-Zelle für die Kreuzungssuche */
   private xCells = new Map<number, number[]>();
@@ -600,15 +629,30 @@ export class Strich2 {
     return r.rail ? r.rail.z : r.z;
   }
 
+  /** Sinus des Winkels, in dem sich die Linie an den Punkten i und j im Bild kreuzt (0 = parallel, 1 = rechtwinklig) */
+  private crossSin(i: number, j: number): number {
+    const dir = (k: number): [number, number] => {
+      const a = this.pts[Math.max(0, k - 1)].p;
+      const b = this.pts[Math.min(this.pts.length - 1, k + 1)].p;
+      const l = Math.hypot(b.X - a.X, b.Y - a.Y) || 1;
+      return [(b.X - a.X) / l, (b.Y - a.Y) / l];
+    };
+    const [ax, ay] = dir(i);
+    const [bx, by] = dir(j);
+    return Math.abs(ax * by - ay * bx);
+  }
+
   /**
    * Kreuzung mit einem früheren Punkt (fest, oder frei mit der Tiefe der letzten Lösung): verbotener Tiefenunterschied,
-   * die Seite bleibt je Kreuzung
+   * die Seite (vorne oder hinten) wird je Begegnung einmal entschieden und an die Nachbarbündel vererbt. (Ein Versuch mit
+   * der Lücke zwischen allen verbotenen Bändern je Punkt, mit und ohne Gedächtnis, war auf Florians Schleifen-Strichen
+   * messbar schlechter: 31 Striche 375 und 478 Kreuzungen statt 215, 27 Striche 202 und 298 statt 129; verworfen 29.10.)
    */
   private crossBounds(i: number, t: number, lo: number, hi: number, closing = false): { lo: number; hi: number } {
     const q = this.pts[i];
     const n = this.pts.length;
     const cx = Math.floor(q.p.X);
-    for (let c = cx - 1; c <= cx + 1; c++) {
+    for (let c = cx - XWIN; c <= cx + XWIN; c++) {
       const list = this.xCells.get(c);
       if (!list) continue;
       for (const j of list) {
@@ -619,22 +663,44 @@ export class Strich2 {
         const rp = this.stageOf(r);
         const rz = this.zOf(r);
         const dX = q.p.X - rp.X;
-        if (Math.abs(dX) >= PASS_SIDE) continue;
+        if (Math.abs(dX) >= XWIN) continue;
         const dY = q.p.Y - rp.Y;
-        const w = Math.sqrt(PASS_SIDE * PASS_SIDE - dX * dX);
+        // kleiner Versatz: im ganzen Fenster seitlich PASS_SIDE (dichter als PASS_SIDE in x: der Kreis darum) oder in der Höhe PASS_OVER
+        const w = Math.abs(dX) < PASS_SIDE ? Math.sqrt(PASS_SIDE * PASS_SIDE - dX * dX) : PASS_SIDE;
         const fLo = Math.max(-w, (dY - PASS_OVER) / TILT_TAN);
         const fHi = Math.min(w, (dY + PASS_OVER) / TILT_TAN);
         if (fLo >= fHi) continue;
-        const key = `${Math.floor(i / 12)}:${Math.floor(j / 12)}`;
+        if (!r.frozen) this.freePairs = true;
+        // ganze Spur nur an einer sauberen Kreuzung: weit auseinander auf dem Strich, schräg kreuzend, und Platz dafür
+        const clean = i - j > LOOP_ARC / STEP && this.crossSin(i, j) >= CROSS_SIN;
+        const fitsLane = (s: number) => clean && (s > 0 ? hi >= rz + LANE_DEPTH : lo <= rz - LANE_DEPTH);
+        const fitsMin = (s: number) => (s > 0 ? hi >= rz + fHi : lo <= rz + fLo);
+        const iB = Math.floor(i / 12);
+        const jB = Math.floor(j / 12);
+        const key = `${iB}:${jB}`;
         let side = this.sides.get(key) ?? 0;
         if (!side) {
-          // nahe am Ziel; sonst später Gezeichnetes vorne
-          side = t - rz >= (fLo + fHi) / 2 ? 1 : -1;
-          const fits = (s: number) => (s > 0 ? hi >= rz + fHi : lo <= rz + fLo);
-          if (!fits(side) && fits(-side)) side = -side;
-          this.sides.set(key, side);
+          // Seite vom Nachbarpaar erben (dieselbe Begegnung ein Stück weiter vorn oder hinten): Wechselt die Seite entlang
+          // einer flachen Kreuzung, müssen die Tiefenkurven sich schneiden (so entstanden Kreuzungen auf gleicher Höhe)
+          for (const k of [`${iB - 1}:${jB}`, `${iB}:${jB - 1}`, `${iB}:${jB + 1}`, `${iB - 1}:${jB - 1}`, `${iB - 1}:${jB + 1}`]) {
+            const s = this.sides.get(k);
+            if (s) {
+              side = s;
+              break;
+            }
+          }
         }
-        if (side > 0) lo = Math.max(lo, rz + fHi);
+        if (!side) {
+          // nahe am Ziel; sonst später Gezeichnetes vorne. An einer sauberen Kreuzung lieber die Seite mit Platz für die Spur
+          side = t - rz >= (fLo + fHi) / 2 ? 1 : -1;
+          if (clean && !fitsLane(side) && fitsLane(-side)) side = -side;
+          else if (!fitsLane(side) && !fitsMin(side) && fitsMin(-side)) side = -side;
+        }
+        this.sides.set(key, side);
+        if (fitsLane(side)) {
+          if (side > 0) lo = Math.max(lo, rz + LANE_DEPTH);
+          else hi = Math.min(hi, rz - LANE_DEPTH);
+        } else if (side > 0) lo = Math.max(lo, rz + fHi);
         else hi = Math.min(hi, rz + fLo);
         q.near = true;
       }
@@ -721,8 +787,15 @@ export class Strich2 {
 
   // ------------------------------------------------------------------ Löser
 
+  /** lösen; bezog sich eine Kreuzungsschranke auf einen noch freien Punkt, noch einmal mit dessen neuer Tiefe */
+  private solveTwice(o: BrushOptions, endZ = NaN): void {
+    this.solve(o, endZ);
+    if (this.freePairs) this.solve(o, endZ);
+  }
+
   /** Tiefe des freien Stücks lösen (feste Punkte als Rand); endZ: Tiefe am letzten Punkt (Rundenschluss) */
   private solve(o: BrushOptions, endZ = NaN): void {
+    this.freePairs = false;
     const n = this.pts.length;
     let free = this.baseLen;
     while (free < n && this.pts[free].frozen) free++;
@@ -969,7 +1042,7 @@ export class Strich2 {
     const first = this.fixedSegs[0] ?? null;
     const endTangent = closed && first ? unit(first.p0, first.p1) : (this.endTangent ?? undefined);
     // ohne feste Segmente eine geschlossene Runde: Tangente an der Naht über sie hinweg (reduceNodes closed)
-    const fit = pts.length >= 2 ? reduceNodes(pts, [], { even: true, tolAt, startTangent, endTangent, closed: closed && !first }) : { segments: [] as CubicSegment3[], indices: [] as number[] };
+    const fit = pts.length >= 2 ? reduceNodes(pts, [], { even: FIT_TUNING.even, tolScale: FIT_TUNING.tolScale, evenSpan: FIT_TUNING.evenSpan, evenTurn: FIT_TUNING.evenTurn, tolAt, startTangent, endTangent, closed: closed && !first }) : { segments: [] as CubicSegment3[], indices: [] as number[] };
     const segs = [...this.fixedSegs, ...fit.segments];
     const nodeOf = (k: number): TrackNode => {
       const seg = segs[k];
@@ -1093,7 +1166,7 @@ export class Strich2 {
     this.feed(points);
     if (this.pts.length - this.baseLen < 6) return null;
     this.query(o, Math.min(before, this.lineFinal) - 2);
-    this.solve(o);
+    this.solveTwice(o);
     this.freeze(o);
     const end = cut ? Math.max(this.frozenEnd(), Math.min(this.pts.length, this.baseLen + 2)) : this.pts.length;
     const pv = this.preview(o, false, end);
@@ -1136,7 +1209,7 @@ export class Strich2 {
       this.lineFinal = this.pts.length;
     }
     this.query(o, Math.min(before, this.lineFinal) - 2);
-    this.solve(o, endAt ? endAt.z : NaN);
+    this.solveTwice(o, endAt ? endAt.z : NaN);
     if (endAt) this.pts[this.pts.length - 1].z = endAt.z;
     // beim Loslassen ist ein noch offenes steiles Stück Höhe: alles bis FREEZE vor dem Ende wird fest
     this.freeze(o, true);

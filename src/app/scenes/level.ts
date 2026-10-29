@@ -31,7 +31,7 @@ import { strokeToTrack, closePath, extendTrack, interpretStroke, lanesTrack, typ
 import { bendSegment } from '@/track/edit';
 import { RubberBrush, chaikin, resamplePolyline } from '@/track/brush';
 import { BrushRefiner, joinLines, lineLength, planBrushTrack, previewBrushTrack, spliceLine, swapCrossing, trackLine, trackLineWithDepth, type BrushPlan, type BrushPreview } from '@/track/brushTrack';
-import { FIX_BEHIND, FREEZE, Strich2, type Strich2End, type Strich2Preview } from '@/track/strich2';
+import { FIT_TUNING, FIX_BEHIND, FREEZE, Strich2, type Strich2End, type Strich2Preview } from '@/track/strich2';
 import { splitPathAt } from '@/track/pathSplit';
 import { TrackInspector, type WeakSpot } from '@/track/inspect';
 import { findCrossings } from '@/track/crossings';
@@ -188,6 +188,11 @@ const AUTOSCROLL = typeof location === 'undefined' || new URLSearchParams(locati
 const STRICH_URL = urlNum('strich', 0);
 /** Strich 2: Vorlauf in Metern hinter der Spitze, ab dem die Tiefe fest wird (FREEZE; zum Ausprobieren, z. B. &vorlaufm=8) */
 const VORLAUFM_URL = urlNum('vorlaufm', FREEZE);
+// Strich 2, Knoten-Fit zum Ausprobieren: &tol=2 (Faktor auf die Toleranz), &even=0 (ohne Gleichverteilung), &span=150 (m), &turn=180 (°)
+FIT_TUNING.tolScale = urlNum('tol', FIT_TUNING.tolScale);
+FIT_TUNING.even = urlNum('even', FIT_TUNING.even ? 1 : 0) !== 0;
+FIT_TUNING.evenSpan = urlNum('span', FIT_TUNING.evenSpan);
+FIT_TUNING.evenTurn = urlNum('turn', FIT_TUNING.evenTurn);
 /**
  * Strich 2: 1 (Vorgabe) zeigt die Schienen nur bis zum festen Teil, der Vorlauf bleibt Tinte und die Bahn zieht weich
  * nach, sobald die Tiefe entschieden ist; 2 zeigt den Vorlauf vorläufig als Schienen bis zur Spitze
@@ -275,6 +280,12 @@ export class LevelScene implements Scene {
   private strich2: Strich2 | null = null;
   /** Überzeichnen mit Strich 2: Stelle der alten Bahn (Bogenlänge, Probe), an der der Strich begann */
   private overdrawAt: { s: number; index: number } | null = null;
+  /**
+   * Bearbeiten über Knoten und Griffe: je Zeigerereignis nur vormerken, die Bahn wird einmal je Bild neu gebaut (leicht,
+   * wie die Pinsel-Vorschau), beim Loslassen ganz (Florian 29.10.: „es ruckelt und stockt“; gemessen 14 ms je Ereignis
+   * bei 300 m, bis 120 Ereignisse je Sekunde am Trackpad)
+   */
+  private editRedraw = false;
   /** Strich 2: ab hier (Pinsellänge) zeigt die Tinte den Strich; läuft weich dem festen Bahnende nach (die Bahn „zieht nach“) */
   private brushInkFrom = 0;
   /** Plan der aktuellen Pinsel-Bahn (Kreuzungen zum Tauschen) und der Stand der Bahn, zu dem er passt */
@@ -1404,7 +1415,7 @@ export class LevelScene implements Scene {
     let y = Math.max(this.groundAt(w.x, z) + 0.6, w.y);
     if (this.level.maxHeight) y = Math.min(y, this.level.maxHeight);
     bendSegment(this.path, this.drag.seg ?? 0, this.drag.t ?? 0.5, { x: w.x, y, z: z * LANE_DEPTH });
-    this.redrawTrack();
+    this.editRedraw = true;
   }
   private onStage(st: StagePoint): boolean {
     const z = clamp(st.Y / LANE_RISE, LANE_MIN - 0.5, LANE_MAX + 0.5);
@@ -2815,7 +2826,8 @@ export class LevelScene implements Scene {
     if (!this.sandbox) storage.saveDraft(this.level.id, path);
   }
 
-  private redrawTrack(): void {
+  /** light: während eines Zieh-Vorgangs (Knoten, Griff, Tiefe, Rolle, Segment): Schienen wie die Pinsel-Vorschau, Kennzahlen und stehender Zug bleiben vom letzten vollen Aufbau */
+  private redrawTrack(light = false): void {
     if (!this.path || this.path.nodes.length < 2) {
       this.samples = null;
       this.stats = null;
@@ -2826,13 +2838,13 @@ export class LevelScene implements Scene {
       return;
     }
     this.samples = sampleTrack(this.path, 0.25);
-    this.stats = trackStats(this.path, this.samples);
-    this.view.setTrack(this.path, this.samples, this.skin, this.terrain, this.allowTunnels, false);
+    if (!light || !this.stats) this.stats = trackStats(this.path, this.samples);
+    this.view.setTrack(this.path, this.samples, this.skin, this.terrain, this.allowTunnels, light);
     this.scheduleInspect();
     this.drawOverlay();
     this.refreshLaneHud();
     this.drawChainLine();
-    if (this.mode === 'draw') this.buildStandingTrain();
+    if (this.mode === 'draw' && !light) this.buildStandingTrain();
     if (this.drag.kind !== 'none' && this.drag.kind !== 'stroke') this.liveFeedback(this.path, this.samples, this.stats);
   }
 
@@ -2883,6 +2895,7 @@ export class LevelScene implements Scene {
   private afterEdit(): void {
     if (!this.path) return;
     if (!this.path.brush) closePath(this.path);
+    this.editRedraw = false;
     this.redrawTrack();
     this.updateGoals();
     if (!this.sandbox) storage.saveDraft(this.level.id, this.path);
@@ -2946,7 +2959,7 @@ export class LevelScene implements Scene {
     n.x = w.x;
     n.y = Math.max(this.groundAt(w.x, n.z) + 0.6, w.y);
     if (this.level.maxHeight) n.y = Math.min(n.y, this.level.maxHeight);
-    this.redrawTrack();
+    this.editRedraw = true;
   }
   private moveHandle(i: number, st: StagePoint, isIn: boolean): void {
     if (!this.path) return;
@@ -2966,7 +2979,7 @@ export class LevelScene implements Scene {
       const il = Math.hypot(n.inX, n.inY, n.inZ * LANE_DEPTH) || len;
       n.inX = (-dx / len) * il; n.inY = (-dy / len) * il; n.inZ = ((-dz / len) * il) / LANE_DEPTH;
     }
-    this.redrawTrack();
+    this.editRedraw = true;
   }
   /** Tiefen-Handle: vertikal ziehen verschiebt den Knoten in der Tiefe (eine Spur = LANE_RISE Bühnen-Meter) */
   private dragDepth(i: number, dY: number, startZ: number): void {
@@ -2974,7 +2987,7 @@ export class LevelScene implements Scene {
     const n = this.path.nodes[i];
     n.z = clamp(startZ + dY / LANE_RISE, LANE_MIN, LANE_MAX);
     n.y = Math.max(this.groundAt(n.x, n.z) + 0.6, n.y);
-    this.redrawTrack();
+    this.editRedraw = true;
     this.rollText.text = `${t('lane.back')}: ${n.z.toFixed(1)}`;
   }
   /** Roll-Handle: vertikal ziehen stellt die Schräglage ein (manuell); Doppeltipp = automatisch */
@@ -2982,7 +2995,7 @@ export class LevelScene implements Scene {
     if (!this.path) return;
     const n = this.path.nodes[i];
     n.roll = clamp(startRoll + dY * 0.25, -Math.PI, Math.PI);
-    this.redrawTrack();
+    this.editRedraw = true;
     this.rollText.text = `${Math.round((n.roll * 180) / Math.PI)}°`;
   }
   private deleteNode(i: number): void {
@@ -4062,6 +4075,10 @@ export class LevelScene implements Scene {
       if (this.refiner && !this.stroke) this.stepRefine(REFINE_SLICE_MS);
       else this.stepInspect();
       this.spotLayer.visible = !this.stroke;
+      if (this.editRedraw) {
+        this.editRedraw = false;
+        this.redrawTrack(true);
+      }
       if (this.stroke) {
         this.autoscroll(dt);
         if (this.brush) this.advanceBrush(dt);

@@ -1082,9 +1082,11 @@ Etappe 2); Bahn durch die Höhle gezeichnet und gefahren, Stützen auf Kanten; R
 fester Vorlauf 12 m, Knoten gefittet wie beim bisherigen Pinsel, pinkes Band als Vorlauf) ist in Ebenen-Zonen die Vorgabe
 des Pinsels; `&strich=1` nimmt den bisherigen Pinsel, `&strich=2` erzwingt Strich 2 auch ohne Ebenen, `&vorlaufm=N` setzt den
 Vorlauf in Metern zum Ausprobieren. Fortsetzen und Überzeichnen laufen seit 29.10. mittags auf Strich 2 (die alte Bahn
-bleibt wörtlich, Studie Abschnitt 12; rückwärts Überzeichnetes fällt noch auf den bisherigen Pinsel zurück); Kreuzungen
-über Spuren getrennt und die Handy-Messung bei 1000 m sind Stufe P1 der Studie (ihr Tor P2 ist Tor S4). Zonen ohne
-Ebenen zeichnen weiter mit dem bisherigen Pinsel.
+bleibt wörtlich, Studie Abschnitt 12; rückwärts Überzeichnetes fällt noch auf den bisherigen Pinsel zurück). Seit 29.10.
+nachmittags (Studie Abschnitt 13): Kreuzungen auf gleicher Höhe auf Florians Strichen 11 → 3 (kleiner Versatz im
+±6-m-Fenster, Seite je Begegnung, ganze Spur nur an sauberen Kreuzungen), Knoten-Fit 150 m / 180° (`&tol= &even= &span=
+&turn=` zum Ausprobieren), Bearbeiten über Knoten und Griffe baut die Bahn einmal je Bild leicht neu statt je
+Zeigerereignis. Offen in Stufe P1: Handy-Messung bei 1000 m. Zonen ohne Ebenen zeichnen weiter mit dem bisherigen Pinsel.
 **Noch offen aus Stufe 4:** die übrigen Spielobjekte auf Kanten (Schlange, Ziele, Stufen, Schalter, Coins, Baustellen;
 bis dahin der Klötzchen-Editor), Durchblick-Prüfung. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
 lang, die Schraffuren. **Nicht geprüft:** Szene 06 in Formen (Tor S4), Stroke-Replay mit dem Ebenen-Pinsel (der Replay

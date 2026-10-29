@@ -56,6 +56,18 @@ nach hinten in Metern (eine Spur = 8,4 m). **Loslassen** = der Finger geht hoch,
    die Bahn vor dem Anfasspunkt und hinter dem Ende wörtlich, der Strich endet genau am Ende in dessen Tiefe und
    Richtung, mit Vorschau während des Strichs. Platzhalter: rückwärts gezeichnet und über die Naht einer Runde nimmt
    weiter der heutige Pinsel.
+11. Fünfter Nachtrag (Abschnitt 13): Florians Auftrag Kreuzungen („so gut wie keine“), Knoten „nur wo nötig“ und das
+   Ruckeln beim Bearbeiten. Kreuzungen auf gleicher Höhe entstanden, weil die Regel nur im ±1-m-Fenster der Bildkreuzung
+   galt und die Seite je 12-Punkte-Bündel neu entschied. Erster Umbau (ganze Spur für jedes nahe Paar) war messbar
+   schlechter und ist verworfen. Jetzt: kleiner Versatz im ±6-m-Fenster, Seite je Begegnung vererbt, zweiter
+   Lösungsdurchgang für freie Nachbarn, Seite je Begegnung vererbt, ganze Spur nur an sauberen Kreuzungen (weit
+   auseinander, ab 30°, Platz). Auf denselben 17 Strichen: Kreuzungen 11 → 3, Striche ohne Kreuzung 9 → 15,
+   Fahrt-Abbrüche an Kreuzungen 5 → 1; auf den 27 von gestern Abend 208 → 129 (heutiger Pinsel: 264), auf den 31
+   Schleifen-Strichen 423 → 215; ein Versuch mit Lücken statt Seiten war schlechter und ist verworfen. Preis:
+   Knicke 63 → 78 und Tiefenspanne 20 → 25 m (die Spur-Rampen). Knoten 38 → 36: Die Toleranz ändert die Zahl nicht, die
+   Knoten kommen aus den Schleifen des Strichs (ein kubisches Segment dreht höchstens 180°); Vorgabe jetzt 150 m / 180°.
+   Das Ruckeln kam vom Neubau der ganzen Bahn je Zeigerereignis (14 ms, bis 120 je Sekunde); jetzt einmal je Bild
+   leicht, beim Loslassen ganz (0,2 ms je Ereignis, 10 ms je Bild).
 
 ## 2. Befund am heutigen Pinsel
 
@@ -659,3 +671,149 @@ Haken mit zwei bis vier Knoten. Eine Richtungs-Angleichung der ersten Meter wär
 Prüfungen bestanden (nur Zahlenrauschen gegenüber dem Lauf vom Vormittag). Stand: Commit auf
 `claude/pinsel-studie-8f0777` nach b658b07; die Editor-Session holt den Zweig per Fast-Forward nach `zoneneditor`
 (Florians Entscheidung, 29.10.).
+
+## 13. Nachtrag 29.10. nachmittags: Kreuzungen, Knotenzahl, Ruckeln beim Bearbeiten (Stufe P1)
+
+Florians Auftrag: „Mach hier mit den Kreuzungen weiter: Stränge um ganze Spuren trennen, wo Platz ist (weniger enge
+Knoten, weniger Abbrüche an Kreuzungen).“ Und mittendrin: „Kreuzungen sind aktuell recht frustrierend. Es entstehen sehr
+viele und die Punkte sind insgesamt viel zu hoch. Das waren sie selbst bei Strich 1. … es sollte eigentlich so gut wie
+keine Kreuzungen geben. Und die weißen Bearbeitungspunkte sollten wirklich nur da liegen, wo sie nötig sind. Die
+Performance bei der Bearbeitung über die Punkte ist ganz schlecht, es ruckelt und stockt.“
+
+### 13a. Was die Fahrt als Kreuzung zählt, und woher sie kamen
+
+Die Fahrt (`findCrossings`) zählt eine Kreuzung auf gleicher Höhe, wenn sich zwei Stränge in der Draufsicht (x und
+Tiefe) schneiden oder näher als 1 m aneinander laufen und ihre Höhen dort unter 3,2 m auseinanderliegen; ein Looping
+mit Kopfüber-Stück dazwischen ist ausgenommen. Die Nachspiel-Messung gibt die Kreuzungen jetzt je Strich aus
+(`crossings`: Bogenlängen, Abstand auf der Bahn, Höhenunterschied, Tiefe der Linie an beiden Stellen).
+
+Diagnose auf Florians 34 Strichen vom Vormittag (alte Regel): 43 Kreuzungen auf gleicher Höhe, 1,3 je Strich; 29 davon
+zwischen Stellen, die mehr als 200 m auseinanderliegen (der Strich kommt zurück und kreuzt Früheres), nur 5 in Schleifen
+unter 40 m. Bei 26 von 43 war die Linie an der Stelle selbst getrennt (bis 12 m Tiefenunterschied), die fertige Bahn
+kreuzte trotzdem: Die Regel galt nur punktweise im ±1-m-Fenster der Bildkreuzung, und die Seite (vorne oder hinten)
+wurde je 12-Punkte-Bündel neu entschieden. Wechselt sie entlang einer flachen Kreuzung, müssen sich die Tiefenkurven
+wenige Meter daneben schneiden.
+
+### 13b. Erster Umbau, ehrlich: schlechter
+
+Ganze Spur (8,4 m) für jedes im Bild nahe Paar (±6 m in x, bis 7,7 m in Y), kleiner Versatz nur als Rückfall. Auf
+denselben 21 Strichen (die ältesten 21 von heute, die Nachspiel-Auswahl hatte sich verzählt, darum 21 statt 34):
+Kreuzungen 20 → 26, Knicke 127 → 142, Rollen 118° → 145° je 100 m, Tiefenspanne 19,7 → 28 m. Grund: In Florians dichten
+Schleifenhaufen muss ein Strang dann von jedem nahen früheren eine Spur weg, die Rampen von 8,4 m kommen sich gegenseitig
+in die Quere, die Schranken widersprechen sich, der Löser klemmt irgendwo fest. Verworfen.
+
+### 13c. Zweiter Umbau: kleiner Versatz robust, ganze Spur nur an sauberen Kreuzungen
+
+- **Fenster:** Der kleine Versatz (seitlich 2,2 m oder in der Höhe 3,8 m) gilt für jeden früheren Punkt, der im Bild nah
+  ist, in ±6 m x-Fenster, nicht nur im ±1-m-Fenster.
+- **Seite erben:** Die Seite einer Begegnung (vorne oder hinten) wird einmal entschieden und an die Nachbarbündel vererbt
+  (derselbe Strang ein Stück weiter vorn oder hinten); vorher entschied jedes 12-Punkte-Paar neu. Das war die eigentliche
+  Ursache der flachen Kreuzungen: Der neue Test „flache Kreuzung unter 9°“ hatte mit Fenster allein noch 3 Kreuzungen,
+  mit Erben 0.
+- **Versuch Lücken, verworfen:** Auf den 31 Schleifen-Strichen blieben mit der Seiten-Regel 215 Kreuzungen, und in 168 von
+  178 zugeordneten galt die Regel, die Linie war trotzdem nicht getrennt: Bei mehreren früheren Strängen in Reichweite
+  widersprechen sich die Schranken (vor dem einen, hinter dem anderen). Darum ein Versuch, je Punkt alle verbotenen
+  Tiefenbänder zu vereinigen und die Lücke zu wählen, die die vorige Tiefe enthält, erst ohne, dann mit Gedächtnis je
+  Punkt. Gemessen: 31 Striche 375 und 478 Kreuzungen statt 215, 27 Striche 202 und 298 statt 129, Knicke 313 und 361
+  statt 301. Die Wahl der Lücke kippt von Vorschau zu Vorschau, und das Gedächtnis macht es noch starrer und schlechter.
+  Verworfen; die Seiten-Regel bleibt. Die Restkreuzungen in dichten Schleifenhaufen sind eine offene Stelle von P1.
+- **Freie Nachbarn:** Liegt der frühere Punkt noch im Vorlauf (seine Tiefe ändert sich mit), wird zweimal gelöst; der
+  zweite Durchgang sieht die neue Tiefe (Schleifen innerhalb der 12 m).
+- **Ganze Spur** nur an sauberen Kreuzungen: mehr als 40 m auseinander auf dem Strich (keine Schleife des Strichs selbst),
+  die Stränge kreuzen sich im Bild schräg (Winkel ab 30°), und der freie Raum hat Platz für 8,4 m; sonst der kleine
+  Versatz. Test „schräge Kreuzung unter 35°“: eine Spur Abstand, keine Kreuzung auf gleicher Höhe.
+- **Toleranz an Kreuzungen 0,3 statt 0,12 m** (`TOL_NEAR`), dafür `PASS_OVER` 3,8 statt 3,5 m: Die Fahrt zählt erst unter
+  1 m seitlichem Abstand; 2,2 m minus zweimal 0,3 m bleiben 1,6 m, in der Höhe 3,8 − 0,6 = 3,2 m (Durchfahrt). Die enge
+  Toleranz 0,12 erzwang viele kurze Segmente, also Knoten.
+- **Platzhalter:** Winkelgrenze 30°, Schleifengrenze 40 m, Fenster 6 m sind gesetzt, nicht gemessen. Schleifen kürzer als
+  8 Linienmeter (NEIGHBOR) bleiben ohne Regel: ein Strich, der sich binnen 8 m selbst schneidet, ist mit 4 m Mindestradius
+  ohnehin nicht fahrbar.
+
+### 13d. Knotenzahl: Woran sie wirklich hängt
+
+Der Knoten-Fit ist jetzt einstellbar (`&tol=`, `&even=`, `&span=`, `&turn=`; Messung `--tol --even --span --turn`), und
+die Varianten sind auf den 21 Strichen gemessen (Median je Strich, alle mit derselben Kreuzungsregel):
+
+| Variante | Knoten | Abweichung Bahn–Strich 90 % | Knicke |
+|---|---|---|---|
+| Vorgabe (Toleranz 0,3/1,2 m, gleichmäßig, 90 m, 120°) | 48 | 2,0 px | 137 |
+| Toleranz doppelt (0,6/2,4 m) | 48 | 1,9 px | 134 |
+| ohne Gleichverteilung | 47 | 2,0 px | 137 |
+| Segmente bis 150 m und 180° Drehung | 44 | 2,1 px | 132 |
+| Toleranz doppelt und ohne Gleichverteilung | 48 | 2,0 px | 137 |
+
+**Lesart, ehrlich:** Die Toleranz ändert die Knotenzahl nicht. Die Knoten kommen aus den Schleifen des Strichs: Ein
+kubisches Segment schafft höchstens eine Drehung von 120° (jetzt 180°), eine gezeichnete Schleife braucht also drei bis
+vier Knoten, und Florians Striche haben im Median 130 Proben mit Radius unter 4 m, also viele kleine Schleifen. Die
+Knoten sind damit „nötig“ im Sinn des Fits, nicht im Sinn des Zeichners. Weniger Knoten gäbe es nur, wenn die Bahn die
+kleinen Schleifen nicht mitmacht (Glättung über die 4-m-Grenze, eine Entscheidung) oder wenn der Fit andere Kurven
+als Kubiken nutzte. Die Vorgabe ist jetzt 150 m / 180° (8 % weniger Knoten bei gleicher Abweichung).
+
+### 13e. Ruckeln beim Bearbeiten über die Punkte
+
+Gemessen im Browser (303 m Bahn, 52 Knoten): Jedes Zeigerereignis beim Ziehen eines Knotens, Griffs, der Tiefe, Rolle
+oder eines Segments baute die ganze Bahn neu (`redrawTrack`: Proben, Kennzahlen, Schienen-Mesh, Stützen; 14 ms je
+Ereignis, bis 31 ms), und ein Trackpad liefert bis zu 120 Ereignisse je Sekunde: 1,7 s Arbeit je Sekunde, daher
+„ruckelt und stockt“. Jetzt merkt das Ereignis nur vor, die Bahn wird einmal je Bild leicht neu gebaut (Schienen wie die
+Pinsel-Vorschau, Kennzahlen und stehender Zug bleiben vom letzten vollen Aufbau) und beim Loslassen ganz. Gemessen
+danach (251 m, 87 Knoten): 0,2 ms je Ereignis, 10,5 ms je Bild im Median während des Ziehens (ein Ausreißer 110 ms).
+Nicht geprüft: das Gefühl am Mac, längere Bahnen (bei 500 m rund 20 ms je Bild, also unter 60 fps; das Mesh wächst noch
+nicht inkrementell, Risiko 4 aus Abschnitt 7).
+
+### 13f. Ergebnis
+
+Nachspiel auf denselben 17 Strichen von heute früh (Median je Strich; „vorher“ = Stand 0d07c0f, „Spur für alle“ = der
+verworfene erste Umbau, „jetzt“ = Stand nach 13c–13e):
+
+| | vorher | Spur für alle | jetzt |
+|---|---|---|---|
+| Kreuzungen auf gleicher Höhe (Summe) | 11 | 19 | 3 |
+| Striche ohne Kreuzung | 9 von 17 | 10 | 15 |
+| Fahrt-Abbruch an Kreuzung / Entgleisen / Stehenbleiben / Fall | 5 / 5 / 1 / 5 | 5 / 4 / 0 / 7 | 1 / 7 / 4 / 4 |
+| Knoten je Strich | 38 | 47 | 36 |
+| Bahnmeter je Knoten | 8,0 | 8,1 | 9,2 |
+| Knicke (R < 4 m) | 63 | 131 | 78 |
+| Rollen je 100 m | 122° | 140° | 127° |
+| Tiefenspanne / Umkehr | 19,7 m / 10 | 27,7 m / 13 | 25,3 m / 11 |
+| Sprung beim Loslassen (px) | 0,1 | 0,2 | 0,3 |
+| Vorschau Median / 90 % (ms, unter Last) | 6,6 / 13,8 | 12,5 / 30,6 | 7,7 / 18,4 |
+
+**Lesart, ehrlich:** Die Kreuzungen auf gleicher Höhe sind von 11 auf 3 gefallen, 15 von 17 Strichen haben keine mehr;
+die drei übrigen liegen an Stellen, an denen die Regel galt, aber auf keiner Seite Platz für den Versatz war (Ebenen,
+Stufe P2). Die Spur-Rampen kosten Form: Knicke 63 → 78 und Tiefenspanne 20 → 25 m, Rollen leicht mehr, und die Fahrt
+scheitert jetzt eher am Entgleisen und Stehenbleiben als an Kreuzungen (geschafft bleibt 0 von 17: Stufe P4). Die Knoten
+sind nur leicht weniger (38 → 36), weil die Schleifen des Strichs sie brauchen (13d). Im Browser bestätigt: eine Bahn,
+die ihren ersten Strang schräg kreuzt, geht 11 m dahinter vorbei, ohne Kreuzung auf gleicher Höhe (120 m, 10 Knoten).
+Die Zeiten sind unter Last gemessen (parallel liefen Szenarien und weitere Nachspiele). Im Spiel bedeutet eine ganze
+Spur Abstand 4,2 m Höhenunterschied im Bild an der Kreuzung; ob das „so gut wie keine Kreuzungen“ trifft, zeigt sich
+beim Zeichnen.
+
+**Die beiden Sätze von gestern** (Median je Strich; „alte Regel“ = 0d07c0f, „jetzt“ = Seiten-Regel mit Fenster, zweitem
+Durchgang, Spur an sauberen Kreuzungen, Toleranz 0,3, Fit 150 m / 180°; der heutige Pinsel auf denselben Strichen,
+nicht deterministisch, ±10 %):
+
+| | 27 neue: alte Regel | jetzt | heutiger Pinsel | 31 alte: alte Regel | jetzt | heutiger Pinsel |
+|---|---|---|---|---|---|---|
+| Kreuzungen auf gleicher Höhe (Summe) | 208 | 129 | 264 | 423 | 215 | – |
+| Striche ohne Kreuzung | 12 von 27 | 16 | 15 | 4 von 30 | 8 | – |
+| Fahrt-Abbruch an Kreuzung | 13 | 3 | 8 | 18 | 12 | 10 |
+| Fahrt geschafft | 0 | 0 | 4 | 0 | 0 | 0 |
+| Knoten je Strich | 70 | 52 | 57 | 99 | 80 | 59 |
+| Knicke | 208 | 177 | 218 | 297 | 301 | 187 |
+| Rollen je 100 m | 114° | 121° | 147° | 127° | 142° | 149° |
+| Tiefenspanne | 19,5 m | 28,3 m | 30,9 m | 26,6 m | 38,3 m | 40,7 m |
+| Vorschau Median (ms, unter Last) | 7,5 | 9,8 | 33,7 | 6,6 | 8,7 | 32,8 |
+
+(Der Kreuzungswert des heutigen Pinsels auf den 31 Strichen stammt aus einem älteren Lauf ohne diese Zählung.) Lesart:
+Auf den Schleifen-Sätzen bleibt rund ein Drittel bis die Hälfte der Kreuzungen, 5 bis 7 je Strich, in dichten
+Schleifenhaufen, wo sich die Schranken mehrerer früherer Stränge widersprechen oder kein Platz ist; der heutige Pinsel
+hat dort mehr. Die Knoten sind mit 52 und 80 je Strich näher am heutigen Pinsel (57 und 59) als vorher (70 und 99).
+
+**Absicherung:** 464 Tests (zwei neu: flache Kreuzung unter 9° mit kleinem Versatz, schräge Kreuzung unter 35° mit
+ganzer Spur, beide ohne Kreuzung auf gleicher Höhe) und `npm run build` grün; Szenarien 1–28 gegen den Messserver :5188
+alle 200 Prüfungen bestanden (Szenario 25 setzt mit 150 m / 180° jetzt 6 statt 8 Knoten, alle in der Tiefe der Ebene).
+Im Browser (`test-huegel`): ein Strich, der seinen ersten Strang schräg kreuzt, geht 11 m dahinter vorbei (120 m, 10
+Knoten, keine Kreuzung auf gleicher Höhe); zwei Schleifen hintereinander mit mehreren Kreuzungen (229 m, 22 Knoten)
+ebenfalls ohne Kreuzung auf gleicher Höhe. Nicht geprüft: das Gefühl am Mac (Band, Spur-Rampen, Ziehen über die
+Punkte), das Handy, Zonen ohne Ebenen. Stand: Commit auf `claude/pinsel-studie-8f0777` nach 0d07c0f; die Editor-Session
+holt den Zweig per Fast-Forward nach `zoneneditor`.

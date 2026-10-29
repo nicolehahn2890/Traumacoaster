@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { trackLineWithDepth, type BrushOptions, type Landing } from '@/track/brushTrack';
 import { createNode, emptyPath, sampleTrack, type TrackPath } from '@/track/model';
+import { findCrossings } from '@/track/crossings';
 import { FIX_BEHIND, FREEZE, Strich2 } from '@/track/strich2';
 import { LANE_DEPTH, setPerspective, type StagePoint } from '@/track/stage';
 import type { FreeLanes } from '@/zone/field';
@@ -120,6 +121,61 @@ describe('Strich 2: kausal mit festem Vorlauf', () => {
     expect(-last.inY / li).toBeGreaterThan(0.99);
     expect(r.line[r.line.length - 1].X).toBeCloseTo(84, 6);
     expect(r.z[r.z.length - 1]).toBeCloseTo(10, 6);
+  });
+
+  /** alte Bahn: gerade bei Höhe 10, Tiefe 4 m (Bühne Y 12) von X 0 bis 60, als feste Knoten */
+  function straightBase(): { nodes: ReturnType<typeof createNode>[]; line: ReturnType<typeof trackLineWithDepth> } {
+    const zl = 4 / LANE_DEPTH;
+    const nodes = [0, 20, 40, 60].map((x) => {
+      const n = createNode(x, 10, zl);
+      n.inX = -6;
+      n.outX = 6;
+      return n;
+    });
+    nodes[0].inX = 0;
+    nodes[0].kind = 'station';
+    nodes[3].outX = 0;
+    const old: TrackPath = { ...emptyPath(), nodes, closed: false };
+    return { nodes, line: trackLineWithDepth(sampleTrack(old, 0.25)) };
+  }
+
+  /** Tiefe des späteren Strangs an der Bildstelle (X, Y), gesucht ab Linienpunkt from */
+  function depthAt(r: { line: StagePoint[]; z: Float64Array }, X: number, Y: number, from: number): number {
+    let best = -1;
+    let bd = Infinity;
+    for (let i = from; i < r.line.length; i++) {
+      const d = Math.hypot(r.line[i].X - X, r.line[i].Y - Y);
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    }
+    expect(bd).toBeLessThan(1);
+    return r.z[best];
+  }
+
+  it('flache Kreuzung mit einem früheren Strang: kleiner Versatz, keine Kreuzung auf gleicher Höhe', () => {
+    const { nodes, line } = straightBase();
+    const s = new Strich2(() => stepOptions(1000), { ...line, nodes }, NaN, 8);
+    // flach nach rechts oben, scharfe Ecke, flach nach links unten: kreuzt die alte Bahn bei X 10 unter 9°
+    const pts = polyline([[60, 12], [260, 52], [260.4, 52.2], [-100, -5.6]]);
+    for (let n = 6; n <= pts.length; n += 10) s.update(pts.slice(0, n));
+    const r = s.finish(pts)!;
+    expect(r).not.toBeNull();
+    expect(Math.abs(depthAt(r, 10, 12, line.line.length + 100) - 4)).toBeGreaterThanOrEqual(2.2 - 0.05);
+    expect(findCrossings(sampleTrack(r.path, 0.25)).length).toBe(0);
+  });
+
+  it('schräge Kreuzung mit einem früheren Strang: eine ganze Spur Abstand, wo Platz ist', () => {
+    const { nodes, line } = straightBase();
+    const s = new Strich2(() => stepOptions(1000), { ...line, nodes }, NaN, 8);
+    // kurz weiter, steil hoch (Kehre), dann unter 35° nach links unten: kreuzt die alte Bahn bei X 46
+    const pts = polyline([[60, 12], [70, 14], [72, 30], [-20, -34.4]]);
+    for (let n = 6; n <= pts.length; n += 10) s.update(pts.slice(0, n));
+    const r = s.finish(pts)!;
+    expect(r).not.toBeNull();
+    expect(Math.abs(depthAt(r, 46.3, 12, line.line.length + 30) - 4)).toBeGreaterThanOrEqual(LANE_DEPTH - 0.05);
+    expect(findCrossings(sampleTrack(r.path, 0.25)).length).toBe(0);
   });
 
   it('ändert eine Tiefe nie mehr, sobald sie fest ist, und springt beim Loslassen nicht', () => {
