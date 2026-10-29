@@ -5,7 +5,9 @@ Stufe 0 und Stufe 1 gebaut, Tor S1 bestanden (Florian, 27.10.2026); Stufe 2 ganz
 (Florian, 27.10.2026; ein paar Kleinigkeiten meldet er nach); Stufe 3 gebaut (Farbmenü, Verläufe, Füllstapel,
 Ebenenstapel, Luftperspektive, Stile, Looks, SVG), Tor S3 am Mac bestanden („Es scheint alles erstmal zu
 funktionieren“; Kleinigkeiten aus S2 und S3 sammelt Florian und geht sie später mit uns durch); weiter mit Stufe 4.
-Der Editor muss zuerst am Mac laufen, iPad und Tablet optimieren wir später (Florian, 27.10.2026).** Gebaut wird Stufe für
+Der Editor muss zuerst am Mac laufen, iPad und Tablet optimieren wir später (Florian, 27.10.2026). Stufe 5 (Earle-Schichten) steht auf dem Branch
+`zoneneditor-tor2`; an Tor S5 hat Florian die Werkzeuge freigegeben, die Testzone bleibt Vorschlag (29.10.2026).**
+Gebaut wird Stufe für
 Stufe mit Tor, auf dem Branch `zoneneditor`. Der große Plan (`docs/GROSSER-PLAN.md`)
 ruht seit heute auf Florians Wunsch; Etappe 2 steht nach Schritt 7, dem Freiraumfeld und der Freigabe der Ebenen-Probe,
 Tor 2b ist offen. Die Session von Etappe 2 hat die Pause per Nachricht bekommen (27.10.2026).
@@ -1229,6 +1231,18 @@ als große Flächen in harmonischem Grün (Gold, Wiese hell, Wiese, tief), drei 
 Punktsaum am Rand und ein Pünktchen-Verlauf ins Tiefe statt der S-Bänder. **Messung** (Mac, Metal, 1688 × 780, Zone
 `tor-s5` mit `&earle=messen`): wie gesichert 1,84 ms je Bild, ohne Earle-Schichten 0,91 ms. **Platzhalter:** Werte der
 Pünktchen-Verläufe und der ganze Nachschliff der Szene. **Nicht geprüft:** am Handy.
+**Tor S5: Werkzeuge freigegeben (Florian, 29.10.2026):** „Ich muss keine Fotos für Vergleiche machen. Es sieht gut
+aus. Deine Vergleichszone kommt nicht ran, aber die Werkzeuge sehen schon mal gut aus. Das passt.“ Die Werkzeuge der
+Stufe 5 sind damit angenommen; Standbilder vom Handy und ein Vergleichsblatt mit seinen Fotos entfallen. Die Testzone
+`tor-s5` erreicht Earle nicht und bleibt mit ihrem ganzen Nachschliff Vorschlag; den Look selbst entscheidet die
+Stilprobe (Etappe 4 im großen Plan, Abschnitt 8). **Regel 4 (B1):** Florian hat die Pünktchen als Shader gesehen und
+die Werkzeuge freigegeben, den Vergleich gemalt gegen Shader braucht er nicht; ob Regel 4 in Paket 0 damit neu gilt
+(Pünktchen und Textur als Schicht im Editor erlaubt), bestätigt er noch ausdrücklich. **Offen aus Stufe 5:** Papier und
+Gouache aus Florians Scans (bis dahin Platzhalter-Kacheln). **Nicht geprüft:** Pünktchen-Verläufe am Handy gemessen;
+Farbnebel, Funkeln und Punktpinsel am iPad mit dem Pencil; Punktkronen mit Bahn und Fahrt davor; Kantenwelle an
+spielbaren Kanten. Earle liegt weiter nur auf `zoneneditor-tor2` (jetzt auf `zoneneditor` 11454fb, Pinsel-Studie
+Paket 2), damit die Pinsel-Studie `zoneneditor` weiter per Fast-Forward nachziehen kann; wann Earle nach `zoneneditor`
+kommt, ist offen.
 
 **Stufe 6: Bilder, Schnittmasken, Säume, Austausch (M).** Bildschichten, Schnittmaske, Saum entlang einer Kante,
 Malvorlage mit Fingerabdruck und Größenangabe, Umriss aus Bild, Import gemalter Teile mit Passmarken, KTX2 beim
@@ -1314,7 +1328,7 @@ als Vorlagenwerkzeug für gemalte Teile.
 
 | Nr. | Frage | wann |
 |---|---|---|
-| B1 | Paket 0 Regel 4 neu: Pünktchen und Textur als Schicht im Editor erlaubt? Nach Vergleich gemalt gegen Shader (Florian will es als Shader sehen, 27.10.) | Tor S5 |
+| B1 | Paket 0 Regel 4 neu: Pünktchen und Textur als Schicht im Editor erlaubt? Nach Vergleich gemalt gegen Shader (Florian will es als Shader sehen, 27.10.) **An Tor S5 (29.10.):** Werkzeuge freigegeben, den Vergleich braucht er nicht („Ich muss keine Fotos für Vergleiche machen“); Regel 4 neu fassen wartet auf sein ausdrückliches Ja | Tor S5 |
 | B2 | ~~Abtauchen nur in grabbare Flächen, Fels bleibt fest?~~ **Teilweise beantwortet (27.10.):** „Fels ist fest“ gilt erst einmal nicht mehr, „grabbar“ wird gebaut; ob es daneben noch „fest“ braucht, zeigt der Test | Tor S4 |
 | B3 | ~~Portale automatisch oder nur von Hand?~~ **Beantwortet (27.10.):** dynamisch. Offen bleibt, wie Durchfahrten gemacht werden, ob sie sichtbar sind und ob der Pinsel dynamisch gräbt | Tor S7 |
 | B4 | Pinsel „Ebenen: Bodenhöhe“ als Grundlage für die Tiefe aus Ebenen? | Tor S4 |
