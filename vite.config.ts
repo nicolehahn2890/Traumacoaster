@@ -18,16 +18,17 @@ function upwards(name: string): string | null {
 
 /**
  * Strich-Rekorder (nur im Dev-Server): Das Spiel schickt jeden fertigen Strich (rohe Fingerpunkte, Lesart, Zoom,
- * Ergebnis) an /__strokes; sie landen zeilenweise in recordings/strokes.jsonl. So lassen sich echte Striche vom Handy
- * später nachspielen (npm run strokes:replay).
+ * Ergebnis) an /__strokes; läuft der Server mit TC_RECORD=1, landen sie zeilenweise in recordings/strokes.jsonl. So
+ * lassen sich echte Striche vom Handy später nachspielen (npm run strokes:replay).
  */
 function strokeRecorder(): Plugin {
   return {
     name: 'tc-stroke-recorder',
     apply: 'serve',
     configureServer(server) {
-      // TC_NO_RECORD=1: nichts aufzeichnen (automatische Tests, damit sie die echten Aufnahmen nicht verfälschen)
-      const record = !process.env.TC_NO_RECORD;
+      // nur mit TC_RECORD=1 aufzeichnen (Florian, 29.10.2026: „Hör mal mit dem Aufnehmen auf … ich nehme erst auf, wenn es
+      // so weit ist“); TC_NO_RECORD=1 schaltet weiterhin ab (automatische Tests, damit sie die echten Aufnahmen nicht verfälschen)
+      const record = process.env.TC_RECORD === '1' && !process.env.TC_NO_RECORD;
       // in einem Worktree unter .claude/worktrees landen die Striche in der Datei des Haupt-Checkouts, wo das Replay sie sucht
       const file = upwards('recordings/strokes.jsonl') ?? 'recordings/strokes.jsonl';
       server.middlewares.use('/__strokes', (req, res) => {

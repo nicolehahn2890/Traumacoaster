@@ -80,7 +80,7 @@ Im DEV-Modus zeigen rote Ringe die Schwachstellen der Bahn (zu eng, zu langsam, 
 
 Auf dem Handy zoomt das Zeichnen nicht weiter heraus als etwa 5 mm je Spur; Doppeltipp auf eine freie Stelle wechselt zur Übersicht und zurück.
 
-Strich-Rekorder (nur `npm run dev`): Jeder Strich landet mit Lesart, Zoom und Zeitstempeln in `recordings/strokes.jsonl` (nicht im Repo). `npm run strokes:replay` spielt alle aufgezeichneten Striche in allen vier Lesarten nach und fährt sie (`-- --last 5` nur die letzten fünf). `TC_NO_RECORD=1 npm run dev` zeichnet nichts auf.
+Strich-Rekorder (nur `npm run dev`, nur mit `TC_RECORD=1`, seit 29.10.2026): Jeder Strich landet mit Lesart, Zoom und Zeitstempeln in `recordings/strokes.jsonl` (nicht im Repo). `npm run strokes:replay` spielt alle aufgezeichneten Striche in allen vier Lesarten nach und fährt sie (`-- --last 5` nur die letzten fünf). Ohne `TC_RECORD=1` (oder mit `TC_NO_RECORD=1`) zeichnet der Server nichts auf.
 
 ## Zeichnen in einem Satz
 

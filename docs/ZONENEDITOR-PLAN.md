@@ -1120,6 +1120,15 @@ unangetastet, bis eine echte Zone zeigt, wie viel Lesung er braucht (offen: Bode
 der Pinsel flach liest, aber steil baut).
 Offen in Stufe P1: Mesh und Abtastung des festen Teils behalten (Renderer), Restkreuzungen in dichten
 Schleifenhaufen (strukturell, Stufe P2). Zonen ohne Ebenen zeichnen weiter mit dem bisherigen Pinsel.
+**Editor zuerst, Strich eingefroren, Aufnahme aus (Florian, 29.10.2026 abends):** „Leider hat die Strich-Session noch
+keine guten Resultate erzielt. Ich würde den Editor jetzt mit dem Strich, den wir haben, fertig bauen und dann noch mal
+versuchen, eine Lösung zu finden.“ Studie 17 kam auf seinen Wunsch noch herein (2a7f105); danach ist der Strich für die
+Editor-Zeit eingefroren, die Pinsel-Studie ist angehalten, und wie es mit dem Pinsel weitergeht (Strich 1, Strich 2 oder
+eine Lesart ohne Formregeln), entscheidet Florian später in einer eigenen Session, in einer echten, dicht gemalten Zone.
+Dazu: „Hör mal mit dem Aufnehmen auf. Ich kritzle wild, um extreme Formen zu erzeugen. Das Prüfen und Korrigieren dieser
+dauert ewig. Ich nehme erst auf, wenn es so weit ist. Das hat auch die Strich-Session versaut.“ Der Strich-Rekorder
+schreibt seitdem nur mit `TC_RECORD=1`; die bisherigen Aufnahmen (901 Striche bis 29.10.) sind Kritzeleien für extreme
+Formen und kein Maßstab für den Pinsel.
 **Noch offen aus Stufe 4:** die übrigen Spielobjekte auf Kanten (Schlange, Ziele, Stufen, Schalter, Coins, Baustellen;
 bis dahin der Klötzchen-Editor), Durchblick-Prüfung. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
 lang, die Schraffuren. **Nicht geprüft:** Szene 06 in Formen (Tor S4), Stroke-Replay mit dem Ebenen-Pinsel (der Replay
