@@ -30,6 +30,12 @@ function mixHex(a: string, b: string, t: number): string {
   return rgbToHex(x[0] + (y[0] - x[0]) * t, x[1] + (y[1] - x[1]) * t, x[2] + (y[2] - x[2]) * t);
 }
 
+/** Farbe heller oder dunkler (Kanäle mal k, sRGB) */
+function scaleHex(a: string, k: number): string {
+  const [r, g, b] = hexToRgb(a);
+  return rgbToHex(r * k, g * k, b * k);
+}
+
 /** Farbton (Grad) und Sättigung einer Farbe */
 function hueSat(hex: string): { h: number; s: number } {
   const [r, g, b] = hexToRgb(hex);
@@ -66,8 +72,10 @@ export interface EarleContext {
 /** Schichten einer Vorgabe über der Grundfarbe (von unten nach oben) */
 export function presetLayers(preset: EarlePreset, c: EarleContext): ZoneFill[] {
   const { box, base, light } = c;
-  const hi = mixHex(base, light.color, 0.32);
-  const lo = mixHex(base, light.shade, 0.38);
+  // hell: zur Lichtfarbe; tief: dieselbe Farbe dunkler und nur ein wenig zum Schatten (Earle hält die Farbe kräftig,
+  // eine Mischung mit dem blauen Schatten machte warme Flächen grau)
+  const hi = mixHex(base, light.color, 0.3);
+  const lo = mixHex(scaleHex(base, 0.78), light.shade, 0.12);
   const cx = (box.minX + box.maxX) / 2;
   // Breiten gehen mit der Größe der Fläche (kürzere Seite in Metern der Ebene), in Grenzen
   const size = Math.min((box.maxX - box.minX) * Math.abs(c.sx), (box.maxY - box.minY) * Math.abs(c.sy));
@@ -91,7 +99,9 @@ export function presetLayers(preset: EarlePreset, c: EarleContext): ZoneFill[] {
       ];
     case 'rock':
       return [
-        { type: 'gradient', edge: true, steps: 4, inner: 0.3, stops: [{ t: 0, color: hi, a: 1 }, { t: 1, color: lo, a: 1 }], ...edgeDepth(rel(0.25, 1, 6)), blend: 'normal', opacity: 1 },
+        // Ringe: hell an der Kante, nach innen durchscheinend auslaufend, damit die eigene Farbgebung der Fläche bleibt;
+        // das Dunkle bringt der Innenschatten
+        { type: 'gradient', edge: true, steps: 3, inner: 0.3, stops: [{ t: 0, color: hi, a: 0.9 }, { t: 1, color: hi, a: 0 }], ...edgeDepth(rel(0.25, 1, 6)), blend: 'normal', opacity: 1 },
         shade({ width: rel(0.15, 0.6, 2.4), opacity: 0.5 }),
         dots({ source: 'edge', reach: rel(0.08, 0.4, 1.4), size: 0.2, gap: 2.2, density: 0.5, tone: 0.45, seed: 3 }),
         grain({ tile: 'gouache', scale: 9, opacity: 0.3 }),
@@ -120,11 +130,13 @@ export function presetLayers(preset: EarlePreset, c: EarleContext): ZoneFill[] {
 
 /**
  * Vorgabe auf einen Anstrich legen (ändert paint.fills): vorhandene Earle-Schichten fallen weg; Bänder gehen an den
- * obersten eigenen Verlauf (er bekommt Stufen), sonst kommt der Verlauf der Vorgabe dazu. Was nicht mehr in den Stapel
- * passt, fällt von oben weg
+ * obersten eigenen Verlauf (er bekommt Stufen), sonst kommt der Verlauf der Vorgabe dazu. Ein Kantenverlauf der Vorgabe
+ * ist durchscheinend und kommt obendrauf; ein früher gesetzter Kantenverlauf der Vorgabe wird ersetzt. Was nicht mehr in
+ * den Stapel passt, fällt von oben weg
  */
 export function applyPreset(paint: Paint, preset: EarlePreset, c: EarleContext): void {
-  const own = (paint.fills ?? []).filter((f) => !isEarle(f));
+  // (ein durchscheinender Kantenverlauf mit Stufen stammt von einer früheren Vorgabe: er wird ersetzt)
+  const own = (paint.fills ?? []).filter((f) => !isEarle(f) && !(isGradient(f) && f.edge && f.steps && f.stops.every((st) => st.color === f.stops[0].color)));
   const layers = presetLayers(preset, c);
   const bands = layers[0] && isGradient(layers[0]) ? (layers[0] as GradientFill) : null;
   const rest = bands ? layers.slice(1) : layers;

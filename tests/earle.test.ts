@@ -228,6 +228,22 @@ describe('Knopf „Earle“', () => {
     expect(paint.fills!.length).toBeLessThanOrEqual(MAX_LAYERS - 1);
   });
 
+  it('Fels: die Ringe liegen durchscheinend über der eigenen Farbgebung und verdoppeln sich beim zweiten Druck nicht', () => {
+    const own: GradientFill = { type: 'gradient', stops: [{ t: 0, color: '#e8d4a8', a: 1 }, { t: 1, color: '#c08850', a: 1 }], x0: 0, y0: 3, x1: 0, y1: -3, blend: 'normal', opacity: 1 };
+    const paint = { fill: '#e8d4a8' as string | null, fills: [own] as ZoneFill[] };
+    applyPreset(paint, 'rock', ctx);
+    applyPreset(paint, 'rock', ctx);
+    const grads = paint.fills!.filter((f): f is GradientFill => f.type === 'gradient');
+    expect(grads).toHaveLength(2);
+    expect(grads[0]).toEqual(own);
+    expect(grads[1].edge).toBe(true);
+    expect(grads[1].stops.at(-1)!.a).toBe(0);
+    // die eigene Farbgebung bleibt sichtbar: nichts Deckendes darüber, der eigene Verlauf ist die unterste sichtbare Schicht
+    const shown = visibleLayers([{ type: 'color', color: '#e8d4a8', blend: 'normal', opacity: 1 }, ...paint.fills!]);
+    expect(shown[0]).toEqual(own);
+    expect(shown).toHaveLength(paint.fills!.length);
+  });
+
   it('jede Vorgabe passt in den Stapel; Automatisch wählt nach Material und Farbe', () => {
     for (const p of ['hill', 'rock', 'meadow', 'crown', 'water'] as const) expect(presetLayers(p, ctx).length).toBeLessThanOrEqual(MAX_LAYERS - 1);
     expect(autoPreset('solid', '#777777')).toBe('rock');

@@ -1127,8 +1127,10 @@ im Ebenen-Material behoben (Punkt in der Zelle, Zufall ohne Sinus, Muster je For
 schleppt den ganzen Schleifenrumpf mit); jetzt bekommt jede Schichtfolge ihren eigenen geraden Shader (ein Draw Call je
 Folge, Testszenen 6 bis 7), durchsichtige Flächen in Läufen gleicher Folge. Messung `scripts/earle-bildzeiten.mjs`
 (Mac M3 Pro, Metal, Spielblick 1688 × 780): Ebenen ohne Earle 1,0 bis 1,2 ms je Bild, mit Earle auf allen Flächen
-1,5 bis 1,9 ms; Gegenprobe gegen den allgemeinen Shader: kein Bildpunkt weicht um mehr als 1 ab. Kantenabstand beim
-Laden 30 bis 85 ms je Testszene, danach nur für geänderte Flächen. **Platzhalter:** alle Vorgaben und Zahlen der
+1,4 bis 1,9 ms; Gegenprobe gegen den allgemeinen Shader: kein Bildpunkt weicht um mehr als 1 ab. Kantenabstand beim
+Laden 30 bis 120 ms je Testszene, danach nur für geänderte Flächen. Die Vorgaben halten die eigene Farbgebung der Fläche
+(Bänder gehen an den eigenen Verlauf, die Felsringe liegen durchscheinend darüber). Vorher und nachher als Standbild in
+Handy-Auflösung: `docs/research/earle/2026-10-29-earle-paket1.jpg`. **Platzhalter:** alle Vorgaben und Zahlen der
 Presets, die Regel für „Automatisch“, die Papier- und Gouache-Kacheln (erzeugt, bis Florian scannt), die Licht- und
 Schattenfarbe. **Nicht geprüft:** Bildrate am echten Handy (Messung am Mac), Pinsel und Fahrt mit Earle-Flächen. **Offen
 aus Stufe 5:** Sonne als Griff im Bild, Kantenwelle, Farbnebel, Funkeln, Punktkronen mit Wind, Punktpinsel, Kosten je
