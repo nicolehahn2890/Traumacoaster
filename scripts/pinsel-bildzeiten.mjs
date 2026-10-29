@@ -4,7 +4,10 @@
  * Bild die Zeit zwischen zwei requestAnimationFrame-Aufrufen sowie die Dauer von previewBrush, advanceBrush/drawInk und
  * view.setTrack. Nach dem Loslassen laufen die Probefahrten; auch dort werden die Bildzeiten gezählt.
  *
- *   node scripts/pinsel-bildzeiten.mjs <strokes.jsonl> --idx 3,20,42 [--url http://localhost:5186/] [--strich 2] [--gl swiftshader]
+ *   node scripts/pinsel-bildzeiten.mjs <strokes.jsonl> --idx 3,20,42 [--url http://localhost:5186/] [--strich 2] [--gl swiftshader] [--viewport 852x393@3]
+ *
+ * --viewport misst am Handy-Bild statt am aufgezeichneten Bildschirm (Breite x Höhe in CSS-Pixeln @ Pixeldichte; Tor P1:
+ * 60 fps bei 1000 m Linie), die Kamera behält den Zoom der Aufnahme.
  *
  * --idx zählt die Striche von heute (28.10.) in Zonen, beginnend bei 0 (wie scripts/pinsel-messung.ts --heute).
  */
@@ -16,7 +19,7 @@ const opt = (f) => {
   const i = args.indexOf(f);
   return i >= 0 ? args[i + 1] : null;
 };
-const file = args.find((a, i) => !a.startsWith('--') && !['--idx', '--url', '--strich', '--gl', '--shot', '--extra', '--shotAt'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
+const file = args.find((a, i) => !a.startsWith('--') && !['--idx', '--url', '--strich', '--gl', '--shot', '--extra', '--shotAt', '--viewport'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
 const URL = opt('--url') ?? process.env.TC_URL ?? 'http://localhost:5186/';
 const STRICH = opt('--strich');
 const GL = opt('--gl') ?? 'metal';
@@ -24,6 +27,12 @@ const GL = opt('--gl') ?? 'metal';
 const EXTRA = opt('--extra') ?? '';
 const SHOT_AT = Number(opt('--shotAt') ?? 0);
 const IDX = (opt('--idx') ?? '0').split(',').map(Number);
+const VIEWPORT = (() => {
+  const v = opt('--viewport');
+  if (!v) return null;
+  const m = /^(\d+)x(\d+)(?:@([\d.]+))?$/.exec(v);
+  return m ? { width: Number(m[1]), height: Number(m[2]), dpr: m[3] ? Number(m[3]) : 3 } : null;
+})();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const all = readFileSync(file, 'utf8')
@@ -48,7 +57,7 @@ for (const idx of IDX) {
     continue;
   }
   const zone = rec.zone === 'test-boegen' && rec.field === 'f2' ? 'test-boegen-f2' : rec.zone;
-  const ctx = await browser.newContext({ viewport: { width: rec.screen[0], height: rec.screen[1] }, deviceScaleFactor: rec.dpr ?? 2 });
+  const ctx = await browser.newContext({ viewport: VIEWPORT ? { width: VIEWPORT.width, height: VIEWPORT.height } : { width: rec.screen[0], height: rec.screen[1] }, deviceScaleFactor: VIEWPORT ? VIEWPORT.dpr : (rec.dpr ?? 2) });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.error('PAGEERROR', e.message));
   const url = `${URL}?zone=${zone}&editor=2&scroll=0&fov=${rec.persp ?? 18}${STRICH ? `&strich=${STRICH}` : ''}${EXTRA ? `&${EXTRA}` : ''}`;
@@ -153,7 +162,8 @@ for (const idx of IDX) {
   const fr = M.frames;
   const fps = fr.length ? 1000 / (fr.reduce((a, b) => a + b, 0) / fr.length) : NaN;
   const slow = fr.filter((d) => d > 20).length;
-  console.log(`#${idx} ${rec.at.slice(11, 19)} ${zone} ${rec.screen.join('×')}@${rec.dpr ?? 2} zoom ${rec.zoom} fov ${rec.persp ?? 18} · GPU: ${gpu}`);
+  const vp = VIEWPORT ? `${VIEWPORT.width}×${VIEWPORT.height}@${VIEWPORT.dpr} (Handy-Bild; aufgezeichnet ${rec.screen.join('×')}@${rec.dpr ?? 2})` : `${rec.screen.join('×')}@${rec.dpr ?? 2}`;
+  console.log(`#${idx} ${rec.at.slice(11, 19)} ${zone} ${vp} zoom ${rec.zoom} fov ${rec.persp ?? 18} · GPU: ${gpu}`);
   const idle = M.idle ?? [];
   console.log(`   Leerlauf ohne Strich: ${idle.length} Bilder, Bildzeit Median ${f1(q(idle, 0.5))} ms, 90 % ${f1(q(idle, 0.9))} (Ø ${f1(idle.length ? 1000 / (idle.reduce((a, b) => a + b, 0) / idle.length) : NaN)} fps)`);
   console.log(`   Strich ${f1(res.tStroke / 1000)} s, ${fr.length} Bilder: Ø ${f1(fps)} fps, Bildzeit Median ${f1(q(fr, 0.5))} ms, 90 % ${f1(q(fr, 0.9))}, max ${f1(Math.max(...fr))}; Bilder über 20 ms: ${slow} (${Math.round((100 * slow) / Math.max(1, fr.length))} %)`);

@@ -1088,9 +1088,11 @@ nachmittags (Studie Abschnitt 13): Kreuzungen auf gleicher Höhe auf Florians St
 &turn=` zum Ausprobieren), Bearbeiten über Knoten und Griffe baut die Bahn einmal je Bild leicht neu statt je
 Zeigerereignis. Kantenfelder je Ebene (Studie 13h, 29.10. abends): ein Rasterindex je Ebene und Flächenliste in
 `planeStack.ts`, beim ersten Zugriff nach jedem Neubau des Stapels gebaut (30 bis 80 ms), macht Freiraum, Landung und
-Bodenhöhe 60- bis 100-mal billiger bei identischen Ergebnissen; die Vorschau von Strich 2 liegt damit um 1 ms. Offen in
-Stufe P1: Handy-Messung bei 1000 m, Restkreuzungen in dichten Schleifenhaufen (strukturell, Stufe P2). Zonen ohne Ebenen
-zeichnen weiter mit dem bisherigen Pinsel.
+Bodenhöhe 60- bis 100-mal billiger bei identischen Ergebnissen; die Vorschau von Strich 2 liegt damit um 1 ms. Handy-
+Messung (Studie 13i, headless am Handy-Bild): 54 bis 60 fps bei 862 bis 1396 m Linie, 0 bis 6 % Bilder über 20 ms; der
+Rest kommt vom Neubau des ganzen Schienen-Meshs je Vorschau (`setTrack`, Risiko 4), nicht vom Strich. Offen in Stufe P1:
+Mesh und Abtastung des festen Teils behalten (Renderer), Restkreuzungen in dichten Schleifenhaufen (strukturell, Stufe
+P2). Zonen ohne Ebenen zeichnen weiter mit dem bisherigen Pinsel.
 **Noch offen aus Stufe 4:** die übrigen Spielobjekte auf Kanten (Schlange, Ziele, Stufen, Schalter, Coins, Baustellen;
 bis dahin der Klötzchen-Editor), Durchblick-Prüfung. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
 lang, die Schraffuren. **Nicht geprüft:** Szene 06 in Formen (Tor S4), Stroke-Replay mit dem Ebenen-Pinsel (der Replay

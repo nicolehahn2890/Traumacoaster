@@ -82,6 +82,12 @@ nach hinten in Metern (eine Spur = 8,4 m). **Loslassen** = der Finger geht hoch,
    0,03 ms, mit identischen Ergebnissen (Test gegen die direkte Rechnung auf Fixturen und allen Testzonen). Die
    Vorschau von Strich 2 liegt damit auf den 31 Schleifen-Strichen bei 0,9 ms im Median (90 %: 2,8 ms), bei
    identischen Knoten, Knicken und Fahrten.
+14. Achter Nachtrag (Abschnitt 13i): Handy-Messung für Tor P1, headless am Handy-Bild (852 × 393 @3, Metal auf dem Mac,
+   also obere Schranke). Vier Striche mit 862 bis 1396 m: Strich 2 54 bis 60 fps im Schnitt, 0 bis 6 % Bilder über
+   20 ms; der bisherige Pinsel 40 bis 50 fps mit 10 bis 15 % und Einfrieren nach dem Loslassen. Die Vorschau wächst mit
+   der Bahnlänge (24 ms bei 1000 m), nicht durch den Strich (1 ms), sondern weil `setTrack` und die Abtastung je
+   Vorschau die ganze Bahn neu bauen (Risiko 4): Für glatte 60 fps bei 1000 m muss der Renderer den festen Teil
+   behalten. Nicht gebaut, Entscheidung für Florian, abzustimmen mit der Editor-Session.
 
 ## 2. Befund am heutigen Pinsel
 
@@ -942,3 +948,36 @@ nach 5bca0a7, Fast-Forward nach `zoneneditor` möglich.
 (`indexPlaneStack` in `level.ts`, `requestIdleCallback` mit 500 ms Frist, sonst nach 50 ms; ein inzwischen neu gebauter
 Stapel baut seinen eigenen), damit auch der erste Strich nach einer Ebenenänderung nicht wartet. Die Editor-Session hat
 aa5810a geholt und die Bedingungen im Diff bestätigt. Geprüft: 466 Tests, Build, Szenarien 11 und 24–28 (43 Prüfungen).
+
+### 13i. Handy-Messung für Tor P1 (Florians Auftrag: „60 fps bei 1000 m Linie mit Strich 2, headless am Handy-Bild“)
+
+**Aufbau:** `scripts/pinsel-bildzeiten.mjs` mit neuer Option `--viewport 852x393@3` (iPhone quer, dreifache
+Pixeldichte; die Kamera behält den Zoom der Aufnahme), headless Chromium mit Metal auf dem M3 Pro, also eine Schätzung
+des Handys, keine Messung am Gerät. Vier deiner längsten Striche vom 28.10. werden als Zeigerereignisse im Takt der
+Aufnahme nachgezeichnet, mit Strich 2 (Vorgabe) und mit dem bisherigen Pinsel (`&strich=1`); gezählt werden die Bilder
+zwischen zwei `requestAnimationFrame`-Aufrufen während des Strichs und die Dauer von `previewBrush`, davon `setTrack`.
+
+| Strich | gemalt | Strich 2: Ø fps / Bilder über 20 ms | Vorschau Median / 90 % (davon `setTrack`) | bisheriger Pinsel: Ø fps / über 20 ms | Vorschau Median / 90 % |
+|---|---|---|---|---|---|
+| #65 `test-huegel` 18:48, zoom 14,8 | 1396 m | 56,4 fps / 6 % | 17,0 / 30,0 ms (11,8) | 45,1 fps / 15 % | 32,5 / 86,3 ms |
+| #86 `test-huegel` 21:39 | 1257 m | 53,8 fps / 4 % | 8,8 / 23,5 ms (5,6) | 46,1 fps / 10 % | 19,7 / 91,4 ms |
+| #53 `test-huegel` 18:42 | 1265 m | 53,5 fps / 3 % | 11,4 / 24,7 ms (8,3) | 40,4 fps / 12 % | 67,6 / 135,1 ms |
+| #41 `test-boegen-f2` 14:16, zoom 7 | 862 m | 60,0 fps / 0 % | 8,5 / 14,3 ms (6,2) | 49,8 fps / 15 % | 28,1 / 50,6 ms |
+
+Vorschau-Dauer über der Linienlänge (Strich #65, Median je 100 m): Strich 2 3,6 ms bei 0–100 m, 10,3 ms bei 500 m, 24,1 ms
+bei 1000 m, 34,4 ms bei 1300 m; bisheriger Pinsel 4,4 → 33 → 96 → 175 ms. Nach dem Loslassen: Strich 2 keine
+Probefahrten, kein Stocken; der bisherige Pinsel 0,1 bis 0,8 s Probefahrten mit Bildern bis 1083 ms.
+
+**Lesart, ehrlich:** Tor P1 ist in der Bildrate fast, aber nicht ganz erreicht: 54 bis 56 fps im Schnitt bei 1250 bis
+1400 m, bei 862 m glatte 60; 3 bis 6 % der Bilder sind länger als 20 ms, ein Bild je Vorschau, wenn die Vorschau über
+die Bildzeit wächst. Der Löser von Strich 2 ist daran mit rund 1 ms unbeteiligt (Abschnitt 13g/13h); die Vorschau wächst
+mit der Bahnlänge, weil `setTrack` je Vorschau das Schienen-Mesh der ganzen Bahn neu baut und `sampleTrack` und
+`trackStats` die ganze Bahn abtasten (Risiko 4 aus Abschnitt 7: „Das Mesh wächst noch nicht inkrementell“). Bei 1000 m
+sind das rund 20 der 24 ms. Der nächste Schritt für glatte 60 fps bei 1000 m wäre also nicht am Strich, sondern am
+Renderer: den festen Teil der Bahn (Proben, Kennzahlen, Mesh) behalten und je Vorschau nur den Teil ab dem letzten
+festen Segment neu bauen. Das ist eine Änderung an `view.setTrack` und `sampleTrack`, abzustimmen mit der
+Editor-Session, nicht gebaut. Der bisherige Pinsel liegt bei 40 bis 50 fps mit 10 bis 15 % langsamen Bildern und friert
+nach dem Loslassen für die Probefahrten ein.
+
+Nicht geprüft: das echte Handy (Metal auf dem M3 Pro ist schneller als ein iPhone; die Zahlen sind eine obere Schranke
+der Bildrate), Hochformat, Striche über 1400 m.
