@@ -135,6 +135,11 @@ export interface BrushOptions {
    * Scheibenkanten als Boden. Lange Wellen werden Tiefe, kurze und Hügel Höhe; Landungen und Höhlen (depthAt) gehen vor
    */
   groundAt?: (p: StagePoint) => number;
+  /**
+   * Kettenlinie als Deckel (Strich 2, Paket 3): Welthöhe der Kettenzugstärke über der Station; die Bahn liegt nirgends
+   * höher, was im Bild darüber liegt, wird Tiefe
+   */
+  chainTop?: number;
 }
 
 /** Ebenen-Test: Landung eines Strichpunkts auf einer Scheibe (Tiefe in Metern, Kennung der Scheibe, Höhe über ihrer Kante) */

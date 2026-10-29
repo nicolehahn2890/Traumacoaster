@@ -29,7 +29,7 @@ import { RIDE_TUNING, SKIN_PHYSICS, TrainSim, simOptionsForLevel } from '../src/
 import { MAX_BANK, railBanksFor, sampleTrack, trackStats, type TrackPath, type TrackSamples } from '../src/track/model';
 import type { Vec3 } from '../src/core/math3';
 import { RubberBrush } from '../src/track/brush';
-import { BrushRefiner, findLineCrossings, joinLines, lineLength, pathFromPoints, planBrushTrack, prepareBrushLine, previewBrushTrack, trackLineWithDepth, type BrushField, type BrushOptions, type BrushPreview } from '../src/track/brushTrack';
+import { BrushRefiner, findElements, findLineCrossings, joinLines, lineLength, pathFromPoints, planBrushTrack, prepareBrushLine, previewBrushTrack, trackLineWithDepth, type BrushField, type BrushOptions, type BrushPreview } from '../src/track/brushTrack';
 import { LANE_DEPTH, rayToWorld, setPerspective, setView, toView, viewDistance, type StagePoint } from '../src/track/stage';
 import { parseZone, type ZoneFile } from '../src/zone/types';
 import { cachedFreeLanes } from '../src/zone/field';
@@ -38,7 +38,8 @@ import { trackFrames } from '../src/world/trackMesh';
 import { buildTrack } from '../src/world/trackBuilder';
 import { planWorldSupports } from '../src/world/supports';
 import { trackTypeForSkin } from '../src/world/trackTypes';
-import { FIT_TUNING, FIX_BEHIND, FREEZE, LOOK_TUNING, Strich2, type Strich2Preview } from '../src/track/strich2';
+import { FIT_TUNING, FIX_BEHIND, FREEZE, LOOK_TUNING, LOOP_TUNING, Strich2, type Strich2Preview } from '../src/track/strich2';
+import { resolveAbilities } from '../src/zone/abilities';
 import { findCrossings } from '../src/track/crossings';
 
 interface Rec {
@@ -63,7 +64,7 @@ const opt = (f: string): string | null => {
   const i = args.indexOf(f);
   return i >= 0 ? args[i + 1] : null;
 };
-const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest', '--vorlauf', '--tag', '--tol', '--even', '--span', '--turn', '--freezemax', '--lookstart', '--fahrt', '--antrieb'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
+const file = args.find((a, i) => !a.startsWith('--') && !['--last', '--json', '--strich', '--nur', '--debug', '--skip', '--fest', '--vorlauf', '--tag', '--tol', '--even', '--span', '--turn', '--freezemax', '--lookstart', '--fahrt', '--antrieb', '--loopaspect', '--loopr', '--schleifen'].includes(args[i - 1])) ?? 'recordings/strokes.jsonl';
 const LAST = Number(opt('--last') ?? 0);
 /** so viele der jüngsten Striche weglassen (ein älterer Satz bleibt vergleichbar, wenn neue dazukamen) */
 const SKIP = Number(opt('--skip') ?? 0);
@@ -86,6 +87,11 @@ if (opt('--lookstart') !== null) LOOK_TUNING.lookStart = Number(opt('--lookstart
 // Fahrregeln (Paket 2): --fahrt strict|drive (Vorgabe wie im Spiel: drive), --antrieb Mindesttempo des Antriebs in m/s
 if (opt('--fahrt') !== null) RIDE_TUNING.rules = opt('--fahrt') === 'strict' ? 'strict' : 'drive';
 if (opt('--antrieb') !== null) RIDE_TUNING.driveSpeed = Number(opt('--antrieb'));
+// Schleifen (Paket 3): --loopaspect Höhe/Breite ab der eine Schleife ein Looping ist, --loopr Mindestradius; --ohnekette ohne Kettenlinie als Deckel
+if (opt('--schleifen') !== null) LOOP_TUNING.on = opt('--schleifen') !== '0';
+if (opt('--loopaspect') !== null) LOOP_TUNING.aspect = Number(opt('--loopaspect'));
+if (opt('--loopr') !== null) LOOP_TUNING.minR = Number(opt('--loopr'));
+const OHNE_KETTE = flag('--ohnekette');
 /** wie in der Level-Szene: Band 22 px, Vorschau höchstens alle 50 ms, sonst nach dem 1,5-Fachen ihrer Dauer */
 const BAND_PX = 22;
 const PREVIEW_MIN_S = 0.05;
@@ -246,6 +252,16 @@ const diffCounters = (a: Counters, b: Counters): Counters => ({
 const snap = (c: Counters): Counters => JSON.parse(JSON.stringify(c));
 
 /** Pinsel-Optionen wie `LevelScene.brushOptions` in einer Ebenen-Zone („Ebenen: Bodenhöhe“) bzw. im Level (Bildhöhe) */
+/** Kettenlinie als Deckel (Paket 3): Höhe der Station des Felds plus Kettenzugstärke der aufgelösten Fähigkeiten; undefined ohne Kette */
+function chainTopOf(rec: Rec, z: ReturnType<typeof loadZone>): number | undefined {
+  if (!z || OHNE_KETTE) return undefined;
+  const zone = z.zone;
+  const fld = zone.fields.find((f) => f.id === rec.field) ?? null;
+  const ab = resolveAbilities(zone, fld);
+  const st = (fld && zone.stations.find((s) => s.x >= fld.x0 && s.x <= fld.x1 && s.y >= fld.y0 && s.y <= fld.y1)) ?? zone.stations[0];
+  return ab.chain && st ? st.y + ab.chain : undefined;
+}
+
 function brushOptionsFor(rec: Rec, z: ReturnType<typeof loadZone>, terrain: Terrain, holdZ: number, counters: Counters): BrushOptions {
   const closeSnap = Math.max(8, 60 / rec.zoom);
   const tolerance = Math.max(0.4, 8 / rec.zoom);
@@ -266,6 +282,7 @@ function brushOptionsFor(rec: Rec, z: ReturnType<typeof loadZone>, terrain: Terr
     depthAt: timed((p: StagePoint) => planeLanding(stack, p), counters.depthAt),
     zMax: planeDeepestDock(stack),
     groundAt: timed((p: StagePoint) => planeGroundDepth(stack, p), counters.groundAt),
+    chainTop: chainTopOf(rec, z),
   };
   return base;
 }
@@ -350,8 +367,25 @@ interface StrokeResult {
     rideOk: boolean;
     /** Zahlen der Fahrt (Paket 2): Inversionen, Querkraft, Antrieb, Schräglage am Anschlag */
     rideStats: RideNumbers;
-    /** Selbstkreuzungen des Strichs im Bild (gezeichnete Schleifen, grob) */
+    /** Selbstkreuzungen des Strichs im Bild (grob) */
     loopsDrawn: number;
+    /** Strich 2: erkannte Loopings (davon aufgeweitet), Bodenschleifen, Punkte über der Kettenlinie; Kettenlinie und höchster Bahnpunkt (Welt) */
+    s2Loops: number;
+    s2LoopsWidened: number;
+    s2LoopsFlat: number;
+    s2Capped: number;
+    chainTop: number;
+    maxHeightM: number;
+    /** gezeichnete Schleifen nach findElements: Loopings (hoch, nach oben) und Bodenschleifen; Radius-Schätzung je Looping (Bühnen-Meter) */
+    loopsV: number;
+    loopsFlat: number;
+    loopRadii: number[];
+    /** Inversionen der Fahrt nach Lage: im Looping, in einer Bodenschleife, an einer Kehre (Umkehr in x), sonst; je sonst/Kehre: Höhen- und Tiefenspanne ±15 m */
+    invInLoop: number;
+    invInFlat: number;
+    invHairpin: number;
+    invOther: number;
+    invShapes: Array<{ k: number; kind: string; dy: number; dz: number }>;
     crossings?: Array<{ s1: number; s2: number; along: number; dy: number; zTrack: number; z1Line: number; z2Line: number; dzLine: number; near1: boolean | null; near2: boolean | null }>;
     accepted: string[];
   } | null;
@@ -486,6 +520,8 @@ interface RideNumbers {
   timeS: number;
   fail: string | null;
   failAtM: number;
+  /** Stellen der Inversionen (Bogenlänge und Weltpunkt des ersten Wagens) */
+  invAt: Array<{ s: number; x: number; y: number; z: number }>;
 }
 
 function ride(path: TrackPath, level: LevelDef, terrain: Terrain, skin: string, field: PlaneField | null, slices: boolean): { ok: boolean; text: string; stats: RideNumbers } {
@@ -496,9 +532,14 @@ function ride(path: TrackPath, level: LevelDef, terrain: Terrain, skin: string, 
   let capSteps = 0;
   let latSteps = 0;
   let driveFirst = -1;
+  const invAt: Array<{ s: number; x: number; y: number; z: number }> = [];
   // bis 400 s Spielzeit: mit Antrieb kriecht ein langer Strich notfalls mit 4 m/s durch
   for (let i = 0; i < 60 * 400 && !sim.finished; i++) {
     sim.step(1 / 60);
+    if (sim.stats.inversions > invAt.length) {
+      const c = sim.cars[0];
+      invAt.push({ s: sim.s, x: c.x, y: c.y, z: c.z });
+    }
     if (sim.phase === 'coast') {
       steps++;
       if (Math.abs(sim.cars[0].bank) >= MAX_BANK - 0.02) capSteps++;
@@ -513,7 +554,7 @@ function ride(path: TrackPath, level: LevelDef, terrain: Terrain, skin: string, 
   const arrived = sim.phase === 'done' || sim.failReason === 'openEnd';
   const stats: RideNumbers = {
     inversions: sim.stats.inversions, maxLatG: sim.stats.maxLatG, kmh, driveM: sim.stats.driveM, driveFirstM: driveFirst,
-    bankCap: steps ? capSteps / steps : 0, lat15: steps ? latSteps / steps : 0, timeS: sim.t, fail: arrived ? null : sim.failReason ?? 'Zeit um', failAtM: at,
+    bankCap: steps ? capSteps / steps : 0, lat15: steps ? latSteps / steps : 0, timeS: sim.t, fail: arrived ? null : sim.failReason ?? 'Zeit um', failAtM: at, invAt,
   };
   const drive = sim.stats.driveM > 0 ? `, Antrieb ${Math.round(sim.stats.driveM)} m ab ${Math.round(driveFirst)} m` : '';
   if (arrived) return { ok: true, text: `${sim.phase === 'done' ? 'geschafft' : `Ende erreicht bei ${at} m`}, ${kmh} km/h, ${lat} g quer, ${sim.stats.inversions} kopfüber${drive}`, stats };
@@ -773,10 +814,12 @@ function replay(rec: Rec, idx: number): StrokeResult {
   let best: TrackPath;
   let bestPts: Vec3[];
   let bestZ: Float64Array;
+  let s2Line: StagePoint[] | null = null;
   if (s2) {
     const r = s2.finish(drawn);
     planMs = performance.now() - t0;
     if (!r || r.path.nodes.length < 2) return result;
+    s2Line = r.line;
     planPts = r.pts;
     planZ = r.z;
     planPath = r.path;
@@ -820,6 +863,34 @@ function replay(rec: Rec, idx: number): StrokeResult {
   const jumpBest = pvFin ? jumpOf(pvFin, { pts: bestPts, z: bestZ, path: best }, cam, rec.zoom, rec.screen) : empty;
   const shape = shapeStats(best, bestSamples);
   const r = ride(best, level, terrain, skin, z?.field ?? null, !!z);
+  // gezeichnete Schleifen (Linie von Strich 2, sonst die Pinsellinie) und Lage der Inversionen
+  const loopLine = s2Line ?? line;
+  const loopPts = s2Line ? bestPts : null;
+  const els = findElements(loopLine, findLineCrossings(loopLine, !!best.closed));
+  const loopRadii = els.loops.filter((l) => l.vertical).map((l) => {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (let k = l.i; k <= l.j && k < loopLine.length; k++) { x0 = Math.min(x0, loopLine[k].X); x1 = Math.max(x1, loopLine[k].X); y0 = Math.min(y0, loopLine[k].Y); y1 = Math.max(y1, loopLine[k].Y); }
+    return (x1 - x0 + (y1 - y0)) / 4;
+  });
+  let invInLoop = 0, invInFlat = 0, invHairpin = 0, invOther = 0;
+  const invShapes: Array<{ k: number; kind: string; dy: number; dz: number }> = [];
+  if (loopPts && loopPts.length === loopLine.length) {
+    for (const inv of r.stats.invAt) {
+      let k = 0, bd = Infinity;
+      for (let m = 0; m < loopPts.length; m++) { const d = Math.hypot(loopPts[m].x - inv.x, loopPts[m].y - inv.y, loopPts[m].z - inv.z); if (d < bd) { bd = d; k = m; } }
+      const inV = els.loops.some((l) => l.vertical && k >= l.i - 4 && k <= l.j + 4);
+      const inF = !inV && els.loops.some((l) => !l.vertical && k >= l.i - 4 && k <= l.j + 4);
+      let dy = 0, dz = 0, kind = 'sonst';
+      if (!inV && !inF) {
+        const a = Math.max(0, k - 15), b = Math.min(loopLine.length - 1, k + 15);
+        let y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity, pos = false, neg = false;
+        for (let m = a; m <= b; m++) { y0 = Math.min(y0, loopPts[m].y); y1 = Math.max(y1, loopPts[m].y); z0 = Math.min(z0, loopPts[m].z); z1 = Math.max(z1, loopPts[m].z); if (m > a) { const dx = loopLine[m].X - loopLine[m - 1].X; if (dx > 0.3) pos = true; if (dx < -0.3) neg = true; } }
+        dy = y1 - y0; dz = z1 - z0; kind = pos && neg ? 'kehre' : 'sonst';
+        invShapes.push({ k, kind, dy: Math.round(dy * 10) / 10, dz: Math.round(dz * 10) / 10 });
+      }
+      if (inV) invInLoop++; else if (inF) invInFlat++; else if (kind === 'kehre') invHairpin++; else invOther++;
+    }
+  }
   result.release = {
     planMs,
     planCalls,
@@ -833,6 +904,12 @@ function replay(rec: Rec, idx: number): StrokeResult {
     nodes: best.nodes.length,
     nodesGlobal: pathFromPoints(bestPts, !!best.closed).nodes.length,
     nearPts: s2 ? ((s2 as unknown as { pts: Array<{ near: boolean }> }).pts.filter((q) => q.near).length) : NaN,
+    s2Loops: s2?.stats.loops ?? NaN,
+    s2LoopsWidened: s2?.stats.loopsWidened ?? NaN,
+    s2LoopsFlat: s2?.stats.loopsFlat ?? NaN,
+    s2Capped: s2?.stats.capped ?? NaN,
+    chainTop: opts.chainTop ?? NaN,
+    maxHeightM: bestPts.reduce((m, p) => Math.max(m, p.y), -Infinity),
     lengthM: bestSamples.length,
     closed: !!best.closed,
     jumpPlan,
@@ -842,6 +919,10 @@ function replay(rec: Rec, idx: number): StrokeResult {
     rideOk: r.ok,
     rideStats: r.stats,
     loopsDrawn: findLineCrossings(line, !!best.closed).length,
+    loopsV: els.loops.filter((l) => l.vertical).length,
+    loopsFlat: els.loops.filter((l) => !l.vertical).length,
+    loopRadii,
+    invInLoop, invInFlat, invHairpin, invOther, invShapes,
     accepted,
     // Kreuzungen auf gleicher Höhe (wie die Fahrt sie zählt): Zahl und je Stelle die Bogenlängen, der Abstand auf der
     // Bahn (klein = Schleife des Strichs selbst) und der Höhenunterschied
@@ -936,6 +1017,10 @@ if (rels.length) {
   console.log(`Bahn: Knicke je Strich Median ${q(rels.map((r) => r.knicke), 0.5)} (Summe ${rels.reduce((a, r) => a + r.knicke, 0)}), Rollrate 90 % Median ${f1(q(rels.map((r) => r.rollRate), 0.5))} °/m, Rollen je 100 m Median ${Math.round(q(rels.map((r) => r.rollPer100), 0.5))}°, Tiefenspanne Median ${f1(q(rels.map((r) => r.depthSpan), 0.5))} m, Tiefenumkehr je Strich Median ${q(rels.map((r) => r.depthFlips), 0.5)}; Fahrt geschafft ${rels.filter((r) => r.rideOk).length} von ${rels.length}; Stützen ${rels.reduce((a, r) => a + r.supports, 0)}, davon schwebend ${rels.reduce((a, r) => a + r.floating, 0)}`);
   const rs = rels.map((r) => r.rideStats);
   console.log(`Fahrt (${RIDE_TUNING.rules}, Antrieb ${RIDE_TUNING.driveSpeed} m/s): geschafft ${rels.filter((r) => r.rideOk).length} von ${rels.length}; Antrieb-Meter je Strich Median ${Math.round(q(rs.map((x) => x.driveM), 0.5))}, max ${Math.round(mx(rs.map((x) => x.driveM)))}, Striche mit Antrieb ${rs.filter((x) => x.driveM > 0).length}; kopfüber Summe ${rs.reduce((a, x) => a + x.inversions, 0)} bei gezeichneten Schleifen ${rels.reduce((a, r) => a + r.loopsDrawn, 0)}; Querkraft max Median ${f1(q(rs.map((x) => x.maxLatG), 0.5))} g, Zeitanteil über 1,5 g Median ${Math.round(100 * q(rs.map((x) => x.lat15), 0.5))} %, Schräglage am Anschlag Median ${Math.round(100 * q(rs.map((x) => x.bankCap), 0.5))} %; Fahrzeit Median ${Math.round(q(rs.map((x) => x.timeS), 0.5))} s`);
+  const radii = rels.flatMap((r) => r.loopRadii);
+  console.log(`Schleifen gezeichnet: Loopings ${rels.reduce((a, r) => a + r.loopsV, 0)} (Radius Median ${f1(q(radii, 0.5))} m, 10 % ${f1(q(radii, 0.1))} m, unter 4 m: ${radii.filter((v) => v < 4).length}), Bodenschleifen ${rels.reduce((a, r) => a + r.loopsFlat, 0)}; kopfüber nach Lage: im Looping ${rels.reduce((a, r) => a + r.invInLoop, 0)}, in Bodenschleife ${rels.reduce((a, r) => a + r.invInFlat, 0)}, an Kehre ${rels.reduce((a, r) => a + r.invHairpin, 0)}, sonst ${rels.reduce((a, r) => a + r.invOther, 0)}`);
+  const withChain = rels.filter((r) => Number.isFinite(r.chainTop));
+  console.log(`Strich 2 Schleifen: Loopings ${rels.reduce((a, r) => a + (r.s2Loops || 0), 0)} (aufgeweitet ${rels.reduce((a, r) => a + (r.s2LoopsWidened || 0), 0)}), Bodenschleifen ${rels.reduce((a, r) => a + (r.s2LoopsFlat || 0), 0)}; Kettenlinie: ${withChain.length} Striche mit Kette, Punkte darüber (nicht zu halten) Summe ${withChain.reduce((a, r) => a + (r.s2Capped || 0), 0)}, Striche über der Linie ${withChain.filter((r) => r.maxHeightM > r.chainTop + 0.6).length}, höchster Punkt über der Linie max ${f1(mx(withChain.map((r) => r.maxHeightM - r.chainTop)))} m`);
 }
 if (JSON_OUT) {
   writeFileSync(JSON_OUT, JSON.stringify(results.map((r) => ({ ...r, previews: r.previews.map((p) => ({ ...p, devAll: undefined, devTouched: undefined, devFree: undefined, devTipFar: undefined, moveZ: undefined, movePx: undefined, dev50: q(p.devAll, 0.5), dev90: q(p.devAll, 0.9), devMax: mx(p.devAll), move90: q(p.movePx, 0.9), moveMax: mx(p.movePx), tailZ: undefined, tail90: q(p.tailZ, 0.9), tailMax: mx(p.tailZ) })) })), null, 1));

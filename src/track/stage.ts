@@ -216,6 +216,22 @@ export function rayToWorld(p: StagePoint, z: number): { x: number; y: number } {
   return toWorld(p.cx + ((p.X - p.cx) * W) / D, p.cy + dy + laneRise(z), z);
 }
 
+/**
+ * Tiefe (Spuren), in der der Strahl durch den Bühnenpunkt die Welthöhe y erreicht (Kettenlinie als Deckel, Strich 2,
+ * Paket 3): Die Höhe am Strahl fällt mit der Tiefe (weiter hinten liegt derselbe Bildpunkt tiefer), die Umkehrung ist
+ * linear in z. Ohne Strahl oder Perspektive wie toWorld: Y = y + rise(z). Liegt der Bildpunkt so hoch, dass die Höhe am
+ * Strahl mit der Tiefe nicht fällt (weit über dem Kameraziel, sehr nah gezoomt), gibt es keine Tiefe: Infinity
+ */
+export function zAtHeight(p: StagePoint, y: number): number {
+  if (!perspOn() || p.cx === undefined || p.cy === undefined) return LANE_RISE > 1e-9 ? (p.Y - y) / LANE_RISE : Infinity;
+  const D = view.D;
+  const Yi = p.Y - p.cy;
+  // y = cy + (Yi·D + z·(Yi·DEPTH_VIEW − LANE_RISE·D)) / (D + Yi·TILT_SIN)
+  const slope = Yi * DEPTH_VIEW - LANE_RISE * D;
+  if (slope >= -1e-9) return Infinity;
+  return ((y - p.cy) * (D + Yi * TILT_SIN) - Yi * D) / slope;
+}
+
 /** Zwischenpunkt zweier Strahlen (Lage und Kamera linear) */
 export function mixPoint(a: StagePoint, b: StagePoint, t: number): StagePoint {
   const p: StagePoint = { X: a.X + (b.X - a.X) * t, Y: a.Y + (b.Y - a.Y) * t };

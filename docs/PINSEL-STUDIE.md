@@ -105,6 +105,16 @@ nach hinten in Metern (eine Spur = 8,4 m). **Loslassen** = der Finger geht hoch,
    schiebt 4 bis 7 % der Länge. Offen und gemessen: Inversionen, die der Strich nicht als Schleife gezeichnet hat
    (Paket 3), Querkraft-Spitzen an Knicken (Form), Schräglage ein Zehntel der Zeit am Anschlag (Stilprobe). Schalter
    `&fahrt=1` (streng), `&antrieb=`; fünf Entscheidungen für Florian in 15f.
+17. Abschnitt 16, Paket 3: Schleifen und Kettenlinie. Diagnose: Nur ein Zehntel der Inversionen lag in Loopings, die als
+   solche gezeichnet waren; jeder Kringel wurde eine Kehre (verdrehter Halbbogen, kopfüber), und hohe schmale U sind
+   geometrisch halbe Loopings. Gebaut: Strich 2 erkennt Schleifen (Selbstkreuzung mit ≥ 200° Drehung), liest sie ab
+   Höhe/Breite 0,7 als Looping (Tiefe bleibt, eigene Ausfahrt 2,5 m dahinter, Mindestradius 4 m mit Aufweitung, die
+   Tinte bleibt), sonst als Bodenschleife; Kehren warten, bis sie keine Schleife mehr werden können; die Kettenlinie
+   ist ein Deckel (`chainTop`, `zAtHeight`). Gemessen: 19 / 72 / 63 Loopings entstehen, aber Kreuzungen auf
+   gleicher Höhe (6 → 19, 112 → 175, 196 → 255) und Knicke nehmen zu, die ungewollten Inversionen sinken nur um 15 bis
+   18 % auf zwei Sätzen; vier Kehren-Lesungen ohne senkrechte Schenkel waren schlechter oder kippten. Schalter
+   `&schleifen=0`; Brücken-Regel nicht gebaut; fünf offene Punkte in 16f, voran die Frage, ob die Loopings den Preis
+   wert sind, und die Kehren als Gestaltungsfrage.
 
 ## 2. Befund am heutigen Pinsel
 
@@ -1217,3 +1227,170 @@ Schanze (Plan 4.3) und Kollision im Schlangenbereich (Plan 4.7).
 
 **Entscheidung 3 aus Abschnitt 10** (Nachsicht der Fahrt) ist damit durch Florians Antwort 2 und diesen Umbau
 beantwortet: nachsichtig, mit Antrieb und Stützrädern, Querkraft als Wert.
+
+## 16. Paket 3: Schleifen als Loopings, Kehren, Kettenlinie (30.10.)
+
+Florians Auftrag (30.10.): „gezeichnete Schleifen als gewollte Loopings mit Mindestradius 4 m, Restkreuzungen als
+Brücken wo ein Höcker passt (eben nur als letzter Ausweg, nie ein Abbruch), Kettenlinie als Deckel in Strich 2,
+echter Schleifen-Zähler in der Messung.“ Dazu seine Antworten: Mindesttempo bleibt 4 m/s, Schräglage 80° und stiller
+Antrieb bis zur Stilprobe.
+
+### 16a. Befund: Woher die ungewollten Überkopffahrten kamen
+
+Die Messung aus Abschnitt 15 ordnet jede Inversion der Fahrt (Antrieb, ganze Bahn) dem nächsten Linienpunkt zu und
+schaut, was der Strich dort tut (Einteilung nach `findElements` des bisherigen Pinsels: Looping = hoch und nach oben
+gezeichnete Schleife, Bodenschleife = sonstige Schleife; Kehre = Umkehr in x innerhalb von ±15 m ohne Schleife):
+
+| | 21 heute früh | 27 neue | 31 alte |
+|---|---|---|---|
+| Inversionen gesamt | 137 | 470 | 606 |
+| davon in gezeichneten Loopings | 10 | 34 | 50 |
+| in Bodenschleifen (flach oder hängend gezeichnet) | 50 | 147 | 276 |
+| an Kehren ohne Schleife | 58 | 166 | 147 |
+| sonst (steile Stücke ohne Umkehr) | 19 | 123 | 133 |
+| gezeichnete Loopings / Bodenschleifen | 11 / 30 | 28 / 145 | 26 / 157 |
+| Radius der Loopings: Median / 10 % / unter 4 m | 3,1 m / 2,2 m / 8 von 11 | 3,7 / 2,3 / 18 von 28 | 4,5 / 2,4 / 11 von 26 |
+
+Nur ein Zehntel der Inversionen lag in Loopings, die als solche gezeichnet waren. Der Rest hatte zwei Ursachen, beide
+in der Lesung von Strich 2 (Abschnitt 6):
+
+- **Jeder Kringel wurde eine Kehre.** Ein steiles Stück mit Umkehr in x galt als Kehre, sobald die Gegenrichtung drei
+  Punkte hielt, also am Scheitel des Kringels, bevor er sich schließt. Die erste Hälfte des Kringels fror als Halbkreis
+  durch die Tiefe ein (Tiefe 2 × Weite, bis 25 m), die zweite Hälfte kam mit der Bodenhöhe zurück: ein in die Tiefe
+  verdrehter Halbbogen, kopfüber am Scheitel, und dazu die Kreuzung des Kringels mit sich selbst.
+- **Kehren selbst.** Ein hohes schmales U (10 m hoch, 3 m weit) bekam 6 m Tiefe und 10 m Höhe: senkrechte Schenkel,
+  oben eine Wende über die Kuppe. Geometrisch ist das ein halber Looping, der Wagen hängt danach unter der Schiene; der
+  Schienenrahmen (Parallel-Transport in `sampleTrack`) zeigt genau das.
+
+Dazu die Radien: Florians Kringel sind klein, der Median liegt bei 3 bis 4,5 m, ein gutes Drittel unter dem
+Mindestradius; ohne Aufweiten wären sie als Loopings nicht fahrbar.
+
+### 16b. Gebaut: Schleifen in Strich 2
+
+- **Erkennung** (`findLoops`, je Vorschau nur die neuen Linienstücke gegen die bis 160 m davor): Kreuzt die 1-m-Linie
+  sich selbst und dreht dazwischen mindestens 200° (Bogen 12 bis 160 m), ist das eine Schleife. Nur innerhalb des
+  neuen Strichs: Kreuzt er beim Fortsetzen die alte Bahn, ist das eine Kreuzung, keine Schleife (der Test „schräge
+  Kreuzung, ganze Spur“ hatte das aufgedeckt).
+- **Looping oder Bodenschleife** nach dem Seitenverhältnis Höhe/Breite im Bild: ab 0,7 ein Looping (eine senkrechte
+  Kreisbahn ist im Bild rund, eine waagerechte bei 26,6° Neigung eine Ellipse mit 0,45; die Schwelle liegt dazwischen;
+  `&loopaspect`, `--loopaspect`). Der bisherige Pinsel verlangte 0,9 und „nach oben gezeichnet“; Florians hängende
+  Kringel fielen damit durch.
+- **Looping:** Die Tiefe bleibt durch die Schleife die der Einfahrt (Gewicht 8 gegen die Glättung), die Form im Bild
+  wird die Form in der Höhe. Die eigene Kreuzung regelt das Schleifenziel selbst: Die Ausfahrt läuft über die letzten
+  16 m der Schleife um 2,5 m hinter die Einfahrt und bleibt dort noch 8 m; die Kreuzungsregel lässt dieses Paar aus
+  (eng gefittet wird dort trotzdem). Vorher hatte die Regel die Ausfahrt an die Seite gedrückt, die eine früh
+  gemerkte Entscheidung vorgab, oder ihr an der eigenen Kreuzung eine ganze Spur verordnet (Tiefensprung 8 m).
+- **Bodenschleife:** Die Höhe bleibt, die Bildbewegung wird Tiefe (Ziel `z = z_ein + ΔY / tan 26,6°`).
+- **Mindestradius 4 m** (`&loopr`, `--loopr`): Radius aus dem Rechteck der Schleife im Bild, (Breite + Höhe) / 4.
+  Darunter wird die Bahn um die Schleifenmitte auf den Mindestradius gestreckt, davor und dahinter über 6 Punkte an
+  die Tinte angeschlossen; die Tinte bleibt (Bahnpunkt `pt` je Linienpunkt neben dem Linienpunkt `p`). Ein Marker im
+  Bild fehlt noch (Platzhalter).
+- **Fest als Ganzes:** Ein steiler Lauf in einer erkannten Schleife gilt als gelesen (Form „loop“), er sperrt das
+  Einfrieren nicht mehr; die Schleife friert ein, sobald sie hinter dem Vorlauf liegt.
+- **Kehren warten auf die Schleife:** Eine Kehre gilt erst als gelesen, wenn der zweite Schenkel bis auf die halbe
+  Höhe des U zurück ist, an der Spitze nicht mehr auf die Einfahrt zufällt (flach ausläuft oder steigt) und drei Punkte
+  weiter keine Kreuzung gekommen ist; ein Kringel fällt weiter, kreuzt seine Einfahrt und gehört dann der Schleife.
+  Ebenso wartet ein Hügel, bis dahinter eine klare Richtung steht (vorher gewann der Hügel das Rennen gegen die Kehre,
+  sobald drei flache Punkte da waren). Die beiden Seiten derselben Schleife (Scheitel über der Einfahrt) sind keine
+  Kreuzung mehr, und Seiten, die vor der Erkennung zwischen Punkten der Schleife entschieden wurden, werden gelöscht.
+- **Reihenfolge im Löser:** Die Kreuzungsschranken kommen jetzt nach den Formzielen (Hügel, Kehre, Schleife), damit
+  die Seite einer Begegnung am endgültigen Ziel entschieden wird. Mit dem Bodenhöhen-Ziel saß sie oft falsch und
+  deckelte die Tiefe einer Bodenschleife; die Lösung schwang dann zwischen den Schranken (Tiefe −6 m statt +11 m).
+
+### 16c. Kehren: vier Lesungen, eine offene Frage
+
+Ein hohes schmales U lässt sich nicht gleichzeitig auf der Tinte, aufrecht und glatt bauen; das ist der harte Kern
+hinter Florians „keine unnötigen Überkopffahrten“. Gemessen an Einheitstests mit einem 9 m weiten, 17 m hohen U mit
+runden Ecken und einem 3 m schmalen U:
+
+1. **Flach: die ganze Bildhöhe wird Tiefe** (Scheitel so hoch wie der Fuß). Ein schmales U wird eine lange schmale
+   Ellipse in der Ebene (20 m tief, 3 m breit) mit Radius unter 2 m am Scheitel: auf Florians Strichen mehr Knicke
+   (Median je Strich 133, 248, 351 statt 124, 159, 314) und mehr schwebende Stützen (439, 1198, 1571 statt 408, 1095,
+   1380). Verworfen.
+2. **Steigende Wendel:** halbe Sinuswelle der Tiefe über die ganze Kehre mit Amplitude halbe Weite. Am Scheitel steht
+   die Tiefe still, die Wende läuft in der senkrechten Ebene über die Kuppe: kopfüber. Verworfen.
+3. **Haube in der Ebene** (Tiefe gerade von Fuß zu Fuß wie beim Hügel, U in der Bahn auf 8 m aufgezogen). Eine Wende
+   über die Kuppe zurück ist ein halber Looping, der Wagen hängt danach unter der Schiene. Verworfen.
+4. **Senkrechte Schenkel, oben ein waagerechter Halbkreis durch die Tiefe** mit dem Radius der halben Weite, mindestens
+   4 m (ein schmaleres U wird in der Bahn aufgezogen, die Tinte bleibt): Das ist der Stand im Code. Höhe, Tiefe und
+   Weite stimmen in den Tests; der Schienenrahmen liest aber auch hier den senkrechten Schenkel, der oben nach hinten
+   abbiegt, als Looping-Kuppe („kopfüber bleibt“ in `sampleTrack`) und kippt. Die Einheitstests prüfen darum Form und
+   Weite, nicht den Rahmen; ob Florians rundere Kehren das Problem haben, zeigt die Messung in 16e.
+
+Was fehlt, ist eine Lesung ohne senkrechte Schenkel: Die Schenkel müssten selbst Tiefe tragen (eine Wendel, die nach
+hinten steigt, mit Steigung unter 50°, wo der Rahmen sich noch aufrichtet), und dafür braucht ein 10 m hohes U rund 8 m
+Tiefe je Schenkel und 8 m Weite, also eine deutliche Abweichung von der Tinte. Das ist eine Gestaltungsfrage für
+Florian (16f), keine Rechenfrage.
+
+### 16d. Gebaut: Kettenlinie als Deckel
+
+- `BrushOptions.chainTop` (Welthöhe der Kettenzugstärke über der Station, in `level.ts` aus Feld und Station wie die
+  gezeichnete Linie, nur mit Kettenzug-Start). In Strich 2 wird daraus je freiem Punkt eine Mindesttiefe:
+  `zAtHeight(p, chainTop)` (neu in `stage.ts`, die Höhe am Strahl fällt mit der Tiefe, mit und ohne Perspektive).
+  Was im Bild über der Linie liegt, wird Tiefe. Geht das auch in der tiefsten erlaubten Tiefe nicht (Stapel zu flach),
+  bleibt der Punkt dort und wird gezählt (`stats.capped`, Messung `s2Capped`); ein Abschneiden wie beim Höhenlimit ist
+  Platzhalter.
+- **Ehrlich:** Florians Testzonen haben keine Aufwertungsstufen, dort löst `resolveAbilities` keine Kettenzugstärke
+  auf, die Linie wird nicht gezeichnet und der Deckel greift nicht. Auf seinen Strichen ist der Deckel darum nicht
+  gemessen, nur in Einheitstests (Linie 40 m hoch bei Kette 12 m: Bahn unter 12,6 m; mit nur 40 m Tiefe bleibt der
+  Rest Höhe und wird gezählt). Sobald ein Feld eine Stufe hat (`upgrades`, Plan 2.4), gilt er.
+
+### 16e. Messung: vorher gegen nachher (dieselben Striche; Fahrt mit Antrieb)
+
+„Vorher“ ist der Stand 11454fb (Paket 2), „nachher“ Schleifen neu mit der bisherigen Kehren-Regel (16c, Lesung 4 war
+dazwischen noch schlechter: Knicke-Median 142 / 301 / 381, Kreuzungen 18 / 192 / 309). Inversionen nach Lage wie in 16a;
+„Kehre + sonst“ ist der Teil, den niemand gezeichnet hat.
+
+| | 21 heute früh: vorher → nachher | 27 neue | 31 alte (Schleifen) |
+|---|---|---|---|
+| Strich 2 erkennt: Loopings (davon aufgeweitet) / Bodenschleifen | 19 (13) / 23 | 72 (32) / 76 | 63 (20) / 114 |
+| Inversionen gesamt | 137 → 155 | 470 → 481 | 606 → 482 |
+| davon in Loopings (Zählung des alten Pinsels) | 10 → 22 | 34 → 35 | 50 → 30 |
+| in Bodenschleifen (alter Pinsel; viele davon sind jetzt Loopings nach Strich 2) | 50 → 41 | 147 → 208 | 276 → 210 |
+| an Kehren + sonst (ungewollt) | 77 → 92 | 289 → 238 | 280 → 242 |
+| Kreuzungen auf gleicher Höhe (Summe) | 6 → 19 | 112 → 175 | 196 → 255 |
+| Knicke je Strich (Median) | 124 → 134 | 159 → 270 | 314 → 401 |
+| Knoten je Strich (Median) | 36 → 42 | 53 → 59 | 82 → 81 |
+| Band hinter dem Festen je Vorschau, Median / 90 % | 37,9 / 80 m → 39,8 / 91 m | 37,9 / 84 → 40,8 / 105 m | 38 / 45 → 41 / 94 m |
+| angekommen | 21 / 21 → 21 / 21 | 27 → 26 | 30 → 30 |
+
+**Lesart, ehrlich:**
+
+- **Die Loopings sind da.** 19, 72 und 63 gezeichnete Kringel sind jetzt Loopings mit konstanter Tiefe, ein Drittel bis
+  zwei Drittel davon auf 4 m Radius aufgeweitet; weitere 23, 76 und 114 flache Kringel sind Bodenschleifen. Das ist das,
+  was Florian wollte, und es steht in Tests und Zahlen.
+- **Die ungewollten Inversionen sinken kaum:** auf den zwei schleifenreichen Sätzen um 15 bis 18 %, auf dem kleinen
+  Satz steigen sie. Der Grund steht in 16c: Kehren bleiben die bisherige Lesung, und die kippt bei hohen schmalen U.
+  Die Zählung „in Loopings / Bodenschleifen“ stammt vom alten Pinsel (Schwelle 0,9, nach oben gezeichnet) und zählt
+  Florians hängende Kringel als Bodenschleifen; nach Strich 2 sind viele davon gewollte Loopings. Ein Zähler, der die
+  Lesung von Strich 2 selbst nimmt, fehlt noch.
+- **Kreuzungen auf gleicher Höhe und Knicke werden mehr,** und zwar deutlich (Kreuzungen +60 bis +200 %, Knicke +8 bis
+  +70 %). Das ist das Gegenteil von Florians Wunsch („so gut wie keine Kreuzungen“, „nur die nötigsten Punkte“). Die
+  Ursache habe ich nicht gefunden: Verdächtig sind die konstante Tiefe der Loopings in dichten Haufen (der Kringel
+  wich vorher als Kehre 10 bis 25 m in die Tiefe aus und ging so anderen Strängen aus dem Weg), die Stufe der eigenen
+  Ausfahrt (2,5 m über 16 m) und die Aufweitung. Eine Zählung, welche der neuen Kreuzungen eigene Schleifenkreuzungen
+  sind und welche Kreuzungen mit anderen Strängen, ist der nächste Schritt.
+- **Das Band wird länger** (Median +2 m, oberes Zehntel +10 bis +50 m), weil Kehren jetzt warten, bis sie keine
+  Schleife mehr werden können. Für die Schleifen ist das nötig, für Florians Zeichengefühl ein Rückschritt.
+- Die Kettenlinie greift in den Testzonen nicht (16d), die Vorschau-Zeiten ändern sich nicht messbar.
+
+**Konsequenz:** Die Schleifen-Lesung bleibt eingebaut und an (Florians Entscheidung), aber mit Schalter `&schleifen=0`
+(Messung `--schleifen 0`) für den bisherigen Stand, und die Frage, ob die Loopings den Preis wert sind, geht mit den
+Zahlen an Florian (16f). Ich würde sie heute nicht als Verbesserung verkaufen.
+
+### 16f. Offen und Entscheidungen
+
+1. **Schleifen an oder aus**, bis die Kreuzungen und Knicke geklärt sind (Zahlen oben; im Spiel `&schleifen=0` zum
+   Vergleich). Empfehlung: an lassen und die Kreuzungen als Nächstes aufklären (eigene Schleifenkreuzung gegen fremde
+   Stränge), denn die Loopings selbst sind richtig.
+2. **Kehren:** die Gestaltungsfrage aus 16c. Ein hohes schmales U kann nur aufrecht bleiben, wenn seine Schenkel Tiefe
+   tragen (Wendel, Steigung unter 50°) und die Bahn dafür spürbar von der Tinte abweicht (8 m Tiefe je Schenkel, 8 m
+   Weite). Alternative: U bleiben, was sie sind (halbe Loopings), und die Fahrt zeigt es als Überkopffahrt. Das ist
+   Florians Entscheidung; bis dahin bleibt die bisherige Lesung.
+3. **Brücken-Regel** für Restkreuzungen (Höcker, wo er passt): nicht gebaut. Mit den gestiegenen Kreuzungen wäre sie
+   Symptombehandlung; erst die Ursache in 1 klären. Der Höcker braucht ohnehin die Abweichung von der Tinte in der Höhe
+   (3,2 m plus Rampen), die Mechanik dafür (`pt` je Linienpunkt) gibt es jetzt.
+4. **Marker** für aufgeweitete Loopings im Bild (Platzhalter) und ein Schleifen-Zähler in der Messung nach der Lesung
+   von Strich 2 statt nach dem alten Pinsel.
+5. **Kettenlinie:** greift erst, wenn ein Feld eine Aufwertungsstufe hat (Plan 2.4); die Testzonen haben keine. Ein
+   Feld mit Stufe in `test-huegel` wäre der Test.

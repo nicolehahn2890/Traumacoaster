@@ -44,7 +44,7 @@ export type Strich2Preview = BrushPreview & { line: StagePoint[]; frozen: number
 import type { CubicSegment3 } from '@/core/bezierFit3';
 import { createNode, emptyPath, type TrackNode, type TrackPath } from './model';
 import { reduceNodes } from './reduceNodes';
-import { LANE_DEPTH, LANE_MAX, LANE_MIN, TILT_TAN, mixPoint, rayToWorld, toView, type StagePoint } from './stage';
+import { LANE_DEPTH, LANE_MAX, LANE_MIN, TILT_TAN, mixPoint, rayToWorld, toView, zAtHeight, type StagePoint } from './stage';
 
 /** so weit (m) hinter der Spitze ist die Tiefe noch frei; davor fest */
 export const FREEZE = 12;
@@ -169,6 +169,27 @@ const QUERY_REUSE = 0.3;
 const XWIN = 6;
 const LOOP_ARC = 40;
 const CROSS_SIN = Math.sin((30 * Math.PI) / 180);
+/**
+ * Gezeichnete Schleifen (Paket 3; Florian 30.10.: „gezeichnete Schleifen als gewollte Loopings mit Mindestradius 4 m,
+ * der Rest flach“). Kreuzt die Linie sich selbst und dreht sie dazwischen mindestens LOOP_TURN (Bogen LOOP_MIN_ARC bis
+ * LOOP_MAX_ARC Meter), ist das eine Schleife. Hoch gezeichnet (Höhe ≥ aspect · Breite; eine senkrechte Kreisbahn ist im
+ * Bild rund, eine waagerechte bei 26,6° Neigung eine Ellipse mit 0,45) ist sie ein **Looping**: Die Tiefe bleibt durch die
+ * Schleife die der Einfahrt (die Kreuzungsregel versetzt die Ausfahrt um PASS_SIDE), die Form im Bild wird die Form in
+ * der Höhe; ist ihr Radius kleiner als minR, wird die Bahn um die Schleifenmitte aufgeweitet, die Tinte bleibt. Flach
+ * gezeichnet ist sie eine **Bodenschleife**: Die Höhe bleibt, die Bildbewegung wird Tiefe. In einer Schleife gilt keine
+ * Hügel- oder Kehren-Lesung, ihre eigene Kreuzung bekommt keine ganze Spur, und sie friert als Ganzes ein, sobald sie
+ * sich schließt. Eine Kehre gilt erst als gelesen, wenn ihr zweiter Schenkel wieder auf der Höhe des Fußes ist: vorher
+ * kann sie noch eine Schleife werden (die Ausfahrt kreuzt die Einfahrt), und ihre Tiefe darf nicht als Halbkreis fest werden.
+ */
+const LOOP_MIN_ARC = 12;
+const LOOP_MAX_ARC = 160;
+const LOOP_TURN = (200 * Math.PI) / 180;
+/** Aufweitung läuft über so viele Punkte vor und hinter der Schleife an und aus (Anschluss an die Tinte) */
+const LOOP_BLEND = 6;
+/** Gewicht des Schleifenziels: stärker als Landung und Hügel, damit die Tiefe gegen die Glättung durch die Schleife hält */
+const W_LOOP = 8;
+/** on: Schleifen lesen (Vorgabe; &schleifen=0 / --schleifen 0 für den Stand vor Paket 3, siehe Studie 16e) */
+export const LOOP_TUNING = { on: true, aspect: 0.7, minR: 4 };
 /** an der Station bleibt die Tiefe so lange (m) die der Station */
 const STATION_CALM = 12;
 /** Schranken-Feder (Vielfaches der größten Diagonale) */
@@ -209,6 +230,31 @@ export interface Strich2Stats {
   fitMs: number;
   /** Punkte, deren Kreuzungsschranken sich auch mit einheitlicher Seite widersprachen (kein Platz) */
   conflicts: number;
+  /** erkannte Schleifen: Loopings (davon aufgeweitet) und Bodenschleifen; Punkte, die die Kettenlinie nicht halten konnte */
+  loops: number;
+  loopsWidened: number;
+  loopsFlat: number;
+  capped: number;
+}
+
+/** gezeichnete Schleife: Linienpunkte der Kreuzung (Einfahrt i, Ausfahrt j), Looping oder Bodenschleife, Radius und Mitte im Bild, Aufweitung */
+interface Loop {
+  i: number;
+  j: number;
+  vertical: boolean;
+  r: number;
+  cx: number;
+  cy: number;
+  scale: number;
+}
+
+/** steiler Lauf mit Lesung: Füße a und b (−1 offen), Scheitel (Punkt mit der kleinsten Richtung in x); Kehre: turn = drei Punkte hinter der Umkehr (bis dorthin läuft die Tiefe) */
+interface Shape {
+  a: number;
+  b: number;
+  kind: 'hill' | 'kehre' | 'open' | 'loop';
+  apex: number;
+  turn: number;
 }
 
 /** je Linienpunkt gemerkt: Abfragen und Lösung */
@@ -239,6 +285,10 @@ interface Pt {
   /** Weltpunkt mit Hub über die tragende Fläche (gilt für die Tiefe wpLane) */
   wp: Vec3 | null;
   wpLane: number;
+  /** Bahnpunkt im Bild, wenn er vom Linienpunkt abweicht (aufgeweitete Schleife); die Tinte bleibt p */
+  pt: StagePoint | null;
+  /** die Kettenlinie war auch in der tiefsten erlaubten Tiefe nicht zu halten */
+  capped: boolean;
 }
 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
@@ -348,7 +398,12 @@ export class Strich2 {
   private xCells = new Map<number, number[]>();
   private readonly startZ: number;
   private readonly tsX: number;
-  stats: Strich2Stats = { n: 0, frozen: 0, ms: 0, queryMs: 0, solveMs: 0, crossMs: 0, fitMs: 0, conflicts: 0 };
+  /** erkannte Schleifen (Kreuzung der Linie mit sich selbst mit Drehung dazwischen); bis loopsChecked schon gesucht */
+  private loops: Loop[] = [];
+  private loopsChecked = 0;
+  /** Diagnose (Messung, Tests): Ziele, Gewichte, Schranken und Wende-Gewichte des letzten Lösens ab Linienindex a */
+  lastSolve: { a: number; T: Float64Array; W: Float64Array; LO: Float64Array; HI: Float64Array; level: Float64Array } | null = null;
+  stats: Strich2Stats = { n: 0, frozen: 0, ms: 0, queryMs: 0, solveMs: 0, crossMs: 0, fitMs: 0, conflicts: 0, loops: 0, loopsWidened: 0, loopsFlat: 0, capped: 0 };
   private queryMs = 0;
 
   /**
@@ -428,7 +483,18 @@ export class Strich2 {
   }
 
   private newPt(p: StagePoint, z: number): Pt {
-    return { p, land: null, ground: NaN, lanes: null, flat: true, wh: 1, run: 0, dirX: 0, z, frozen: false, blocked: false, cave: false, near: false, queried: false, rail: null, railStage: null, wp: null, wpLane: NaN };
+    return { p, land: null, ground: NaN, lanes: null, flat: true, wh: 1, run: 0, dirX: 0, z, frozen: false, blocked: false, cave: false, near: false, queried: false, rail: null, railStage: null, wp: null, wpLane: NaN, pt: null, capped: false };
+  }
+
+  /** Lage des Bahnpunkts im Bild: der Linienpunkt, bei aufgeweiteten Schleifen der verschobene */
+  private at(q: Pt): StagePoint {
+    return q.pt ?? q.p;
+  }
+
+  /** die Schleife, in der ein Linienpunkt liegt (mit etwas Rand), sonst null */
+  private loopOf(k: number): Loop | null {
+    for (const l of this.loops) if (k >= l.i - 2 && k <= l.j + 2) return l;
+    return null;
   }
 
   private indexX(i: number): void {
@@ -519,6 +585,111 @@ export class Strich2 {
       this.fixedNodes.pop();
     }
     this.fitFrom = this.fixedEnd.length ? this.fixedEnd[this.fixedEnd.length - 1] : 0;
+    this.loops = this.loops.filter((l) => l.j < from);
+    this.loopsChecked = Math.min(this.loopsChecked, from);
+  }
+
+  // ------------------------------------------------------------------ Schleifen
+
+  /**
+   * Schleifen suchen: jedes neue Linienstück gegen die Stücke bis LOOP_MAX_ARC davor (vorläufige Punkte entstehen je
+   * Vorschau neu, darum ab dem endgültigen Teil immer wieder); eine Kreuzung mit Drehung ≥ LOOP_TURN dazwischen ist eine
+   * Schleife. Danach die Bahnpunkte aufgeweiteter Loopings setzen
+   */
+  private findLoops(): void {
+    const n = this.pts.length;
+    if (!LOOP_TUNING.on) {
+      this.loops = [];
+      this.loopsChecked = n;
+      return;
+    }
+    const from = Math.max(this.baseLen + 1, Math.min(this.loopsChecked, this.lineFinal));
+    this.loops = this.loops.filter((l) => l.j < from);
+    const P = (k: number): StagePoint => this.pts[k].p;
+    const head = (k: number): number => Math.atan2(P(k + 1).Y - P(k).Y, P(k + 1).X - P(k).X);
+    for (let i = from; i < n; i++) {
+      const a = P(i - 1);
+      const b = P(i);
+      const minX = Math.min(a.X, b.X);
+      const maxX = Math.max(a.X, b.X);
+      const minY = Math.min(a.Y, b.Y);
+      const maxY = Math.max(a.Y, b.Y);
+      const rx = b.X - a.X;
+      const ry = b.Y - a.Y;
+      // nur im neuen Strich: Kreuzt er die alte Bahn (Fortsetzen), ist das eine Kreuzung, keine Schleife
+      for (let j = Math.max(this.baseLen + 1, i - Math.round(LOOP_MAX_ARC / STEP)); j <= i - NEIGHBOR; j++) {
+        const c = P(j - 1);
+        const d = P(j);
+        if (Math.max(c.X, d.X) < minX || Math.min(c.X, d.X) > maxX || Math.max(c.Y, d.Y) < minY || Math.min(c.Y, d.Y) > maxY) continue;
+        const sx = d.X - c.X;
+        const sy = d.Y - c.Y;
+        const den = rx * sy - ry * sx;
+        if (Math.abs(den) < 1e-12) continue;
+        const t = ((c.X - a.X) * sy - (c.Y - a.Y) * sx) / den;
+        const u = ((c.X - a.X) * ry - (c.Y - a.Y) * rx) / den;
+        if (!(t >= 0 && t < 1 && u >= 0 && u < 1)) continue;
+        if (i - j < LOOP_MIN_ARC / STEP) continue;
+        let turn = 0;
+        for (let k = j; k < i - 1; k++) {
+          let dh = head(k + 1) - head(k);
+          dh -= Math.round(dh / (2 * Math.PI)) * 2 * Math.PI;
+          turn += dh;
+        }
+        if (Math.abs(turn) < LOOP_TURN) continue;
+        if (this.loops.some((l) => Math.abs(l.i - j) < 6 && Math.abs(l.j - i) < 6)) continue;
+        let x0 = Infinity;
+        let x1 = -Infinity;
+        let y0 = Infinity;
+        let y1 = -Infinity;
+        for (let k = j; k <= i; k++) {
+          x0 = Math.min(x0, P(k).X);
+          x1 = Math.max(x1, P(k).X);
+          y0 = Math.min(y0, P(k).Y);
+          y1 = Math.max(y1, P(k).Y);
+        }
+        const w = x1 - x0;
+        const h = y1 - y0;
+        const vertical = h >= LOOP_TUNING.aspect * w;
+        const r = (w + h) / 4;
+        this.loops.push({ i: j, j: i, vertical, r, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, scale: vertical && r > 1e-6 && r < LOOP_TUNING.minR ? LOOP_TUNING.minR / r : 1 });
+        // Seiten, die vor der Erkennung zwischen Punkten der Schleife entschieden wurden, gelten nicht mehr (die beiden
+        // Seiten der Schleife sind keine Kreuzung; die Ein- und Ausfahrt entscheidet neu)
+        const b0 = Math.floor(j / 12);
+        const b1 = Math.floor(i / 12);
+        for (const key of Array.from(this.sides.keys())) {
+          const iB = Math.floor(key / 65536);
+          const jB = key % 65536;
+          if (iB >= b0 && iB <= b1 && jB >= b0 && jB <= b1) this.sides.delete(key);
+        }
+        break;
+      }
+    }
+    this.loopsChecked = n;
+    this.stats.loops = this.loops.filter((l) => l.vertical).length;
+    this.stats.loopsWidened = this.loops.filter((l) => l.scale > 1).length;
+    this.stats.loopsFlat = this.loops.length - this.stats.loops;
+    for (const l of this.loops) this.widen(l);
+  }
+
+  /**
+   * Bahnpunkte einer aufgeweiteten Schleife: die Schleife um ihre Mitte gestreckt, davor und dahinter über LOOP_BLEND freie
+   * Punkte an die Tinte angeschlossen. Feste Punkte behalten ihren Bahnpunkt (ihre Schienen stehen)
+   */
+  private widen(l: Loop): void {
+    const n = this.pts.length;
+    for (let k = Math.max(this.baseLen, l.i - LOOP_BLEND); k <= Math.min(n - 1, l.j + LOOP_BLEND); k++) {
+      const q = this.pts[k];
+      if (q.frozen) continue;
+      if (l.scale <= 1) {
+        q.pt = null;
+        continue;
+      }
+      const out = k < l.i ? l.i - k : k > l.j ? k - l.j : 0;
+      const f = 1 - out / (LOOP_BLEND + 1);
+      const wgt = f * f * (3 - 2 * f);
+      const s = 1 + (l.scale - 1) * wgt;
+      q.pt = { ...q.p, X: l.cx + (q.p.X - l.cx) * s, Y: l.cy + (q.p.Y - l.cy) * s };
+    }
   }
 
   /** feine Punkte an Vielfachen von FINE entlang des Pinsels nachziehen (der Cursor läuft nur vorwärts) */
@@ -698,9 +869,9 @@ export class Strich2 {
     return { lo: Math.max(zMin, lo), hi: Math.min(zMax, hi), mid: (iv[best].a + iv[best].b) / 2, cave: iv[best].cave, blocked: false };
   }
 
-  /** Lage eines früheren Punkts für die Kreuzungsregel: seine festen Schienen (Bühne), sonst sein Linienpunkt */
+  /** Lage eines früheren Punkts für die Kreuzungsregel: seine festen Schienen (Bühne), sonst sein Bahnpunkt */
   private stageOf(r: Pt): StagePoint {
-    return r.railStage ?? r.p;
+    return r.railStage ?? this.at(r);
   }
 
   private zOf(r: Pt): number {
@@ -731,9 +902,10 @@ export class Strich2 {
   private crossBounds(i: number, t: number, lo: number, hi: number, closing = false): { lo: number; hi: number } {
     const tC = performance.now();
     const q = this.pts[i];
+    const qp = this.at(q);
     const n = this.pts.length;
     const cx = Math.floor(q.p.X);
-    const pairs: Array<{ rz: number; fLo: number; fHi: number; clean: boolean; key: number; iB: number; jB: number }> = [];
+    const pairs: Array<{ rz: number; fLo: number; fHi: number; clean: boolean; key: number; iB: number; jB: number; forced: number }> = [];
     for (let c = cx - XWIN; c <= cx + XWIN; c++) {
       const list = this.xCells.get(c);
       if (!list) continue;
@@ -741,22 +913,38 @@ export class Strich2 {
         if (j > i - NEIGHBOR) continue;
         // Rundenschluss: die Naht an der Station ist keine Kreuzung
         if (closing && n - i + j < NEIGHBOR + 3) continue;
+        // Paare in einer Schleife: die beiden Seiten derselben Schleife (Scheitel über der Einfahrt) und die Einfahrt
+        // gegen ihre eigene Anfahrt sind keine Kreuzung; nur die Ausfahrt begegnet der Einfahrt, und sie läuft hinter
+        // sie (Seite fest, kleiner Versatz, keine ganze Spur). (Ohne Schranke, nur mit dem weichen Ziel, verdoppelten
+        // sich die Kreuzungen auf gleicher Höhe auf Florians Strichen: 6 → 21, 112 → 212; mit der Schranke auch für
+        // die Einfahrt rückte eine Bodenschleife schon am Anfang 2 m nach hinten)
+        const lp = this.loopOf(i) ?? this.loopOf(i - XWIN - NEIGHBOR);
+        let own = false;
+        if (lp) {
+          const nearEntry = j >= lp.i - XWIN - NEIGHBOR && j <= lp.i + NEIGHBOR;
+          if (j > lp.i + NEIGHBOR && j <= lp.j + 2) continue;
+          if (nearEntry) {
+            if (i < lp.j - 2 * NEIGHBOR) continue;
+            own = true;
+          }
+        }
         const r = this.pts[j];
         const rp = this.stageOf(r);
-        const dX = q.p.X - rp.X;
+        const dX = qp.X - rp.X;
         if (Math.abs(dX) >= XWIN) continue;
-        const dY = q.p.Y - rp.Y;
+        const dY = qp.Y - rp.Y;
         // kleiner Versatz: im ganzen Fenster seitlich PASS_SIDE (dichter als PASS_SIDE in x: der Kreis darum) oder in der Höhe PASS_OVER
         const w = Math.abs(dX) < PASS_SIDE ? Math.sqrt(PASS_SIDE * PASS_SIDE - dX * dX) : PASS_SIDE;
         const fLo = Math.max(-w, (dY - PASS_OVER) / TILT_TAN);
         const fHi = Math.min(w, (dY + PASS_OVER) / TILT_TAN);
         if (fLo >= fHi) continue;
         if (!r.frozen) this.freePairs = true;
-        // ganze Spur nur an einer sauberen Kreuzung: weit auseinander auf dem Strich, schräg kreuzend
-        const clean = i - j > LOOP_ARC / STEP && this.crossSin(i, j) >= CROSS_SIN;
+        // ganze Spur nur an einer sauberen Kreuzung: weit auseinander auf dem Strich, schräg kreuzend, nicht die eigene
+        // Kreuzung einer erkannten Schleife (ein Looping versetzt seine Ausfahrt nur um den kleinen Versatz)
+        const clean = !own && i - j > LOOP_ARC / STEP && this.crossSin(i, j) >= CROSS_SIN;
         const iB = Math.floor(i / 12);
         const jB = Math.floor(j / 12);
-        pairs.push({ rz: this.zOf(r), fLo, fHi, clean, key: iB * 65536 + jB, iB, jB });
+        pairs.push({ rz: this.zOf(r), fLo, fHi, clean, key: iB * 65536 + jB, iB, jB, forced: own ? 1 : 0 });
       }
     }
     if (!pairs.length) {
@@ -771,7 +959,7 @@ export class Strich2 {
     };
     const cur = { lo, hi };
     for (const pr of pairs) {
-      let side = this.sides.get(pr.key) ?? 0;
+      let side = pr.forced || (this.sides.get(pr.key) ?? 0);
       if (!side) {
         // Seite vom Nachbarpaar erben (dieselbe Begegnung ein Stück weiter vorn oder hinten): Wechselt die Seite entlang
         // einer flachen Kreuzung, müssen die Tiefenkurven sich schneiden (so entstanden Kreuzungen auf gleicher Höhe)
@@ -810,11 +998,11 @@ export class Strich2 {
    * Kehre: die klare Richtung in x kehrt um und hält RESOLVE_RUN Punkte) und seine Füße a (letzter flacher Punkt davor)
    * und b (erster flacher Punkt danach, −1 offen)
    */
-  private shapes(from: number): Array<{ a: number; b: number; kind: 'hill' | 'kehre' | 'open'; apex: number }> {
+  private shapes(from: number): Shape[] {
     const n = this.pts.length;
     const steep = (i: number) => this.pts[i].wh < STEEP_LIMIT;
     const clear = (i: number) => (Math.abs(this.pts[i].dirX) > 0.4 ? Math.sign(this.pts[i].dirX) : 0);
-    const out: Array<{ a: number; b: number; kind: 'hill' | 'kehre' | 'open'; apex: number }> = [];
+    const out: Shape[] = [];
     for (let i = Math.max(1, from); i < n; i++) {
       if (!steep(i)) continue;
       const a = i - 1;
@@ -829,17 +1017,60 @@ export class Strich2 {
         after = clear(s);
         afterAt = s;
       }
-      let kind: 'hill' | 'kehre' | 'open' = 'open';
+      let kind: Shape['kind'] = 'open';
       let b = -1;
-      if (before && after && before * after < 0) {
-        // Kehre: erklärt, sobald die Gegenrichtung RESOLVE_RUN Punkte hält
+      let turn = -1;
+      const lp = this.loopOf(i) ?? this.loopOf(e);
+      if (lp && e >= lp.i && a <= lp.j) {
+        // in einer erkannten Schleife: die Schleife liest den Lauf (Looping oder Bodenschleife), er ist erklärt
+        kind = 'loop';
+        b = Math.max(e, lp.j);
+      } else if (before && after && before * after < 0) {
+        // Kehre: erklärt, sobald die Gegenrichtung RESOLVE_RUN Punkte hält und der zweite Schenkel wieder auf der Höhe des
+        // Fußes ist. Vorher kann die Ausfahrt die Einfahrt noch kreuzen (Schleife), und die Tiefe darf nicht als Halbkreis
+        // fest werden (Paket 3: so wurde die erste Hälfte jeder gezeichneten Schleife eine Kehre)
+        // gehalten, solange keine Gegenrichtung kommt (ein senkrechter zweiter Schenkel hat keine klare Richtung in x)
         let hold = 0;
-        for (let s = afterAt; s < n && clear(s) === after; s++) hold++;
+        for (let s = afterAt; s < n && clear(s) !== before; s++) hold++;
         if (hold >= RESOLVE_RUN) {
-          kind = 'kehre';
-          b = afterAt + RESOLVE_RUN - 1;
+          // wieder unten: der zweite Schenkel ist bis auf die Hälfte der Höhe des U zurück (die Höhe des Fußes muss er
+          // nicht treffen, Kehren kommen auf anderer Höhe zurück) und die Linie hat seit dem Fuß nicht mehr gedreht als
+          // eine Kehre dreht: ein Kringel dreht weiter (LOOP_TURN) und kreuzt dann seine Einfahrt, der gehört der Schleife
+          const yA = this.pts[a].p.Y;
+          const up = Math.sign(this.pts[e].p.Y - yA) || 1;
+          const height = Math.abs(this.pts[e].p.Y - yA);
+          let back = -1;
+          for (let s = afterAt; s < n; s++) {
+            if ((this.pts[s].p.Y - yA) * up <= Math.max(1, 0.5 * height)) {
+              back = s;
+              break;
+            }
+          }
+          // und der zweite Schenkel fällt an der Spitze nicht mehr auf die Einfahrt zu (er läuft flach aus oder steigt
+          // wieder): Ein Kringel fällt weiter, bis er die Einfahrt kreuzt, und gehört dann der Schleife
+          if (back >= 0 && back + RESOLVE_RUN < n) {
+            const tip = this.pts[n - 1].p;
+            const prev = this.pts[n - 1 - RESOLVE_RUN].p;
+            const falling = (tip.Y - prev.Y) * up < -0.5 * Math.abs(tip.X - prev.X) - 0.3;
+            if (!falling) {
+              kind = 'kehre';
+              // bis zum zweiten Fuß (wieder auf der Höhe des ersten), sonst so weit der Schenkel reicht: die Tiefe läuft
+              // gerade bis dorthin, der zweite Schenkel darf sich nicht verdrehen
+              let full = -1;
+              for (let s = back; s < n; s++) {
+                if ((this.pts[s].p.Y - yA) * up <= 1) {
+                  full = s;
+                  break;
+                }
+              }
+              b = Math.max(afterAt + RESOLVE_RUN - 1, full >= 0 ? full : n - 1);
+              turn = afterAt + RESOLVE_RUN - 1;
+            }
+          }
         }
-      } else if (e + RESOLVE_RUN < n) {
+      } else if (e + RESOLVE_RUN < n && after && (!before || after === before)) {
+        // Hügel: danach flach weiter in derselben Richtung (ohne klare Richtung dahinter bleibt der Lauf offen: er kann
+        // noch eine Kehre werden; vorher gewann der Hügel das Rennen, sobald drei flache Punkte da waren)
         let flat = 0;
         for (let s = e + 1; s < n && !steep(s); s++) flat++;
         if (flat >= RESOLVE_RUN) {
@@ -857,7 +1088,7 @@ export class Strich2 {
           apex = s;
         }
       }
-      out.push({ a, b, kind, apex });
+      out.push({ a, b, kind, apex, turn });
       i = b < 0 ? e : b;
     }
     return out;
@@ -930,6 +1161,7 @@ export class Strich2 {
     const k = n - a;
     const zMin = LANE_MIN * LANE_DEPTH;
     const zMax = Math.max(LANE_MAX * LANE_DEPTH, o.zMax ?? -Infinity);
+    const cap = o.chainTop !== undefined && Number.isFinite(o.chainTop) ? o.chainTop : undefined;
     const T = new Float64Array(k);
     const W = new Float64Array(k);
     const LO = new Float64Array(k).fill(zMin);
@@ -964,8 +1196,18 @@ export class Strich2 {
         T[m] = b.mid;
         W[m] = W_CAVE;
       }
-      ({ lo, hi } = this.crossBounds(i, T[m], lo, hi, Number.isFinite(endZ)));
-      if (lo > hi) lo = hi = (lo + hi) / 2;
+      // Kettenlinie als Deckel (Paket 3): nicht höher als die Kettenzugstärke über der Station; am Strahl heißt das
+      // mindestens so tief. Geht das auch in der tiefsten erlaubten Tiefe nicht, bleibt der Punkt dort und wird gezählt
+      q.capped = false;
+      if (cap !== undefined) {
+        const zc = zAtHeight(q.p, cap) * LANE_DEPTH;
+        if (zc > lo) {
+          if (zc > hi) {
+            q.capped = true;
+            lo = hi;
+          } else lo = zc;
+        }
+      }
       LO[m] = lo;
       HI[m] = hi;
       T[m] = clamp(T[m], lo, hi);
@@ -990,33 +1232,40 @@ export class Strich2 {
     const add = (i: number, j: number, v: number) => {
       A[i * k + j] += v;
     };
-    // Formen im Fenster: Hügel laufen gerade von Fuß zu Fuß, Kehren als Halbkreis durch die Tiefe
+    // Formen im Fenster: Hügel laufen gerade von Fuß zu Fuß, Kehren als Halbkreis durch die Tiefe (Schleifen unten)
     for (const sh of this.shapes(a + 1)) {
-      if (sh.kind === 'open' || sh.b < 0) continue;
+      if (sh.kind === 'open' || sh.kind === 'loop' || sh.b < 0) continue;
       const ma = sh.a - a;
       const mb = sh.b - a;
       if (sh.kind === 'hill') {
+        // Hügel laufen in der Tiefe gerade von Fuß zu Fuß
         const za = this.pts[sh.a].frozen ? this.pts[sh.a].z : T[Math.max(0, ma)];
         const zb = T[Math.min(k - 1, mb)];
         for (let m = Math.max(1, ma + 1); m < Math.min(k, mb); m++) {
           if (this.pts[a + m].frozen) continue;
-          T[m] = za + ((zb - za) * (m - ma)) / (mb - ma);
+          T[m] = za + ((zb - za) * (m - ma)) / Math.max(1, mb - ma);
           W[m] = W_LAND;
           level[m] = 0;
         }
       } else {
-        // Weite des U im Bild und Richtung: nach oben gezeichnet nach hinten
+        // Kehre: wie vor Paket 3 ein Halbkreis durch die Tiefe (Weite des U im Bild, Richtung nach oben gezeichnet nach
+        // hinten), gelegt über den ersten Schenkel bis drei Punkte hinter die Umkehr; der zweite Schenkel kommt mit der
+        // Bodenhöhe zurück. Das kippt bei hohen schmalen U am Scheitel (Studie 16c), aber alle vier Lesungen ohne
+        // senkrechte Schenkel waren auf Florians Strichen messbar schlechter (Knicke, Knoten, Kreuzungen); die Frage
+        // bleibt offen (16f). Neu ist nur, dass die Kehre erst als gelesen gilt, wenn sie keine Schleife mehr werden kann
         const A = this.pts[sh.a].p;
+        const tEnd = sh.turn >= 0 ? sh.turn : sh.b;
+        const mt = tEnd - a;
         let ext = A.X;
         const s0 = Math.sign(this.pts[sh.a].dirX) || 1;
-        for (let s = sh.a; s <= sh.b; s++) ext = s0 > 0 ? Math.max(ext, this.pts[s].p.X) : Math.min(ext, this.pts[s].p.X);
+        for (let s = sh.a; s <= tEnd; s++) ext = s0 > 0 ? Math.max(ext, this.pts[s].p.X) : Math.min(ext, this.pts[s].p.X);
         const width = Math.abs(ext - A.X);
         const dz = clamp(2 * width, KEHRE_MIN, KEHRE_MAX_LANES * LANE_DEPTH);
         const base = this.pts[sh.a].frozen ? this.pts[sh.a].z : T[Math.max(0, ma)];
-        let sgn = Math.sign(this.pts[sh.b].p.Y - A.Y) || 1;
+        let sgn = Math.sign(this.pts[tEnd].p.Y - A.Y) || 1;
         if (base + sgn * dz > zMax || base + sgn * dz < zMin) sgn = -sgn;
-        const span = Math.max(1, mb - ma);
-        for (let m = Math.max(1, ma + 1); m <= Math.min(k - 1, mb); m++) {
+        const span = Math.max(1, mt - ma);
+        for (let m = Math.max(1, ma + 1); m <= Math.min(k - 1, mt); m++) {
           if (this.pts[a + m].frozen) continue;
           const u = (m - ma) / span;
           T[m] = clamp(base + (sgn * dz * (1 - Math.cos(Math.PI * u))) / 2, LO[m], HI[m]);
@@ -1025,6 +1274,44 @@ export class Strich2 {
         }
       }
     }
+    // Schleifen: ein Looping hält die Tiefe der Einfahrt (die Kreuzungsregel versetzt die Ausfahrt), eine Bodenschleife
+    // die Höhe (die Bildbewegung wird Tiefe)
+    for (const l of this.loops) {
+      if (l.j < a || l.i >= n) continue;
+      const qi = this.pts[l.i];
+      const zIn = qi.frozen ? qi.z : T[clamp(l.i - a, 0, k - 1)];
+      const body = (q: Pt): number => (l.vertical ? zIn : zIn + (q.p.Y - qi.p.Y) / TILT_TAN);
+      for (let m = Math.max(1, l.i - a); m <= Math.min(k - 1, l.j - a); m++) {
+        const q = this.pts[a + m];
+        if (q.frozen) continue;
+        T[m] = clamp(body(q), LO[m], HI[m]);
+        W[m] = W_LOOP;
+        level[m] = 0;
+      }
+      // die eigene Kreuzung: die Ausfahrt läuft über die letzten 2·NEIGHBOR Meter der Schleife hinter die Einfahrt
+      // (PASS_SIDE plus Spiel) und bleibt dort noch NEIGHBOR Meter; die Kreuzungsregel lässt dieses Paar aus
+      const off = PASS_SIDE * 1.15;
+      for (let m = Math.max(1, l.j - 2 * NEIGHBOR - a); m <= Math.min(k - 1, l.j + NEIGHBOR - a); m++) {
+        const q = this.pts[a + m];
+        if (q.frozen) continue;
+        const u = clamp((a + m - (l.j - 2 * NEIGHBOR)) / (2 * NEIGHBOR), 0, 1);
+        T[m] = clamp(body(q) + off * u * u * (3 - 2 * u), LO[m], HI[m]);
+        W[m] = W_LOOP;
+        level[m] = 0;
+      }
+    }
+    // Kreuzungsschranken erst jetzt, mit dem endgültigen Ziel je Punkt: Die Seite einer Begegnung wird am Ziel entschieden
+    // und bleibt; mit dem Bodenhöhen-Ziel statt dem der Form (Kehre, Schleife) saß sie oft falsch und deckelte die Tiefe
+    for (let m = 0; m < k; m++) {
+      const i = a + m;
+      if (this.pts[i].frozen) continue;
+      let { lo, hi } = this.crossBounds(i, T[m], LO[m], HI[m], Number.isFinite(endZ));
+      if (lo > hi) lo = hi = (lo + hi) / 2;
+      LO[m] = lo;
+      HI[m] = hi;
+      T[m] = clamp(T[m], lo, hi);
+    }
+    this.lastSolve = { a, T: Float64Array.from(T), W: Float64Array.from(W), LO: Float64Array.from(LO), HI: Float64Array.from(HI), level: Float64Array.from(level) };
     for (let m = 0; m < k; m++) {
       add(m, m, W[m]);
       b[m] += W[m] * T[m];
@@ -1108,14 +1395,14 @@ export class Strich2 {
   /** Weltpunkt eines Linienpunkts (Hub über die tragende Fläche), gemerkt je Tiefe */
   /** Weltpunkt ohne Feld (freie Punkte beim Fitten: vorläufig, nie fest) */
   private worldPointCheap(q: Pt): Vec3 {
-    const w = rayToWorld(q.p, q.z / LANE_DEPTH);
+    const w = rayToWorld(this.at(q), q.z / LANE_DEPTH);
     return { x: w.x, y: w.y, z: q.z };
   }
 
   private worldPoint(o: BrushOptions, q: Pt): Vec3 {
     const lane = q.z / LANE_DEPTH;
     if (q.wp && Math.abs(q.wpLane - lane) < 0.02) return q.wp;
-    const w = rayToWorld(q.p, lane);
+    const w = rayToWorld(this.at(q), lane);
     let y = w.y;
     const t0 = performance.now();
     if (o.field && !o.field.solid(w.x, w.y, lane)) {
@@ -1337,6 +1624,7 @@ export class Strich2 {
     }
     const frozen = this.frozenEnd();
     const frozenWorld = frozen > this.baseLen ? this.worldPoint(o, this.pts[frozen - 1]) : null;
+    this.stats.capped = this.pts.reduce((s, q) => s + (q.capped ? 1 : 0), 0);
     return { path: { ...emptyPath(), nodes, closed, brush: true }, z, rock, cave, crossings: [], line: this.pts.map((q) => q.p), frozen, frozenWorld };
   }
 
@@ -1364,6 +1652,7 @@ export class Strich2 {
     this.feed(points);
     if (this.pts.length - this.baseLen < MIN_LINE) return null;
     this.query(o, Math.min(before, this.lineFinal) - 2);
+    this.findLoops();
     this.solveTwice(o);
     this.freeze(o);
     const end = cut ? Math.max(this.frozenEnd(), Math.min(this.pts.length, this.baseLen + 2)) : this.pts.length;
@@ -1407,6 +1696,7 @@ export class Strich2 {
       this.lineFinal = this.pts.length;
     }
     this.query(o, Math.min(before, this.lineFinal) - 2);
+    this.findLoops();
     this.solveTwice(o, endAt ? endAt.z : NaN);
     if (endAt) this.pts[this.pts.length - 1].z = endAt.z;
     // beim Loslassen ist ein noch offenes steiles Stück Höhe: alles bis FREEZE vor dem Ende wird fest

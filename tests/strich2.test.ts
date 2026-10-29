@@ -65,7 +65,8 @@ describe('Strich 2: kausal mit festem Vorlauf', () => {
     expect(pk && pl).toBeTruthy();
     expect(pl!.frozen).toBe(pk!.frozen);
     expect(pl!.frozen).toBeGreaterThanOrEqual(60 - 3 - 3);
-    // Gerade, Kehre, 8 m zurück: die Richtungsumkehr liegt noch im Fenster, also gilt der volle Vorlauf (6 gegen 12 m)
+    // Gerade, steil hoch, 8 m zurück: solange der zweite Schenkel nicht wieder auf der Höhe des Fußes ist, kann das noch
+    // eine Schleife werden (Paket 3): das Stück bleibt offen, fest wird nur bis zum Fuß, egal wie lang der Vorlauf ist
     const turn = polyline([[0, 10], [60, 10], [60, 20], [52, 20]]);
     const k2 = new Strich2(() => stepOptions(1000), null, 4, 8, FIX_BEHIND, 6);
     const l2 = new Strich2(() => stepOptions(1000), null, 4, 8);
@@ -75,8 +76,22 @@ describe('Strich 2: kausal mit festem Vorlauf', () => {
     }
     const pk2 = k2.update(turn)!;
     const pl2 = l2.update(turn)!;
-    expect(pk2.frozen).toBeGreaterThan(pl2.frozen);
-    expect(pk2.frozen - pl2.frozen).toBeLessThanOrEqual(FREEZE - 6);
+    expect(pk2.frozen).toBe(pl2.frozen);
+    expect(pk2.frozen).toBeLessThanOrEqual(61);
+    // wieder unten und 20 m weiter: Kehre und Abstieg sind gelesen, fest bis weit hinter den Fuß; mit kurzem Vorlauf
+    // weiter als mit langem (3 gegen 12 m, der Abstieg liegt noch im langen Fenster)
+    const down = polyline([[0, 10], [60, 10], [60, 20], [52, 20], [52, 10], [32, 10]]);
+    const k3 = new Strich2(() => stepOptions(1000), null, 4, 8, FIX_BEHIND, 6);
+    const l3 = new Strich2(() => stepOptions(1000), null, 4, 8);
+    for (let n = 6; n <= down.length; n += 10) {
+      k3.update(down.slice(0, n));
+      l3.update(down.slice(0, n));
+    }
+    const pk3 = k3.update(down)!;
+    const pl3 = l3.update(down)!;
+    expect(pl3.frozen).toBeGreaterThan(pk2.frozen + 8);
+    expect(pk3.frozen).toBeGreaterThanOrEqual(pl3.frozen);
+    expect(pk3.frozen - pl3.frozen).toBeLessThanOrEqual(FREEZE - 3);
   });
 
   it('Fortsetzen: die Knoten der alten Bahn bleiben wörtlich stehen, der Anschluss ist G1', () => {
@@ -390,5 +405,127 @@ describe('Strich 2: kausal mit festem Vorlauf', () => {
     const r = s.finish(pts)!;
     expect(r.path.nodes.length).toBeLessThanOrEqual(10);
     expect(r.path.nodes.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+/** Kringel (Trochoide, gespiegelt): startet am tiefsten Punkt nach rechts, dreht über den Scheitel und kreuzt links die Anfahrt */
+function curl(x0: number, y0: number, b: number, a: number, ky = 1): StagePoint[] {
+  const out: StagePoint[] = [];
+  for (let t = 0.05; t <= 2 * Math.PI + 1e-9; t += 0.05) out.push({ X: x0 + b * Math.sin(t) - a * t, Y: y0 + ky * (b - b * Math.cos(t)) });
+  return out;
+}
+
+/** Strich: schräge Anfahrt von links oben, Kringel, Ausfahrt nach rechts unten */
+function curlStroke(b: number, a: number, ky = 1): StagePoint[] {
+  const start = polyline([[-60, 15], [0, 9]]);
+  const c = curl(0, 9, b, a, ky);
+  const last = c[c.length - 1];
+  const exit = polyline([[last.X, last.Y], [40, 5]]).slice(1);
+  return [...start, ...c, ...exit];
+}
+
+/** Boden überall in Tiefe 4, keine Landungen, viel Platz nach hinten */
+function flatOptions(chainTop?: number): BrushOptions {
+  return { ground: () => -500, clearance: 0.8, holdLane: true, depthAt: () => null, groundAt: () => 4, zMax: 80, chainTop };
+}
+
+describe('Strich 2: Schleifen, Kehren und Kettenlinie (Paket 3)', () => {
+  it('liest einen hoch gezeichneten Kringel als Looping: die Tiefe bleibt, die Bahn geht kopfüber', () => {
+    const pts = curlStroke(7, 1);
+    const s = new Strich2(() => flatOptions(), null, 4, 8);
+    run(s, pts);
+    const r = s.finish(pts)!;
+    expect(s.stats.loops).toBe(1);
+    expect(s.stats.loopsFlat).toBe(0);
+    expect(s.stats.loopsWidened).toBe(0);
+    // in der Schleife (Bild-Y über 12) bleibt die Tiefe bei der der Einfahrt (± kleiner Versatz der Ausfahrt)
+    const zIn = r.pts.find((p, i) => r.line[i].X > -2 && r.line[i].Y < 9.5)!.z;
+    for (let i = 0; i < r.line.length; i++) if (r.line[i].Y > 12) expect(Math.abs(r.pts[i].z - zIn)).toBeLessThan(4.5);
+    const S = sampleTrack(r.path);
+    let minUp = 1;
+    for (let i = 0; i < S.count; i++) minUp = Math.min(minUp, S.upy[i]);
+    expect(minUp).toBeLessThan(-0.5);
+    // Höhe der Schleife wie gezeichnet: 14 m im Bild sind 14 m Höhe bei gleicher Tiefe
+    const ys = r.pts.filter((p, i) => r.line[i].X > -12 && r.line[i].X < 12).map((p) => p.y);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(11);
+  });
+
+  it('weitet einen zu kleinen Kringel auf den Mindestradius auf, die Tinte bleibt', () => {
+    const pts = curlStroke(2.8, 0.4);
+    const s = new Strich2(() => flatOptions(), null, 4, 8);
+    run(s, pts);
+    const r = s.finish(pts)!;
+    expect(s.stats.loops).toBe(1);
+    expect(s.stats.loopsWidened).toBe(1);
+    const inLoop = (i: number) => r.line[i].X > -8 && r.line[i].X < 8 && r.line[i].Y > 9.3;
+    const ink = r.line.filter((p, i) => inLoop(i)).map((p) => p.Y);
+    const ys = r.pts.filter((p, i) => inLoop(i)).map((p) => p.y);
+    // Tinte 5,6 m hoch, Bahn auf mindestens rund 7 m aufgeweitet (Radius 4 am Scheitel, Anschluss an die Tinte an den Enden)
+    expect(Math.max(...ink) - Math.min(...ink)).toBeLessThan(6);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(6.2);
+  });
+
+  it('liest einen flach gezeichneten Kringel als Bodenschleife: die Höhe bleibt, die Bildbewegung wird Tiefe', () => {
+    const pts = curlStroke(7, 1, 0.35);
+    const s = new Strich2(() => flatOptions(), null, 4, 8);
+    run(s, pts);
+    const r = s.finish(pts)!;
+    expect(s.stats.loops).toBe(0);
+    expect(s.stats.loopsFlat).toBe(1);
+    const inLoop = (i: number) => r.line[i].X > -12 && r.line[i].X < 12 && r.line[i].Y > 9.3;
+    const ys = r.pts.filter((p, i) => inLoop(i)).map((p) => p.y);
+    const zs = r.pts.filter((p, i) => inLoop(i)).map((p) => p.z);
+    // bis auf den Versatz der eigenen Kreuzung (die Ausfahrt läuft 2,5 m hinter die Einfahrt, im Bild 1,25 m tiefer)
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(3.5);
+    expect(Math.max(...zs) - Math.min(...zs)).toBeGreaterThan(6);
+    const S = sampleTrack(r.path);
+    let minUp = 1;
+    for (let i = 0; i < S.count; i++) minUp = Math.min(minUp, S.upy[i]);
+    expect(minUp).toBeGreaterThan(0.3);
+  });
+
+  it('liest ein hohes U als Kehre (keine Schleife) und wartet damit, bis es keine Schleife mehr werden kann', () => {
+    // U mit runden Ecken (wie von Hand), 9 m weit, 17 m hoch, 6 m über der Anfahrt zurück (keine Schleife, keine Kreuzung)
+    const arc = (cx: number, cy: number, r: number, a0: number, a1: number, n = 12): Array<[number, number]> =>
+      Array.from({ length: n + 1 }, (_, k) => [cx + r * Math.cos(a0 + ((a1 - a0) * k) / n), cy + r * Math.sin(a0 + ((a1 - a0) * k) / n)] as [number, number]);
+    const pts = polyline([[0, 10], [55, 10], ...arc(55, 15, 5, -Math.PI / 2, 0), [60, 23], ...arc(55.5, 23, 4.5, 0, Math.PI), [51, 21], ...arc(46, 21, 5, 0, -Math.PI / 2), [0, 16]]);
+    const s = new Strich2(() => flatOptions(), null, 4, 8);
+    // solange der zweite Schenkel noch fällt, bleibt das U offen: fest nur bis zum Fuß
+    let openAt = -1;
+    for (let n = 6; n <= pts.length; n += 5) {
+      const pv = s.update(pts.slice(0, n));
+      if (pv && pv.line[pv.line.length - 1].Y > 18 && pv.line[pv.line.length - 1].X < 53) openAt = pv.frozen;
+    }
+    expect(openAt).toBeGreaterThan(0);
+    expect(openAt).toBeLessThanOrEqual(60);
+    const r = s.finish(pts)!;
+    expect(s.stats.loops + s.stats.loopsFlat).toBe(0);
+    // Kehre wie bisher: die Tiefe dreht über den ersten Schenkel nach hinten (Weite 9 m → 18 m), der zweite kommt zurück
+    const inU = (i: number) => r.line[i].X > 44 && r.line[i].X < 62 && r.line[i].Y > 11;
+    const zs = r.pts.filter((p, i) => inU(i)).map((p) => p.z);
+    expect(Math.max(...zs) - 4).toBeGreaterThan(3);
+    expect(Math.max(...zs) - 4).toBeLessThanOrEqual(3 * LANE_DEPTH + 0.1);
+    expect(Math.abs(r.pts[r.pts.length - 1].z - 4)).toBeLessThan(3);
+    // Offen (Paket 3, 30.10., Studie 16c): Ein hohes schmales U kippt am Scheitel; vier Lesungen ohne senkrechte Schenkel
+    // waren auf Florians Strichen messbar schlechter. Die Frage ist eine Gestaltungsfrage für Florian.
+  });
+
+  it('hält die Kettenlinie als Deckel: was im Bild darüber liegt, wird Tiefe; ohne Platz nach hinten wird es gezählt', () => {
+    const pts = polyline([[0, 10], [40, 10], [60, 40], [100, 40]]);
+    const frei = new Strich2(() => flatOptions(), null, 4, 8);
+    run(frei, pts);
+    const rf = frei.finish(pts)!;
+    expect(Math.max(...rf.pts.map((p) => p.y))).toBeGreaterThan(25);
+    const cap = new Strich2(() => flatOptions(12), null, 4, 8);
+    run(cap, pts);
+    const rc = cap.finish(pts)!;
+    expect(cap.stats.capped).toBe(0);
+    for (const p of rc.pts) expect(p.y).toBeLessThanOrEqual(12.6);
+    // nur 40 m Tiefe erlaubt: die Linie bei Y 40 bräuchte 56 m, der Rest bleibt Höhe und wird gezählt
+    const eng = new Strich2(() => ({ ...flatOptions(12), zMax: 40 }), null, 4, 8);
+    run(eng, pts);
+    const re = eng.finish(pts)!;
+    expect(eng.stats.capped).toBeGreaterThan(5);
+    expect(Math.max(...re.pts.map((p) => p.y))).toBeGreaterThan(15);
   });
 });

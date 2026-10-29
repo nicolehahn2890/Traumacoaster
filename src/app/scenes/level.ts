@@ -31,7 +31,7 @@ import { strokeToTrack, closePath, extendTrack, interpretStroke, lanesTrack, typ
 import { bendSegment } from '@/track/edit';
 import { RubberBrush, chaikin, resamplePolyline } from '@/track/brush';
 import { BrushRefiner, joinLines, lineLength, planBrushTrack, previewBrushTrack, spliceLine, swapCrossing, trackLine, trackLineWithDepth, type BrushPlan, type BrushPreview } from '@/track/brushTrack';
-import { FIT_TUNING, FIX_BEHIND, FREEZE, LOOK_TUNING, Strich2, type Strich2End, type Strich2Preview } from '@/track/strich2';
+import { FIT_TUNING, FIX_BEHIND, FREEZE, LOOK_TUNING, LOOP_TUNING, Strich2, type Strich2End, type Strich2Preview } from '@/track/strich2';
 import { splitPathAt } from '@/track/pathSplit';
 import { TrackInspector, type WeakSpot } from '@/track/inspect';
 import { findCrossings } from '@/track/crossings';
@@ -196,6 +196,11 @@ FIT_TUNING.evenTurn = urlNum('turn', FIT_TUNING.evenTurn);
 // Strich 2, Vorlauf zum Ausprobieren: &freezemax=40 (ab so vielen Metern bleibt ein offenes steiles Stück Höhe), &lookstart=6
 LOOK_TUNING.freezeMax = urlNum('freezemax', LOOK_TUNING.freezeMax);
 LOOK_TUNING.lookStart = urlNum('lookstart', LOOK_TUNING.lookStart);
+// Schleifen (Paket 3): &schleifen=0 liest keine Schleifen (Stand vor Paket 3); &loopaspect= Höhe/Breite, ab der eine gezeichnete
+// Schleife ein Looping ist (sonst Bodenschleife); &loopr= Mindestradius (m)
+LOOP_TUNING.on = urlNum('schleifen', 1) !== 0;
+LOOP_TUNING.aspect = urlNum('loopaspect', LOOP_TUNING.aspect);
+LOOP_TUNING.minR = urlNum('loopr', LOOP_TUNING.minR);
 // Fahrregeln (Pinsel-Studie, Paket 2): &fahrt=1 die strenge Fahrt wie bisher, sonst Antrieb und Stützräder; &antrieb= Mindesttempo in m/s
 RIDE_TUNING.rules = urlNum('fahrt', 2) === 1 ? 'strict' : 'drive';
 RIDE_TUNING.driveSpeed = urlNum('antrieb', RIDE_TUNING.driveSpeed);
@@ -2213,7 +2218,16 @@ export class LevelScene implements Scene {
       holdLane: brushHoldsLane(),
       holdDepth: Number.isFinite(this.brushHoldZ) ? this.brushHoldZ : this.planeStartDepth(),
       ...this.layerDepth(),
+      chainTop: this.chainTopY(),
     };
+  }
+
+  /** Kettenlinie als Deckel für Strich 2 (Paket 3): Welthöhe der Kettenzugstärke über der Station, nur mit Kettenzug-Start (wie drawChainLine) */
+  private chainTopY(): number | undefined {
+    const st = this.zoneStation();
+    const chain = this.abilities?.chain;
+    if (!st || !chain || (this.path?.startType ?? 'chainlift') !== 'chainlift') return undefined;
+    return st.y + chain;
   }
 
   /** Freiraumfeld aus Flächen für den Pinsel (Ebenen-Zone mit Ebenen-Pinsel), sonst undefined */

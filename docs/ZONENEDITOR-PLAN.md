@@ -1097,6 +1097,11 @@ in Studie 14. 30.10. (Studie 15, Paket 2): Fahrregeln `drive` als Vorgabe (Antri
 Stützräder: kein Entgleisen, kein Fall, kein Stillstand, kein Auffahren; Querkraft und Hängen sind Werte), auf
 Florians 78 Strichen kommen damit alle Bahnen an statt einer; `&fahrt=1` ist die strenge Fahrt, offen sind
 Mindesttempo, Kettenlinie im Zeichnen, ebene Kreuzungen, Schräglage-Deckel und ein sichtbarer Antrieb (Studie 15f).
+30.10. (Studie 16, Paket 3): Strich 2 erkennt gezeichnete Schleifen und liest sie als Loopings (Tiefe bleibt,
+Mindestradius 4 m mit Aufweitung, Tinte bleibt) oder Bodenschleifen; die Kettenlinie ist ein Deckel (`chainTop`,
+greift nur in Feldern mit Aufwertungsstufe). Gemessen entstehen die Loopings, aber Kreuzungen auf gleicher Höhe und
+Knicke nehmen zu und die ungewollten Inversionen sinken kaum; Schalter `&schleifen=0`, Kehren bleiben die bisherige
+Lesung (hohe schmale U kippen als halbe Loopings), Brücken-Regel nicht gebaut; Entscheidungen in Studie 16f.
 Offen in Stufe P1: Mesh und Abtastung des festen Teils behalten (Renderer), Restkreuzungen in dichten
 Schleifenhaufen (strukturell, Stufe P2). Zonen ohne Ebenen zeichnen weiter mit dem bisherigen Pinsel.
 **Noch offen aus Stufe 4:** die übrigen Spielobjekte auf Kanten (Schlange, Ziele, Stufen, Schalter, Coins, Baustellen;
