@@ -7,17 +7,21 @@
  *   Montagen „Wald und Grotte“ und „Große Bögen“)
  * - test-boegen: Plateau auf Bögen über einer Unterwelt, Überhang, schwebende Insel, Wasserfall (Visuals 21, 27, 31, 33, 35,
  *   Baukasten 07 und 09)
+ * - tor-s5: Tor S5 (Stufe 5), ein Satz Körper im Earle-Look: Wiese, Bogen, Baum (Earles Favoriten 01, 03, 05, Florians
+ *   Bilder 6 bis 8, Baukasten 05 und 06, Visuals 14 und 43); die Earle-Vorgaben liegen schon auf den Formen. Vorschlag:
+ *   Formen, Farben und die Wahl der Vorgaben sind nicht festgelegt
  *
  * Platzhalter: alle Formen, Farben, Tiefen; Testgrundlage, kein Inhalt (Tor S4 baut Szene 06 eigens nach). Jede Ebene ist
  * mit „Bild halten“ so gesetzt, dass sie in der Startansicht des Editors (ganze Zonenbreite) aussieht wie hier gezeichnet:
  * Formen in Bildkoordinaten der Spur-0-Ebene.
  *
- *   npx tsx scripts/testzonen.ts
+ *   npx tsx scripts/testzonen.ts [zone …]     (ohne Namen alle Zonen)
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanPath, flattenPath, smoothPath, translatePath, type Poly, type ZonePath } from '../src/zone/path';
-import { holdPicture, type HoldView, type Material, type PlaneRole, type ZoneAir, type ZoneFieldNode, type ZoneGroup, type ZoneNode, type ZonePlane, type ZoneShape, type ZoneStationNode } from '../src/zone/nodes';
+import { holdPicture, LIGHT_DEFAULT, swatchMap, type HoldView, type Material, type PlaneRole, type ZoneAir, type ZoneFieldNode, type ZoneGroup, type ZoneNode, type ZonePlane, type ZoneShape, type ZoneStationNode } from '../src/zone/nodes';
+import { earleShape, type EarlePreset } from '../src/zone/earle';
 import type { GradientFill, ZoneSwatch } from '../src/zone/paint';
 import { dockEdges, stationOf } from '../src/zone/dock';
 import { emptyZone, parseZone, serializeZone } from '../src/zone/types';
@@ -96,6 +100,8 @@ interface ShapeSpec {
   grad?: Grad;
   material?: Material;
   opacity?: number;
+  /** Earle-Vorgabe der Form, wenn die Szene Earle trägt (sonst „Automatisch“ wie der Knopf; none: keine) */
+  earle?: EarlePreset | 'auto' | 'none';
 }
 
 interface PlaneSpec {
@@ -113,6 +119,10 @@ interface SceneSpec {
   groups: string[];
   planes: PlaneSpec[];
   station: { plane: string; x: number };
+  /** Earle-Look schon in der Datei (Knopf „Earle“ je Form, Licht der Zone wie vorgegeben) */
+  earle?: boolean;
+  /** Name des Felds */
+  field?: string;
 }
 
 /** Umriss gegen den Uhrzeigersinn (y nach oben, wie presetPath), Löcher mit ihm */
@@ -200,6 +210,7 @@ function build(scene: SceneSpec): ZoneNode[] {
   const view = fieldView();
   const planeIds = new Map<string, string>();
   let shapeNo = 0;
+  const looks: Array<[ZoneShape, EarlePreset | 'auto']> = [];
   // vorne zuerst (die Liste zeigt die Ebenen nach Tiefe; die Reihenfolge hier ist nur für die Kennungen)
   [...scene.planes]
     .sort((a, b) => a.z - b.z)
@@ -213,12 +224,19 @@ function build(scene: SceneSpec): ZoneNode[] {
       if (spec.air !== undefined) plane.air = spec.air;
       planeIds.set(spec.name, plane.id);
       nodes.push(plane);
-      spec.shapes.forEach((s, k) => nodes.push(makeShape(s, `s${++shapeNo}`, plane.id, k + 1)));
+      spec.shapes.forEach((s, k) => {
+        const shape = makeShape(s, `s${++shapeNo}`, plane.id, k + 1);
+        nodes.push(shape);
+        if (scene.earle && spec.role !== 'air' && s.earle !== 'none') looks.push([shape, s.earle ?? 'auto']);
+      });
     });
+  // Earle-Look wie der Knopf „Earle“ je Form (Luft-Ebenen nicht), mit dem vorgegebenen Licht der Zone
+  const sw = swatchMap(nodes);
+  for (const [shape, preset] of looks) earleShape(shape, null, preset, sw, LIGHT_DEFAULT);
   const st = planeIds.get(scene.station.plane);
   if (!st) throw new Error(`Station: Ebene ${scene.station.plane} fehlt`);
   nodes.push({ id: 'station', kind: 'station', parent: st, x: scene.station.x, dir: 1, length: 14 } satisfies ZoneStationNode);
-  nodes.push({ id: 'f1', kind: 'field', name: 'Test', ...FIELD } satisfies ZoneFieldNode);
+  nodes.push({ id: 'f1', kind: 'field', name: scene.field ?? 'Test', ...FIELD } satisfies ZoneFieldNode);
   return nodes;
 }
 
@@ -469,13 +487,119 @@ function boegen(): SceneSpec {
   };
 }
 
+/**
+ * Tor S5 (Stufe 5): ein Satz Körper im Earle-Look. Vorn eine Wiese mit der Station, in der Mitte eine goldgrüne Wiese mit
+ * einem großen Baum (dunkler Stamm, dessen Äste unter einer Schirmkrone mit Punktkrone auseinandergehen: Florians Bild 6,
+ * Earle 03), rechts ein Felsbogen in Blau mit einem cremefarbenen Ring dahinter (Bild 8, Baukasten 05 und 06), durch ihn
+ * eine helle Wiese mit Baumgruppen (Earle 03), dahinter ferne Hügel, Berge und eine Wolke. Vorschlag: Formen, Farben und
+ * die Wahl der Vorgaben je Form sind nicht festgelegt
+ */
+function torS5(): SceneSpec {
+  const front: Pt[] = [[-60, 4], [-24, 5.2], [-4, 6], [6, 6.2], [14, 6.4], [24, 7.6], [36, 9.8], [48, 9.4], [60, 7.6], [72, 8], [84, 10.2], [96, 9.4], [108, 8], [124, 8.6], [190, 8]];
+  const mid: Pt[] = [[-60, 12], [-24, 13.4], [0, 15], [14, 16.4], [26, 16.8], [38, 16.2], [52, 17.8], [66, 16.6], [80, 18.4], [94, 17.2], [108, 18.8], [124, 17.6], [190, 17]];
+  const back: Pt[] = [[-60, 20], [-20, 21.6], [10, 23.4], [36, 22.6], [58, 25.2], [76, 23.8], [92, 26], [112, 24.4], [140, 25.6], [190, 24]];
+  // Stamm mit vier Ästen, die unter der Krone fächerartig auseinandergehen (Bild 6)
+  const trunk: Pt[] = [
+    [24.2, 14.6], [24.8, 19], [24.6, 23.6], [23.6, 26.6],
+    [19.4, 29.6], [14.4, 32.6], [10.6, 35.2], [11.2, 35.8], [15.2, 33.6], [20.2, 30.8], [23.4, 29.2],
+    [23.2, 31.6], [21.4, 35.6], [22.2, 36], [24.6, 31.8],
+    [25.8, 31.4], [27.4, 36.2], [28.2, 35.8], [27.2, 30.6],
+    [29.4, 29.6], [34.6, 32.2], [40.4, 35.2], [41, 34.6], [35.4, 31.2], [29.8, 27.4],
+    [27.8, 24], [27.4, 19], [28.2, 14.6],
+  ];
+  /** Schirmkrone: gewölbt oben, flacher, leicht gewellter Boden (Bild 6) */
+  const dome = (cx: number, y0: number, rx: number, ry: number): Pt[] => {
+    const out: Pt[] = [];
+    for (let i = 0; i <= 12; i++) {
+      const a = (i / 12) * Math.PI;
+      const k = 1 + (rnd() * 2 - 1) * 0.05;
+      out.push([cx + Math.cos(a) * rx * k, y0 + Math.sin(a) * ry * k]);
+    }
+    out.push([cx - rx * 0.8, y0 - ry * 0.12], [cx - rx * 0.45, y0 - ry * 0.2], [cx - rx * 0.1, y0 - ry * 0.14], [cx + rx * 0.3, y0 - ry * 0.22], [cx + rx * 0.7, y0 - ry * 0.12]);
+    return out;
+  };
+  // Felsbogen als Masse: außen heller Sandstein mit Grasdecke, nach innen zwei Ringe, die dunkler werden und nach rechts
+  // zusammenlaufen wie ein Tunnel (Bänder ungleicher Breite wie in Bild 8 und den Baukasten-Szenen 05 und 06)
+  const archTop: Pt[] = [[55.4, 20], [58.6, 29.6], [64.4, 37.6], [72.6, 43], [82, 46], [92.6, 46.6], [101.6, 44], [108.6, 38.4], [112.8, 30], [114.6, 20]];
+  const archOuter: Pt[] = [[54, -40], [55.6, 0], [54.4, 10], ...archTop, [115, 8], [116, -40]];
+  const archGrass: Pt[] = [...archTop.slice(1, -1).map(([x, y]): Pt => [x, y + 0.9]), ...archTop.slice(1, -1).reverse().map(([x, y], i): Pt => [x + (i % 2 ? 0.6 : -0.5), y - 2.8])];
+  const archHole: Pt[] = [[69.6, 4], [69.2, 14], [70.8, 22.8], [74.8, 29.6], [81, 33.8], [88.4, 35.4], [95.6, 33.6], [100.4, 27.8], [102.6, 19.4], [102.8, 9.4], [102, 3], [86, 2.2], [74, 2.8]];
+  const M: Pt = [86.5, 18];
+  const at = (pts: Pt[], k: number, dx: number, dy: number, ky = k): Pt[] => grow(pts, M[0], M[1], k, ky).map(([x, y]): Pt => [x + dx, y + dy]);
+  const grove = (cx: number, cy: number, rx: number, ry: number): ShapeSpec => ({ name: 'Baumgruppe', outline: blob(cx, cy, rx, ry, 11, 0.1), fill: C['Wald'], material: 'airy', grad: { stops: [[C['Wiese dunkel'], 0], [C['Wald'], 1]], from: [cx, cy + ry], to: [cx, cy - ry] }, earle: 'crown' });
+  return {
+    name: 'tor-s5',
+    groups: ['Wiese', 'Bogen', 'Kulisse'],
+    station: { plane: 'Wiese vorn', x: 7 },
+    earle: true,
+    field: 'Tor S5 (Vorschlag)',
+    planes: [
+      { name: 'Vorn Busch', z: -6, role: 'front', shapes: [{ name: 'Busch', outline: blob(106, -11, 14, 8, 11, 0.12), fill: C['Busch'], material: 'airy', grad: { stops: [[C['Wiese dunkel'], 0], [C['Busch'], 1]], from: [106, -3], to: [106, -15] }, earle: 'crown' }] },
+      { name: 'Wiese vorn', z: 4, role: 'play', group: 'Wiese', shapes: [{ name: 'Wiese vorn', outline: band(front), fill: C['Wiese'], grad: hillGrad(10.2, C['Wiese hell'], C['Wiese dunkel']), earle: 'hill' }] },
+      {
+        name: 'Wiese Mitte',
+        z: 12,
+        role: 'play',
+        group: 'Wiese',
+        shapes: [
+          { name: 'Wiese Mitte', outline: band(mid), fill: C['Gold'], grad: hillGrad(18.8, C['Gold'], C['Wiese']), earle: 'hill' },
+          { name: 'Stamm', outline: trunk, fill: C['Höhle tief'], material: 'airy', earle: 'rock' },
+          { name: 'Krone', outline: dome(26, 35, 18, 11), fill: C['Wiese'], material: 'airy', grad: { stops: [[C['Wiese hell'], 0], [C['Wiese dunkel'], 1]], from: [26, 46], to: [26, 33] }, earle: 'crown' },
+        ],
+      },
+      {
+        name: 'Bogen',
+        z: 22,
+        role: 'play',
+        group: 'Bogen',
+        shapes: [
+          { name: 'Bogen', outline: archOuter, holes: [archHole], fill: C['Sandstein hell'], material: 'solid', grad: { stops: [[C['Sandstein hell'], 0], [C['Sandstein'], 0.55], [C['Ocker'], 1]], from: [86, 46], to: [86, 0] }, earle: 'rock' },
+          { name: 'Grasdecke', outline: archGrass, fill: C['Wiese'], grad: hillGrad(47, C['Wiese hell'], C['Wiese']), earle: 'meadow' },
+        ],
+      },
+      {
+        name: 'Bogen Ring 1',
+        z: 25,
+        role: 'play',
+        group: 'Bogen',
+        shapes: [{ name: 'Ring hell', outline: at(archHole, 1.1, 0, 0, 1.06), holes: [at(archHole, 0.8, 2.4, 0.4, 0.78)], fill: C['Fels blau hell'], material: 'solid', grad: { stops: [[C['Fels blau hell'], 0], [C['Fels blau'], 1]], from: [86, 36], to: [86, 2] }, earle: 'rock' }],
+      },
+      {
+        name: 'Bogen Ring 2',
+        z: 29,
+        role: 'play',
+        group: 'Bogen',
+        shapes: [{ name: 'Ring tief', outline: at(archHole, 0.84, 2.4, 0.4, 0.82), holes: [at(archHole, 0.58, 4.6, 0.8, 0.56)], fill: C['Fels blau'], material: 'solid', grad: { stops: [[C['Fels blau'], 0], [C['Fels blau tief'], 1]], from: [88, 30], to: [88, 4] }, earle: 'rock' }],
+      },
+      {
+        name: 'Wiese hinten',
+        z: 40,
+        role: 'backdrop',
+        group: 'Kulisse',
+        shapes: [
+          { name: 'Wiese hinten', outline: band(back, -30), fill: C['Wiese hell'], grad: hillGrad(26, C['Wiese hell'], C['Wiese']), earle: 'meadow' },
+          grove(44, 23.2, 3.2, 2.6),
+          grove(50.4, 24.4, 2.6, 2.2),
+          grove(85, 25.6, 3, 2.4),
+          grove(95.5, 26.6, 2.4, 2),
+        ],
+      },
+      { name: 'Wolke', z: 80, role: 'air', group: 'Kulisse', shapes: [cloud(40, 51, 24)] },
+      { name: 'Hügel fern', z: 90, role: 'backdrop', group: 'Kulisse', air: 0.7, shapes: [{ ...farHills([[-60, 30], [-20, 32], [12, 33.6], [44, 32], [76, 34.4], [110, 33], [190, 32]]), earle: 'meadow' }] },
+      { name: 'Berge', z: 120, role: 'backdrop', group: 'Kulisse', air: 0.5, shapes: mountains([[64, 50], [118, 47]]).map((s): ShapeSpec => ({ ...s, earle: s.name === 'Berge' ? 'hill' : 'meadow' })) },
+    ],
+  };
+}
+
 // ------------------------------------------------------------------ schreiben und prüfen
 
-for (const scene of [huegel(), grotte(), boegen()]) {
+// alle Szenen bauen (der Zufall läuft in dieser Reihenfolge), nur die genannten schreiben
+const only = process.argv.slice(2);
+for (const scene of [huegel(), grotte(), boegen(), torS5()].filter((s) => !only.length || only.includes(s.name))) {
   seed = 7;
   const nodes = build(scene);
   // das Feld als Feldknoten (Zonen-Editor) und als Spiegel in den Feldern der Zonendatei (Klötzchen-Editor)
-  const zone = { ...emptyZone(scene.name, FIELD.x1 - FIELD.x0, 'steel'), fields: [{ id: 'f1', name: 'Test', ...FIELD }], nodes };
+  const zone = { ...emptyZone(scene.name, FIELD.x1 - FIELD.x0, 'steel'), fields: [{ id: 'f1', name: scene.field ?? 'Test', ...FIELD }], nodes };
   const text = serializeZone(zone);
   const back = parseZone(JSON.parse(text));
   if (!back || (back.nodes?.length ?? 0) !== nodes.length) throw new Error(`${scene.name}: Zonendatei liest sich nicht zurück (${back?.nodes?.length} von ${nodes.length} Knoten)`);

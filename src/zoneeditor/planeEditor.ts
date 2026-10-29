@@ -350,6 +350,8 @@ export class PlaneEditor {
       visible: (plane) => this.planeShown(plane),
     });
     this.ui = new EditorUi(this.actions(), zone.name, this.overlay.el, this.colorHost());
+    // Standbild (Tor S5): ohne Leisten, damit ein Bildschirmfoto vom Handy nur das Spielbild zeigt
+    if (this.still) document.head.append(Object.assign(document.createElement('style'), { textContent: '[class^="ze-"],[class*=" ze-"]{display:none!important}' }));
     this.ui.setTool(this.tool);
     this.ui.setView(this.viewChoice);
     this.ui.setHold(this.hold);
@@ -559,9 +561,15 @@ export class PlaneEditor {
 
   // ------------------------------------------------------------------ Bild
 
-  /** freier Bildbereich zwischen den Leisten des Editors (Bildschirm-Pixel) */
+  /**
+   * Standbild (Tor S5, `&bild` in der Adresse): die Leisten des Editors sind aus, der Spielblick nimmt den ganzen Bildschirm;
+   * Ziehen und Zoomen gehen weiter
+   */
+  private readonly still = typeof location !== 'undefined' && new URLSearchParams(location.search).has('bild');
+
+  /** freier Bildbereich zwischen den Leisten des Editors (Bildschirm-Pixel); im Standbild der ganze Bildschirm */
   freeRect(): { x0: number; y0: number; x1: number; y1: number } {
-    return this.ui.freeRect(this.width, this.height);
+    return this.still ? { x0: 0, y0: 0, x1: this.width, y1: this.height } : this.ui.freeRect(this.width, this.height);
   }
 
   resize(w: number, h: number): void {
@@ -1960,10 +1968,15 @@ export class PlaneEditor {
         return;
       }
       // ein einzelner Finger zeichnet nicht, sobald ein Stift im Spiel war; lange halten ist die Pipette
-      if (this.penSeen) {
+      if (this.penSeen && !this.still) {
         this.startHold(e.pointerId);
         return;
       }
+    }
+    // Standbild: ein Finger, Stift oder Maus verschiebt nur das Bild, an der Zone ändert sich nichts
+    if (this.still) {
+      this.nav = { kind: 'mouse', pointerId: e.pointerId, last: p, orbit: false };
+      return;
     }
     if (e.pointerType === 'mouse' && (e.button === 1 || e.button === 2 || this.spaceDown)) {
       this.nav = { kind: 'mouse', pointerId: e.pointerId, last: p, orbit: e.button === 2 && this.views.mode === 'free' };

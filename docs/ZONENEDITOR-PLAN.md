@@ -1186,6 +1186,22 @@ und Punktkronen je −0,10 (Schwankung etwa 0,1 ms, siehe Kontrolle); die Anzeig
 Werkzeuge „sehen vielversprechend aus“. **Nicht geprüft:** Malen mit Farbnebel und Punktpinsel am iPad mit dem Pencil
 (der Editor ist zuerst für den Mac). **Offen aus Stufe 5:** Papier
 und Gouache aus Florians Scans; dann Tor S5 (Standbilder vom Handy neben Earles Favoriten, Florians Freigabe).
+**Tor S5 vorbereitet (29.10.2026, Florian: „Bereite Tor S5 vor: eine Testszene mit Wiese, Bogen und Baum im Earle-Look
+und ein Vergleichsblatt neben Earles Favoriten. Inhalte und Farben nur als Vorschlag markieren.“)** Testzone `tor-s5` aus
+`scripts/testzonen.ts` (`npx tsx scripts/testzonen.ts tor-s5` schreibt nur sie): vorn eine Wiese mit der Station, in der
+Mitte eine goldgrüne Wiese mit einem großen Baum (Stamm mit vier Ästen unter einer Schirmkrone mit Punktkrone, nach Bild 6
+und Earle 03), rechts ein Felsbogen aus Sandstein mit Grasdecke und zwei nach innen dunkler werdenden Ringen (Bild 8,
+Baukasten 05 und 06), dahinter eine helle Wiese mit Baumgruppen, ferne Hügel, Berge und eine Wolke. Die Earle-Vorgaben
+liegen schon in der Datei (Wiesen: Hügel, Krone: Krone, Stamm und Bogen: Fels, hinten: Wiese). **Standbild** `&bild` am
+Zonen-Editor: ohne Leisten, der Spielblick nimmt den ganzen Bildschirm, ein Finger verschiebt nur das Bild, zwei Finger
+zoomen; für die Standbilder vom Handy (quer): `?zone=tor-s5&editor=2&bild`. **Vergleichsblatt** (unsere Bilder neben Earles
+01, 03, 05 und Florians Bildern 6 bis 8) nur lokal, weil es fremde Bilder enthält; unsere Bilder allein:
+`docs/research/earle/2026-10-29-tor-s5-vorschlag.jpg`. **Befund am Blatt:** Krone und Wiesenbänder treffen die Technik
+(echte Punkte in der Krone, harte Stufen, Pünktchen an der Lichtkante). Gegenüber Earle und Bild 8 sind unsere Bilder
+heller und weicher (wenig Tonwert-Kontrast, blasser Himmel, Dunst über den Bergen), der Bogen ist regelmäßiger als die
+geschwungenen Bänder in Bild 8 und seine Kantenpünktchen sind lichter, der Baum hat vier dicke Äste statt vieler feiner.
+**Platzhalter:** die ganze Szene (Formen, Farben, Wahl der Vorgaben). **Offen für das Tor:** Standbilder vom Handy,
+Florians Urteil und Regel 4 (B1).
 
 **Stufe 6: Bilder, Schnittmasken, Säume, Austausch (M).** Bildschichten, Schnittmaske, Saum entlang einer Kante,
 Malvorlage mit Fingerabdruck und Größenangabe, Umriss aus Bild, Import gemalter Teile mit Passmarken, KTX2 beim
