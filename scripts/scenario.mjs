@@ -13,7 +13,7 @@
  */
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import sharp from 'sharp';
 
@@ -2468,6 +2468,179 @@ if (want('31')) {
     if (ride.mode === 'result' || ride.t > 2) break;
   }
   check(ride && (ride.t > 1 || ride.mode === 'result'), `Szene 06: Fahrt läuft (${ride?.mode}, ${Number(ride?.t ?? 0).toFixed(1)} s${ride?.fail ? `, ${ride.fail}` : ''})`);
+}
+
+// 32. Stufe 6 (Bilder, Schnittmasken, Säume, Malvorlagen, KTX2) in einer eigenen Zone, die danach wieder verschwindet
+if (want('32')) {
+  const ZONE = 'szenario-bilder';
+  rmSync(`public/zones/${ZONE}`, { recursive: true, force: true });
+  await page.goto(`${BASE}?zone=${ZONE}&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const ctxBtn = (text) => page.locator('.ze-context .ze-btn', { hasText: new RegExp(`^${text}`) });
+  const draw = () => page.evaluate(() => {
+    const g = window.tcGame;
+    if (g.current.view?.paper) g.current.view.paper.visible = false;
+    for (let i = 0; i < 3; i++) g.app.ticker.update(performance.now());
+  });
+  /** Farbe am Bildpunkt (Bildschirm) */
+  const pixel = async ([x, y]) => {
+    await draw();
+    const shot = await page.screenshot({ clip: { x: Math.round(x) - 1, y: Math.round(y) - 1, width: 3, height: 3 } });
+    const { data } = await sharp(shot).raw().toBuffer({ resolveWithObject: true });
+    return [data[12], data[13], data[14]];
+  };
+  // eine Ebene mit einer Fläche 30 × 16 m in der Mitte des Bilds
+  const ids = await page.evaluate(async () => {
+    const N = await import('/src/zone/nodes.ts');
+    const e = window.tcGame.current.planeEditor;
+    let shape = null;
+    let plane = null;
+    e.edit(() => {
+      plane = N.newPlane(e.nodes, 8, 'Probe');
+      e.nodes.push(plane);
+      shape = N.newShape(e.nodes, plane.id, N.rectPath(30, 16), 0, 0, '#557744', 'Probe Fläche');
+      e.nodes.push(shape);
+    });
+    e.active = plane.id;
+    window.tcGame.current.view.camera.setTarget(0, 0, 14);
+    e.setSelection([shape.id]);
+    return { plane: plane.id, shape: shape.id };
+  });
+  await sleep(800);
+  const shapeOf = () => page.evaluate((id) => JSON.parse(JSON.stringify(window.tcGame.current.planeEditor.nodes.find((n) => n.id === id))), ids.shape);
+  /** warten, bis die Form den Zustand hat (Bilder gehen erst durch Dekodieren und Hochladen), dann ein Bild zeichnen */
+  const shapeWhen = async (test) => {
+    let sh = await shapeOf();
+    for (let i = 0; i < 40 && !test(sh); i++) {
+      await sleep(250);
+      sh = await shapeOf();
+    }
+    await draw();
+    return sh;
+  };
+  const screen = (x, y) => page.evaluate(([pid, x, y]) => {
+    const e = window.tcGame.current.planeEditor;
+    const q = e.screenOf(e.nodes.find((n) => n.id === pid), { x, y });
+    return [q.x, q.y];
+  }, [ids.plane, x, y]);
+  // Malvorlage für die Form (Download)
+  await ctxBtn('Bild …').click();
+  await sleep(300);
+  const [dl] = await Promise.all([page.waitForEvent('download'), ctxBtn('Malvorlage').click()]);
+  await sleep(1200);
+  const tpl = await page.evaluate(() => JSON.parse(JSON.stringify(window.tcGame.current.planeEditor.nodes.find((n) => n.kind === 'template'))));
+  const dlMeta = await sharp(await dl.path()).metadata();
+  const onDisk = tpl && readdirSync(`public/zones/${ZONE}/vorlagen`).filter((f) => f.includes(`-${tpl.id}.`));
+  check(tpl && dl.suggestedFilename() === `vorlage-probe-flaeche-${tpl.id}.png` && dlMeta.width === tpl.w + 2 * tpl.margin && dlMeta.height === tpl.h + 2 * tpl.margin && onDisk.length === 3, `Malvorlage ${tpl?.id}: ${tpl?.w} × ${tpl?.h} px mit Rand als Download (${dl.suggestedFilename()}) und PNG, SVG, Begleitdatei in vorlagen/ (${onDisk?.join(', ')})`);
+  // „in Procreate gemalt“: links rot, rechts blau, ganze Leinwand (mit Rand) in der Größe der Vorlage
+  const paint = (w, h) => sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w / 2}" height="${h}" fill="#d02020"/><rect x="${w / 2}" width="${w / 2}" height="${h}" fill="#2040d0"/></svg>`)).png().toBuffer();
+  const W = tpl.w + 2 * tpl.margin;
+  const H = tpl.h + 2 * tpl.margin;
+  let [chooser] = await Promise.all([page.waitForEvent('filechooser'), ctxBtn('Bild einsetzen').click()]);
+  await chooser.setFiles({ name: `vorlage-probe-flaeche-${tpl.id}.png`, mimeType: 'image/png', buffer: await paint(W, H) });
+  let s = await shapeWhen((sh) => (sh.fills ?? []).some((x) => x.type === 'image'));
+  const f = s.fills?.[0];
+  check(f?.type === 'image' && f.tpl === tpl.id && f.ox === tpl.ox && f.ux === tpl.ux && f.vy === tpl.vy && existsSync(`public${f.src}`), `gemaltes Bild passgenau im Rahmen der Vorlage (${f?.src})`);
+  const left = await pixel(await screen(-8, 0));
+  const right = await pixel(await screen(8, 0));
+  check(left[0] > 150 && left[2] < 90 && right[2] > 150 && right[0] < 90, `im Bild: links rot ${left.join(',')}, rechts blau ${right.join(',')} (Schnittmaske ohne eigenen Draw Call)`);
+  // doppelt so groß gemalt, ohne Kennung im Namen: am Seitenverhältnis erkannt, ersetzt das erste Bild
+  [chooser] = await Promise.all([page.waitForEvent('filechooser'), ctxBtn('Bild einsetzen').click()]);
+  const firstSrc = s.fills[0].src;
+  await chooser.setFiles({ name: 'Unbenanntes Kunstwerk.png', mimeType: 'image/png', buffer: await paint(W * 2, H * 2) });
+  s = await shapeWhen((sh) => (sh.fills ?? []).some((x) => x.type === 'image' && x.src !== firstSrc));
+  const imgs = (s.fills ?? []).filter((x) => x.type === 'image');
+  const size = await sharp(`public${imgs[0]?.src}`).metadata();
+  check(imgs.length === 1 && imgs[0].tpl === tpl.id && size.width === Math.min(tpl.w * 2, Math.round(tpl.w * Math.min(4096 / tpl.w, 4096 / tpl.h))), `doppelt so groß gemalt: erkannt, Schärfe behalten (${size.width} px, höchstens 4096), ersetzt das erste (${imgs.length} Bild)`);
+  // Form ändern: der Füllstapel sagt, dass das Gemalte nicht mehr passt
+  await page.evaluate((id) => {
+    const e = window.tcGame.current.planeEditor;
+    const sh = e.nodes.find((n) => n.id === id);
+    e.edit(() => (sh.path = sh.path.map((p, i) => (i === 0 ? { ...p, x: p.x - 2 } : p))));
+    e.stackOpen = 'paint';
+  }, ids.shape);
+  await sleep(300);
+  const rows = await page.evaluate(() => window.tcGame.current.planeEditor.stackView().rows.map((r) => r.name ?? r.kind));
+  check(rows.some((r) => /Form geändert, bis \d+ px/.test(r)), `Form geändert: ${rows.find((r) => /geändert/.test(r))}`);
+  await page.evaluate(() => {
+    const e = window.tcGame.current.planeEditor;
+    e.undo();
+    e.stackOpen = null;
+  });
+  // Saum: grüner Streifen mit durchsichtiger unterer Hälfte an den Kanten nach oben
+  const strip = await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="100"><rect width="400" height="55" fill="#30c040"/></svg>')).png().toBuffer();
+  [chooser] = await Promise.all([page.waitForEvent('filechooser'), ctxBtn('Saum').click()]);
+  await chooser.setFiles({ name: 'gras.png', mimeType: 'image/png', buffer: strip });
+  s = await shapeWhen((sh) => (sh.rims ?? []).length > 0);
+  const rim = s.rims?.[0];
+  const st = await page.evaluate(() => ({ ...window.tcGame.world.planes.stats }));
+  // Oberkante bei y = 8; der Streifen ist 1,6 m hoch, die Kante bei 30 %: oben 1,12 m darüber, grün bis 0,6 m darüber
+  const above = await pixel(await screen(0, 8.8));
+  check(rim && rim.aspect === 4 && st.rims === 1 && above[1] > 150 && above[0] < 110, `Saum an der Oberkante: grün über der Kante (${above.join(',')}), ${st.rims} Saum, ${st.images} Bilder`);
+  const [dl2] = await Promise.all([page.waitForEvent('download'), ctxBtn('Saum-Vorlage: Stück').click()]);
+  await sleep(1200);
+  const rimTpl = await page.evaluate(() => JSON.parse(JSON.stringify(window.tcGame.current.planeEditor.nodes.filter((n) => n.kind === 'template').at(-1))));
+  check(rimTpl?.rim === rim?.id && rimTpl.mode === 'repeat' && Math.abs(rimTpl.w / rimTpl.h - 4) < 0.05 && /saum-stueck/.test(dl2.suggestedFilename()), `Saum-Vorlage ${rimTpl?.id}: Stück ${rimTpl?.w} × ${rimTpl?.h} px (${dl2.suggestedFilename()})`);
+  // Bildschicht: ein runder gemalter Fleck ohne Vorlage neben die Fläche, dann Umriss aus Bild
+  await page.evaluate(() => window.tcGame.current.planeEditor.setSelection([]));
+  const blob = await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><circle cx="150" cy="150" r="120" fill="#c08030"/></svg>')).png().toBuffer();
+  const layer = await page.evaluate(async (b64) => {
+    const e = window.tcGame.current.planeEditor;
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const I = await import('/src/zoneeditor/images.ts');
+    const before = new Set(e.nodes.map((n) => n.id));
+    await I.importImage(e.imageHost, new File([bytes], 'fleck.png', { type: 'image/png' }), { plane: e.active, at: { x: 26, y: 0 }, width: 10 });
+    const n = e.nodes.find((x) => x.kind === 'shape' && !before.has(x.id));
+    return n ? JSON.parse(JSON.stringify(n)) : null;
+  }, blob.toString('base64'));
+  const lf = layer?.fills?.[0];
+  check(lf?.type === 'image' && lf.mask && layer.path.length === 4, `Bildschicht: Rechteck mit Bild, das ausschneidet (${layer?.name})`);
+  const corner = await pixel(await screen(26 + 4.6, 4.6));
+  await page.evaluate(async (id) => {
+    const e = window.tcGame.current.planeEditor;
+    const I = await import('/src/zoneeditor/images.ts');
+    await I.traceShape(e.imageHost, id);
+  }, layer.id);
+  await sleep(500);
+  const traced = await page.evaluate((id) => JSON.parse(JSON.stringify(window.tcGame.current.planeEditor.nodes.find((n) => n.id === id))), layer.id);
+  const radii = traced.path.map((p) => Math.hypot(p.x, p.y));
+  check(!traced.fills[0].mask && traced.path.length >= 3 && traced.path.length <= 16 && radii.every((r) => Math.abs(r - 4) < 0.3) && corner[2] > corner[0] - 40, `Umriss aus Bild: Kreis mit ${traced.path.length} Ankern, Radius ${Math.min(...radii).toFixed(2)} bis ${Math.max(...radii).toFixed(2)} m (soll 4), deckt jetzt; vorher war die Ecke durchsichtig (${corner.join(',')})`);
+  // Schnittmaske: die Bildschicht über die Fläche schieben, beide wählen, Cmd+7
+  await page.evaluate(([lid, sid]) => {
+    const e = window.tcGame.current.planeEditor;
+    const l = e.nodes.find((n) => n.id === lid);
+    e.edit(() => (l.x = 0));
+    e.setSelection([sid, lid]);
+  }, [layer.id, ids.shape]);
+  await page.keyboard.press('Meta+7');
+  await sleep(500);
+  const clip = await page.evaluate(([lid, sid]) => {
+    const e = window.tcGame.current.planeEditor;
+    const sh = e.nodes.find((n) => n.id === sid);
+    return { gone: !e.nodes.some((n) => n.id === lid), images: (sh.fills ?? []).filter((f) => f.type === 'image').length };
+  }, [layer.id, ids.shape]);
+  check(clip.gone && clip.images === 2, `Schnittmaske (Cmd+7): die Bildschicht liegt jetzt in der Fläche (${clip.images} Bilder im Füllstapel)`);
+  await page.keyboard.press('Alt+Meta+7');
+  await sleep(500);
+  const rel = await page.evaluate((sid) => {
+    const e = window.tcGame.current.planeEditor;
+    const sh = e.nodes.find((n) => n.id === sid);
+    return { images: (sh.fills ?? []).filter((f) => f.type === 'image').length, layers: e.nodes.filter((n) => n.kind === 'shape' && (n.fills ?? []).some((f) => f.type === 'image' && f.mask)).length };
+  }, ids.shape);
+  check(rel.images === 1 && rel.layers === 1, `Schnittmaske lösen (Wahl+Cmd+7): wieder eine eigene Bildschicht (${rel.layers})`);
+  // Sichern: der Dev-Server packt die Bilder als KTX2; nach dem Neuladen lädt das Spiel sie gepackt
+  await page.keyboard.press('Meta+s');
+  let man = null;
+  for (let i = 0; i < 180 && !(man && Object.keys(man).length >= 3); i++) {
+    await sleep(500);
+    if (existsSync(`public/zones/${ZONE}/ktx2.json`)) man = JSON.parse(readFileSync(`public/zones/${ZONE}/ktx2.json`, 'utf8'));
+  }
+  await page.goto(`${BASE}?zone=${ZONE}`, { waitUntil: 'networkidle' });
+  await sleep(3000);
+  const game = await page.evaluate(() => ({ ...window.tcGame.world.planes.stats }));
+  check(man && Object.keys(man).length >= 3 && game.ktx2 === game.images && game.images >= 3, `KTX2 nach dem Sichern: ${Object.keys(man ?? {}).length} Bilder gepackt, im Spiel ${game.ktx2} von ${game.images} als KTX2, ${(game.imageBytes / 1048576).toFixed(2)} MB Grafikspeicher`);
+  await page.screenshot({ path: 'screenshots/scenario-32-bilder.png' });
+  rmSync(`public/zones/${ZONE}`, { recursive: true, force: true });
 }
 
 await browser.close();

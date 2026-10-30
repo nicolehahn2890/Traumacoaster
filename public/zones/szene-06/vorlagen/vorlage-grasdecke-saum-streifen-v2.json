@@ -1,0 +1,30 @@
+{
+  "zone": "szene-06",
+  "vorlage": "v2",
+  "name": "Grasdecke Saum Streifen",
+  "form": "s6",
+  "flaeche": null,
+  "saum": "r1",
+  "art": "stretch",
+  "malbereich": {
+    "w": 4096,
+    "h": 127
+  },
+  "rand": 64,
+  "pxJeMeter": 28.331,
+  "scharfBisZoom": 14.8,
+  "groessterZoom": 60,
+  "ebene": {
+    "id": "p3",
+    "name": "Bogen",
+    "tiefe": 8,
+    "massstab": 1.03487
+  },
+  "rahmen": null,
+  "teilung": [
+    0,
+    1
+  ],
+  "fingerabdruck": "f900d8fe",
+  "angelegt": "2026-10-30"
+}

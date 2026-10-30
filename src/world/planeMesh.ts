@@ -24,13 +24,15 @@
  */
 import { BufferAttribute, BufferGeometry, DataTexture, DoubleSide, FloatType, Group, Mesh, NearestFilter, RGBAFormat, ShaderMaterial, ShapeUtils, UniformsLib, UniformsUtils, Vector2, Vector3, type IUniform, type Raycaster } from 'three';
 import { airAmount, airOf, facePaint, lightIn, lightOf, planeHidden, planesOf, shapeFaces, shapesOf, styleMap, swatchMap, type ZoneLight, type ZoneNode, type ZonePlane, type ZoneShape } from '@/zone/nodes';
-import { BLEND_MODES, DOT_SOURCES, MAX_LAYERS, MIST_MAX, RAMP, hexToRgb, isGradient, layersClear, layersNeedEdge, paintLayers, rampOf, resolveColor, visibleLayers, type Box, type MistDab, type SwatchMap, type ZoneFill } from '@/zone/paint';
+import { BLEND_MODES, DOT_SOURCES, MAX_LAYERS, MIST_MAX, RAMP, hexToRgb, isGradient, layersClear, layersNeedEdge, paintLayers, rampOf, resolveColor, visibleLayers, type Box, type ImageFill, type MistDab, type SwatchMap, type ZoneFill } from '@/zone/paint';
 import { faceBox, type Face } from '@/zone/faces';
 import { EDGE_IN, EDGE_OUT, faceEdge, type EdgeRaster } from '@/zone/edgeDistance';
 import { EdgeAtlas, grainTexture, rankTexture, RANK_N } from './earleTextures';
 import { cachedCrownPoints, crownColor, CROWN_DEFAULT, CROWN_STRIDE, shapeDots } from '@/zone/crown';
 import { cachedWavyFace } from '@/zone/edgeWave';
 import { CrownLayer, type CrownDot } from './crownMesh';
+import { ImageCache } from './imageTextures';
+import { RimLayer } from './rimMesh';
 
 /** was eine Punktkrone zum Zeichnen braucht: ihre Punkte (crown.ts), Form, Ebene, Rang, Grundfarbe, Luftanteil, Ton, Wind */
 interface CrownInput {
@@ -53,7 +55,7 @@ const PER_LAYER = 4;
 const ROW_W = 1 + PER_LAYER * MAX_LAYERS;
 
 /** Arten im Shader (Texel A.x) */
-const CODE = { color: 0, linear: 1, radial: 2, fadeLinear: 3, fadeRadial: 4, edge: 5, fadeEdge: 6, light: 7, shade: 8, dots: 9, grain: 10, sparkle: 11, mist: 12 } as const;
+const CODE = { color: 0, linear: 1, radial: 2, fadeLinear: 3, fadeRadial: 4, edge: 5, fadeEdge: 6, light: 7, shade: 8, dots: 9, grain: 10, sparkle: 11, mist: 12, image: 13 } as const;
 
 interface Triangulated {
   /** Ecken in Pfad-Koordinaten (x, y abwechselnd) */
@@ -408,6 +410,9 @@ vec4 layers(int row, int n, vec2 p, vec2 pat, vec2 dx, vec2 dy, float px, vec4 a
       mat2 R = mat2(cr.x, cr.y, -cr.y, cr.x) / C.x;
       vec2 g = textureGrad(uGrain, R * pat, R * dx, R * dy).rg;
       cs = vec3(A.w < 0.5 ? g.r : g.g);
+    } else if (code == ${CODE.image}) {
+      // Bilder zeichnet nur der Shader je Folge (ein Sampler je Bild); Flächen mit Bild bekommen immer einen
+      as = 0.0;
     }
     as *= A.z;
     vec3 mixed = cs * (1.0 - acc.a) + blendFn(int(A.y + 0.5), cb, cs) * acc.a;
@@ -435,15 +440,17 @@ ${TAIL}
 /**
  * Schichtfolge einer Zeile als Kürzel (je Schicht eins, mit Punkt getrennt): c Farbe; g oder f (Deckkraft) mit l linear,
  * r radial, e Kante, dazu b für Bänder, w für Welle und d für Pünktchen; L Lichtkante, S Innenschatten, D0 bis D4 Pünktchen je Quelle,
- * K Funkeln, N1 bis N16 Farbnebel (Tupfer auf die nächste Zweierpotenz aufgerundet), P Papier oder Gouache. Was die Folge nicht festlegt (Farben, Griffe, Maße, Mischmodus), steht in der Datentextur
+ * K Funkeln, N1 bis N16 Farbnebel (Tupfer auf die nächste Zweierpotenz aufgerundet), P Papier oder Gouache, I mit Platz des
+ * Bilds (r Kachel, m schneidet aus) wie Ir3. Was die Folge nicht festlegt (Farben, Griffe, Maße, Mischmodus), steht in der Datentextur
  */
 /** Plätze im Shader für n Tupfer eines Farbnebels: die nächste Zweierpotenz (1, 2, 4, 8, 16), damit es wenige Shader gibt */
 export const mistSlots = (n: number): number => 2 ** Math.ceil(Math.log2(Math.max(1, Math.min(MIST_MAX, n))));
 
-export function layerTokens(layers: readonly ZoneFill[]): string {
+export function layerTokens(layers: readonly ZoneFill[], slot: (f: ImageFill) => number = () => 0): string {
   return layers
     .map((f) => {
       if (f.type === 'color') return 'c';
+      if (f.type === 'image') return `I${f.repeat ? 'r' : ''}${f.mask ? 'm' : ''}${slot(f)}`;
       if (isGradient(f)) return (f.type === 'fade' ? 'f' : 'g') + (f.edge ? 'e' : f.radial ? 'r' : 'l') + (f.steps ? 'b' : '') + (f.steps && f.wave ? 'w' : '') + (f.dots ? 'd' : '');
       if (f.type === 'light') return 'L';
       if (f.type === 'shade') return 'S';
@@ -504,6 +511,17 @@ function layerGlsl(token: string, k: number, row: string, p: string, pat: string
     return `{ ${head} int mr = int(A.w + 0.5); vec3 ms = vec3(0.0); float mw = 0.0; float mk = 1.0; ${dabs} cs = mw > 1e-5 ? ms / mw : vec3(0.0); as = 1.0 - mk; ${done} }`;
   }
   if (token === 'K') return `{ ${head} B = ${fetch(1)}; C = ${fetch(2)}; D = ${fetch(3)}; as = sparkleAt(${pat}, C, D, px); cs = B.a > 0.5 ? B.rgb : uLightColor; ${done} }`;
+  if (token[0] === 'I') {
+    // Bild im Rahmen (B: Ecke, erste Zeile der Umkehrung; C: zweite Zeile), vormultipliziert; außerhalb des Rahmens
+    // durchsichtig, als Kachel wiederholt; schneidet es aus, nimmt sein Alpha dem Bisherigen Deckkraft (wie ein
+    // Deckkraftverlauf), dann liegt es darüber
+    const repeat = token.includes('r');
+    const mask = token.includes('m');
+    const n = Number(token.replace(/\D/g, ''));
+    const inside = repeat ? '' : ' as *= step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);';
+    const cut = mask ? ' acc *= 1.0 - A.z + A.z * as;' : '';
+    return `{ ${head} B = ${fetch(1)}; C = ${fetch(2)}; vec2 q = ${p} - B.xy; vec2 uv = vec2(dot(q, B.zw), dot(q, C.xy)); vec4 tx = texture(uImg${n}, uv); as = tx.a;${inside} cs = tx.rgb / max(tx.a, 1e-4);${cut} ${done} }`;
+  }
   // Papier oder Gouache
   return `{ ${head} C = ${fetch(2)}; vec2 cr = vec2(cos(C.y), sin(C.y)); mat2 R = mat2(cr.x, cr.y, -cr.y, cr.x) / C.x; vec2 g = textureGrad(uGrain, R * ${pat}, R * ${dx}, R * ${dy}).rg; cs = vec3(A.w < 0.5 ? g.r : g.g); as = 1.0; ${done} }`;
 }
@@ -524,11 +542,15 @@ ${TAIL}
 }
 `;
   const [face, plane] = sig.split('|');
+  // je Bild der Folge ein Sampler (nur die, die sie liest)
+  const images = [...new Set((sig.match(/I[rm]*\d+/g) ?? []).map((t) => Number(t.replace(/\D/g, ''))))];
+  const samplers = images.map((n) => `uniform sampler2D uImg${n};`).join('\n');
   const rows = [
     ...(face ? face.split('.').map((tk, k) => layerGlsl(tk, k, 'vRows.x', 'vLocal', 'vPat.xy', 'fdx', 'fdy')) : []),
     ...(plane ? plane.split('.').map((tk, k) => layerGlsl(tk, k, 'vRows.y', 'vPlane', 'vPat.zw', 'pdx', 'pdy')) : []),
   ];
   return `${PRELUDE}
+${samplers}
 void main() {
 ${DERIVATIVES}
   vec4 A, B, C, D, r;
@@ -605,11 +627,22 @@ export class PlaneLayer {
   private crownInputs: CrownInput[] = [];
   /** die zuletzt gebauten Knoten (Handy-Messung, `src/world/earleMessung.ts`) */
   lastNodes: readonly ZoneNode[] = [];
+  /** Bilder der Bildfüllungen und Säume (Stufe 6, `src/world/imageTextures.ts`) */
+  readonly images = new ImageCache();
+  /** Säume (Stufe 6): gemalte Streifen entlang der Kanten, ein Mesh je Bild */
+  readonly rims: RimLayer;
+  /**
+   * Platz je Bild im Shader (uImg0, uImg1 …): bleibt fest, solange die Ebenen leben, sonst entstünden beim Bearbeiten
+   * immer neue Shader. Je Bild und Art (Rahmen oder Kachel) einer
+   */
+  private readonly imageSlots = new Map<string, number>();
+  /** Bilder (Schlüssel wie imageSlots) des letzten Aufbaus, Füllungen und Säume */
+  private imagesUsed = new Set<string>();
   /**
    * Zahlen des letzten Aufbaus (Leistungsanzeige): Ebenen, Formen, Dreiecke, Zeilen, Verläufe, durchsichtige Flächen,
    * Flächen mit Kantenabstand und Höhe des Atlas, Zeit für Kantenabstand und Packen (ms)
    */
-  stats = { planes: 0, shapes: 0, triangles: 0, paints: 0, gradients: 0, clear: 0, edges: 0, atlas: 0, edgeMs: 0, variants: 0, crowns: 0 };
+  stats = { planes: 0, shapes: 0, triangles: 0, paints: 0, gradients: 0, clear: 0, edges: 0, atlas: 0, edgeMs: 0, variants: 0, crowns: 0, images: 0, imageBytes: 0, ktx2: 0, rims: 0 };
 
   constructor() {
     this.group.name = 'ebenen';
@@ -628,11 +661,32 @@ export class PlaneLayer {
     this.uniforms.uShadeColor = { value: new Vector3(0.12, 0.16, 0.36) };
     // Uhr fürs Funkeln (jedes Mesh stellt sie vor dem Zeichnen)
     this.uniforms.uTime = { value: 0 };
+    this.rims = new RimLayer(this.images);
+    this.group.add(this.rims.group);
+    // ein Bild ist geladen oder als KTX2 getauscht: neue Textur in die Plätze und Säume
+    this.images.onChange = () => {
+      for (const [key, k] of this.imageSlots) this.uniforms[`uImg${k}`].value = this.images.texture(key.replace(/#r$/, ''), key.endsWith('#r'));
+      this.rims.applyTextures();
+      const st = this.images.stats(this.imagesUsed);
+      Object.assign(this.stats, { images: st.count, imageBytes: st.gpu, ktx2: st.ktx2 });
+    };
     const common = { uniforms: this.uniforms, vertexShader: VERTEX, fragmentShader: FRAGMENT, side: DoubleSide, fog: true, dithering: true };
     // undurchsichtig: Three setzt dafür selbst OPAQUE (Deckkraft 1 im Shader)
     this.opaqueMat = new ShaderMaterial(common);
     this.clearMat = new ShaderMaterial({ ...common, transparent: true, depthWrite: false });
   }
+
+  /** Platz eines Bilds im Shader (legt ihn beim ersten Mal mit seiner Textur an) */
+  private readonly slot = (f: ImageFill): number => {
+    const key = `${f.src}${f.repeat ? '#r' : ''}`;
+    let k = this.imageSlots.get(key);
+    if (k === undefined) {
+      k = this.imageSlots.size;
+      this.imageSlots.set(key, k);
+      this.uniforms[`uImg${k}`] = { value: this.images.texture(f.src, !!f.repeat) };
+    }
+    return k;
+  };
 
   /** Uhr fürs Funkeln vor dem Zeichnen stellen */
   private readonly tick = (): void => {
@@ -667,6 +721,7 @@ export class PlaneLayer {
     this.look = look;
     this.fillTextures();
     this.fillCrowns();
+    this.rims.setAir(hexToRgb(resolveColor(this.airColor, this.swatches, this.look)));
   }
 
   /** Zahl der Kronenpunkte (Leistungsanzeige, Messung) */
@@ -742,11 +797,16 @@ export class PlaneLayer {
     let edgeMs = 0;
     let rankNeeded = false;
     let grainNeeded = false;
+    const imagesUsed = new Set<string>();
     const note = (layers: readonly ZoneFill[]) => {
       for (const f of layers) {
         if (f.hidden) continue;
         if (f.type === 'dots' || f.type === 'sparkle' || (isGradient(f) && f.dots)) rankNeeded = true;
         else if (f.type === 'grain') grainNeeded = true;
+        else if (f.type === 'image') {
+          this.slot(f);
+          imagesUsed.add(`${f.src}${f.repeat ? '#r' : ''}`);
+        }
       }
     };
     for (const plane of planesOf(nodes)) {
@@ -821,9 +881,13 @@ export class PlaneLayer {
       edgeMs: Math.round(edgeMs * 10) / 10,
       variants: 0,
       crowns: 0,
+      images: 0,
+      imageBytes: 0,
+      ktx2: 0,
+      rims: 0,
     };
     // deckende Flächen nach Schichtfolge (Fläche|Ebene) zusammen; die häufigsten Folgen bekommen ihren eigenen Shader
-    const sigOf = (part: Part) => `${layerTokens(rows[part.row].layers)}|${layerTokens(rows[part.planeRow].layers)}`;
+    const sigOf = (part: Part) => `${layerTokens(rows[part.row].layers, this.slot)}|${layerTokens(rows[part.planeRow].layers, this.slot)}`;
     const bySig = new Map<string, Part[]>();
     for (const part of solid) {
       const sig = sigOf(part);
@@ -835,7 +899,8 @@ export class PlaneLayer {
     [...bySig.entries()]
       .sort((a, b) => b[1].length - a[1].length)
       .forEach(([sig, parts], i) => {
-        const key = i < MAX_VARIANTS ? sig : '*';
+        // (Bilder kann nur der Shader je Folge zeichnen)
+        const key = i < MAX_VARIANTS || sig.includes('I') ? sig : '*';
         groups.set(key, [...(groups.get(key) ?? []), ...parts]);
       });
     for (const [sig, mesh] of this.solid) {
@@ -856,7 +921,7 @@ export class PlaneLayer {
       if (last && last.sig === sig) last.parts.push(part);
       else runs.push({ sig, parts: [part] });
     }
-    const clearRuns = runs.length > 8 ? [{ sig: '*', parts: clear }] : runs;
+    const clearRuns = runs.length > 8 && !runs.some((r) => r.sig.includes('I')) ? [{ sig: '*', parts: clear }] : runs;
     const old = this.clearRuns;
     this.clearRuns = clearRuns.flatMap(({ sig, parts }, i) => {
       const prev = old[i] && old[i].userData.sig === sig ? old[i] : null;
@@ -872,6 +937,19 @@ export class PlaneLayer {
     this.crownInputs = crownInputs;
     this.fillCrowns();
     this.stats.crowns = this.crowns.dots;
+    // Säume (Stufe 6)
+    this.stats.rims = this.rims.build(nodes, show, hexToRgb(resolveColor(this.airColor, this.swatches, this.look)), ORDER_STEP);
+    for (const k of this.rims.used) imagesUsed.add(k);
+    this.imagesUsed = imagesUsed;
+    // genutzte Bilder frisch halten, lange ungenutzte freigeben; die Plätze zeigen danach auf die aktuellen Texturen
+    this.images.touch(imagesUsed);
+    this.images.prune();
+    for (const key of imagesUsed) {
+      const k = this.imageSlots.get(key);
+      if (k !== undefined) this.uniforms[`uImg${k}`].value = this.images.texture(key.replace(/#r$/, ''), key.endsWith('#r'));
+    }
+    const st = this.images.stats(imagesUsed);
+    Object.assign(this.stats, { images: st.count, imageBytes: st.gpu, ktx2: st.ktx2 });
   }
 
   /** zuletzt aufgelöste Palette, damit eine geänderte Palettenfarbe die Texturen neu füllt */
@@ -1007,6 +1085,18 @@ export class PlaneLayer {
           data[c + 2] = f.density;
           data[c + 3] = f.speed;
           data[d] = f.seed;
+          return;
+        }
+        if (f.type === 'image') {
+          // Ecke und Umkehrung des Rahmens: u = (p − o) · iu, v = (p − o) · iv
+          data[a] = CODE.image;
+          const det = f.ux * f.vy - f.vx * f.uy || 1e-9;
+          data[b] = f.ox;
+          data[b + 1] = f.oy;
+          data[b + 2] = f.vy / det;
+          data[b + 3] = -f.vx / det;
+          data[c] = -f.uy / det;
+          data[c + 1] = f.ux / det;
           return;
         }
         if (f.type !== 'grain') return;
@@ -1176,5 +1266,6 @@ export class PlaneLayer {
     }
     this.solid.clear();
     this.clearRuns = [];
+    this.rims.clear();
   }
 }

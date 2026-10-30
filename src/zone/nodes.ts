@@ -17,6 +17,7 @@ import { cloneFills, isGradient, mapFillPoints, parseColor, parseFills, samePain
 import type { LookName } from '@/world/looks';
 import { parseCrown, parseDotsOff, parseSetDots, serializeCrown, type CrownParams, type DotOff, type SetDot } from './crown';
 import { parseWave, serializeWave, type EdgeWave } from './edgeWave';
+import { parseRims, serializeRim, type RimMode, type ZoneRim } from './rims';
 import { LANE_DEPTH } from '@/track/stage';
 import { COIN_SHAPES, type CoinShape } from './groups';
 import type { SliceRole, SliceStack } from './slices';
@@ -181,8 +182,53 @@ export interface ZoneShape {
   /** mit dem Punktpinsel gesetzte Punkte und weggenommene Stellen der Punktkrone (Stufe 5, src/zone/crown.ts) */
   dots?: SetDot[];
   dotsOff?: DotOff[];
+  /** Säume (Stufe 6, src/zone/rims.ts): gemalte Streifen entlang der Kanten, je Richtung einer */
+  rims?: ZoneRim[];
   hidden?: boolean;
   locked?: boolean;
+}
+
+/**
+ * Malvorlage (Stufe 6, Plan 4.10, src/zone/template.ts): was beim Anlegen einer Vorlage für eine Fläche oder einen Saum
+ * galt. Der Import setzt das gemalte Bild darüber passgenau ein (Rahmen, Größe), der Fingerabdruck zeigt, ob die Form sich
+ * seitdem geändert hat (Risiko „Gemalte Teile passen nicht mehr nach Formänderungen“). Kennung v…, steht auch im
+ * Dateinamen der Vorlage
+ */
+export interface ZoneTemplate {
+  id: string;
+  kind: 'template';
+  name: string;
+  /** Form, für die gemalt wird */
+  shape: string;
+  /** eine Fläche der Form über einen Punkt in ihr (Pfad-Koordinaten); ohne: die ganze Form */
+  face?: [number, number];
+  /** Saum der Form (Kennung r…), für den gemalt wird */
+  rim?: string;
+  /** Malbereich in Bildpunkten (ohne den Rand mit den Passmarken) und Breite des Rands */
+  w: number;
+  h: number;
+  margin: number;
+  /** Bildpunkte je Meter der Ebene im Malbereich */
+  ppm: number;
+  /** Fläche: Rahmen des Malbereichs in Pfad-Koordinaten (Ecke unten links, Kante nach rechts und nach oben) */
+  ox?: number;
+  oy?: number;
+  ux?: number;
+  uy?: number;
+  vx?: number;
+  vy?: number;
+  /** Saum: Art und Teilung Anfang | Mitte | Ende wie im Saum */
+  mode?: RimMode;
+  a?: number;
+  b?: number;
+  /** Fingerabdruck beim Anlegen (Fläche: Umriss in Pfad-Koordinaten; Saum gestreckt: Längen der Kantenstücke) */
+  fp: string;
+  /** Umriss beim Anlegen, vereinfacht (Pfad-Koordinaten), für die Abweichung in Bildpunkten */
+  ref?: Array<[number, number]>;
+  /** Saum gestreckt: Längen der Kantenstücke beim Anlegen (Meter der Ebene) */
+  lens?: number[];
+  /** angelegt (ISO-Datum) */
+  made: string;
 }
 
 /**
@@ -258,7 +304,7 @@ export interface ZoneFieldNode {
   rest?: Record<string, unknown>;
 }
 
-export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup | ZoneSketch | ZoneSwatch | ZoneStyle | ZoneAir | ZoneLight | ZoneStationNode | ZoneFieldNode | ZoneQueueNode | ZoneSiteNode | ZoneCoinNode;
+export type ZoneNode = ZonePlane | ZoneShape | ZoneGroup | ZoneSketch | ZoneSwatch | ZoneStyle | ZoneAir | ZoneLight | ZoneStationNode | ZoneFieldNode | ZoneQueueNode | ZoneSiteNode | ZoneCoinNode | ZoneTemplate;
 /** Spielobjekte auf den Ebenen (Stufe 4): Station, Schlange, Baustelle, Coins */
 export type ZonePlayNode = ZoneStationNode | ZoneQueueNode | ZoneSiteNode | ZoneCoinNode;
 
@@ -275,6 +321,7 @@ export const isFieldNode = (n: ZoneNode): n is ZoneFieldNode => n.kind === 'fiel
 export const isQueueNode = (n: ZoneNode): n is ZoneQueueNode => n.kind === 'queue';
 export const isSiteNode = (n: ZoneNode): n is ZoneSiteNode => n.kind === 'site';
 export const isCoinNode = (n: ZoneNode): n is ZoneCoinNode => n.kind === 'coins';
+export const isTemplate = (n: ZoneNode): n is ZoneTemplate => n.kind === 'template';
 export const isPlayNode = (n: ZoneNode): n is ZonePlayNode => isStationNode(n) || isQueueNode(n) || isSiteNode(n) || isCoinNode(n);
 
 /** Felder der Zone in ihrer Reihenfolge */
@@ -410,7 +457,7 @@ export function newGroup(nodes: readonly ZoneNode[], name?: string): ZoneGroup {
  * y für Stile, f für Felder, q für Schlangen, b für Baustellen, m für Coin-Gruppen), hochgezählt wie die Kennungen der
  * Zonendatei
  */
-export function nextNodeId(nodes: readonly ZoneNode[], prefix: 'p' | 's' | 'g' | 'k' | 'c' | 'y' | 'f' | 'q' | 'b' | 'm'): string {
+export function nextNodeId(nodes: readonly ZoneNode[], prefix: 'p' | 's' | 'g' | 'k' | 'c' | 'y' | 'f' | 'q' | 'b' | 'm' | 'v'): string {
   const ids = new Set(nodes.map((n) => n.id));
   let n = nodes.filter((x) => x.id.startsWith(prefix)).length + 1;
   while (ids.has(`${prefix}${n}`)) n++;
@@ -699,7 +746,7 @@ export function bakeSwatch(nodes: readonly ZoneNode[], id: string): void {
       if (isGradient(f)) for (const st of f.stops) st.color = fix(st.color);
       else if (f.type === 'color') f.color = fix(f.color);
       else if (f.type === 'mist') for (const d of f.dabs) d.color = fix(d.color);
-      else if (f.type !== 'grain' && f.color) f.color = fix(f.color);
+      else if (f.type !== 'grain' && f.type !== 'image' && f.color) f.color = fix(f.color);
     }
   };
   for (const n of nodes) {
@@ -1206,16 +1253,35 @@ export function parseNodes(v: unknown): ZoneNode[] {
       if (dots) s.dots = dots;
       const dotsOff = parseDotsOff(o.dotsOff);
       if (dotsOff) s.dotsOff = dotsOff;
+      const rims = parseRims(o.rims);
+      if (rims) s.rims = rims;
       if (o.hidden === true) s.hidden = true;
       if (o.locked === true) s.locked = true;
       out.push(s);
       ids.add(s.id);
+    } else if (o.kind === 'template' && /^v\d{1,6}$/.test(o.id) && typeof o.shape === 'string' && num(o.w) && num(o.h) && num(o.ppm) && o.w >= 1 && o.h >= 1 && o.ppm > 0 && typeof o.fp === 'string') {
+      const t: ZoneTemplate = { id: o.id, kind: 'template', name, shape: o.shape, w: Math.round(o.w), h: Math.round(o.h), margin: num(o.margin) ? Math.max(0, Math.round(o.margin)) : 0, ppm: o.ppm, fp: o.fp.slice(0, 32), made: typeof o.made === 'string' ? o.made.slice(0, 32) : '' };
+      if (Array.isArray(o.face) && num(o.face[0]) && num(o.face[1])) t.face = [o.face[0], o.face[1]];
+      if (typeof o.rim === 'string' && /^r\d{1,4}$/.test(o.rim)) t.rim = o.rim;
+      if (num(o.ox) && num(o.oy) && num(o.ux) && num(o.uy) && num(o.vx) && num(o.vy)) Object.assign(t, { ox: o.ox, oy: o.oy, ux: o.ux, uy: o.uy, vx: o.vx, vy: o.vy });
+      if (o.mode === 'repeat' || o.mode === 'stretch') t.mode = o.mode;
+      if (num(o.a) && num(o.b)) Object.assign(t, { a: Math.max(0, Math.min(1, o.a)), b: Math.max(0, Math.min(1, o.b)) });
+      // Umriss als eine Zeile „x,y x,y …“ (oder als Liste von Paaren)
+      const pairs = typeof o.ref === 'string' ? o.ref.trim().split(/\s+/).map((p) => p.split(',').map(Number)) : Array.isArray(o.ref) ? o.ref : [];
+      const ref = pairs.filter((q): q is [number, number] => Array.isArray(q) && q.length === 2 && num(q[0]) && num(q[1])).slice(0, 400);
+      if (ref.length >= 3) t.ref = ref.map(([x, y]) => [x, y]);
+      if (Array.isArray(o.lens)) {
+        const lens = o.lens.filter(num).slice(0, 64);
+        if (lens.length) t.lens = lens;
+      }
+      out.push(t);
+      ids.add(t.id);
     }
   }
   const planeIds = new Set(out.filter(isPlane).map((p) => p.id));
   const groupIds = new Set(out.filter(isGroup).map((g) => g.id));
   for (const p of out) if (isPlane(p) && p.group && !groupIds.has(p.group)) delete p.group;
-  return out.filter((n) => isPlane(n) || isGroup(n) || isSwatch(n) || isStyle(n) || isAir(n) || isLight(n) || isFieldNode(n) || planeIds.has(n.parent));
+  return out.filter((n) => isPlane(n) || isGroup(n) || isSwatch(n) || isStyle(n) || isAir(n) || isLight(n) || isFieldNode(n) || isTemplate(n) || planeIds.has(n.parent));
 }
 
 const LOOK_KEYS = ['day', 'dusk', 'night', 'neon'];
@@ -1306,6 +1372,7 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
       if (s.wave) o.wave = serializeWave(s.wave);
       if (s.dots?.length) o.dots = s.dots.map(([x, y, sz, k]) => [round(x, 3), round(y, 3), round(sz, 3), k]);
       if (s.dotsOff?.length) o.dotsOff = s.dotsOff.map(([x, y, r]) => [round(x, 3), round(y, 3), round(r, 3)]);
+      if (s.rims?.length) o.rims = s.rims.map(serializeRim);
       if (s.hidden) o.hidden = true;
       if (s.locked) o.locked = true;
       out.push(o);
@@ -1316,6 +1383,17 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
   for (const b of nodes.filter(isSiteNode)) out.push({ id: b.id, kind: 'site', parent: b.parent, x: round(b.x, 3), variant: b.variant, ...(b.energy !== undefined ? { energy: round(b.energy, 2) } : {}) });
   for (const c of nodes.filter(isCoinNode)) out.push({ id: c.id, kind: 'coins', parent: c.parent, x: round(c.x, 3), y: round(c.y, 3), shape: c.shape, count: c.count, spacing: round(c.spacing, 2) });
   for (const f of fieldNodesOf(nodes)) out.push({ id: f.id, kind: 'field', name: f.name, x0: round(f.x0, 2), x1: round(f.x1, 2), y0: round(f.y0, 2), y1: round(f.y1, 2), ...(f.rest ? JSON.parse(JSON.stringify(f.rest)) : {}) });
+  for (const t of nodes.filter(isTemplate)) {
+    const o: Record<string, unknown> = { id: t.id, kind: 'template', name: t.name, shape: t.shape, w: t.w, h: t.h, margin: t.margin, ppm: round(t.ppm, 3), fp: t.fp, made: t.made };
+    if (t.face) o.face = [round(t.face[0], 3), round(t.face[1], 3)];
+    if (t.rim) o.rim = t.rim;
+    if (t.ox !== undefined) Object.assign(o, { ox: round(t.ox, 4), oy: round(t.oy ?? 0, 4), ux: round(t.ux ?? 0, 4), uy: round(t.uy ?? 0, 4), vx: round(t.vx ?? 0, 4), vy: round(t.vy ?? 0, 4) });
+    if (t.mode) o.mode = t.mode;
+    if (t.a !== undefined && t.b !== undefined) Object.assign(o, { a: round(t.a, 4), b: round(t.b, 4) });
+    if (t.ref) o.ref = t.ref.map(([x, y]) => `${round(x, 3)},${round(y, 3)}`).join(' ');
+    if (t.lens) o.lens = t.lens.map((l) => round(l, 3));
+    out.push(o);
+  }
   for (const k of nodes.filter(isSketch)) {
     if (!k.src.startsWith('/zones/')) continue;
     const o: Record<string, unknown> = { id: k.id, kind: 'sketch', parent: k.parent, name: k.name, src: k.src, x: round(k.x, 3), y: round(k.y, 3), w: round(k.w, 3), h: round(k.h, 3), opacity: round(k.opacity, 2) };
@@ -1330,6 +1408,7 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
 export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
   return nodes.map((n): ZoneNode => {
     if (isGroup(n) || isSketch(n) || isAir(n) || isPlayNode(n)) return { ...n };
+    if (isTemplate(n)) return { ...n, ...(n.face ? { face: [n.face[0], n.face[1]] as [number, number] } : {}), ...(n.ref ? { ref: n.ref.map(([x, y]): [number, number] => [x, y]) } : {}), ...(n.lens ? { lens: [...n.lens] } : {}) };
     if (isLight(n)) return { ...n, ...(n.looks ? { looks: JSON.parse(JSON.stringify(n.looks)) as ZoneLight['looks'] } : {}) };
     if (isFieldNode(n)) return { ...n, ...(n.rest ? { rest: JSON.parse(JSON.stringify(n.rest)) as Record<string, unknown> } : {}) };
     if (isPlane(n)) return { ...n, ...(n.fills ? { fills: cloneFills(n.fills) } : {}) };
@@ -1348,6 +1427,7 @@ export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
       ...(n.wave ? { wave: { ...n.wave } } : {}),
       ...(n.dots ? { dots: n.dots.map((d): SetDot => [d[0], d[1], d[2], d[3]]) } : {}),
       ...(n.dotsOff ? { dotsOff: n.dotsOff.map((d): DotOff => [d[0], d[1], d[2]]) } : {}),
+      ...(n.rims ? { rims: n.rims.map((r) => ({ ...r })) } : {}),
     };
   });
 }

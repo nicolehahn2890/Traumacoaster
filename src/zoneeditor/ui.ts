@@ -132,6 +132,16 @@ export interface UiActions extends StackActions {
   lineDelete(): void;
   faceFill(fill: string | null): void;
   exportSvg(scope: 'all' | 'plane'): void;
+  /**
+   * Bilder (Stufe 6): ein Bild einsetzen (passt eine Malvorlage, dorthin, sonst auf die gewählte Form oder als Bildschicht),
+   * Malvorlage für Fläche oder Form oder für den Saum (Stück zum Wiederholen, Streifen), Saum anlegen, Umriss aus Bild,
+   * Schnittmaske (lösen: release)
+   */
+  imagePick(file: File): void;
+  templateMake(kind: 'face' | 'repeat' | 'stretch'): void;
+  rimAdd(file: File): void;
+  traceImage(): void;
+  clipMask(release: boolean): void;
   lassoForm(form: 'lasso' | 'rect'): void;
   importSvg(file: File): void;
   tilt(deg: number): void;
@@ -171,6 +181,8 @@ export interface ContextExtra {
    * Werten (ok: steht auf einer Kante bzw. vor einer spielbaren Ebene)
    */
   play?: { edges: number; placing: PlayKind | null; station: boolean; sel: PlaySel | null } | null;
+  /** Bilder der gewählten Form (Stufe 6): hat sie ein Bild (schneidet es aus), Säume, geht eine Schnittmaske */
+  image?: { hasImage: boolean; mask: boolean; rims: number; canClip: boolean } | null;
   /** Werkzeug Felder: Zahl der Felder, das gewählte (Name, Breite, Höhe in Metern, Ziele, Stufen, Schalter, Look) */
   field?: { count: number; sel: { name: string; w: number; h: number; goals: string; stage: string; upgrade: string; switches: string; look: string | null } | null } | null;
 }
@@ -512,11 +524,14 @@ export class EditorUi {
   /** nach Wischen oder Ziehen kommt noch ein click; den schlucken */
   private swallowClick = false;
   /** Leiste unten zeigt für mehrere Formen die Knöpfe zum Ausrichten oder Verbinden, für die Ebene die der Skizze */
-  private sub: 'align' | 'combine' | 'sketch' | 'numbers' | 'roles' | 'material' | null = null;
+  private sub: 'align' | 'combine' | 'sketch' | 'numbers' | 'roles' | 'material' | 'image' | null = null;
   /** Breite und Höhe in den Zahlen gemeinsam ändern */
   private keepRatio = false;
   /** Bildauswahl für Skizzen */
   private readonly sketchFile = el('input');
+  /** Bild einsetzen und Saum anlegen (Stufe 6) */
+  private readonly imageFile = el('input');
+  private readonly rimFile = el('input');
   private thumbs = new Map<string, HTMLCanvasElement>();
   /** Farbknopf und Farbmenü, Füllstapel (Stufe 3) */
   private readonly colors: ColorMenu;
@@ -598,6 +613,20 @@ export class EditorUi {
       this.sketchFile.value = '';
     });
     this.root.append(this.sketchFile);
+    for (const [input, act] of [
+      [this.imageFile, (f: File) => a.imagePick(f)],
+      [this.rimFile, (f: File) => a.rimAdd(f)],
+    ] as const) {
+      input.type = 'file';
+      input.accept = 'image/png,image/jpeg,image/webp';
+      input.style.display = 'none';
+      input.addEventListener('change', () => {
+        const f = input.files?.[0];
+        if (f) act(f);
+        input.value = '';
+      });
+      this.root.append(input);
+    }
     foot.append(
       button('Probe-Stapel', '32 Ebenen aus der Kamerasession einfügen (Last für die Handy-Messung)', () => a.addProbe()),
       button('SVG laden', 'SVG aus Illustrator laden: Gruppen p… ersetzen ihre Ebene, andere Gruppen werden neue Ebenen', () => file.click()),
@@ -1234,14 +1263,14 @@ export class EditorUi {
    * gewählte Formen Farbe und Reihenfolge, sonst für die gewählten Ebenen Rolle und Isolieren
    */
   setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false, extra: ContextExtra = {}): void {
-    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null, filling = null, grad = null, dropChoice = null, material = null, dock = null, play = null, field = null, dotBrush = null, mist = null } = extra;
+    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null, filling = null, grad = null, dropChoice = null, material = null, dock = null, play = null, field = null, dotBrush = null, mist = null, image = null } = extra;
     const plane = planes.at(-1) ?? null;
     const shape = shapes.at(-1) ?? null;
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
     const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : path.kind === 'band' ? `b|${path.shape}` : `l|${path.form}|${path.count}|${path.smooth}`;
     const gi = units ?? { units: shapes.length, groups: 0, inside: false };
     const numKey = this.sub === 'numbers' && nums ? `${[nums.x, nums.y, nums.w, nums.h].map((v) => v.toFixed(2)).join(',')}|${this.keepRatio}` : `${!!nums}`;
-    const key = dropChoice ? `drop|${dropChoice}` : filling ? `fill|${filling}` : grad ? `grad|${JSON.stringify(grad)}` : dotBrush ? `dots|${JSON.stringify(dotBrush)}` : mist ? `mist|${JSON.stringify(mist)}` : dock ? `dock|${JSON.stringify(dock)}|${this.sub}` : play ? `play|${JSON.stringify(play)}` : field ? `field|${JSON.stringify(field)}` : path ? `${pk}|${material}|${this.sub}` : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
+    const key = dropChoice ? `drop|${dropChoice}` : filling ? `fill|${filling}` : grad ? `grad|${JSON.stringify(grad)}` : dotBrush ? `dots|${JSON.stringify(dotBrush)}` : mist ? `mist|${JSON.stringify(mist)}` : dock ? `dock|${JSON.stringify(dock)}|${this.sub}` : play ? `play|${JSON.stringify(play)}` : field ? `field|${JSON.stringify(field)}` : path ? `${pk}|${material}|${this.sub}` : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}|${JSON.stringify(image)}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
     this.context.replaceChildren();
@@ -1388,6 +1417,12 @@ export class EditorUi {
       }));
       this.context.append(button('Füllungen', 'Füllstapel der Fläche: Farben und Verläufe mit Mischmodus und Deckkraft', () => this.a.stackOpen('paint')));
       this.context.append(button('Loch', 'Fläche zum Loch machen (Entf); eine Farbe füllt sie wieder', () => this.a.faceFill(null), path.fill === null ? 'on' : ''));
+      // Stufe 6: gemaltes Bild in die Fläche, Malvorlage nur für diese Fläche
+      this.context.append(
+        el('span', 'ze-sep'),
+        button('Bild einsetzen', 'Ein Bild in die Fläche (Schnittmaske); ein gemaltes Bild zu einer Malvorlage kommt passgenau an seinen Platz. Auch: Bild ins Bild ziehen', () => this.imageFile.click()),
+        button('Malvorlage', 'Malvorlage für diese Fläche: Bild in der Zielgröße mit Silhouette und Passmarken (Download und zones/…/vorlagen)', () => this.a.templateMake('face')),
+      );
     } else if (shape && this.sub === 'numbers' && nums) {
       // Zahlen nur auf Wunsch (Plan 4.2 Grundsatz 1): Mitte, Breite, Höhe in Metern der Ebene, Drehen um Grad
       this.context.append(el('span', 'ze-label', gi.groups || shapes.length > 1 ? 'Rahmen' : shape.name));
@@ -1442,6 +1477,32 @@ export class EditorUi {
           this.setContext(planes, shapes, isolate, path, canPaste, extra);
         }),
       );
+    } else if (shape && this.sub === 'image') {
+      // Stufe 6 (Plan 4.8, 4.10): Bilder, Malvorlagen, Säume
+      this.context.append(el('span', 'ze-label', shapes.length > 1 ? `${shapes.length} Formen` : shape.name));
+      this.context.append(
+        button('Bild einsetzen', 'Ein Bild in die Form (Schnittmaske: nur innerhalb zu sehen); ein gemaltes Bild zu einer Malvorlage kommt passgenau an seinen Platz. Auch: Bild ins Bild ziehen', () => this.imageFile.click()),
+        button('Malvorlage', 'Malvorlage für die Form: Bild in der Zielgröße (aus Tiefe und größtem Zoom) mit Silhouette und Passmarken, als Download und unter zones/…/vorlagen', () => this.a.templateMake('face')),
+        el('span', 'ze-sep'),
+        button('Saum', 'Neuer Saum: ein gemalter Streifen läuft an den Kanten entlang, die nach oben zeigen (Werte im Füllstapel)', () => this.rimFile.click()),
+      );
+      if (image?.rims)
+        this.context.append(
+          button('Saum-Vorlage: Stück', 'Malvorlage für den gewählten Saum (sonst den ersten): Anfang, Mitte zum Wiederholen, Ende', () => this.a.templateMake('repeat')),
+          button('Streifen', 'Malvorlage für den gewählten Saum als ein Streifen über die ganze Kante (gestreckt)', () => this.a.templateMake('stretch')),
+        );
+      if (image?.hasImage || image?.canClip) this.context.append(el('span', 'ze-sep'));
+      if (image?.hasImage) this.context.append(button('Umriss aus Bild', 'Die Form bekommt den Umriss des Gemalten (wo das Bild deckt); danach ist sie eine Form mit Bild wie jede andere', () => this.a.traceImage()));
+      if (image?.canClip) this.context.append(button('Schnittmaske', 'Das Bild der vorderen Form nur innerhalb der Form darunter zeigen (Cmd+7)', () => this.a.clipMask(false)));
+      else if (image?.hasImage && !image.mask) this.context.append(button('Schnittmaske lösen', 'Das Bild wird wieder eine eigene Bildschicht über der Form (Wahl+Cmd+7)', () => this.a.clipMask(true)));
+      this.context.append(
+        el('span', 'ze-sep'),
+        button('Fertig', 'Zurück zur Leiste der Formen', () => {
+          this.sub = null;
+          this.contextKey = '-';
+          this.setContext(planes, shapes, isolate, path, canPaste, extra);
+        }),
+      );
     } else if (shape && this.sub === 'material') {
       this.context.append(el('span', 'ze-label', shapes.length > 1 ? `Material von ${shapes.length} Formen` : `Material von ${shape.name}`));
       for (const m of MATERIALS) this.context.append(button(MATERIAL_WORDS[m], `Material: ${MATERIAL_WORDS[m]} (fest und grabbar tragen, luftig und frei lassen die Bahn durch)`, () => this.a.setMaterial(m), material === m ? 'on' : ''));
@@ -1483,7 +1544,7 @@ export class EditorUi {
         button(FLIP_X, 'Waagrecht spiegeln (Shift+H)', () => this.a.flip('x')),
         button(FLIP_Y, 'Senkrecht spiegeln (Shift+V)', () => this.a.flip('y')),
       );
-      const open = (sub: 'align' | 'combine' | 'numbers' | 'material') => () => {
+      const open = (sub: 'align' | 'combine' | 'numbers' | 'material' | 'image') => () => {
         this.sub = sub;
         this.contextKey = '-';
         this.setContext(planes, shapes, isolate, path, canPaste, extra);
@@ -1496,6 +1557,7 @@ export class EditorUi {
       this.context.append(button('Vereinfachen', 'Weniger Anker, höchstens 1,5 Bildpunkte daneben', () => this.a.simplify()));
       if (nums) this.context.append(button('Zahlen', 'Lage, Größe und Drehung als Zahlen', open('numbers')));
       this.context.append(button('Füllungen', many ? 'Füllstapel der zuletzt gewählten Form' : 'Füllstapel der Form: Farben und Verläufe mit Mischmodus und Deckkraft', () => this.a.stackOpen('paint')));
+      this.context.append(button('Bild …', 'Bilder (Stufe 6): Bild einsetzen, Malvorlage, Saum, Umriss aus Bild, Schnittmaske', open('image')));
       this.context.append(button(`Material: ${material && material !== 'mixed' ? MATERIAL_WORDS[material] : 'gemischt'}`, 'Material der Formen: fest, grabbar, luftig, frei (Stufe 4: fest und grabbar tragen Bahn und Stützen)', open('material')));
       if (gi.units > 1 && onePlane) this.context.append(button('Gruppieren', 'Zu einer Gruppe (Cmd+G): Tippen wählt sie ganz, doppelt tippen geht hinein', () => this.a.shapeGroup()));
       if (gi.groups) this.context.append(button('Auflösen', 'Gruppe auflösen, die Formen bleiben (Shift+Cmd+G)', () => this.a.shapeUngroup()));

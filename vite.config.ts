@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import type { Plugin } from 'vite';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
 import { fileURLToPath, URL } from 'node:url';
 import { networkInterfaces } from 'node:os';
 
@@ -106,9 +107,28 @@ function zoneStore(): Plugin {
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ ips }));
       });
-      // Bilder zur Zone (Skizzen des Zonen-Editors): POST /__zonefile/<zone>/skizze-<name>.<png|jpg|webp>, höchstens 25 MB
+      // KTX2 beim Kompilieren (Stufe 6, scripts/zone-ktx2.mjs): nach dem Hochladen eines Bilds die Zone im Hintergrund
+      // packen, je Zone einer nach dem anderen; fertig: Ereignis tc:ktx2, die Clients tauschen die Bilder gegen KTX2
+      const packing = new Map<string, 'running' | 'again'>();
+      const pack = (zone: string): void => {
+        if (packing.has(zone)) {
+          packing.set(zone, 'again');
+          return;
+        }
+        packing.set(zone, 'running');
+        execFile(process.execPath, ['scripts/zone-ktx2.mjs', zone], { timeout: 300_000 }, (err, out) => {
+          if (err) server.config.logger.warn(`KTX2 ${zone}: ${err.message}`);
+          else if (/neu gepackt/.test(out)) server.config.logger.info(out.trim().split('\n').pop() ?? '');
+          server.ws.send({ type: 'custom', event: 'tc:ktx2', data: { name: zone } });
+          const again = packing.get(zone) === 'again';
+          packing.delete(zone);
+          if (again) pack(zone);
+        });
+      };
+      // Dateien zur Zone (Zonen-Editor): POST /__zonefile/<zone>/<name>. Skizzen (skizze-…, PNG, JPG, WebP, höchstens 25 MB),
+      // Bilder und Säume (Stufe 6: bild-…, saum-…, PNG, höchstens 60 MB), Malvorlagen (vorlagen/vorlage-…: PNG, SVG, JSON)
       server.middlewares.use('/__zonefile', (req, res) => {
-        const m = /^\/([a-z0-9-]{1,40})\/(skizze-[a-z0-9-]{1,40}\.(?:png|jpe?g|webp))$/.exec((req.url ?? '').split(/[?#]/)[0]);
+        const m = /^\/([a-z0-9-]{1,40})\/(skizze-[a-z0-9-]{1,40}\.(?:png|jpe?g|webp)|(?:bild|saum)-[a-z0-9-]{1,80}\.png|vorlagen\/vorlage-[a-z0-9-]{1,80}\.(?:png|svg|json))$/.exec((req.url ?? '').split(/[?#]/)[0]);
         if (req.method !== 'POST' || !m) {
           res.statusCode = req.method !== 'POST' ? 405 : 400;
           res.end();
@@ -116,29 +136,33 @@ function zoneStore(): Plugin {
         }
         const chunks: Buffer[] = [];
         let size = 0;
+        const limit = m[2].startsWith('skizze-') ? 25e6 : 60e6;
         req.on('data', (c: Buffer) => {
           size += c.length;
-          if (size <= 25e6) chunks.push(c);
+          if (size <= limit) chunks.push(c);
         });
         req.on('end', () => {
-          if (size > 25e6) {
+          if (size > limit) {
             res.statusCode = 413;
             res.end();
             return;
           }
-          mkdirSync(`${dir}/${m[1]}`, { recursive: true });
-          writeFileSync(`${dir}/${m[1]}/${m[2]}`, Buffer.concat(chunks));
+          const file = `${dir}/${m[1]}/${m[2]}`;
+          mkdirSync(file.replace(/\/[^/]+$/, ''), { recursive: true });
+          writeFileSync(file, Buffer.concat(chunks));
           res.statusCode = 204;
           res.end();
+          // die Zone nimmt das Bild erst mit dem Sichern; gepackt wird dann (Wächter unten), hier schon einmal vorab
+          if (/^(?:bild|saum)-/.test(m[2])) setTimeout(() => pack(m[1]), 1500);
         });
       });
       // Zonendateien und ihre Bilder direkt von der Platte (ohne Vites Verzeichnisliste, die public/zones nicht beobachtet):
       // so erscheinen neue Zonen und neu abgelegte Bilder ohne Neustart, und nichts wird zwischengespeichert
-      const types: Record<string, string> = { json: 'application/json', webp: 'image/webp', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', svg: 'image/svg+xml' };
+      const types: Record<string, string> = { json: 'application/json', webp: 'image/webp', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', svg: 'image/svg+xml', ktx2: 'image/ktx2' };
       server.middlewares.use('/zones', (req, res, next) => {
         if (req.method !== 'GET' && req.method !== 'HEAD') return next();
         const rel = decodeURIComponent((req.url ?? '').replace(/^\/+/, '').split(/[?#]/)[0]);
-        if (!/^[a-z0-9-]{1,40}\/[\w.-]{1,120}$/.test(rel) || rel.includes('..')) return next();
+        if (!/^[a-z0-9-]{1,40}\/(?:vorlagen\/)?[\w.-]{1,120}$/.test(rel) || rel.includes('..')) return next();
         const file = `${dir}/${rel}`;
         if (!existsSync(file)) return next();
         const ext = rel.split('.').pop()!.toLowerCase();
@@ -153,7 +177,15 @@ function zoneStore(): Plugin {
           const m = /^([a-z0-9-]+)[\\/]zone\.json$/.exec(String(file ?? ''));
           if (!m) return;
           if (timer) clearTimeout(timer);
-          timer = setTimeout(() => server.ws.send({ type: 'custom', event: 'tc:zone', data: { name: m[1] } }), 80);
+          timer = setTimeout(() => {
+            server.ws.send({ type: 'custom', event: 'tc:zone', data: { name: m[1] } });
+            // trägt die Zone Bilder ohne KTX2, packen (das Skript überspringt, was schon gepackt ist); eine gelöschte Zone nicht
+            try {
+              if (/\/(?:bild|saum)-[\w.-]+\.png"/.test(readFileSync(`${dir}/${m[1]}/zone.json`, 'utf8'))) pack(m[1]);
+            } catch {
+              /* Zone gerade gelöscht oder halb geschrieben */
+            }
+          }, 80);
         });
         // der Wächter hält den Prozess nicht am Leben (Vitest nutzt dieselbe Konfiguration und wartete sonst beim Schließen)
         watcher.unref();
@@ -206,11 +238,34 @@ function caDownload(): Plugin {
   };
 }
 
+/**
+ * Basis-Universal-Transcoder für KTX2 (Stufe 6, `src/world/imageTextures.ts`): im Dev-Server unter /basis/ aus
+ * node_modules, im Build als dist/basis/
+ */
+function basisTranscoder(): Plugin {
+  const files = ['basis_transcoder.js', 'basis_transcoder.wasm'];
+  const from = (f: string) => fileURLToPath(new URL(`./node_modules/three/examples/jsm/libs/basis/${f}`, import.meta.url));
+  return {
+    name: 'tc-basis-transcoder',
+    configureServer(server) {
+      server.middlewares.use('/basis', (req, res, next) => {
+        const f = (req.url ?? '').replace(/^\/+/, '').split(/[?#]/)[0];
+        if (!files.includes(f)) return next();
+        res.setHeader('Content-Type', f.endsWith('.wasm') ? 'application/wasm' : 'text/javascript');
+        res.end(readFileSync(from(f)));
+      });
+    },
+    generateBundle() {
+      for (const f of files) this.emitFile({ type: 'asset', fileName: `basis/${f}`, source: readFileSync(from(f)) });
+    },
+  };
+}
+
 // base './' sorgt dafür, dass der Build unter jedem Pfad läuft
 // (GitHub Pages unter /Traumacoaster/, lokal unter /, später Capacitor file://).
 export default defineConfig({
   base: './',
-  plugins: [strokeRecorder(), zoneStore(), caDownload()],
+  plugins: [strokeRecorder(), zoneStore(), caDownload(), basisTranscoder()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

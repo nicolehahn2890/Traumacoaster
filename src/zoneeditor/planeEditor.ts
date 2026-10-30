@@ -96,12 +96,19 @@ import { constrain45, NO_MODS, PathTools, regionRing, regionTest, simplifyShape,
 import { booleanShapes, type BoolOp } from '@/zone/pathfinder';
 import { evalLayers, gradientT, GRADIENT_DOTS, hexToRgb, isEarle, isGradient, isHex, MAX_LAYERS, MIST_MAX, paintLayers, rampOf, RAMP, resolveColor, rgbToHex, type GradientFill, type GradientStop, type PaintColor, type ZoneFill } from '@/zone/paint';
 import { crownFor, earleShape, freshEarle, type EarlePreset } from '@/zone/earle';
-import { crownParamsOf, fillParams, setCrownParam, setFillParam, setWaveParam, waveParamsOf } from './fillParams';
+import { crownParamsOf, fillParams, rimParamsOf, setCrownParam, setFillParam, setRimParam, setWaveParam, waveParamsOf } from './fillParams';
+import { addRim, clipInto, driftNote, importImage, makeTemplate, releaseClip, startImageSampler, topImage, traceShape, type DropTarget, type ImageHost } from './images';
+import { PHONE_VIEW } from '@/zone/template';
+import { IMAGE_BUDGET } from '@/world/imageTextures';
+import { RIM_MODE_WORDS, type ZoneRim } from '@/zone/rims';
 import { WAVE_DEFAULT } from '@/zone/edgeWave';
 
 /** Zeilen der Punktkrone und der Kantenwelle im Füllstapel (keine Füllungen, sondern Merkmale der Form) */
 const CROWN_ROW = -10;
 const WAVE_ROW = -11;
+/** Säume im Füllstapel: Saum i hat die Zeile RIM_ROW − i (Stufe 6) */
+const RIM_ROW = -20;
+const isRimRow = (i: number): boolean => i <= RIM_ROW;
 import { addStop, lineT, moveStop, ownPaint, readGradient, removeGradient, removeStop, reverseStops, setMid, targetBox, topGradient, writeGradient, writePaint, type GradKind, type GradLine, type GradPatch, type GradTarget } from '@/zone/gradients';
 import type { StackAddKind, StackRow, StackView } from './stackPanel';
 import { bakeStyle, linkedStyle, linkStyle, paintToStyle, pasteStyle, styleFromClip, unlinkStyle, type StyleClip } from '@/zone/styles';
@@ -255,6 +262,14 @@ export class PlaneEditor {
   private hold = true;
   /** Skizzen als Pause-Ebenen; die gerade angepasst wird (Rahmen mit Ecken) */
   private readonly sketches = new SketchLayer();
+  /** Bilder, Malvorlagen, Säume (Stufe 6, src/zoneeditor/images.ts) */
+  private readonly imageHost: ImageHost = {
+    zone: '',
+    nodes: () => this.nodes,
+    edit: (fn) => this.edit(fn),
+    toast: (msg) => this.ui.toast(msg),
+    sharpView: () => ({ ...PHONE_VIEW, fov: viewState().fov }),
+  };
   private sketchEdit: string | null = null;
   /** Einrasten an Ankern und Kanten im Bild; Raster der aktiven Ebene */
   private snapOn = true;
@@ -397,6 +412,11 @@ export class PlaneEditor {
     this.syncCameraUi();
     const s = host.surface;
     s.addEventListener('pointerdown', this.onDown, true);
+    // Bilder ins Bild ziehen (Stufe 6): auf eine Form (gemaltes Bild, Malvorlage) oder in die aktive Ebene (Bildschicht)
+    s.addEventListener('dragover', this.onDragOver, true);
+    s.addEventListener('drop', this.onDrop, true);
+    (this.imageHost as { zone: string }).zone = this.zone.name;
+    startImageSampler();
     s.addEventListener('pointermove', this.onMove, true);
     s.addEventListener('pointerup', this.onUp, true);
     s.addEventListener('pointercancel', this.onUp, true);
@@ -731,13 +751,17 @@ export class PlaneEditor {
       dock: this.building && this.tool === 'dock' && !this.fillMode ? this.dockInfo() : null,
       play: this.building && this.tool === 'play' && !this.fillMode ? this.playInfo() : null,
       field: this.building && this.tool === 'field' && !this.fillMode ? this.fieldInfo() : null,
+      image: this.building ? this.imageInfo() : null,
     });
     this.ui.setStack(this.stackView());
     this.syncColorFromSelection();
     this.ui.colorRefresh();
     const st = this.host.world.planes.stats;
     const tris = st.triangles >= 1000 ? `${(st.triangles / 1000).toFixed(1).replace('.', ',')}k` : String(st.triangles);
-    this.ui.setTop(this.dirty, this.history.canUndo, this.history.canRedo, `${planes.length} Ebenen · ${st.shapes} Formen · ${tris} Dreiecke · Welt: ${this.host.world.drawCalls} Draw Call${this.host.world.drawCalls === 1 ? '' : 's'} · ${this.fps.value} fps`);
+    // Bilder (Stufe 6): Zahl und Grafikspeicher, wie das Handy ihn hält (KTX2 gepackt, sonst vier Bytes je Bildpunkt)
+    const over = st.imageBytes > IMAGE_BUDGET ? ` über dem Rahmen von ${IMAGE_BUDGET / 1048576} MB` : '';
+    const img = st.images ? ` · ${st.images} Bild${st.images === 1 ? '' : 'er'} ${(st.imageBytes / 1048576).toFixed(1).replace('.', ',')} MB${st.ktx2 ? ` (${st.ktx2} KTX2)` : ''}${over}` : '';
+    this.ui.setTop(this.dirty, this.history.canUndo, this.history.canRedo, `${planes.length} Ebenen · ${st.shapes} Formen · ${tris} Dreiecke${img} · Welt: ${this.host.world.drawCalls} Draw Call${this.host.world.drawCalls === 1 ? '' : 's'} · ${this.fps.value} fps`);
   }
 
   /** Vorschaubilder der Ebenen: Formen in ihrer Farbe, eingepasst */
@@ -1167,7 +1191,7 @@ export class PlaneEditor {
         this.stackSel = i;
         this.uiDirty = true;
       },
-      stackOpacity: (i, v, phase) => i === CROWN_ROW || i === WAVE_ROW ? undefined : this.stackEdit((p) => {
+      stackOpacity: (i, v, phase) => isRimRow(i) ? this.rimEdit(i, (r) => (r.opacity = v), phase) : i === CROWN_ROW || i === WAVE_ROW ? undefined : this.stackEdit((p) => {
         if (i < 0) p.opacity = v;
         else if (p.fills?.[i]) p.fills[i].opacity = v;
       }, phase),
@@ -1175,13 +1199,21 @@ export class PlaneEditor {
         const f = p.fills?.[i];
         if (f && f.type !== 'fade') f.blend = m;
       }),
-      stackHide: (i) => i === CROWN_ROW || i === WAVE_ROW ? this.shapeEdit((s) => { const f = i === CROWN_ROW ? s.crown : s.wave; if (f) { if (f.hidden) delete f.hidden; else f.hidden = true; } }) : this.stackEdit((p) => {
+      stackHide: (i) => isRimRow(i) ? this.rimEdit(i, (r) => (r.hidden = !r.hidden || undefined)) : i === CROWN_ROW || i === WAVE_ROW ? this.shapeEdit((s) => { const f = i === CROWN_ROW ? s.crown : s.wave; if (f) { if (f.hidden) delete f.hidden; else f.hidden = true; } }) : this.stackEdit((p) => {
         const f = p.fills?.[i];
         if (!f) return;
         if (f.hidden) delete f.hidden;
         else f.hidden = true;
       }),
       stackRemove: (i) => {
+        if (isRimRow(i)) {
+          this.shapeEdit((s) => {
+            s.rims = (s.rims ?? []).filter((_, k) => k !== RIM_ROW - i);
+            if (!s.rims.length) delete s.rims;
+          });
+          this.stackSel = null;
+          return;
+        }
         if (i === CROWN_ROW || i === WAVE_ROW) {
           this.shapeEdit((s) => (i === CROWN_ROW ? delete s.crown : delete s.wave));
           this.stackSel = null;
@@ -1193,6 +1225,7 @@ export class PlaneEditor {
         this.stackSel = null;
       },
       stackMove: (i, dir) => {
+        if (i < 0) return;
         let to = i;
         this.stackEdit((p) => {
           const fills = p.fills ?? [];
@@ -1211,7 +1244,7 @@ export class PlaneEditor {
         this.setTool('gradient');
       },
       stackParam: (i, key, v, phase) =>
-        i === CROWN_ROW ? this.shapeEdit((s) => s.crown && setCrownParam(s.crown, key, v), phase) : i === WAVE_ROW ? this.shapeEdit((s) => s.wave && setWaveParam(s.wave, key, v), phase) : this.stackParam(i, key, v, phase),
+        isRimRow(i) ? this.rimEdit(i, (r) => setRimParam(r, key, v), phase) : i === CROWN_ROW ? this.shapeEdit((s) => s.crown && setCrownParam(s.crown, key, v), phase) : i === WAVE_ROW ? this.shapeEdit((s) => s.wave && setWaveParam(s.wave, key, v), phase) : this.stackParam(i, key, v, phase),
       stackZoneColor: (i) => this.stackEdit((p) => {
         const f = p.fills?.[i];
         if (f && f.type !== 'grain' && isEarle(f)) delete f.color;
@@ -1236,6 +1269,17 @@ export class PlaneEditor {
       anchorDelete: () => this.paths.deleteAnchor(),
       lineDelete: () => this.paths.deleteLine(),
       faceFill: (fill) => this.paths.fillFace(fill),
+      imagePick: (file) => void importImage(this.imageHost, file, this.dropTarget(null)),
+      templateMake: (kind) => void this.templateMake(kind),
+      rimAdd: (file) => {
+        const sh = this.shape;
+        if (sh) void addRim(this.imageHost, sh.id, file);
+      },
+      traceImage: () => {
+        const sh = this.shape;
+        if (sh) void traceShape(this.imageHost, sh.id);
+      },
+      clipMask: (release) => this.clipMask(release),
       exportSvg: (scope) => this.exportSvg(scope),
       importSvg: (file) => void this.importSvg(file),
       tilt: (deg) => {
@@ -3652,6 +3696,7 @@ export class PlaneEditor {
     if (f.type === 'mist') return f.dabs.slice(0, 4).map((d, i) => `radial-gradient(circle at ${20 + i * 20}% ${40 + (i % 2) * 20}%,${resolveColor(d.color, sw, look)} 0 25%,transparent 45%)`).join(',') + ',#4a4f5a';
     if (!isGradient(f)) {
       const light = lightIn(lightOf(this.nodes), look);
+      if (f.type === 'image') return `center/cover no-repeat url("${f.src}"),#4a4f5a`;
       const own = f.type !== 'grain' && f.color ? resolveColor(f.color, sw, look) : null;
       if (f.type === 'light') return `linear-gradient(135deg,${own ?? resolveColor(light.color, sw, look)} 0 35%,#3a3f4a 35%)`;
       if (f.type === 'shade') return `linear-gradient(135deg,#8a8f9a 0 62%,${own ?? resolveColor(light.shade, sw, look)} 62%)`;
@@ -3687,10 +3732,20 @@ export class PlaneEditor {
     const wave = 'plane' in t ? undefined : t.shape.wave;
     if (wave)
       rows.push({ index: WAVE_ROW, kind: 'wave', preview: 'radial-gradient(circle at 50% 120%,#8d8a83 0 45%,transparent 47%) 0 0/9px 12px,#5b5f6a', blend: null, opacity: 1, hidden: !!wave.hidden, params: waveParamsOf(wave) });
+    // Säume (Stufe 6) über allem, was die Form füllt
+    if (!('plane' in t) && !t.face)
+      (t.shape.rims ?? []).forEach((r, k) => {
+        const note = driftNote(this.nodes, t.shape, r.tpl);
+        rows.push({ index: RIM_ROW - k, kind: 'rim', name: `Saum ${RIM_MODE_WORDS[r.mode]}${note ? ` · ${note}` : ''}`, preview: `center/cover no-repeat url("${r.src}"),#3a3f4a`, blend: null, opacity: r.opacity ?? 1, hidden: !!r.hidden, params: rimParamsOf(r) });
+      });
     for (let i = fills.length - 1; i >= 0; i--) {
       const f = fills[i];
       const row: StackRow = { index: i, kind: f.type, preview: this.fillPreview(f), blend: f.type === 'fade' ? null : f.blend, opacity: f.opacity, hidden: !!f.hidden, ...fillParams(f, 'plane' in t ? { sx: 1, sy: 1 } : t.shape) };
-      if (f.type !== 'color' && f.type !== 'grain' && f.type !== 'mist' && !isGradient(f)) row.ownColor = !!f.color;
+      if (f.type === 'image' && !('plane' in t)) {
+        const note = driftNote(this.nodes, t.shape, f.tpl);
+        if (note) row.name = `${row.name ?? 'Bild'} · ${note}`;
+      }
+      if (f.type !== 'color' && f.type !== 'grain' && f.type !== 'mist' && f.type !== 'image' && !isGradient(f)) row.ownColor = !!f.color;
       rows.push(row);
     }
     if (!('plane' in t) && p.fill !== null) rows.push({ index: -1, kind: 'base', preview: this.resolve(p.fill), blend: null, opacity: p.opacity ?? 1, hidden: false });
@@ -3839,13 +3894,13 @@ export class PlaneEditor {
         },
       };
     const f = p.fills?.[i];
-    if (!f || isGradient(f) || f.type === 'grain' || f.type === 'mist') return null;
+    if (!f || isGradient(f) || f.type === 'grain' || f.type === 'mist' || f.type === 'image') return null;
     return {
       get: () => f.color ?? null,
       set: (c) => {
         const q = ownPaint(t, styleMap(this.nodes));
         const g = q.fills?.[i];
-        if (g && !isGradient(g) && g.type !== 'grain' && g.type !== 'mist') g.color = c;
+        if (g && !isGradient(g) && g.type !== 'grain' && g.type !== 'mist' && g.type !== 'image') g.color = c;
         writePaint(t, q);
       },
     };
@@ -4025,6 +4080,100 @@ export class PlaneEditor {
     } else this.changed();
     this.uiDirty = true;
   }
+
+  /** Saum der Zeile i ändern (Stufe 6); Ziehen (start, move, end) ist ein Schritt im Arbeitsverlauf */
+  private rimEdit(i: number, fn: (rim: ZoneRim) => unknown, phase: PickPhase = 'tap'): void {
+    this.shapeEdit((s) => {
+      const r = s.rims?.[RIM_ROW - i];
+      if (r) fn(r);
+    }, phase);
+  }
+
+  /** Malvorlage: für die gewählte Fläche oder Form, oder (Stück, Streifen) für den gewählten Saum der Form */
+  private async templateMake(kind: 'face' | 'repeat' | 'stretch'): Promise<void> {
+    const face = isPathTool(this.tool) ? this.paths.selectedFace() : null;
+    const sh = face?.shape ?? this.shape;
+    if (!sh) {
+      this.ui.toast('Malvorlage: erst eine Form oder Fläche wählen');
+      return;
+    }
+    if (kind === 'face') {
+      const many = face && shapeFaces(face.shape).length > 1;
+      await makeTemplate(this.imageHost, sh.id, many && face ? { face: [face.face.inner[0], face.face.inner[1]] } : {});
+      return;
+    }
+    const k = this.stackSel !== null && isRimRow(this.stackSel) ? RIM_ROW - this.stackSel : 0;
+    const rim = sh.rims?.[k];
+    if (!rim) {
+      this.ui.toast('Saum-Vorlage: die Form hat noch keinen Saum („Saum“ legt einen an)');
+      return;
+    }
+    await makeTemplate(this.imageHost, sh.id, { rim: rim.id, mode: kind });
+  }
+
+  /** Schnittmaske (Cmd+7): vordere Bildschicht in die Form darunter; lösen: das Bild wird wieder eine Bildschicht */
+  private clipMask(release: boolean): void {
+    if (release) {
+      const sh = this.shape;
+      const layer = sh ? releaseClip(this.imageHost, sh) : null;
+      if (layer) this.setSelection([layer.id]);
+      return;
+    }
+    if (clipInto(this.imageHost, this.selectedShapes())) this.setSelection(this.selection.filter((id) => findShape(this.nodes, id)));
+  }
+
+  /**
+   * Wohin ein Bild ohne passende Malvorlage kommt: auf die Form am Bildpunkt (beim Ziehen) oder die gewählte Form oder
+   * Fläche, sonst als Bildschicht in die aktive Ebene, mitten ins freie Bild, ein Drittel so breit wie es
+   */
+  private dropTarget(p: Pt | null): DropTarget {
+    const hit = p ? this.pickShape(p) : null;
+    const pickFace = (sh: ZoneShape, fi: number): [number, number] | undefined => {
+      const faces = shapeFaces(sh);
+      return faces.length > 1 && faces[fi] ? [faces[fi].inner[0], faces[fi].inner[1]] : undefined;
+    };
+    if (hit) {
+      const sh = findShape(this.nodes, hit.id);
+      if (sh) return { shape: sh.id, face: pickFace(sh, hit.face) };
+    }
+    if (!p) {
+      const face = isPathTool(this.tool) ? this.paths.selectedFace() : null;
+      if (face) return { shape: face.shape.id, face: shapeFaces(face.shape).length > 1 ? [face.face.inner[0], face.face.inner[1]] : undefined };
+      if (this.shape) return { shape: this.shape.id };
+    }
+    const plane = this.plane;
+    if (!plane) return {};
+    const c = p ?? { x: this.width / 2, y: this.height / 2 };
+    const at = this.planePoint(plane, c);
+    const l = this.planePoint(plane, { x: c.x - this.width / 6, y: c.y });
+    const r = this.planePoint(plane, { x: c.x + this.width / 6, y: c.y });
+    return { plane: plane.id, at: at ?? undefined, width: l && r ? Math.max(1, Math.hypot(r.x - l.x, r.y - l.y)) : 20 };
+  }
+
+  /** was die Leiste unten für Bilder braucht: hat die Form ein Bild, Säume, geht eine Schnittmaske */
+  private imageInfo(): { hasImage: boolean; rims: number; canClip: boolean; mask: boolean } | null {
+    const sh = this.shape;
+    if (!sh) return null;
+    const shapes = this.selectedShapes();
+    const img = topImage(sh);
+    return { hasImage: !!img, mask: !!img?.mask, rims: sh.rims?.length ?? 0, canClip: shapes.length >= 2 && shapes.every((x) => x.parent === sh.parent) && shapes.some((x) => !!topImage(x)) };
+  }
+
+  private onDragOver = (e: DragEvent): void => {
+    if (!this.building || !e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  private onDrop = (e: DragEvent): void => {
+    if (!this.building || !e.dataTransfer?.files.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const box = this.host.surface.getBoundingClientRect();
+    const p = { x: e.clientX - box.left, y: e.clientY - box.top };
+    for (const file of [...e.dataTransfer.files].filter((f) => /^image\/(png|jpeg|webp)$/.test(f.type)).slice(0, 4)) void importImage(this.imageHost, file, this.dropTarget(p));
+  };
 
   /** einen Wert der Schicht i ändern (Zahlen gekappt wie beim Lesen der Datei) */
   private stackParam(i: number, key: string, v: number | string, phase: PickPhase): void {
@@ -4416,6 +4565,8 @@ export class PlaneEditor {
     // Anstrich kopieren und einfügen wie Figma (Cmd+Wahl+C/V; mit Wahltaste liefert e.key Sonderzeichen, darum e.code)
     else if (cmd && e.altKey && e.code === 'KeyC') this.styleCommand('copy');
     else if (cmd && e.altKey && e.code === 'KeyV') this.styleCommand('paste');
+    // Schnittmaske wie Illustrator (Cmd+7, lösen mit Wahl+Cmd+7)
+    else if (cmd && e.code === 'Digit7') this.clipMask(e.altKey);
     else if (cmd && k === 'z') e.shiftKey ? this.redo() : this.undo();
     else if (cmd && k === 'y') this.redo();
     else if (cmd && k === 's') void this.save();
@@ -4506,6 +4657,8 @@ export class PlaneEditor {
     this.writeBackup();
     const s = this.host.surface;
     s.removeEventListener('pointerdown', this.onDown, true);
+    s.removeEventListener('dragover', this.onDragOver, true);
+    s.removeEventListener('drop', this.onDrop, true);
     s.removeEventListener('pointermove', this.onMove, true);
     s.removeEventListener('pointerup', this.onUp, true);
     s.removeEventListener('pointercancel', this.onUp, true);

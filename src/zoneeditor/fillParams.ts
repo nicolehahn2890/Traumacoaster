@@ -8,6 +8,7 @@ import { DOT_SOURCES, GRADIENT_DOTS, GRAIN_TILES, isGradient, type DotSource, ty
 import type { StackParam } from './stackPanel';
 import type { CrownParams } from '@/zone/crown';
 import type { EdgeWave } from '@/zone/edgeWave';
+import { RIM_MODES, RIM_MODE_WORDS, type RimMode, type ZoneRim } from '@/zone/rims';
 
 const SOURCE_WORDS: Record<DotSource, string> = { even: 'gleichmäßig', light: 'Lichtkante', shade: 'Schattenseite', edge: 'alle Kanten', dark: 'im Dunklen' };
 const TILE_WORDS: Record<GrainTile, string> = { paper: 'Papier', gouache: 'Gouache' };
@@ -76,6 +77,17 @@ export function fillParams(f: ZoneFill, s: ParamScale = { sx: 1, sy: 1 }): { nam
         { key: 'seed', label: 'Muster', title: 'Anderes Muster gleicher Art', value: f.seed, step: 0.05, min: 0, max: 9999, digits: 0 },
       ],
     };
+  if (f.type === 'image') {
+    const w = Math.hypot(s.sx * f.ux, s.sy * f.uy);
+    return {
+      name: f.mask ? 'Bildschicht' : f.repeat ? 'Bild als Kachel' : 'Bild',
+      params: [
+        { key: 'repeat', label: 'Lage', title: 'Im Rahmen (einmal, außerhalb durchsichtig) oder als Kachel wiederholt', value: f.repeat ? 'tile' : 'frame', options: [{ value: 'frame', word: 'Rahmen' }, { value: 'tile', word: 'Kachel' }] },
+        { key: 'mask', label: 'Alpha', title: 'Schneidet aus: wo das Bild durchsichtig ist, ist auch die Fläche durchsichtig (Bildschicht)', value: f.mask ? 'cut' : 'over', options: [{ value: 'over', word: 'liegt auf' }, { value: 'cut', word: 'schneidet aus' }] },
+        { key: 'size', label: 'Breite m', title: 'Breite des Bilds (Meter der Ebene); die Höhe folgt im Seitenverhältnis, die Mitte bleibt', value: r(w, 1), step: 0.05, min: 0.05, max: 2000, digits: 1 },
+      ],
+    };
+  }
   return {
     name: TILE_WORDS[f.tile],
     params: [
@@ -151,6 +163,29 @@ export function setFillParam(f: ZoneFill, key: string, v: number | string, s: Pa
     else if (key === 'seed' && ok) f.seed = Math.round(clamp(n, 0, 9999));
     return;
   }
+  if (f.type === 'image') {
+    if (key === 'repeat') {
+      if (v === 'tile') f.repeat = true;
+      else delete f.repeat;
+    } else if (key === 'mask') {
+      if (v === 'cut') f.mask = true;
+      else delete f.mask;
+    } else if (key === 'size' && ok) {
+      // um die Mitte des Rahmens strecken, Seitenverhältnis bleibt
+      const w = Math.hypot(s.sx * f.ux, s.sy * f.uy);
+      if (w < 1e-9) return;
+      const k = clamp(n, 0.05, 2000) / w;
+      const cx = f.ox + (f.ux + f.vx) / 2;
+      const cy = f.oy + (f.uy + f.vy) / 2;
+      f.ux *= k;
+      f.uy *= k;
+      f.vx *= k;
+      f.vy *= k;
+      f.ox = cx - (f.ux + f.vx) / 2;
+      f.oy = cy - (f.uy + f.vy) / 2;
+    }
+    return;
+  }
   if (f.type === 'grain') {
     if (key === 'tile' && (GRAIN_TILES as readonly string[]).includes(String(v))) f.tile = v as GrainTile;
     else if (key === 'scale' && ok) f.scale = clamp(n, 0.2, 400);
@@ -204,4 +239,49 @@ export function setWaveParam(w: EdgeWave, key: string, v: number | string): void
     w.len = clamp(n, 0.2, 100);
     w.amp = Math.min(w.amp, w.len / 4);
   } else if (key === 'seed') w.seed = Math.round(clamp(n, 0, 9999));
+}
+
+/** Richtungen eines Saums als Wort (Grad in der Ebene, 90 = nach oben zeigende Kanten) */
+const RIM_DIRS: Array<{ value: string; word: string; deg: number }> = [
+  { value: 'up', word: 'oben', deg: 90 },
+  { value: 'down', word: 'unten', deg: 270 },
+  { value: 'left', word: 'links', deg: 180 },
+  { value: 'right', word: 'rechts', deg: 0 },
+];
+
+/** Werte eines Saums für die Wertezeile (Grenzen wie parseRims) */
+export function rimParamsOf(rim: ZoneRim): StackParam[] {
+  const dir = RIM_DIRS.find((d) => Math.abs(((rim.dir - d.deg + 540) % 360) - 180) < 1);
+  const params: StackParam[] = [
+    { key: 'mode', label: 'Art', title: 'Wiederholen: Anfang und Ende an den Enden jeder Kante, die Mitte wiederholt sich. Strecken: das ganze Bild über jedes Kantenstück', value: rim.mode, options: RIM_MODES.map((m) => ({ value: m, word: RIM_MODE_WORDS[m] })) },
+    { key: 'width', label: 'Höhe m', title: 'Höhe des Streifens (Meter der Ebene)', value: r(rim.width), step: 0.01, min: 0.05, max: 60, digits: 2 },
+    { key: 'base', label: 'Kante %', title: 'Wo die Kante im Streifen liegt, von unten: so viel liegt in der Fläche', value: Math.round(rim.base * 100), step: 0.5, min: 0, max: 100, digits: 0 },
+    { key: 'dir', label: 'Kanten', title: 'An welchen Kanten der Saum liegt: nach oben, unten, links oder rechts zeigend', value: dir?.value ?? 'up', options: RIM_DIRS.map((d) => ({ value: d.value, word: d.word })) },
+    { key: 'spread', label: 'Spanne °', title: 'So weit darf eine Kante von der Richtung abweichen (Grad; 180 ist rundum)', value: Math.round(rim.spread), step: 0.25, min: 1, max: 180, digits: 0 },
+  ];
+  if (rim.mode === 'repeat') {
+    params.push({ key: 'a', label: 'Anfang %', title: 'Anfang des Bilds bis hier (Anteil der Bildbreite); danach beginnt die Mitte, die sich wiederholt', value: Math.round(rim.a * 100), step: 0.25, min: 0, max: 98, digits: 0 });
+    params.push({ key: 'b', label: 'Ende %', title: 'Ab hier beginnt das Ende des Bilds (Anteil der Bildbreite)', value: Math.round(rim.b * 100), step: 0.25, min: 2, max: 100, digits: 0 });
+  }
+  params.push({ key: 'holes', label: 'Löcher', title: 'Auch an den Rändern der Löcher (etwa ein Höhlenboden)', value: rim.holes ? 'on' : 'off', options: [{ value: 'off', word: 'nein' }, { value: 'on', word: 'ja' }] });
+  return params;
+}
+
+/** einen Wert des Saums setzen (ändert rim in place) */
+export function setRimParam(rim: ZoneRim, key: string, v: number | string): void {
+  const n = typeof v === 'number' ? v : Number.NaN;
+  const ok = Number.isFinite(n);
+  if (key === 'mode' && (RIM_MODES as readonly string[]).includes(String(v))) rim.mode = v as RimMode;
+  else if (key === 'width' && ok) rim.width = clamp(n, 0.05, 60);
+  else if (key === 'base' && ok) rim.base = clamp(n / 100, 0, 1);
+  else if (key === 'dir') {
+    const d = RIM_DIRS.find((x) => x.value === v);
+    if (d) rim.dir = d.deg;
+  } else if (key === 'spread' && ok) rim.spread = clamp(n, 1, 180);
+  else if (key === 'a' && ok) rim.a = clamp(n / 100, 0, rim.b - 0.02);
+  else if (key === 'b' && ok) rim.b = clamp(n / 100, rim.a + 0.02, 1);
+  else if (key === 'holes') {
+    if (v === 'on') rim.holes = true;
+    else delete rim.holes;
+  }
 }

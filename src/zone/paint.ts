@@ -199,7 +199,49 @@ export interface MistFill extends FillBase {
 /** höchstens so viele Tupfer je Farbnebel (der Shader liest sie aus einer Zeile) */
 export const MIST_MAX = 16;
 
-export type ZoneFill = ColorFill | GradientFill | EarleFill | MistFill;
+/**
+ * Bild als Füllung (Stufe 6, Plan 4.8: „Ein Bild kann auch eine Füllung im Füllstapel sein (wie in Figma), dann sitzt es
+ * genau in der Fläche“; Schnittmaske ohne Schablone und ohne eigenen Draw Call, Plan 5.3). Der Rahmen ist ein Parallelogramm
+ * in denselben Koordinaten wie die Verlaufsgriffe: Ecke unten links (ox, oy), Kante nach rechts (ux, uy) und nach oben
+ * (vx, vy); so dreht, spiegelt und streckt das Bild mit der Form. Außerhalb des Rahmens ist es durchsichtig, als Kachel
+ * (repeat) wiederholt es sich. Earle-Schichten darüber wirken auf das Bild wie auf eine Farbe
+ */
+export interface ImageFill extends FillBase {
+  type: 'image';
+  /** Bild neben der Zonendatei (`/zones/<zone>/bild-….png`) */
+  src: string;
+  ox: number;
+  oy: number;
+  ux: number;
+  uy: number;
+  vx: number;
+  vy: number;
+  /** als Kachel wiederholen (der Rahmen ist eine Kachel) */
+  repeat?: boolean;
+  /** Bildschicht: der Alphakanal schneidet aus, was darunter liegt (die Fläche wird dort durchsichtig) */
+  mask?: boolean;
+  /** Malvorlage, nach der das Bild gemalt wurde (Kennung des Vorlagen-Knotens, src/zone/template.ts) */
+  tpl?: string;
+}
+
+/** Bild am Ort (u, v im Rahmen, 0 bis 1, v nach oben): Farbe sRGB nicht vormultipliziert, Deckkraft; null: noch nicht geladen */
+export type ImageSampler = (src: string, u: number, v: number) => [number, number, number, number] | null;
+let imageSampler: ImageSampler | null = null;
+/** wer Bilder lesen kann (Editor: aus den geladenen Bildern), gibt sie Pipette und Vorschau; ohne: Bilder sind durchsichtig */
+export function setImageSampler(fn: ImageSampler | null): void {
+  imageSampler = fn;
+}
+
+/** Lage (u, v) eines Punkts im Rahmen eines Bilds (Umkehrung des Parallelogramms) */
+export function imageUv(f: ImageFill, x: number, y: number): [number, number] {
+  const det = f.ux * f.vy - f.vx * f.uy;
+  if (Math.abs(det) < 1e-12) return [-1, -1];
+  const qx = x - f.ox;
+  const qy = y - f.oy;
+  return [(f.vy * qx - f.vx * qy) / det, (-f.uy * qx + f.ux * qy) / det];
+}
+
+export type ZoneFill = ColorFill | GradientFill | EarleFill | MistFill | ImageFill;
 
 export const isGradient = (f: ZoneFill): f is GradientFill => f.type === 'gradient' || f.type === 'fade';
 export const isEarle = (f: ZoneFill): f is EarleFill => f.type === 'light' || f.type === 'shade' || f.type === 'dots' || f.type === 'grain' || f.type === 'sparkle';
@@ -244,6 +286,8 @@ export interface ZoneStyle {
 
 const HEX = /^#[0-9a-f]{6}$/;
 const REF = /^@c\d{1,6}$/;
+/** Bilder liegen neben der Zonendatei (wie Skizzen); nur solche Adressen kommen in die Datei */
+export const IMAGE_SRC = /^\/zones\/[a-z0-9-]{1,40}\/[\w.-]{1,120}\.(?:png|webp|jpe?g)$/;
 
 export const isHex = (c: unknown): c is string => typeof c === 'string' && HEX.test(c);
 export const isRef = (c: unknown): c is string => typeof c === 'string' && REF.test(c);
@@ -380,6 +424,14 @@ export function parseFill(v: unknown): ZoneFill | null {
       dabs.push({ x: d.x, y: d.y, r: d.r, color, a: num(d.a) ? clamp01(d.a) : 1 });
     }
     if (dabs.length) f = { type: 'mist', dabs, blend, opacity };
+  } else if (o.type === 'image') {
+    if (typeof o.src === 'string' && IMAGE_SRC.test(o.src) && num(o.ox) && num(o.oy) && num(o.ux) && num(o.uy) && num(o.vx) && num(o.vy) && Math.abs(o.ux * o.vy - o.vx * o.uy) > 1e-9) {
+      const g: ImageFill = { type: 'image', src: o.src, ox: o.ox, oy: o.oy, ux: o.ux, uy: o.uy, vx: o.vx, vy: o.vy, blend, opacity };
+      if (o.repeat === true) g.repeat = true;
+      if (o.mask === true) g.mask = true;
+      if (typeof o.tpl === 'string' && /^v\d{1,6}$/.test(o.tpl)) g.tpl = o.tpl;
+      f = g;
+    }
   } else if (o.type === 'grain') {
     f = {
       type: 'grain',
@@ -436,6 +488,12 @@ export function serializeFill(f: ZoneFill): Record<string, unknown> {
     Object.assign(o, { size: r3(f.size), gap: r3(f.gap), density: r3(f.density), speed: r3(f.speed), seed: f.seed });
     if (f.color) o.color = f.color;
   } else if (f.type === 'mist') o.dabs = f.dabs.map((d) => ({ x: r3(d.x), y: r3(d.y), r: r3(d.r), color: d.color, a: r3(d.a) }));
+  else if (f.type === 'image') {
+    Object.assign(o, { src: f.src, ox: r4(f.ox), oy: r4(f.oy), ux: r4(f.ux), uy: r4(f.uy), vx: r4(f.vx), vy: r4(f.vy) });
+    if (f.repeat) o.repeat = true;
+    if (f.mask) o.mask = true;
+    if (f.tpl) o.tpl = f.tpl;
+  }
   if (f.type !== 'fade') o.blend = f.blend;
   o.opacity = r3(f.opacity);
   if (f.hidden) o.hidden = true;
@@ -458,6 +516,14 @@ export function mapFillPoints(fills: readonly ZoneFill[] | undefined, fn: (x: nu
         d.x = r3(d.x);
         d.y = r3(d.y);
       }
+      continue;
+    }
+    if (f.type === 'image') {
+      // drei Ecken abbilden (unten links, unten rechts, oben links), daraus wieder Ecke und Kanten
+      const [ax, ay] = fn(f.ox, f.oy);
+      const [bx, by] = fn(f.ox + f.ux, f.oy + f.uy);
+      const [cx, cy] = fn(f.ox + f.vx, f.oy + f.vy);
+      Object.assign(f, { ox: r4(ax), oy: r4(ay), ux: r4(bx - ax), uy: r4(by - ay), vx: r4(cx - ax), vy: r4(cy - ay) });
       continue;
     }
     if (!isGradient(f)) continue;
@@ -545,9 +611,9 @@ export function bandT(t: number, steps: number, inner = 0.35): number {
   return clamp01((k + inner * (p - k - 0.5)) / (steps - 1));
 }
 
-/** kann die Fläche durchsichtig werden (Deckkraft unter 1 oder ein Deckkraftverlauf)? */
+/** kann die Fläche durchsichtig werden (Deckkraft unter 1, ein Deckkraftverlauf oder eine Bildschicht, die ausschneidet)? */
 export function layersClear(layers: readonly ZoneFill[], opacity = 1): boolean {
-  return opacity < 1 || layers.some((f) => f.type === 'fade');
+  return opacity < 1 || layers.some((f) => !f.hidden && (f.type === 'fade' || (f.type === 'image' && !!f.mask)));
 }
 
 // ------------------------------------------------------------------ Verlauf als Farbband
@@ -653,7 +719,19 @@ export function evalLayers(layers: readonly ZoneFill[], x: number, y: number, sw
     if (f.hidden || isEarle(f)) continue;
     let cs: RGB;
     let as: number;
-    if (f.type === 'mist') {
+    if (f.type === 'image') {
+      // Bild: aus dem Sampler des Editors (sonst durchsichtig); Bildschicht: der Alphakanal nimmt dem Bisherigen Deckkraft
+      const [u, v] = imageUv(f, x, y);
+      const inside = f.repeat || (u >= 0 && u <= 1 && v >= 0 && v <= 1);
+      const s = inside && imageSampler ? imageSampler(f.src, f.repeat ? u - Math.floor(u) : u, f.repeat ? v - Math.floor(v) : v) : null;
+      cs = s ? [s[0], s[1], s[2]] : [0, 0, 0];
+      as = s ? s[3] : 0;
+      if (f.mask) {
+        const m = 1 - f.opacity + f.opacity * as;
+        pr = [pr[0] * m, pr[1] * m, pr[2] * m];
+        pa *= m;
+      }
+    } else if (f.type === 'mist') {
       const m = mistAt(f, x, y, swatches, look);
       cs = m.rgb;
       as = m.a;

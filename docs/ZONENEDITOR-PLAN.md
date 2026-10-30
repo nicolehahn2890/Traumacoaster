@@ -6,7 +6,10 @@ Stufe 0 und Stufe 1 gebaut, Tor S1 bestanden (Florian, 27.10.2026); Stufe 2 ganz
 Ebenenstapel, Luftperspektive, Stile, Looks, SVG), Tor S3 am Mac bestanden („Es scheint alles erstmal zu
 funktionieren“; Kleinigkeiten aus S2 und S3 sammelt Florian und geht sie später mit uns durch); weiter mit Stufe 4.
 Der Editor muss zuerst am Mac laufen, iPad und Tablet optimieren wir später (Florian, 27.10.2026). Stufe 5 (Earle-Schichten) ist seit 29.10.2026 in
-`zoneneditor` (gebaut auf `zoneneditor-tor2`); an Tor S5 hat Florian die Werkzeuge freigegeben und Regel 4 neu gefasst, die Testzone bleibt Vorschlag (29.10.2026).**
+`zoneneditor` (gebaut auf `zoneneditor-tor2`); an Tor S5 hat Florian die Werkzeuge freigegeben und Regel 4 neu gefasst, die Testzone bleibt Vorschlag (29.10.2026).
+Stufe 4 ist bis auf die Handy-Messung erfüllt (30.10.2026). Stufe 6 (Bilder, Schnittmasken, Säume, Malvorlagen, KTX2) ist seit
+30.10.2026 gebaut, auf dem Zweig `claude/dreamy-dewdney-c96dd5`; Tor S6 wartet auf Florians Malerei nach den bereitliegenden
+Vorlagen und die Handy-Messung.**
 Gebaut wird Stufe für
 Stufe mit Tor, auf dem Branch `zoneneditor`. Der große Plan (`docs/GROSSER-PLAN.md`)
 ruht seit heute auf Florians Wunsch; Etappe 2 steht nach Schritt 7, dem Freiraumfeld und der Freigabe der Ebenen-Probe,
@@ -654,7 +657,7 @@ Ziel: Jede Form wird sofort mit Bahn, Stützen und Fahrt geprüft, im selben Bil
   mit Lage, Tiefe und Fingerabdruck der Form. Florian malt darauf in Procreate oder Photoshop; der Import setzt das Bild
   über die Begleitdatei passgenau ein und warnt, wenn die Form sich seitdem geändert hat.
 - **Bilder hinein:** PNG und WebP per Ziehen oder Auswahl; auf dem iPad aus „Dateien“ oder Fotos. PSD-Import mit
-  Ebenen aus Procreate ist eine Option für Stufe 6 (Entscheidung B6).
+  Ebenen aus Procreate ist eine Option für Stufe 6 (Entscheidung B6; Florian, 30.10.2026: „PNG reicht“).
 - **Für Paket 8b:** Jeder Teile-Auftrag bekommt Malvorlage und SVG der Form als Vorgabe; die Prüfung „passt es genau“
   vergleicht das Ergebnis mit dieser Form.
 
@@ -1183,7 +1186,9 @@ Halt (die Bahn zu dicht unter dem Fels oder zu weit von allem). Szenario 30. Ver
 lokal, es zeigt Bilder aus `refs/`); unsere Bilder allein: `docs/research/halter/2026-10-30-halter-vorschlag.jpg`.
 **Platzhalter:** alle Formen und Maße der Halter, die Reichweiten (4 m, 2,6 m, 3,2 bis 12 m), die Regel „je Lauf die
 nächste Variante“. Gemalte oder modellierte Halter gehören zur Stützen-Werkstatt (Etappe 4 im großen Plan).
-**Offen:** Florians Wahl der Varianten und der Mischregel.
+**Florian, 30.10.:** Halter, Bahn und Zug haben optisch noch nichts mit dem Spiel zu tun. Welche Formen wir bauen und
+brauchen, zeigt sich erst mit dem Look („Das müssen wir erst herausfinden“). Bis dahin bleiben Varianten und Mischregel
+Platzhalter; es gibt nichts zu wählen. Was bleibt, ist der Ablauf: Wo keine Kante trägt, hält die Stütze an Wand oder Decke.
 **Szene 06 in Formen (30.10.2026, Vorschlag für Tor S4):** Zone `szene-06` aus `npx tsx scripts/testzonen.ts szene-06`, in
 der Lage der gemalten Fassung (Zone `ebenen`, Feld „Oben“ 0 bis 96 × −12 bis 66 m): Bogen, Terrasse und Wiesenmasse
 übernehmen deren Umrisse (dort in Etappe 2 aus den Bildern des Baukastens gewonnen). Ebenen von vorn nach hinten: Farn
@@ -1200,12 +1205,18 @@ mit Earle 1,45 ms je Bild, ohne Earle 1,35 ms, Grotte zum Vergleich 1,43 ms; am 
 `docs/research/szene-06/2026-10-30-szene-06-vorschlag.jpg`; der Vergleich mit der gemalten Fassung nur lokal (Bilder aus
 `refs/`). **Platzhalter:** alle Formen außer den übernommenen Umrissen, alle Farben, Tiefen und Earle-Vorgaben, die Lage
 der Station. **Bekannt:** Das hohe Feld erscheint in der Perspektive als Trapez; sein unterer Rand liegt beim Start knapp
-unter der Leiste unten.
+unter der Leiste unten. **Florian, 30.10.:** Mit Earles Bildern hat Szene 06 nur die Silhouette gemein; den Stil findet
+Florian.
 **Tor S4, was noch fehlt:** Florian passt Szene 06 an, zeichnet und fährt selbst eine Bahn durch die Höhle (die Werkzeuge,
-nicht das Gefühl des Pinsels) und misst am Handy (`?zone=szene-06&dev=1&earle=messen`, dazu eine Fahrt mit der Anzeige);
-seine Wahl der Halter-Varianten. „Replay grün“ wartet, bis er wieder aufnimmt. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
+nicht das Gefühl des Pinsels) und misst am Handy (`?zone=szene-06&dev=1&earle=messen`, dazu eine Fahrt mit der Anzeige).
+Die Formen der Halter gehören nicht zum Tor, sie kommen mit dem Look. „Replay grün“ wartet, bis er wieder aufnimmt. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
 lang, die Schraffuren. **Nicht geprüft:** Szene 06 in Formen (Tor S4), Stroke-Replay mit dem Ebenen-Pinsel (der Replay
 kennt den Modus nicht), 60 fps am Handy.
+**Stand Tor S4 (30.10.2026, Florian: „Sind wir nun fertig mit 4 und kann ich mit 6 anfangen?“):** Gebaut ist alles aus
+Stufe 4; die Durchblick-Prüfung kommt mit den Portalen (Stufe 7). Erfüllt: Szene 06 in Formen (die Silhouette; den Stil
+findet Florian), eine Bahn von Florian durch die Höhle mit Stützen auf Kanten (sein Bild vom 30.10.), die Fahrt durch die
+Höhle in Szenario 31. Mit dem eingefrorenen Strich verschoben: „Replay grün“, B2 und B4. Offen: 60 fps am Handy; die
+Messung hält Stufe 6 nicht auf. Weiter mit Stufe 6.
 
 **Stufe 5: Earle-Schichten (M).** Licht der Zone, Bänder, Innenschatten (Kantenabstand im Atlas), Textur aus Florians
 Scans, Pünktchen mit Rang-Kachel und Punktpinsel, Lichtkante, Kantenwelle, Farbnebel, Funkeln, Punktkronen für Bäume
@@ -1351,6 +1362,79 @@ dich dafür mit der Pinsel-Studie ab.“):** Fast-Forward von 11454fb (Pinsel-St
 Malvorlage mit Fingerabdruck und Größenangabe, Umriss aus Bild, Import gemalter Teile mit Passmarken, KTX2 beim
 Kompilieren. **Tor S6:** Florian malt nach einer Malvorlage eine Grasnarbe als Saum und eine gemalte Fläche in
 Procreate, setzt beides ein; 60 fps am Handy, Speicher im Rahmen.
+**Florians Antworten vor dem Bau (30.10.2026):** B6: „PNG reicht“ (kein PSD-Import). Malvorlagen fürs Tor: „mach beides,
+bogen und grasnarbe“ (Szene 06: der große Bogen als gemalte Fläche und die Grasnarbe als Saum; die Rückwand der Höhle liegt
+zusätzlich bereit). Saum: „beides und nimm eine existierende vorlage aus dem ordner. es gibt bereits grasnarben oder? du
+kannst sie ja zerteilen.“ (Stück zum Wiederholen und Streifen für die ganze Kante; `grass_rim_trim.png` aus dem Elemente-Bogen
+zerteilt als Platzhalter-Saum und Unterlage). KTX2: Bibliothek `ktx2-encoder` installieren „ja“.
+**Stand 30.10.2026: gebaut** (Technik in `docs/TECH.md` 4l; Zweig `claude/dreamy-dewdney-c96dd5` ab 78ca3c3):
+- *Bild als Füllung, Schnittmaske* (4.8): Ein Bild ist eine Schicht im Füllstapel einer Form oder Fläche, im Rahmen (außerhalb
+  durchsichtig) oder als Kachel; es sitzt genau in der Form, ohne Schablone und ohne eigenen Draw Call je Form (ein Draw Call je
+  Bild und Schichtfolge). Earle-Schichten darüber wirken auf das Bild wie auf eine Farbe. Wertezeile: Rahmen oder Kachel,
+  „liegt auf“ oder „schneidet aus“, Breite. **Bildschicht:** ein Bild in eine leere Stelle der Ebene ziehen gibt ein Rechteck
+  mit dem Bild, das ausschneidet (verschieben, skalieren, drehen wie jede Form). **Schnittmaske** wie in Illustrator: Bildschicht
+  und Form darunter wählen, Cmd+7 (oder „Schnittmaske“); Wahl+Cmd+7 löst sie wieder. (Ziehen in der Ebenenliste wie Affinity
+  gibt es nicht: die Liste zeigt Ebenen, nicht einzelne Formen.)
+- *Saum* (4.8): Knopf „Saum“ an der Form, dann ein Streifenbild wählen. Der Streifen läuft an allen Kanten entlang, die in eine
+  Richtung zeigen (Vorgabe: oben, ± 50°; unten, links, rechts und rundum gehen auch, Löcher auf Wunsch), und folgt der Form,
+  wenn sie sich ändert (auch der Kantenwelle). **Wiederholen:** das Bild ist Anfang | Mitte | Ende (Grenzen im Füllstapel als
+  Prozent), Anfang und Ende sitzen an den Enden jedes Kantenstücks, die Mitte wiederholt sich dazwischen. **Strecken:** das ganze
+  Bild über jedes Kantenstück. Im Füllstapel der Form über den Füllungen: Höhe, Lage der Kante im Streifen, Richtung, Spanne,
+  Anfang, Ende, Löcher, Deckkraft, Auge.
+- *Malvorlage mit Fingerabdruck und Größenangabe* (4.10): „Bild …“ › „Malvorlage“ an Form oder Fläche, „Saum-Vorlage: Stück“
+  oder „Streifen“ für den Saum. Das PNG hat den Malbereich (Form mit Überstand rundum) in der Zielgröße aus Tiefe und größtem
+  Zoom (höchstens 4096 Bildpunkte, sonst sagt die Vorlage, bis zu welchem Zoom sie scharf ist), die Silhouette, beim Saum die
+  Kante und die Teilung, im Rand vier Passmarken und eine Zeile mit Größe, Bildpunkten je Meter, Schärfe und Fingerabdruck.
+  Dazu SVG mit Schnittpfad (Illustrator) und Begleitdatei; alles als Download und in `zones/<zone>/vorlagen/`.
+- *Import gemalter Teile mit Passmarken* (4.10): Das gemalte PNG ins Bild ziehen oder „Bild einsetzen“. Erkannt wird die
+  Vorlage am Namen (Procreate behält ihn: `…-v3`), an der Größe oder am Seitenverhältnis (größer gemalt bleibt schärfer, bis
+  4096); der Rand fällt weg, das Bild sitzt genau im Rahmen der Vorlage. Ist die Leinwand beschnitten, finden die Passmarken die
+  Lage (wenn sie mit im Bild sind). Ein zweites Bild derselben Vorlage ersetzt das erste.
+- *Gemalte Teile nach Formänderungen* (Risiko in Abschnitt 7): Der Fingerabdruck merkt den Umriss beim Anlegen der Vorlage;
+  Verschieben und Skalieren ändern ihn nicht (das Bild geht mit), Anker schon. Dann steht am Bild im Füllstapel „Form geändert,
+  bis N px daneben“, und der Import sagt es auch. Ein Saum zum Wiederholen passt immer; ein gestreckter merkt die Kantenlänge.
+- *Umriss aus Bild* (4.8): „Umriss aus Bild“ an einer Form mit Bild gibt ihr den Umriss des Gemalten (wo es deckt) als wenige
+  glatte Anker; danach deckt das Bild, und die Form ist eine Form wie jede andere (Andockkanten, Material grabbar).
+- *KTX2 beim Kompilieren* (4.11): Nach dem Hochladen und nach jedem Sichern packt der Dev-Server die Bilder der Zone als KTX2
+  (Basis Universal UASTC mit Mipmaps, `scripts/zone-ktx2.mjs`, `npm run kompilieren`); das Spiel lädt sie gepackt, am Handy
+  und am Mac als ASTC (ein Byte je Bildpunkt statt vier). Die Messzeile oben links zeigt Bilder und Grafikspeicher.
+- *Tor S6 vorbereitet* (`npx tsx scripts/tor-s6.ts`): In Szene 06 liegt auf der Grasdecke ein **Platzhalter-Saum** aus
+  `grass_rim_trim.png`, zerteilt in die linke Locke (Anfang), ein nahtlos gemachtes Mittelstück und die rechte Locke (Ende,
+  hochgerückt, weil das Band im Original nach rechts abfällt). Malvorlagen in `public/zones/szene-06/vorlagen/`: **v1**
+  Grasnarbe als Stück zum Wiederholen (1296 × 402 px, scharf bis Zoom 60), **v2** Grasnarbe als Streifen über die ganze
+  Oberkante (144,6 m: 4096 × 127 px, scharf nur bis Zoom 15; ein Streifen für eine so lange Kante wird dünn), **v3** der große Bogen (4096 × 2442 px, scharf bis Zoom 14 von 60), **v4** die Rückwand (4096 × 2826 px, scharf bis
+  Zoom 35); zu v1 und v2 je eine Unterlage mit der zerteilten Grasnarbe in der richtigen Größe.
+- *Wohin ein gemaltes Bild im Füllstapel kommt:* über die Schichten, die die Fläche färben (Farbe, Verlauf, Farbnebel), unter
+  die Wirkungen (Lichtkante, Innenschatten, Pünktchen, Papier, Funkeln, Deckkraftverlauf). Befund beim Messen: zuunterst
+  eingesetzt verdeckten die Vorschlags-Verläufe von Szene 06 das Bild ganz; behoben vor dem Commit.
+
+**Geprüft (30.10.2026):** 563 Tests grün (23 neue in `tests/bilder.test.ts`), Typprüfung sauber, Szenarien 24 bis 32 allein
+gegen den eigenen Server grün (Szenario 32 mit 12 Prüfungen in einer eigenen Zone, die danach wieder verschwindet: Malvorlage
+als Download und in `vorlagen/`, gemaltes Bild passgenau, Rot und Blau an den richtigen Stellen im Bild, doppelt so groß
+gemalt, „Form geändert, bis 173 px“, Saum über der Kante, Saum-Vorlage, Bildschicht, Umriss aus Bild (Kreis mit 5 Ankern,
+Radius 3,98 bis 4,03 m statt 4), Schnittmaske und lösen, nach dem Sichern im Spiel 3 von 3 Bildern als KTX2 mit 12,1 statt
+48,4 MB Grafikspeicher). Szenario 31 (Szene 06 mit dem Platzhalter-Saum) fährt weiter durch die Höhle. **Bildzeit**
+(`scripts/earle-bildzeiten.mjs`, Mac M3 Pro, Metal, Handy-Bild 1688 × 780): Testszenen wie in Stufe 5 (mit Earle 1,58 bis
+2,33 ms, ohne 0,71 bis 0,97 ms); die Gegenprobe der Shader zeigt 0,02 % abweichende Bildpunkte, mit angehaltener Uhr 0 %
+(größte Abweichung 1): das Funkeln läuft zwischen den zwei Aufnahmen weiter, die Shader sind gleich. Szene 06 mit gemaltem
+Bogen (Testbild 4096 × 2442 aus der Vorlage v3) und Saum: 2,0 bis 2,4 ms je Bild, ohne Bilder 2,1 bis 2,3 ms, also im
+Rauschen; ein Draw Call mehr je Bild. **Speicher:** der Bogen in Vorlagengröße kostet als PNG 51 MB Grafikspeicher, als KTX2
+13 MB; der Platzhalter-Saum 0,5 MB (KTX2). Rahmen für die Bilder einer Zone: 64 MB (Platzhalter, die Messzeile warnt darüber).
+**Platzhalter:** der Saum aus `grass_rim_trim.png` (Bild aus `refs/`, zerteilt; Grenzen 300, 660 und 1380 Bildpunkte, 48
+Bildpunkte überblendet) und seine Werte auf der Grasdecke (4,5 m hoch, Kante bei 59 %); Vorgaben eines neuen Saums (1,6 m hoch,
+Kante bei 30 %, nach oben ± 50°); der größte Zoom 60, das Handy 390 CSS-Bildpunkte hoch und Auflösung 2 für die Zielgröße der
+Vorlagen; Überstand 3 % (mindestens 0,4 m); Rand 64 Bildpunkte; Aussehen der Vorlage (Grau der Silhouette, Striche, Wortlaut
+der Zeilen, Magenta der Passmarken); 4096 Bildpunkte als größte Seite; 64 MB Speicherrahmen; 20 s, bis ein ungenutztes Bild die
+Grafikkarte verlässt; die Grundfarbe nach „Umriss aus Bild“ (Mittel der Randfarben); das Aussehen der neuen Knöpfe.
+**Nicht geprüft:** 60 fps und Speicher am Handy (Florian misst mit `&earle=messen`, neue Zeile „− Bilder und Säume“);
+der Weg über Procreate selbst (Import der Vorlage, Malen, Teilen als PNG, AirDrop); am iPad; KTX2 auf einem Handy ohne ASTC.
+**Offen aus Stufe 6:** Bilder im SVG der Ebenen (die Malvorlage bringt ihre eigene SVG mit Schnittpfad mit); Ziehen einer
+Bildschicht auf eine Form in der Ebenenliste (die Liste zeigt keine Formen); Atlas für viele Bilder (erst wenn die
+Draw Calls es verlangen); PSD (B6: später, wenn gewünscht).
+**Tor S6, was Florian tut:** In Szene 06 „Bild …“ › „Malvorlage“ am Bogen (oder die bereitliegenden Dateien in
+`public/zones/szene-06/vorlagen/` nehmen), in Procreate malen (Vorlage importieren, neue Ebene, über den Umriss bis an den
+gestrichelten Rand malen, Vorlage ausblenden, als PNG teilen), das PNG ins Editorfenster ziehen; dasselbe mit der
+Saum-Vorlage v1 (oder v2) für die Grasnarbe; sichern; am Handy `&earle=messen` und eine Fahrt mit der Bildrate.
 
 **Stufe 7: Portale und Tunnel (L).** Portal-Vorlagen, Portal-Werkstatt, Platzierung beim Zeichnen, Tiefenwechsel durch
 die Öffnung, Loch zur Laufzeit, feste Öffnungen und Baustellen mit Vorlagen, Tunnel-Meter. **Tor S7:** Florian zeichnet
@@ -1386,7 +1470,7 @@ Gefühl des Pinsels; „Replay grün“ wartet, bis Florian wieder aufnimmt.
 | Portale zur Laufzeit (Loch, Tiefenwechsel, Vorlage passt nicht in die Lücke) | Portal-Werkstatt, Prüfung „passt in die Lücke“; Rückfall: nur feste Öffnungen | Tor S7 |
 | Zwei ungesicherte Stände (Etappe-2-Worktree, Kamerawinkel nur lokal) | Stufe 0 sichert beide, bevor gebaut wird (erledigt am 27.10.: `b30bb71` und Branch `zoneneditor`, beide lokal) | Stufe 0 |
 | Shader-Pünktchen wirken gefiltert statt gemalt | Vergleich gemalt gegen Shader am Handy; Florian entscheidet Regel 4 (entschieden 29.10.: Shader-Schichten erlaubt; wie sie im fertigen Bild wirken, zeigt die Stilprobe) | Tor S5 |
-| Gemalte Teile passen nicht mehr nach Formänderungen | Fingerabdruck der Malvorlage, Warnung im Editor | Tor S6 |
+| Gemalte Teile passen nicht mehr nach Formänderungen | Fingerabdruck der Malvorlage, Warnung im Editor (gebaut 30.10.: „Form geändert, bis N px daneben“ am Bild im Füllstapel und beim Import; Überstand rundum in der Vorlage; Säume zum Wiederholen passen auf jede Kante) | Tor S6 |
 
 ## 8. Was aus dem großen Plan danach weiterläuft
 
@@ -1440,11 +1524,11 @@ Gefühl des Pinsels; „Replay grün“ wartet, bis Florian wieder aufnimmt.
 | Nr. | Frage | wann |
 |---|---|---|
 | B1 | ~~Paket 0 Regel 4 neu: Pünktchen und Textur als Schicht im Editor erlaubt?~~ **Beantwortet (29.10., Tor S5):** „Ja, Regel 4 gilt neu: Pünktchen und Textur dürfen im Editor Shader-Schichten sein.“ Den Vergleich gemalt gegen Shader brauchte Florian nicht („Ich muss keine Fotos für Vergleiche machen“) | Tor S5 |
-| B2 | ~~Abtauchen nur in grabbare Flächen, Fels bleibt fest?~~ **Teilweise beantwortet (27.10.):** „Fels ist fest“ gilt erst einmal nicht mehr, „grabbar“ wird gebaut; ob es daneben noch „fest“ braucht, zeigt der Test | Tor S4 |
+| B2 | ~~Abtauchen nur in grabbare Flächen, Fels bleibt fest?~~ **Teilweise beantwortet (27.10.):** „Fels ist fest“ gilt erst einmal nicht mehr, „grabbar“ wird gebaut; ob es daneben noch „fest“ braucht, zeigt der Test | mit dem Strich (30.10., vorher Tor S4) |
 | B3 | ~~Portale automatisch oder nur von Hand?~~ **Beantwortet (27.10.):** dynamisch. Offen bleibt, wie Durchfahrten gemacht werden, ob sie sichtbar sind und ob der Pinsel dynamisch gräbt | Tor S7 |
 | B4 | Pinsel „Ebenen: Bodenhöhe“ als Grundlage für die Tiefe aus Ebenen? **Offen gelassen (30.10.):** Tor S4 gilt mit eingefrorenem Strich, B4 entscheidet Florian mit dem Pinsel später | Tor S4 |
 | B5 | Neigung und Bildwinkel je Zone oder je Feld? | Tor S1 |
-| B6 | PSD-Import aus Procreate (Ebenen als Bildschichten) nötig? | Tor S6 |
+| B6 | ~~PSD-Import aus Procreate (Ebenen als Bildschichten) nötig?~~ **Beantwortet (30.10., vor Stufe 6):** „PNG reicht“; die Malvorlage ist ein PNG, zurück kommt ein PNG. PSD kann später dazukommen, wenn das Ausblenden der Vorlage lästig wird | Tor S6 |
 
 **Florian parallel (jederzeit, nicht im Tor):** Papier und Gouache scannen oder fotografieren (für die Texturen in Stufe
 5); eine Skizze der ersten echten Zonenformen, die er im Editor nachbauen will; am iPad das HTTPS-Profil installieren

@@ -1,0 +1,34 @@
+{
+  "zone": "szene-06",
+  "vorlage": "v3",
+  "name": "Großer Bogen",
+  "form": "s5",
+  "flaeche": null,
+  "saum": null,
+  "art": null,
+  "malbereich": {
+    "w": 4096,
+    "h": 2442
+  },
+  "rand": 64,
+  "pxJeMeter": 27.216,
+  "scharfBisZoom": 14.3,
+  "groessterZoom": 60,
+  "ebene": {
+    "id": "p3",
+    "name": "Bogen",
+    "tiefe": 8,
+    "massstab": 1.03487
+  },
+  "rahmen": {
+    "ox": -75.25116435185187,
+    "oy": -44.860094834848596,
+    "ux": 150.50061574074076,
+    "uy": 0,
+    "vx": 0,
+    "vy": 89.7162649737375
+  },
+  "teilung": null,
+  "fingerabdruck": "e47a0a1a",
+  "angelegt": "2026-10-30"
+}

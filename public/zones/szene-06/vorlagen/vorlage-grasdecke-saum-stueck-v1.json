@@ -1,0 +1,30 @@
+{
+  "zone": "szene-06",
+  "vorlage": "v1",
+  "name": "Grasdecke Saum Stück",
+  "form": "s6",
+  "flaeche": null,
+  "saum": "r1",
+  "art": "repeat",
+  "malbereich": {
+    "w": 1296,
+    "h": 402
+  },
+  "rand": 64,
+  "pxJeMeter": 89.35,
+  "scharfBisZoom": 60,
+  "groessterZoom": 60,
+  "ebene": {
+    "id": "p3",
+    "name": "Bogen",
+    "tiefe": 8,
+    "massstab": 1.03487
+  },
+  "rahmen": null,
+  "teilung": [
+    0.2777777777777778,
+    0.6111111111111112
+  ],
+  "fingerabdruck": "saum",
+  "angelegt": "2026-10-30"
+}

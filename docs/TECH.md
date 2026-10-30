@@ -898,6 +898,104 @@ Plan: `docs/ZONENEDITOR-PLAN.md`, Stufe 4 und 4.9. Ohne DOM: `src/zone/dock.ts`,
   ändern, Ziele und Stufe eines Felds, beim Spielen Welt, Coins, Wand und Ziele), 30 (Halter-Probe `test-halter`: Wand-
   und Deckenhalter, Fahrt).
 
+## 4l. Zonen-Editor, Stufe 6: Bilder, Schnittmasken, Säume, Austausch
+
+Plan: `docs/ZONENEDITOR-PLAN.md`, Stufe 6 und 4.8, 4.10, 4.11. Ohne DOM: `src/zone/rims.ts`, `src/zone/template.ts`, die
+Bildfüllung in `src/zone/paint.ts`; Renderer `src/world/imageTextures.ts`, `src/world/rimMesh.ts`, `planeMesh.ts`; Editor
+`src/zoneeditor/images.ts`; Dev-Server `vite.config.ts`; Packen `scripts/zone-ktx2.mjs`; Tor `scripts/tor-s6.ts`.
+
+- **Bildfüllung** (`ImageFill`, Art `image` im Füllstapel): Bild neben der Zonendatei (`src` nur `/zones/<zone>/….png|webp|jpg`,
+  `IMAGE_SRC`), Rahmen als Parallelogramm in Pfad-Koordinaten (Ecke unten links `ox, oy`, Kanten `ux, uy` und `vx, vy`), so
+  drehen, spiegeln, strecken und kopieren es `mapFillPoints`, `rotateShape`, `flipShape`, `transferShape` und Stile mit;
+  `repeat` (Kachel), `mask` (Bildschicht: das Alpha nimmt dem Bisherigen Deckkraft wie ein Deckkraftverlauf, dann liegt das
+  Bild darüber; `layersClear` gibt die Fläche dann ins durchsichtige Mesh), `tpl` (Malvorlage). `imageUv` kehrt den Rahmen um.
+  `evalLayers` liest Bilder über einen Sampler (`setImageSampler`; der Editor setzt einen, der die Bilder einmal dekodiert:
+  Pipette, Prüfungen), ohne Sampler sind sie durchsichtig. Wertezeile (`fillParams`): Rahmen oder Kachel, liegt auf oder
+  schneidet aus, Breite um die Mitte.
+- **Shader** (`planeMesh.ts`): Kürzel `I<Platz>` mit `r` (Kachel) und `m` (schneidet aus), etwa `Ir3`; der Shader je Folge
+  deklariert nur die Sampler, die er liest (`uniform sampler2D uImg3;`), und rechnet gerade (keine Schleife): `uv` aus der
+  Umkehrung des Rahmens (Datentextur B: Ecke und erste Zeile, C: zweite Zeile), `texture()`, vormultipliziert, außerhalb des
+  Rahmens Deckkraft 0. Der allgemeine Shader kann keine Sampler wählen; darum bekommen Flächen mit Bild immer einen Shader je
+  Folge (`MAX_VARIANTS` gilt für sie nicht, durchsichtige Läufe mit Bild werden nicht zusammengelegt). Plätze vergibt
+  `PlaneLayer.slot` je Bild und Art (Rahmen, Kachel) einmal; die Uniforms hängen am gemeinsamen Uniform-Objekt. Jedes Bild
+  kostet je Schichtfolge einen Draw Call (Bilder sind keine Atlas-Seiten, siehe unten).
+- **Bilder laden** (`ImageCache`, `PlaneLayer.images`, mit den Säumen geteilt): je Bild und Art eine Textur; bis zum Laden eine
+  leere (durchsichtig). PNG über den TextureLoader mit `premultiplyAlpha`, Mipmaps, ohne Farbraum (die Shader rechnen in
+  sRGB), Kachel `RepeatWrapping`, sonst `ClampToEdge`, Anisotropie bis 4. **KTX2:** Steht das Bild in
+  `/zones/<zone>/ktx2.json`, lädt der KTX2Loader (Transcoder unter `/basis/`, Vite-Plugin `basisTranscoder`: im Dev-Server aus
+  `node_modules/three/examples/jsm/libs/basis`, im Build nach `dist/basis/`) die gepackte Fassung; am Mac und iPhone wird
+  daraus ASTC 4×4 (gemessen am Mac: Format 37808), sonst BC7 oder ETC2. `&ktx2=0` lädt die Originale. Das Dev-Server-Ereignis
+  `tc:ktx2` lässt den Cache die Zone neu lesen und die Texturen tauschen (`onChange` setzt Uniforms und Säume neu).
+  `stats(used)` zählt Bilder, Grafikspeicher (PNG: 4 Bytes je Punkt mit Mipmaps; KTX2: aus der Datei des Compilers) und KTX2;
+  die Messzeile des Editors zeigt sie, über `IMAGE_BUDGET` (Platzhalter 64 MB) mit „über dem Rahmen“. `touch` und `prune`:
+  Bilder, die 20 s niemand gebraucht hat (etwa ein ersetztes), verlassen die Grafikkarte; kommt eins zurück, lädt es neu.
+  Die Handy-Messung (`&earle=messen`, `earleMessung.ts`) hat die Zeile „− Bilder und Säume“ (`withoutImages`) und nennt
+  Zahl, Grafikspeicher und KTX2 der Bilder.
+- **KTX2 beim Kompilieren** (`scripts/zone-ktx2.mjs <zone> | --all`, `npm run kompilieren`): sammelt die Bilder der
+  Bildfüllungen (Formen, Flächen, Ebenen, Stile) und Säume einer Zone, rundet die Kanten auf Vielfache von 4, multipliziert
+  Alpha vor, spiegelt die Zeilen (wie PNG-Texturen) und packt mit `ktx2-encoder` 0.6.0 (Basis Universal UASTC, Mipmaps,
+  Zstandard, ohne sRGB-Kennzeichen); `ktx2.json` hält Datei, Größe, Grafikspeicher und eine Prüfsumme des Originals,
+  unveränderte Bilder werden übersprungen. Der Dev-Server startet es nach dem Hochladen eines Bilds und nach jedem Sichern
+  einer Zone mit Bildern (eine Zone nach der anderen, `tc:ktx2` danach). Der Build packt nicht selbst (CI unverändert); die
+  KTX2-Dateien liegen mit der Zone im Repository.
+- **Säume** (`ZoneRim` in `shape.rims`, Kennung `r…`; Plan 4.8 nach UbiArts Frisen und Unitys Sprite Shape): Bild, gemerktes
+  Seitenverhältnis (die Geometrie rechnet ohne das Bild), Höhe `width`, Lage der Kante `base` (Anteil von unten), Richtung
+  `dir` und Spanne `spread` (Grad in der Ebene), Art `repeat` oder `stretch`, Teilung `a`, `b` (Anfang | Mitte | Ende als
+  Anteile der Bildbreite), `holes`, Deckkraft, ausgeblendet, `tpl`. `rimRuns` tastet Umriss (und Löcher) in Ebenen-
+  Koordinaten gleichmäßig ab (mit Kantenwelle), glättet die Außennormalen über etwa die halbe Streifenhöhe und nimmt Läufe,
+  deren Normale höchstens `spread` von `dir` abweicht (über den Anfang des Rings verbunden; alles drin: ein geschlossener
+  Lauf). **Achtung:** `polyArea` ist gegen den Uhrzeigersinn negativ (anders als sein Kommentar); der Umriss läuft darum
+  so, dass `polyArea` negativ ist, die Löcher umgekehrt. `rimPieces` teilt einen Lauf: Anfang, ganzzahlig viele Mitten
+  (leicht gestreckt), Ende; kurze Läufe schrumpfen Anfang und Ende, geschlossene haben nur Mitten, `stretch` ein Stück.
+  `rimStrip` legt je Stück einen eigenen Streifen (Ecken an den Grenzen doppelt, damit keine Naht durch Interpolation
+  entsteht), oben Normale mal (1 − base) · Höhe, unten base · Höhe. Kopieren, Spiegeln, Löschen nehmen Säume mit der Form mit.
+- **Säume zeichnen** (`RimLayer`, in `PlaneLayer.group`): je Bild ein Mesh (ein Draw Call je Bild), Tiefe eine halbe Stufe
+  vor ihrer Form (`(rank + 0.5) · ORDER_STEP`), durchsichtig ohne Tiefenschreiben, `renderOrder` −1 (vor den durchsichtigen
+  Flächen der Ebenen), Farbe wie die Flächen: vormultipliziertes Bild geteilt durch Alpha, Luftperspektive der Ebene (`aMix`),
+  dann Nebel und Farbraum; ohne `discard`.
+- **Malvorlage** (`ZoneTemplate`, Knoten `v…`; `template.ts`): `neededPpm` (Bildpunkte je Meter der Ebene beim größten Zoom:
+  Zoom · Auflösung · D/(D + z) · Maßstab der Ebene, D aus Bildschirmhöhe, Zoom und Bildwinkel; Platzhalter `PHONE_VIEW`:
+  390 CSS-Bildpunkte hoch, Auflösung 2, Zoom 60, Bildwinkel der Zone), `sharpZoom`. `faceTemplate`: Rahmen um Form oder
+  Fläche plus Überstand (3 %, mindestens 0,4 m), längste Seite höchstens `TEMPLATE_MAX` 4096, Rand `TEMPLATE_MARGIN` 64 px mit
+  vier Passmarken (Magenta), Fingerabdruck (`fingerprint`: FNV über die Polygone in Pfad-Koordinaten auf Zentimeter, ändert
+  sich nicht beim Verschieben und Skalieren), Umriss `ref` (vereinfacht) für die Abweichung. `rimTemplate`: Stück im
+  Seitenverhältnis des Bilds mit Teilung oder Streifen so lang wie das längste Kantenstück (Fingerabdruck: die Längen).
+  `templateSvg` (Malbereich, Silhouette mit Löchern, Linien, Kante und Teilung beim Saum, Marken, Zeile mit Größe, Schärfe und
+  Fingerabdruck), `clipSvg` (Illustrator: Bild mit Schnittpfad), `templateJson` (Begleitdatei). Der Umriss `ref` hat höchstens
+  200 Punkte (Toleranz ab 1 Bildpunkt, bei großen Formen gröber) und steht in der Zonendatei als eine Zeile „x,y x,y …“.
+  Dateien `vorlage-<name>-v<n>`;
+  der Editor rastert das SVG über ein `<img>` und `OffscreenCanvas`, das Skript über sharp.
+- **Import** (`images.ts`): `matchTemplate` (Kennung im Namen, sonst gleiche Größe mit oder ohne Rand, sonst gleiches
+  Seitenverhältnis, die jüngste), `importRect` (exakt, skaliert, über zwei gegenüberliegende Passmarken `findMarks`, sonst
+  gestreckt mit Hinweis), Ausschnitt in der Größe der Vorlage mal dem Maßstab, in dem gemalt wurde (höchstens 4096), als PNG
+  hochgeladen (`bild-…`, `saum-…`). Fläche: `fillFromTemplate` über die färbenden Schichten (`imageSlotIn`: nach der letzten
+  Farbe, dem letzten Verlauf ohne Pünktchen, Farbnebel oder Bild; deckende Verläufe verdeckten es sonst ganz), unter die
+  Wirkungen (Lichtkante, Innenschatten, Pünktchen, Papier, Funkeln, Deckkraftverlauf), über `ownPaint`/`writePaint`; ein
+  früheres Bild derselben Vorlage wird ersetzt. Saum: neues Bild, Seitenverhältnis, Art und
+  Teilung der Vorlage. Ohne Vorlage: auf die Form unter dem Zeiger (Bild bedeckt sie im Seitenverhältnis) oder als
+  Bildschicht (`addImageLayer`: Rechteck, Bild schneidet aus, Material luftig). `templateDrift` und `driftNote`: der
+  Füllstapel schreibt an Bild und Saum „Form geändert, bis N px daneben“ (über 2 px).
+- **Umriss aus Bild** (`traceShape`): `traceAlpha` (Alpha ab 128, 480 Punkte), über den Rahmen in Pfad-Koordinaten, `fitCurve`
+  mit 1,5 Bildpunkten; Löcher bleiben, Teilungslinien und Füllpunkte fallen weg, das Bild deckt (ohne `mask`), Grundfarbe ist
+  das Mittel der deckenden Randpunkte, luftig wird grabbar. **Schnittmaske** (`clipInto`, Cmd+7): die vordere Form mit Bild
+  gibt es an die Form darunter (Rahmen über die Ebene umgerechnet), die Bildschicht fällt weg; **lösen** (`releaseClip`,
+  Wahl+Cmd+7): das oberste Bild wird wieder eine Bildschicht (Parallelogramm des Rahmens).
+- **Editor:** Knopf „Bild …“ an Formen (Bild einsetzen, Malvorlage, Saum, Saum-Vorlage Stück und Streifen, Umriss aus Bild,
+  Schnittmaske und lösen), an Flächen „Bild einsetzen“ und „Malvorlage“; Bilder ins Bild ziehen (`onDrop`: auf die Form unter
+  dem Zeiger, sonst in die aktive Ebene). Säume stehen im Füllstapel der Form über den Füllungen (Zeilen `RIM_ROW − i`, Auge,
+  Deckkraft, Entfernen, Wertezeile `rimParamsOf`). Malvorlagen gehen als Download (Mac: „Downloads“, von dort per AirDrop
+  aufs iPad) und über den Dev-Server nach `public/zones/<zone>/vorlagen/`.
+- **Dev-Server:** `/__zonefile/<zone>/…` nimmt außer Skizzen `bild-…` und `saum-…` (PNG, bis 60 MB) und
+  `vorlagen/vorlage-…` (PNG, SVG, JSON); `/zones/…` liefert auch `vorlagen/` und `.ktx2` aus. Der Wächter liest die
+  Zonendatei mit `try` (eine gelöschte Zone warf vorher und beendete den Server).
+- **Prüfungen:** `tests/bilder.test.ts` (23 Fälle: Rundlauf, Rahmen, Pipette, Bildschicht, Einfügestelle, Kürzel und Sampler,
+  Säume oben/unten/rundum, Teilung, Nähte, Wertezeilen, Zielgröße, Kappung, Fingerabdruck und Abweichung, Saum-Vorlagen, SVG,
+  Erkennen der Vorlage, Lage über Größe und Passmarken); Szenario 32 (12 Prüfungen in einer eigenen Zone, die danach
+  verschwindet: Malvorlage als Download und in `vorlagen/`, gemaltes Bild passgenau, Farben im Bild, doppelt so groß gemalt,
+  Form geändert, Saum über der Kante, Saum-Vorlage, Bildschicht, Umriss aus Bild, Schnittmaske und lösen, KTX2 nach dem
+  Sichern im Spiel). Nach dem Einsetzen wartet es auf den Zustand der Form (Dekodieren und Hochladen dauern unterschiedlich
+  lange; feste zwei Sekunden reichten in einem Lauf nicht).
+
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).
 - g-Kräfte: f = v²·κ⃗ (Mindestradius 2,5 m; κ⃗ aus `sampleTrack` über ±1,2 m gemittelt, ein Wagen spürt keine kürzeren Spitzen) + a_tan·T + g·ŷ, wobei a_tan die echte Tangentialbeschleunigung des Zugs ist (Hangabtrieb minus Reibung, Kettenzug hält das Tempo, Launch, Booster, Bremse); zerlegt im Wagen-Rahmen (T, U, S) mit Schräglage. So drückt die Kette die Fahrgäste in die Lehne, der Launch in den Sitz, die Bremse nach vorn. Entgleisen bei seitlichem g über dem Limit des Schienentyps (`SKIN_PHYSICS`: Holz 2,0, Hybrid 2,4, Mine 2,2, Stahl 3,0, Gold 3,0, Neon 3,2, Eis 2,6, Geister 2,3, Lava 3,0, Space 3,5), Herausfallen bei kopfüber mit g_v < −0,15 über 0,12 s, Blackout über 7 g (nur ein Merker, kostet den dritten Stern). Entgleisen und Herausfallen übergeben den Zug in den Freiflug (unten), Rückroller und Wasser lassen ihn auf der Schiene ausrollen.
@@ -978,6 +1076,8 @@ npm run preview      # Build lokal ansehen
 npm run levels:doc   # docs/LEVELS.md neu erzeugen
 npm run screenshots  # Playwright-Screenshots nach screenshots/
 npm run scenario     # Szenario-Test: Looping, Kurve, Fahrt bis zum Ergebnis
+npm run kompilieren  # Bilder aller Zonen als KTX2 packen (scripts/zone-ktx2.mjs; der Dev-Server tut es nach Hochladen und Sichern selbst)
+npx tsx scripts/tor-s6.ts  # Tor S6: Platzhalter-Saum aus refs/ zerteilen, Malvorlagen v1 bis v4 für Szene 06
 ```
 **HTTPS im WLAN** (Zonen-Editor auf dem iPad, `docs/ZONENEDITOR-PLAN.md` 3.3): `scripts/https-cert.sh` legt eine eigene
 Zertifizierungsstelle (nur für lokale Namen und Heimnetz-Adressen) und ein Server-Zertifikat im Ordner `.certs` des
