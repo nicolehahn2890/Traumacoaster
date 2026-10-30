@@ -1194,6 +1194,11 @@ nicht das Gefühl des Pinsels) und misst am Handy (`?zone=szene-06&dev=1&earle=m
 Die Formen der Halter gehören nicht zum Tor, sie kommen mit dem Look. „Replay grün“ wartet, bis er wieder aufnimmt. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
 lang, die Schraffuren. **Nicht geprüft:** Szene 06 in Formen (Tor S4), Stroke-Replay mit dem Ebenen-Pinsel (der Replay
 kennt den Modus nicht), 60 fps am Handy.
+**Stand Tor S4 (30.10.2026, Florian: „Sind wir nun fertig mit 4 und kann ich mit 6 anfangen?“):** Gebaut ist alles aus
+Stufe 4; die Durchblick-Prüfung kommt mit den Portalen (Stufe 7). Erfüllt: Szene 06 in Formen (die Silhouette; den Stil
+findet Florian), eine Bahn von Florian durch die Höhle mit Stützen auf Kanten (sein Bild vom 30.10.), die Fahrt durch die
+Höhle in Szenario 31. Mit dem eingefrorenen Strich verschoben: „Replay grün“, B2 und B4. Offen: 60 fps am Handy; die
+Messung hält Stufe 6 nicht auf. Weiter mit Stufe 6.
 
 **Stufe 5: Earle-Schichten (M).** Licht der Zone, Bänder, Innenschatten (Kantenabstand im Atlas), Textur aus Florians
 Scans, Pünktchen mit Rang-Kachel und Punktpinsel, Lichtkante, Kantenwelle, Farbnebel, Funkeln, Punktkronen für Bäume
@@ -1428,7 +1433,7 @@ Gefühl des Pinsels; „Replay grün“ wartet, bis Florian wieder aufnimmt.
 | Nr. | Frage | wann |
 |---|---|---|
 | B1 | ~~Paket 0 Regel 4 neu: Pünktchen und Textur als Schicht im Editor erlaubt?~~ **Beantwortet (29.10., Tor S5):** „Ja, Regel 4 gilt neu: Pünktchen und Textur dürfen im Editor Shader-Schichten sein.“ Den Vergleich gemalt gegen Shader brauchte Florian nicht („Ich muss keine Fotos für Vergleiche machen“) | Tor S5 |
-| B2 | ~~Abtauchen nur in grabbare Flächen, Fels bleibt fest?~~ **Teilweise beantwortet (27.10.):** „Fels ist fest“ gilt erst einmal nicht mehr, „grabbar“ wird gebaut; ob es daneben noch „fest“ braucht, zeigt der Test | Tor S4 |
+| B2 | ~~Abtauchen nur in grabbare Flächen, Fels bleibt fest?~~ **Teilweise beantwortet (27.10.):** „Fels ist fest“ gilt erst einmal nicht mehr, „grabbar“ wird gebaut; ob es daneben noch „fest“ braucht, zeigt der Test | mit dem Strich (30.10., vorher Tor S4) |
 | B3 | ~~Portale automatisch oder nur von Hand?~~ **Beantwortet (27.10.):** dynamisch. Offen bleibt, wie Durchfahrten gemacht werden, ob sie sichtbar sind und ob der Pinsel dynamisch gräbt | Tor S7 |
 | B4 | Pinsel „Ebenen: Bodenhöhe“ als Grundlage für die Tiefe aus Ebenen? **Offen gelassen (30.10.):** Tor S4 gilt mit eingefrorenem Strich, B4 entscheidet Florian mit dem Pinsel später | Tor S4 |
 | B5 | Neigung und Bildwinkel je Zone oder je Feld? | Tor S1 |
