@@ -1168,7 +1168,9 @@ Halt (die Bahn zu dicht unter dem Fels oder zu weit von allem). Szenario 30. Ver
 lokal, es zeigt Bilder aus `refs/`); unsere Bilder allein: `docs/research/halter/2026-10-30-halter-vorschlag.jpg`.
 **Platzhalter:** alle Formen und Maße der Halter, die Reichweiten (4 m, 2,6 m, 3,2 bis 12 m), die Regel „je Lauf die
 nächste Variante“. Gemalte oder modellierte Halter gehören zur Stützen-Werkstatt (Etappe 4 im großen Plan).
-**Offen:** Florians Wahl der Varianten und der Mischregel.
+**Florian, 30.10.:** Halter, Bahn und Zug haben optisch noch nichts mit dem Spiel zu tun. Welche Formen wir bauen und
+brauchen, zeigt sich erst mit dem Look („Das müssen wir erst herausfinden“). Bis dahin bleiben Varianten und Mischregel
+Platzhalter; es gibt nichts zu wählen. Was bleibt, ist der Ablauf: Wo keine Kante trägt, hält die Stütze an Wand oder Decke.
 **Szene 06 in Formen (30.10.2026, Vorschlag für Tor S4):** Zone `szene-06` aus `npx tsx scripts/testzonen.ts szene-06`, in
 der Lage der gemalten Fassung (Zone `ebenen`, Feld „Oben“ 0 bis 96 × −12 bis 66 m): Bogen, Terrasse und Wiesenmasse
 übernehmen deren Umrisse (dort in Etappe 2 aus den Bildern des Baukastens gewonnen). Ebenen von vorn nach hinten: Farn
@@ -1185,10 +1187,11 @@ mit Earle 1,45 ms je Bild, ohne Earle 1,35 ms, Grotte zum Vergleich 1,43 ms; am 
 `docs/research/szene-06/2026-10-30-szene-06-vorschlag.jpg`; der Vergleich mit der gemalten Fassung nur lokal (Bilder aus
 `refs/`). **Platzhalter:** alle Formen außer den übernommenen Umrissen, alle Farben, Tiefen und Earle-Vorgaben, die Lage
 der Station. **Bekannt:** Das hohe Feld erscheint in der Perspektive als Trapez; sein unterer Rand liegt beim Start knapp
-unter der Leiste unten.
+unter der Leiste unten. **Florian, 30.10.:** Mit Earles Bildern hat Szene 06 nur die Silhouette gemein; den Stil findet
+Florian.
 **Tor S4, was noch fehlt:** Florian passt Szene 06 an, zeichnet und fährt selbst eine Bahn durch die Höhle (die Werkzeuge,
-nicht das Gefühl des Pinsels) und misst am Handy (`?zone=szene-06&dev=1&earle=messen`, dazu eine Fahrt mit der Anzeige);
-seine Wahl der Halter-Varianten. „Replay grün“ wartet, bis er wieder aufnimmt. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
+nicht das Gefühl des Pinsels) und misst am Handy (`?zone=szene-06&dev=1&earle=messen`, dazu eine Fahrt mit der Anzeige).
+Die Formen der Halter gehören nicht zum Tor, sie kommen mit dem Look. „Replay grün“ wartet, bis er wieder aufnimmt. **Platzhalter:** Vorgabe „grabbar“, 35° Grenze, Station 1 m über der Kante und 14 m
 lang, die Schraffuren. **Nicht geprüft:** Szene 06 in Formen (Tor S4), Stroke-Replay mit dem Ebenen-Pinsel (der Replay
 kennt den Modus nicht), 60 fps am Handy.
 
