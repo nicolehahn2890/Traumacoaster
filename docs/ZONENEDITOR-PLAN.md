@@ -1136,8 +1136,9 @@ Strich in Angriff nehme. […] Das soll alles in den Editor (später nach Entsch
 alte Editor 1 und die Kamerawinkelanzeige im Game raus. Der Editor ist dann die einzige Stelle zum Testen, und er muss
 immer und überall im Game erreichbar sein für mich, mit einem Button aus den Levels und der Map.“ Umgesetzt: Menü
 „Test ▾“ oben in der Mitte des Editors (`src/ui/testMenu.ts`) mit Strich 1 und 2, den vier Tiefen-Lesarten des alten
-Kameramenüs (gelten sofort), den Schaltern der Pinsel-Studie, den alten Lesarten und den Zeichengrößen; die
-Strich-Schalter schreibt es in die Adresse und lädt neu, so wie die Studie sie gemessen hat. Knopf „Editor“ in jedem Level
+Kameramenüs (gelten sofort), den Schaltern der Pinsel-Studie, den alten Lesarten und den Zeichengrößen, auf seine
+Nachfrage geordnet danach, für welchen Strich sie gelten (für alle, nur Strich 2, nur Pinsel, nur alte Lesarten; blass,
+wo sie beim gewählten Strich nicht wirken); die Strich-Schalter schreibt es in die Adresse und lädt neu, so wie die Studie sie gemessen hat. Knopf „Editor“ in jedem Level
 und auf der Karte (`src/ui/editorLink.ts`: die Zone des Levels, sonst die zuletzt bearbeitete, mit den Schaltern der
 letzten Editor-Sitzung), im Menü „Zur Karte“. Klötzchen-Editor (`?editor=1`) und Kamera-Anzeige im Spiel sind entfernt;
 Neigung und Bildwinkel stellt der Editor. `&schleifen=0` und `&even=0` wirkten bis dahin nicht (die Adresse nahm keine 0
