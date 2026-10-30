@@ -52,7 +52,8 @@ import { applyZoneExtras, buildZoneCoins, buildZoneQueue, buildZoneSite, buildZo
 import { stationOf } from '@/zone/dock';
 import { coinsOfGroup } from '@/zone/groups';
 import { planePlayObjects } from '@/zone/playObjects';
-import { ZoneEditor } from '@/app/zoneEditor';
+import { openEditor, rememberEditor } from '@/ui/editorLink';
+import { switchQuery, TestMenu } from '@/ui/testMenu';
 import { PlaneEditor } from '@/zoneeditor/planeEditor';
 import { Button, Toast, Sticker, label, INK, PAPER, PINK, paintRect, goalIcon, beltIcon, check, star, iconBack, iconUndo, iconRedo, iconPlay, iconStop, iconShelf, iconSave, iconTrash } from '@/ui/widgets';
 import { hexNum, shade } from '@/render/paint';
@@ -73,7 +74,7 @@ export interface SandboxConfig {
   world: number;
   width: number;
   saved?: SavedTrack;
-  /** Zone aus der Zonendatei: flacher Boden, alles freigeschaltet, Elemente aus der Datei (mit ?editor=1 der Editor) */
+  /** Zone aus der Zonendatei: flacher Boden, alles freigeschaltet, Elemente aus der Datei (mit ?editor=2 der Zonen-Editor) */
   zone?: ZoneFile;
 }
 
@@ -160,6 +161,13 @@ const urlNum = (key: string, fallback: number): number => {
   const v = Number(new URLSearchParams(location.search).get(key));
   return Number.isFinite(v) && v > 0 ? v : fallback;
 };
+/** wie urlNum, nimmt aber 0 an: für Schalter wie &schleifen=0 und &even=0 (urlNum gab bei 0 die Vorgabe zurück) */
+const urlSwitch = (key: string, fallback: number): number => {
+  if (typeof location === 'undefined') return fallback;
+  const raw = new URLSearchParams(location.search).get(key);
+  const v = raw === null || raw === '' ? NaN : Number(raw);
+  return Number.isFinite(v) ? v : fallback;
+};
 /** Strichspitze: dicker Punkt unter dem Finger (Radius px) und ein sich verjüngender Schweif (Länge px) entlang des Strichs */
 const TIP_RADIUS_PX = urlNum('tipr', 13);
 const TIP_TAIL_PX = 110;
@@ -176,8 +184,6 @@ const PERSP_URL = typeof location !== 'undefined' && new URLSearchParams(locatio
 /** mit dem Weltrenderer (?world=1) ist die Perspektive Standard; ?persp=0 zeigt dort zum Vergleich die Bühne */
 const PERSP_OFF = typeof location !== 'undefined' && new URLSearchParams(location.search).get('persp') === '0';
 const FOV_URL = urlNum('fov', 18);
-/** ?editor=1: Klötzchen-Editor der Zone (nur mit ?zone=, am Mac) */
-const EDITOR_URL = typeof location !== 'undefined' && new URLSearchParams(location.search).get('editor') === '1';
 /** ?editor=2: Zonen-Editor mit Ebenen und Formen (docs/ZONENEDITOR-PLAN.md, Stufe 1; nur mit ?zone=) */
 const EDITOR2_URL = typeof location !== 'undefined' && new URLSearchParams(location.search).get('editor') === '2';
 /** ?scroll=0: kein Autoscroll beim Zeichnen (automatische Tests zeichnen in festen Bildschirmkoordinaten) */
@@ -192,7 +198,7 @@ const STRICH_URL = urlNum('strich', 0);
 const VORLAUFM_URL = urlNum('vorlaufm', FREEZE);
 // Strich 2, Knoten-Fit zum Ausprobieren: &tol=2 (Faktor auf die Toleranz), &even=0 (ohne Gleichverteilung), &span=150 (m), &turn=180 (°)
 FIT_TUNING.tolScale = urlNum('tol', FIT_TUNING.tolScale);
-FIT_TUNING.even = urlNum('even', FIT_TUNING.even ? 1 : 0) !== 0;
+FIT_TUNING.even = urlSwitch('even', FIT_TUNING.even ? 1 : 0) !== 0;
 FIT_TUNING.evenSpan = urlNum('span', FIT_TUNING.evenSpan);
 FIT_TUNING.evenTurn = urlNum('turn', FIT_TUNING.evenTurn);
 // Strich 2, Vorlauf zum Ausprobieren: &freezemax=40 (ab so vielen Metern bleibt ein offenes steiles Stück Höhe), &lookstart=6
@@ -200,7 +206,7 @@ LOOK_TUNING.freezeMax = urlNum('freezemax', LOOK_TUNING.freezeMax);
 LOOK_TUNING.lookStart = urlNum('lookstart', LOOK_TUNING.lookStart);
 // Schleifen (Paket 3): &schleifen=0 liest keine Schleifen (Stand vor Paket 3); &loopaspect= Höhe/Breite, ab der eine gezeichnete
 // Schleife ein Looping ist (sonst Bodenschleife); &loopr= Mindestradius (m)
-LOOP_TUNING.on = urlNum('schleifen', 1) !== 0;
+LOOP_TUNING.on = urlSwitch('schleifen', 1) !== 0;
 LOOP_TUNING.aspect = urlNum('loopaspect', LOOP_TUNING.aspect);
 LOOP_TUNING.minR = urlNum('loopr', LOOP_TUNING.minR);
 // Fahrregeln (Pinsel-Studie, Paket 2): &fahrt=1 die strenge Fahrt wie bisher, sonst Antrieb und Stützräder; &antrieb= Mindesttempo in m/s
@@ -413,6 +419,8 @@ export class LevelScene implements Scene {
   private saveBtn = new Button('', { width: 48, round: true, color: '#7ee081', icon: iconSave });
   /** Dev-Modus: Bahntyp durchschalten */
   private skinBtn = new Button('DEV', { width: 150, height: 40, size: 15, color: '#2a1f3d' });
+  /** in den Zonen-Editor, aus jedem Level (Florian, 30.10.2026; src/ui/editorLink.ts) */
+  private editorBtn = new Button('Editor', { width: 72, height: 34, size: 14, color: '#bfb7cc' });
   /** Umschalter der Lesart (Bühne / Ein Strich), zum Ausprobieren */
   /** Lesart „Ebenen“: Ebenenleiste links (hinten oben, vorne unten) und die für den nächsten Strich gewählte Ebene */
   private lanePanel = new Container();
@@ -439,11 +447,11 @@ export class LevelScene implements Scene {
   private toast = new Toast();
   private resultPanel: Container | null = null;
   private uiButtons: Button[] = [];
-  /** Klötzchen-Editor der Zone (?zone=…&editor=1) */
-  private zoneEditor: ZoneEditor | null = null;
   /** Zonen-Editor mit Ebenen und Formen (?zone=…&editor=2) */
   private planeEditor: PlaneEditor | null = null;
-  /** Kamerawinkel-Test: Regler für Neigung und Bildwinkel (nur Weltrenderer) */
+  /** Testmenü im Zonen-Editor: alle Striche und Lesarten zum Vergleichen (src/ui/testMenu.ts) */
+  private testMenu: TestMenu | null = null;
+  /** Neigung und Bildwinkel (nur Weltrenderer; die Regler zeigt der Zonen-Editor) */
   private cameraPanel: CameraTiltPanel | null = null;
   /** Tiefe (Meter), die der Pinsel „Spur halten“ im laufenden Strich hält (NaN: Spur unter dem Anfang) */
   private brushHoldZ = NaN;
@@ -541,7 +549,7 @@ export class LevelScene implements Scene {
       game.world.showLevel(this.terrain, this.world, night);
       const zone = this.sandbox?.zone;
       if (zone) {
-        // Zone: Bahntyp der Datei (die Adresse ?track= geht vor), Elemente in die Welt, mit ?editor=1 der Editor
+        // Zone: Bahntyp der Datei (die Adresse ?track= geht vor), Elemente in die Welt
         game.world.trackOverride = game.world.trackOverride ?? zone.trackType;
         game.world.setZone(zone.elements);
         applyZoneExtras(game.world, zone);
@@ -561,26 +569,7 @@ export class LevelScene implements Scene {
         }
         this.level.coins = [...zoneCoins(zone), ...this.planeCoins];
         this.refreshRock();
-        if (EDITOR_URL) {
-          this.zoneEditor = new ZoneEditor(
-            {
-              view: this.view,
-              world: game.world,
-              toast: this.toast,
-              redrawTrack: () => this.redrawTrack(),
-              setActiveField: (f) => this.setActiveField(f),
-              refreshCoins: () => {
-                this.level.coins = [...zoneCoins(zone), ...this.planeCoins];
-                this.view.trackR.setCoins(this.level.coins);
-              },
-              refreshStation: () => this.resetStationPiece(),
-              refreshRock: () => this.refreshRock(),
-              startRide: () => this.startRide(),
-            },
-            zone,
-          );
-          this.ui.addChild(this.zoneEditor.hud);
-        } else if (!EDITOR2_URL) {
+        if (!EDITOR2_URL) {
           // ohne Editor (Handy): ?field=<Kennung> wählt ein Feld der Zone, sonst das erste
           const want = new URLSearchParams(location.search).get('field');
           const fields = fieldsOf(zone);
@@ -590,11 +579,11 @@ export class LevelScene implements Scene {
     }
     this.view.overlay.addChild(this.fieldTape, this.chainLine, this.fxLayer);
     setPerspective(game.world ? !PERSP_OFF : PERSP_URL, game.world ? initialFov(FOV_URL) : FOV_URL);
-    if (game.world) this.cameraPanel = new CameraTiltPanel(() => this.view.camera.zoom, viewState().persp, (x, z) => this.groundAt(x, z));
+    if (game.world) this.cameraPanel = new CameraTiltPanel(viewState().persp);
     this.view.overlay.addChild(this.laneGlow, this.spotLayer, this.ink, this.ghost, this.overlay, this.endMarker);
     this.container.addChild(this.view.root, this.ui);
     this.laneHud.addChild(this.laneHudG);
-    this.hud.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.chainLabel, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn);
+    this.hud.addChild(this.measure.container, this.chipLayer, this.gizmoLayer, this.chainLabel, this.goalsBar, this.levelTitle, this.beltBadge, this.sticker, this.hint, this.speedText, this.rollText, this.shelf, this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.editorBtn);
     this.ui.addChild(this.hud, this.laneHud, this.toast);
     const zone = this.sandbox?.zone;
     if (game.world && EDITOR2_URL && zone) {
@@ -616,20 +605,28 @@ export class LevelScene implements Scene {
             this.lengthPill.visible = on;
             if (!on) this.lengthSlider.visible = false;
             this.view.overlay.visible = on;
-            this.cameraPanel?.setVisible(on);
           },
         },
         zone,
       );
       this.planeEditor.resize(game.width, game.height);
+      // vor dem Neuladen schreibt der Editor beim Abbauen seine Sicherungskopie (ungesicherte Änderungen)
+      this.testMenu = new TestMenu(() => {
+        this.planeEditor?.destroy();
+        this.planeEditor = null;
+      });
+      rememberEditor(zone.name, switchQuery(new URLSearchParams(location.search)));
     }
-    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, ...this.laneBtns.map((l) => l.btn), ...(this.zoneEditor?.buttons ?? [])];
+    this.uiButtons = [this.backBtn, this.undoBtn, this.redoBtn, this.clearBtn, this.playBtn, this.shelfBtn, this.speedBtn, this.saveBtn, this.skinBtn, this.editorBtn, ...this.laneBtns.map((l) => l.btn)];
     this.speedBtn.visible = false;
     this.buildLanePanel();
     this.buildLengthUI();
     this.skinBtn.visible = unlockAll();
     this.skinBtn.setText(`DEV · ${ELEMENT_NAMES[this.skin as ElementId] ?? this.skin}`);
     this.skinBtn.onTap = () => this.cycleDevSkin();
+    // im Editor selbst braucht es den Weg in den Editor nicht
+    this.editorBtn.visible = !this.planeEditor;
+    this.editorBtn.onTap = () => openEditor(this.sandbox?.zone?.name);
     this.saveBtn.visible = !!this.sandbox;
     this.backBtn.onTap = () => this.leave();
     this.undoBtn.onTap = () => this.undo();
@@ -675,8 +672,9 @@ export class LevelScene implements Scene {
     this.stopRide();
     if (this.path && !this.sandbox) storage.saveDraft(this.level.id, this.path);
     setPerspective(false);
-    this.cameraPanel?.destroy();
     this.cameraPanel = null;
+    this.testMenu?.destroy();
+    this.testMenu = null;
     this.planeEditor?.destroy();
     this.planeEditor = null;
     this.game.world?.planes.clear();
@@ -1027,7 +1025,6 @@ export class LevelScene implements Scene {
     const H = this.handlers;
     H.dragStart = (p) => {
       if (this.mode !== 'draw') return;
-      if (this.zoneEditor?.dragStart(p)) return;
       if (this.shelfOpen) {
         const item = this.shelfItemAt(p);
         if (item) {
@@ -1148,7 +1145,6 @@ export class LevelScene implements Scene {
       this.drawOverlay();
     };
     H.dragMove = (p) => {
-      if (this.zoneEditor?.dragMove(p)) return;
       if (this.mode !== 'draw') return;
       const st = tagRay(this.view.camera.toStage(p.x, p.y));
       switch (this.drag.kind) {
@@ -1200,7 +1196,6 @@ export class LevelScene implements Scene {
     };
     H.dragEnd = (p) => {
       if (this.mode !== 'draw') return;
-      if (this.zoneEditor?.dragEnd(p)) return;
       const st = this.view.camera.toStage(p.x, p.y);
       this.pointerScreen = null;
       switch (this.drag.kind) {
@@ -1217,7 +1212,6 @@ export class LevelScene implements Scene {
     };
     H.tap = (p) => {
       if (this.isOverUI(p)) return;
-      if (this.mode === 'draw' && this.zoneEditor?.tap(p)) return;
       if (this.mode === 'ride') {
         this.stopRide();
         return;
@@ -1335,8 +1329,7 @@ export class LevelScene implements Scene {
     };
     H.twoFingerTap = () => this.undo();
     H.threeFingerTap = () => this.redo();
-    H.key = (k, ev) => {
-      if (this.mode === 'draw' && this.zoneEditor?.key(k, ev)) return;
+    H.key = (k) => {
       if (k === ' ') this.mode === 'draw' ? this.startRide() : this.stopRide();
       if (k === 'Escape') this.mode === 'draw' ? this.leave() : this.stopRide();
       if ((k === 'Delete' || k === 'Backspace') && this.selected >= 0) this.deleteNode(this.selected);
@@ -4098,6 +4091,7 @@ export class LevelScene implements Scene {
     this.clearBtn.position.set(w - R - 36, safeTop + 26);
     this.saveBtn.position.set(w - R - 92, safeTop + 26);
     this.skinBtn.position.set(L + 88, h - B - 50);
+    this.editorBtn.position.set(L + 48, safeTop + 76);
     this.lanePanel.position.set(L + 36, h * 0.52);
     // schmaler Bildschirm: über der Höhe des Play-Knopfs (sonst stieße die Anzeige an ihn)
     const pillY = h - B - (this.skinBtn.visible ? 142 : w < 520 ? 150 : 96);
@@ -4118,7 +4112,6 @@ export class LevelScene implements Scene {
     this.laneHud.position.set(w - R - 46, h - B - 120);
     this.shelf.position.set(w - R - 10, h - B - 120);
     this.placeHint();
-    this.zoneEditor?.resize(w, h);
     this.planeEditor?.resize(w, h);
     this.speedText.position.set(w / 2, h - B - (portrait ? 120 : 108));
     this.toast.position.set(w / 2, h * 0.42);
@@ -4192,7 +4185,6 @@ export class LevelScene implements Scene {
     this.sticker.update(dt);
     this.view.update(dt);
     this.game.world?.setCamera(this.view.cameraView());
-    this.zoneEditor?.update();
     this.planeEditor?.update();
     if (this.view.viewMoved) this.drawFieldTape();
     // Perspektive: Griffe, Ende-Marker, Spur-Schein und Schwachstellen liegen in der Ansicht und wandern mit der Kamera

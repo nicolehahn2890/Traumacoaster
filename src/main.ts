@@ -42,7 +42,7 @@ async function boot(): Promise<void> {
   const scene = params.get('scene');
   const showSplash = scene === 'splash' || (levelParam <= 0 && scene !== 'start' && !seen);
   // Das illudiy-Logo nur laden, wenn der Splash auch gezeigt wird (parallel zu Schriften und Texturen)
-  // ?zone=<name>: die Zone (public/zones/<name>/zone.json) als Werkstatt öffnen, mit ?editor=1 im Klötzchen-Editor
+  // ?zone=<name>: die Zone (public/zones/<name>/zone.json) als Werkstatt öffnen, mit ?editor=2 im Zonen-Editor
   const zoneName = params.get('zone');
   const [, , logo, zone] = await Promise.all([loadArtOverrides(), loadFonts(), showSplash && !zoneName ? SplashScene.preload() : Promise.resolve(null), zoneName ? loadZone(zoneName) : Promise.resolve(null)]);
   const game = new Game();

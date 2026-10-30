@@ -35,6 +35,7 @@ import { clamp, lerp, smoothstep } from '@/core/math';
 import { WheelPhysics } from '../wheelPhysics';
 import { haptics } from '@/platform/haptics';
 import { safeArea } from '@/platform/safeArea';
+import { openEditor } from '@/ui/editorLink';
 import { drawProp } from '@/render/props';
 
 /** Ein Level auf der Scheibe */
@@ -140,6 +141,8 @@ export class StartScene implements Scene {
   private peopleBtn = new Button('', { width: 54, round: true, color: '#ffd23f', icon: iconPerson });
   /** Dev-Modus an/aus: alle Welten, Level, Elemente und Bahntypen zum Testen */
   private devBtn = new Button('DEV', { width: 50, round: true, color: '#bfb7cc', size: 14 });
+  /** in den Zonen-Editor, die einzige Stelle zum Testen (Florian, 30.10.2026; src/ui/editorLink.ts) */
+  private editorBtn = new Button('Editor', { width: 72, height: 34, size: 14, color: '#bfb7cc' });
   private hud: Container[] = [];
   private toast = new Toast();
   private settingsOpen: Container | null = null;
@@ -172,7 +175,7 @@ export class StartScene implements Scene {
 
   enter(game: Game): void {
     this.game = game;
-    this.hud = [this.title, this.worldName, this.worldInfo, this.playBtn, this.tracksBtn, this.gearBtn, this.peopleBtn, this.devBtn];
+    this.hud = [this.title, this.worldName, this.worldInfo, this.playBtn, this.tracksBtn, this.gearBtn, this.peopleBtn, this.devBtn, this.editorBtn];
     const startId = this.from?.levelId ?? clamp(storage.progress.current, 1, LEVELS.length);
     this.cur = startId - 1;
     const startWorld = WORLDS[LEVELS[this.cur].world - 1];
@@ -194,6 +197,7 @@ export class StartScene implements Scene {
     this.gearBtn.onTap = () => !this.busy && this.toggleSettings();
     this.peopleBtn.onTap = () => !this.busy && this.game.goto(() => new EditorScene());
     this.devBtn.onTap = () => !this.busy && this.toggleDevMode();
+    this.editorBtn.onTap = () => !this.busy && openEditor();
     this.devBtn.setColor(storage.settings.devMode ? '#7ee081' : '#bfb7cc');
     this.setupInput();
     this.updateTexts();
@@ -374,7 +378,7 @@ export class StartScene implements Scene {
         return;
       }
       if (this.busy) return;
-      if ([this.playBtn, this.tracksBtn, this.gearBtn, this.peopleBtn, this.devBtn].some((b) => this.hits(b, pt))) return;
+      if ([this.playBtn, this.tracksBtn, this.gearBtn, this.peopleBtn, this.devBtn, this.editorBtn].some((b) => this.hits(b, pt))) return;
       const sp = this.spotAt(pt);
       if (sp) {
         // Mitte antippen öffnet, ein Nachbar dreht sich erst in die Mitte
@@ -956,6 +960,7 @@ export class StartScene implements Scene {
     this.gearBtn.position.set(safe.left + 44, 44 + safe.top);
     this.peopleBtn.position.set(safe.left + 110, 44 + safe.top);
     this.devBtn.position.set(safe.left + 40, h - safe.bottom - 40);
+    this.editorBtn.position.set(safe.left + 112, h - safe.bottom - 40);
     this.toast.position.set(w / 2, h * 0.5);
     this.settingsOpen?.position.set(w / 2, h / 2);
     if (!this.spots.length) return;

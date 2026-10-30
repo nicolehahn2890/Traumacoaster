@@ -1129,6 +1129,20 @@ Dazu: „Hör mal mit dem Aufnehmen auf. Ich kritzle wild, um extreme Formen zu 
 dauert ewig. Ich nehme erst auf, wenn es so weit ist. Das hat auch die Strich-Session versaut.“ Der Strich-Rekorder
 schreibt seitdem nur mit `TC_RECORD=1`; die bisherigen Aufnahmen (901 Striche bis 29.10.) sind Kritzeleien für extreme
 Formen und kein Maßstab für den Pinsel.
+**Testmenü im Editor, ein Ort zum Testen (Florian, 30.10.2026):** „Was ich noch gerne hätte: ein kleines verstecktes
+Menü, das aufgeht und mir die verschiedenen jetzt existierenden Striche und Tiefen-/Höhenabtastung in allen möglichen
+Kombinationen anbietet. Damit ich alles ausgiebig testen und vergleichen kann, bevor ich nach dem Editor noch mal den
+Strich in Angriff nehme. […] Das soll alles in den Editor (später nach Entscheidung dann wieder raus), und dann können der
+alte Editor 1 und die Kamerawinkelanzeige im Game raus. Der Editor ist dann die einzige Stelle zum Testen, und er muss
+immer und überall im Game erreichbar sein für mich, mit einem Button aus den Levels und der Map.“ Umgesetzt: Menü
+„Test ▾“ oben in der Mitte des Editors (`src/ui/testMenu.ts`) mit Strich 1 und 2, den vier Tiefen-Lesarten des alten
+Kameramenüs (gelten sofort), den Schaltern der Pinsel-Studie, den alten Lesarten und den Zeichengrößen; die
+Strich-Schalter schreibt es in die Adresse und lädt neu, so wie die Studie sie gemessen hat. Knopf „Editor“ in jedem Level
+und auf der Karte (`src/ui/editorLink.ts`: die Zone des Levels, sonst die zuletzt bearbeitete, mit den Schaltern der
+letzten Editor-Sitzung), im Menü „Zur Karte“. Klötzchen-Editor (`?editor=1`) und Kamera-Anzeige im Spiel sind entfernt;
+Neigung und Bildwinkel stellt der Editor. `&schleifen=0` und `&even=0` wirkten bis dahin nicht (die Adresse nahm keine 0
+an). **Platzhalter:** Aussehen, Ort und Wortlaut von Menü und Knöpfen. Nach der Strich-Entscheidung kommt das Menü wieder
+heraus.
 **Rest von Stufe 4, Florians Antworten (30.10.2026, „alle 3 Fragen wie du es empfiehlst“):** Szene 06 baue ich als
 Vorschlag in Formen, Florian passt ihn im Editor an; die Bahn fährt durch die große Bogenöffnung in die Höhle, weil die
 beiden Steinportale des Originals Portale sind (Stufe 7). Die Durchblick-Prüfung kommt mit den Portalen in Stufe 7.

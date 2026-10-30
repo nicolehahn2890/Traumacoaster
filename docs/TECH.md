@@ -236,7 +236,7 @@ Chunk, 527 kB, 132 kB gzip); ohne Schalter ist das Spiel unverändert.
   Dreiecken und endlichen Werten sowie der Abstand der Bahnknoten zum Strich im Bild der Weltkamera, Median und Maximum, der
   Rundenschluss zählt mit): 250 Bahnprofile gebaut, keine ungültigen Werte; Abstand der Bahnknoten zum Strich bei 227 Aufnahmen mit fester Kamera im Median der Mediane 2,3 px (das Maximum lag in fortgesetzten Bahnen, deren alte Knoten nicht zum Strich gehören; seit Schritt 3 zählen nur neue Striche).
 
-## 4g. Zonendatei und Klötzchen-Editor (`?zone=<name>&editor=1`, Etappe 1, Schritt 6)
+## 4g. Zonendatei und Klötzchen-Editor (Etappe 1, Schritt 6; der Editor ist seit 30.10.2026 entfernt)
 Platzhalter-Werkzeug (Plan Paket 2.2, Stufe 1): Florian baut die Basiszone am Mac mit Maus, Trackpad und Tastatur, ohne
 Politur; alles Gesetzte sind Klötzchen, die später Grafiken ersetzen.
 - **Zonendatei** (`src/zone/types.ts`): `public/zones/<name>/zone.json`, Version 1 mit Name, Breite, Bahntyp und Elementen
@@ -251,15 +251,9 @@ Politur; alles Gesetzte sind Klötzchen, die später Grafiken ersetzen.
   `vite.config.ts`, schreibt die Datei). Ein eigener Wächter meldet jede Änderung der Datei auf der Platte als Ereignis
   `tc:zone`, und das laufende Spiel lädt die Zone neu, ohne die Seite zu laden (Vites Wächter lässt `public/zones` aus,
   sonst lüde er die ganze Seite neu); so sieht man Änderungen von Hand oder aus einer zweiten Sitzung sofort.
-- **Editor** (`src/app/zoneEditor.ts`, nur mit `?editor=1`): Palette links (ein Typ, dann Klick in die Welt setzt das
-  Element auf der gewählten Spur, Tasten 1 bis 5 wählen sie), Klick wählt, Ziehen verschiebt in der Spur-Ebene (der Strahl
-  durch den Mauszeiger trifft die Ebene wie beim Pinsel, `rayToWorld`), Bild auf und ab (oder `]` `[`) schieben in der
-  Tiefe (Shift fein), Pfeiltasten ändern Breite und Höhe, Entf löscht, Esc wählt ab, T wechselt den Bahntyp der Zone,
-  Cmd+S speichert, Tab wechselt zwischen Bauen und Spielen (normales Zeichnen und Fahren in der Zone). Treffer über einen
-  Three-Raycaster auf die Elementgruppe (`WorldRenderer.pickZoneElement`), der Auswahlrahmen ist ein Pixi-Rahmen um den
-  projizierten Kasten des Elements (`zoneElementScreenBox`), beim Ziehen wird die Gruppe nur verschoben und erst beim
-  Loslassen neu gebaut. Höhlenböden tragen Stützen, Wasser sperrt sie (`refreshFoundations`). Kein Rückgängig, keine
-  Mehrfachauswahl, kein Drehen (Stufe 1).
+- **Editor** (`src/app/zoneEditor.ts`, `?editor=1`): am 30.10.2026 entfernt (Florian: „dann können der alte Editor 1 und
+  die Kamerawinkelanzeige im Game raus“); der Zonen-Editor (4i) ist die einzige Stelle zum Testen. Zonen mit Klötzchen
+  laden und spielen weiter, ihre Elemente baut `src/zone/build.ts`.
 - **Metadaten je Element** (Schritt 7, Plan 2.1 und 8a.1): `foundation` (tragfähige Oberkante: Stützen dürfen darauf stehen,
   wenn die Bahn in der Tiefe höchstens eine halbe Spur entfernt ist; `topAt` kennt die Schultern des Dreiteilers),
   `openings` (Öffnungen in der Lippe des Dreiteilers, relativ zum Fuß, Radius; die Bahn darf dort hindurch), `anchor`
@@ -578,8 +572,17 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
 
 ## 4i. Zonen-Editor, Stufe 1 und 2 (`?zone=<name>&editor=2`, Branch `zoneneditor`)
 
-Plan: `docs/ZONENEDITOR-PLAN.md`. Der Editor hängt sich wie der Klötzchen-Editor in die Level-Szene einer Zone und nutzt
-deren Weltrenderer und Spielkamera; seine Oberfläche ist HTML über dem Spielbild (`src/zoneeditor/ui.ts`).
+Plan: `docs/ZONENEDITOR-PLAN.md`. Der Editor hängt sich in die Level-Szene einer Zone und nutzt deren Weltrenderer und
+Spielkamera; seine Oberfläche ist HTML über dem Spielbild (`src/zoneeditor/ui.ts`).
+
+- **Testmenü und Weg in den Editor** (30.10.2026, bis zur Strich-Entscheidung): „Test ▾“ oben in der Mitte
+  (`src/ui/testMenu.ts`) bietet Strich 1 und 2, die vier Tiefen-Lesarten (`setBrushMode` in `src/ui/cameraTiltPanel.ts`,
+  gelten sofort), die Schalter der Pinsel-Studie, die alten Lesarten und die Zeichengrößen. Die Strich-Schalter liest das
+  Level beim Laden aus der Adresse; das Menü schreibt sie dorthin und lädt neu (vorher schreibt der Editor beim Abbauen
+  seine Sicherungskopie). `src/ui/editorLink.ts`: Knopf „Editor“ in jedem Level und auf der Karte, öffnet die Zone des
+  Levels oder die zuletzt bearbeitete mit den Schaltern der letzten Editor-Sitzung (localStorage `tc.editor.zone`,
+  `tc.editor.schalter`); „Zur Karte“ im Menü. Die Kamera-Anzeige im Spiel ist entfernt, `CameraTiltPanel` setzt nur noch
+  Neigung und Bildwinkel für die Regler des Editors.
 
 - **Daten** (`src/zone/nodes.ts`): Knoten in `zone.nodes` der Zonendatei (Version bleibt 1, das Feld ist optional).
   Ebene: Tiefe `z` in Metern (hinten positiv, Welt-Z = −z), Lage `x`, `y` und Maßstab `scale` ihres Inhalts, Rolle,
