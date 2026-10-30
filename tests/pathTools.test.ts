@@ -55,6 +55,7 @@ function setup(opts: { snap?: boolean; grid?: number | null } = {}): { nodes: Zo
     snapping: () => !!opts.snap,
     gridStep: () => opts.grid ?? null,
     visible: () => true,
+    propDrag: () => false,
   };
   return { nodes, tools: new PathTools(host), selected: () => findShape(nodes, selection.at(-1) ?? null), select: (id) => (selection = id ? [id] : []), toasts, commits: () => commits };
 }

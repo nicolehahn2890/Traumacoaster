@@ -59,6 +59,7 @@ import {
   rectPath,
   serializeNodes,
   setGapBehind,
+  syncMesh,
   shapeBounds,
   shapeFromPlanePath,
   shapeFaces,
@@ -93,6 +94,10 @@ import { History } from './history';
 import { EditorOverlay, emptyOverlay } from './overlay';
 import { SketchLayer } from './sketches';
 import { constrain45, NO_MODS, PathTools, regionRing, regionTest, simplifyShape, type Mods, type PathTool } from './pathTools';
+import { MeshTool } from './meshTool';
+import { ringCenter, type XformTarget } from './xform';
+import { FALLOFFS, FALLOFF_WORDS, PROPORTIONAL_DEFAULT, stepRadius, xformFrom, xformLabel, type Proportional, type Xform } from '@/zone/proportional';
+import { restFromDeformed } from '@/zone/mesh';
 import { booleanShapes, type BoolOp } from '@/zone/pathfinder';
 import { evalLayers, gradientT, GRADIENT_DOTS, hexToRgb, isEarle, isGradient, isHex, MAX_LAYERS, MIST_MAX, paintLayers, rampOf, RAMP, resolveColor, rgbToHex, type GradientFill, type GradientStop, type PaintColor, type ZoneFill } from '@/zone/paint';
 import { crownFor, earleShape, freshEarle, type EarlePreset } from '@/zone/earle';
@@ -286,6 +291,17 @@ export class PlaneEditor {
   private readonly ui: EditorUi;
   private readonly pointers = new Map<number, Pointer>();
   private readonly paths: PathTools;
+  /** Netz-Werkzeug (W, wie Spine; src/zoneeditor/meshTool.ts) */
+  private readonly meshTool: MeshTool;
+  /** proportionales Bearbeiten wie in Blender (O): an, Radius (Meter der Ebene), Abfallkurve; gilt für die Sitzung */
+  private prop: Proportional = { ...PROPORTIONAL_DEFAULT };
+  /**
+   * laufende Bewegung wie in Blender (G, R, S oder Ziehen gewählter Punkte, src/zoneeditor/xform.ts): Ziel, Art, Zeiger am
+   * Anfang und jetzt, Achse, Zeiger beim Ziehen (null: folgt der Maus ohne Drücken), zuletzt angewandte Bewegung
+   */
+  private xf: { kind: Xform['kind']; start: Pt; now: Pt; axis: 'x' | 'y' | null; target: XformTarget; pointerId: number | null; last: Xform | null } | null = null;
+  /** letzte Lage von Maus oder schwebendem Stift (Anfang von G, R, S) */
+  private hoverPt: Pt | null = null;
   /** kopierte Formen mit ihren Ebenen beim Kopieren (Einfügen in eine andere Ebene hält das Bild) */
   private clip: Array<{ shape: ZoneShape; from: ZonePlane }> = [];
   /** Formgruppen, die beim Kopieren ganz dabei waren (die Kopie wird eine eigene Gruppe) */
@@ -401,6 +417,31 @@ export class PlaneEditor {
       snapping: () => this.snapOn,
       gridStep: (plane) => (this.gridOn ? this.gridStep(plane) : null),
       visible: (plane) => this.planeShown(plane),
+      propDrag: (pointerId, p) => this.prop.on && this.startXform('grab', p, pointerId),
+    });
+    this.meshTool = new MeshTool({
+      nodes: () => this.nodes,
+      selectedShapes: () => this.selectedShapes(),
+      setSelection: (ids) => this.setSelection(ids),
+      planePoint: (plane, p) => this.planePoint(plane, p),
+      screenOf: (plane, q, shape) => this.screenOf(plane, q, shape),
+      pick: (p) => this.pickShape(p),
+      begin: () => this.history.begin(this.nodes),
+      commit: () => {
+        if (this.history.commit(this.nodes)) this.changed();
+        else this.changed(false);
+      },
+      redraw: () => {
+        this.uiDirty = true;
+        this.drawOverlay();
+      },
+      toast: (m) => this.ui.toast(m),
+      hitRadius: () => this.overlay.handleSize + 6,
+      setRest: (ids) => {
+        this.host.world.planes.restMeshes = ids;
+        this.meshDirty = true;
+      },
+      grab: (pointerId, p) => void this.startXform('grab', p, pointerId),
     });
     this.ui = new EditorUi(this.actions(), zone.name, this.overlay.el, this.colorHost());
     // Standbild (Tor S5): ohne Leisten, damit ein Bildschirmfoto vom Handy nur das Spielbild zeigt
@@ -520,6 +561,9 @@ export class PlaneEditor {
 
   /** nach jeder Änderung: neu zeichnen, Liste und Leisten nachführen, Sicherungskopie planen */
   private changed(markDirty = true): void {
+    // Netzformen: Umriss und Netz im Gleichschritt, auch nach Werkzeugen, die nur den Umriss kennen (src/zone/mesh.ts)
+    for (const n of this.nodes) if (n.kind === 'shape' && n.mesh) syncMesh(n);
+    this.meshTool.selectionChanged();
     // Gruppen bleiben Läufe benachbarter Ebenen; leere fallen weg
     const norm = normalizeGroups(this.nodes);
     if (norm.length !== this.nodes.length) {
@@ -571,6 +615,7 @@ export class PlaneEditor {
     }
     if (last && this.planeSel.length && !this.planeSel.includes(last.parent)) this.planeSel = [last.parent];
     this.paths.selectionChanged(this.selection);
+    this.meshTool.selectionChanged();
     this.uiDirty = true;
     this.drawOverlay();
   }
@@ -599,12 +644,15 @@ export class PlaneEditor {
 
   private setBuilding(on: boolean): void {
     this.building = on;
+    if (on) this.meshTool.setActive(this.tool === 'mesh');
     this.ui.setBuilding(on);
     this.host.setGameUi(!on);
     this.meshDirty = true;
     if (!on) {
       // ein laufender Pfad wird beendet; das Spiel sieht immer den Spielblick
       this.paths.setTool(null);
+      if (this.xf) this.endXform(false);
+      this.meshTool.setActive(false);
       this.views.setMode('game', 0, { min: 0, max: 0 });
       this.viewChoice = 'game';
       this.ui.setView('game');
@@ -752,6 +800,8 @@ export class PlaneEditor {
       play: this.building && this.tool === 'play' && !this.fillMode ? this.playInfo() : null,
       field: this.building && this.tool === 'field' && !this.fillMode ? this.fieldInfo() : null,
       image: this.building ? this.imageInfo() : null,
+      mesh: this.building && this.tool === 'mesh' && !this.fillMode ? this.meshTool.context() : null,
+      prop: this.pointEditing() ? { ...this.prop } : null,
     });
     this.ui.setStack(this.stackView());
     this.syncColorFromSelection();
@@ -903,6 +953,8 @@ export class PlaneEditor {
     if (this.building && isPathTool(this.tool)) {
       this.paths.selectionChanged(this.selection);
       this.paths.overlay(st);
+    } else if (this.building && this.tool === 'mesh') {
+      this.meshTool.overlay(st);
     } else if (this.building) {
       const inner = this.inGroup.at(-1);
       const members = inner ? groupMembersOf(this.nodes, inner) : [];
@@ -955,6 +1007,7 @@ export class PlaneEditor {
         }
       }
     }
+    this.xformOverlay(st);
     this.overlay.draw(st);
   }
 
@@ -1280,6 +1333,10 @@ export class PlaneEditor {
         if (sh) void traceShape(this.imageHost, sh.id);
       },
       clipMask: (release) => this.clipMask(release),
+      meshAction: (a) => this.meshAction(a),
+      meshFill: (d) => this.meshTool.refill(d),
+      propToggle: () => this.propKey(false),
+      propFalloff: () => this.propKey(true),
       exportSvg: (scope) => this.exportSvg(scope),
       importSvg: (file) => void this.importSvg(file),
       tilt: (deg) => {
@@ -1310,6 +1367,7 @@ export class PlaneEditor {
   }
 
   private setTool(t: Tool): void {
+    if (this.xf) this.endXform(false);
     this.tool = t;
     this.sketchEdit = null;
     if (this.fillMode) this.endFill();
@@ -1317,6 +1375,7 @@ export class PlaneEditor {
     this.playPlacing = null;
     this.brushAt = null;
     this.paths.setTool(isPathTool(t) ? t : null);
+    this.meshTool.setActive(t === 'mesh');
     this.ui.setTool(t);
     this.updateCursor();
     this.uiDirty = true;
@@ -1326,7 +1385,7 @@ export class PlaneEditor {
   /** Mauszeiger: Zeichenstift mit Befehlstaste wie die Direktauswahl, mit Wahltaste das Ankerpunkt-Werkzeug */
   private updateCursor(): void {
     const t = this.tool;
-    this.host.surface.style.cursor = this.fillMode ? 'cell' : t === 'select' || t === 'direct' || (t === 'pen' && this.mods.cmd) ? '' : t === 'pen' && this.mods.alt ? 'pointer' : 'crosshair';
+    this.host.surface.style.cursor = this.fillMode ? 'cell' : t === 'select' || t === 'direct' || t === 'mesh' || (t === 'pen' && this.mods.cmd) ? '' : t === 'pen' && this.mods.alt ? 'pointer' : 'crosshair';
   }
 
   /** gedrückte Tasten aus einem Zeiger- oder Tastenereignis übernehmen */
@@ -1846,6 +1905,120 @@ export class PlaneEditor {
   }
 
   /** alle Formen der gewählten Ebenen wählen (Cmd+A) */
+  // ------------------------------------------------------------------ Bewegen wie in Blender, Netz-Werkzeug
+
+  /** Werkzeuge, die Punkte bearbeiten: Direktauswahl, Lasso, Netz */
+  private pointEditing(): boolean {
+    return this.building && (this.tool === 'direct' || this.tool === 'lasso' || this.tool === 'mesh');
+  }
+
+  /**
+   * Bewegung beginnen: G, R, S (folgt der Maus, pointerId null) oder Ziehen gewählter Punkte (pointerId); at: Zeiger am
+   * Anfang, ohne die Mitte der Auswahl. Ohne gewählte Punkte nur ein Hinweis
+   */
+  private startXform(kind: Xform['kind'], at: Pt | null, pointerId: number | null): boolean {
+    if (this.xf || this.gesture || this.paths.busy || (this.tool === 'mesh' && this.meshTool.busy)) return false;
+    const target = this.tool === 'mesh' ? this.meshTool.xformTarget() : this.paths.xformTarget();
+    if (!target) {
+      if (pointerId === null) this.ui.toast(this.tool === 'mesh' ? 'Erst Netzpunkte wählen: antippen, Umschalt nimmt dazu, Rechteck aus dem Leeren' : 'Erst Punkte wählen: antippen, Umschalt nimmt dazu, Rechteck aus dem Leeren');
+      return false;
+    }
+    const start = at ?? this.screenOf(target.plane, target.pivot) ?? { x: this.width / 2, y: this.height / 2 };
+    this.history.begin(this.nodes);
+    this.xf = { kind, start, now: start, axis: null, target, pointerId, last: null };
+    this.applyXform();
+    return true;
+  }
+
+  /** laufende Bewegung neu rechnen (immer vom Stand beim Beginn aus) */
+  private applyXform(): void {
+    const x = this.xf;
+    if (!x) return;
+    const q0 = this.planePoint(x.target.plane, x.start);
+    const q1 = this.planePoint(x.target.plane, x.now);
+    if (!q0 || !q1) return;
+    x.last = xformFrom(x.kind, q0, q1, x.target.pivot, x.axis);
+    x.target.apply(x.last, this.prop.on ? this.prop : null);
+    this.changed();
+    this.drawOverlay();
+  }
+
+  /** Bewegung übernehmen (ok) oder zurücknehmen; geht sie so nicht (Netz überschnitte sich), wird sie zurückgenommen */
+  private endXform(ok: boolean): void {
+    const x = this.xf;
+    if (!x) return;
+    this.xf = null;
+    const why = ok ? (x.target.check?.() ?? null) : null;
+    if (why) this.ui.toast(why);
+    if (ok && !why) {
+      if (this.history.commit(this.nodes)) this.changed();
+      else this.changed(false);
+    } else this.cancelEdit();
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
+  /** Tasten während einer Bewegung: G, R, S wechseln die Art, X und Y halten eine Achse, O der Einflusskreis, Bild↑/↓ */
+  private xformKey(k: string, shift: boolean): void {
+    const x = this.xf;
+    if (!x) return;
+    if (k === 'enter') this.endXform(true);
+    else if (k === 'escape') this.endXform(false);
+    else if (k === 'g' || k === 'r' || k === 's') {
+      x.kind = k === 'g' ? 'grab' : k === 'r' ? 'rotate' : 'scale';
+      x.start = x.now;
+      x.axis = null;
+      this.applyXform();
+    } else if (k === 'x' || k === 'y') {
+      x.axis = x.axis === k ? null : k;
+      this.applyXform();
+    } else if (k === 'o') {
+      this.propKey(shift);
+      this.applyXform();
+    } else if ((k === 'pageup' || k === 'pagedown') && this.prop.on) {
+      this.prop.radius = stepRadius(this.prop.radius, k === 'pageup' ? 1 : -1);
+      this.uiDirty = true;
+      this.applyXform();
+    }
+  }
+
+  /** O: Einflusskreis an oder aus; Umschalt+O: nächste Abfallkurve (schaltet ihn an) */
+  private propKey(shift: boolean): void {
+    if (shift) {
+      this.prop.falloff = FALLOFFS[(FALLOFFS.indexOf(this.prop.falloff) + 1) % FALLOFFS.length];
+      this.prop.on = true;
+    } else this.prop.on = !this.prop.on;
+    const r = this.prop.radius < 10 ? this.prop.radius.toFixed(1).replace('.', ',') : String(Math.round(this.prop.radius));
+    this.ui.toast(this.prop.on ? `Einflusskreis an: ${r} m, ${FALLOFF_WORDS[this.prop.falloff]} (Mausrad während G, R, S oder Ziehen ändert ihn)` : 'Einflusskreis aus');
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
+  /** Einflusskreis und Hinweis der laufenden Bewegung */
+  private xformOverlay(st: ReturnType<typeof emptyOverlay>): void {
+    const x = this.xf;
+    if (!x) return;
+    if (this.prop.on) {
+      const c = ringCenter(x.target, x.last);
+      const a = this.screenOf(x.target.plane, c);
+      const b = this.screenOf(x.target.plane, { x: c.x + this.prop.radius, y: c.y });
+      if (a && b) st.influence = { c: a, r: Math.hypot(b.x - a.x, b.y - a.y) };
+    }
+    if (x.last) st.hint = { at: { x: x.now.x + 18, y: x.now.y + 30 }, text: xformLabel(x.last, this.prop.on ? this.prop : null, x.axis) };
+  }
+
+  private meshAction(a: 'auto' | 'draw' | 'drawDone' | 'drawCancel' | 'deform' | 'edit' | 'reset' | 'remove'): void {
+    if (a === 'auto') this.meshTool.autoCreate();
+    else if (a === 'draw') this.meshTool.startDraw();
+    else if (a === 'drawDone') this.meshTool.finishDraw();
+    else if (a === 'drawCancel') this.meshTool.cancelDraw();
+    else if (a === 'deform' || a === 'edit') this.meshTool.setMode(a);
+    else if (a === 'reset') this.meshTool.reset();
+    else this.meshTool.remove();
+    this.uiDirty = true;
+    this.drawOverlay();
+  }
+
   /** Esc: aus der betretenen Gruppe eine Stufe hinaus (sie bleibt gewählt), sonst die Auswahl aufheben */
   private escape(): void {
     const left = this.inGroup.at(-1);
@@ -2027,6 +2200,11 @@ export class PlaneEditor {
     if (!this.building) return;
     e.stopPropagation();
     e.preventDefault();
+    // Bewegung wie in Blender, die der Maus folgt: Klick übernimmt, Rechtsklick bricht ab
+    if (this.xf && this.xf.pointerId === null) {
+      this.endXform(e.button !== 2);
+      return;
+    }
     const p = this.local(e);
     this.pointers.set(e.pointerId, { ...p, type: e.pointerType, sx: p.x, sy: p.y, t: performance.now(), moved: false });
     try {
@@ -2066,6 +2244,16 @@ export class PlaneEditor {
 
   private onMove = (e: PointerEvent): void => {
     if (!this.building) return;
+    if (e.pointerType !== 'touch') this.hoverPt = this.local(e);
+    const xf = this.xf;
+    if (xf && (xf.pointerId === null || xf.pointerId === e.pointerId)) {
+      e.stopPropagation();
+      e.preventDefault();
+      this.setMods(e);
+      xf.now = this.local(e);
+      this.applyXform();
+      return;
+    }
     const ptr = this.pointers.get(e.pointerId);
     // Größenring der Pinsel folgt Maus und Pencil (unter dem Finger sähe man ihn nicht)
     if (this.tool === 'mist' || this.tool === 'dotbrush') {
@@ -2075,6 +2263,7 @@ export class PlaneEditor {
     if (!ptr) {
       // ohne Druck: Gummiband des Zeichenstifts (Maus, schwebender Pencil)
       if ((this.tool === 'pen' || this.tool === 'curve') && e.pointerType !== 'touch') this.paths.hoverAt(this.local(e));
+      if (this.tool === 'mesh' && e.pointerType !== 'touch') this.meshTool.hoverAt(this.local(e));
       return;
     }
     e.stopPropagation();
@@ -2119,6 +2308,11 @@ export class PlaneEditor {
     e.stopPropagation();
     e.preventDefault();
     this.pointers.delete(e.pointerId);
+    // gezogene Punkte (wie G): Loslassen übernimmt
+    if (this.xf && this.xf.pointerId === e.pointerId) {
+      this.endXform(e.type === 'pointerup');
+      return;
+    }
     if (this.fingerHold?.id === e.pointerId) {
       this.endHold(e.type === 'pointerup');
       return;
@@ -2148,6 +2342,13 @@ export class PlaneEditor {
     if (!this.building) return;
     e.stopPropagation();
     e.preventDefault();
+    // während einer Bewegung mit Einflusskreis: das Rad ändert seinen Radius (wie Blender: nach unten größer)
+    if (this.xf && this.prop.on) {
+      this.prop.radius = stepRadius(this.prop.radius, e.deltaY > 0 ? 1 : -1, Math.abs(e.deltaY) < 40);
+      this.uiDirty = true;
+      this.applyXform();
+      return;
+    }
     const p = this.local(e);
     // Trackpad-Spreizen kommt als Rad mit Strg; die Maus dreht in Stufen
     const k = e.ctrlKey ? Math.exp(-e.deltaY * 0.01) : e.deltaY > 0 ? 0.9 : 1.1;
@@ -2186,6 +2387,8 @@ export class PlaneEditor {
   }
 
   private cancelGesture(): void {
+    if (this.xf) this.endXform(false);
+    this.meshTool.cancelActive();
     this.paths.cancelActive();
     if (!this.gesture) return;
     const before = this.history.cancel();
@@ -2253,6 +2456,10 @@ export class PlaneEditor {
         this.takeColor(c);
         this.ui.toast(`Farbe aufgenommen: ${c}`);
       }
+      return;
+    }
+    if (this.tool === 'mesh' && this.views.mode !== 'free') {
+      this.meshTool.down(pointerId, p, this.mods);
       return;
     }
     if (isPathTool(this.tool) && this.views.mode !== 'free') {
@@ -2394,7 +2601,8 @@ export class PlaneEditor {
   private toolMove(pointerId: number, p: Pt): void {
     const g = this.gesture;
     if (!g || g.pointerId !== pointerId) {
-      this.paths.move(pointerId, p, this.mods);
+      if (this.tool === 'mesh') this.meshTool.move(pointerId, p);
+      else this.paths.move(pointerId, p, this.mods);
       return;
     }
     if (g.kind === 'fill') {
@@ -2511,7 +2719,8 @@ export class PlaneEditor {
   private toolUp(pointerId: number, p: Pt): void {
     const g = this.gesture;
     if (!g || g.pointerId !== pointerId) {
-      this.paths.up(pointerId);
+      if (this.tool === 'mesh') this.meshTool.up(pointerId, p);
+      else this.paths.up(pointerId);
       return;
     }
     this.gesture = null;
@@ -2923,7 +3132,9 @@ export class PlaneEditor {
     const sw = swatchMap(this.nodes);
     const pl = paintLayers(facePaint(f.shape, f.face), styleMap(this.nodes), faceBox(f.face));
     if (!pl) return null;
-    let c = evalLayers(pl.layers, f.local.x, f.local.y, sw, look);
+    // Netz: gemalt ist in der Lage ohne Verzerrung (src/zone/mesh.ts)
+    const at = f.shape.mesh && !this.host.world.planes.restMeshes.has(f.shape.id) ? restFromDeformed(f.shape.mesh, f.local.x, f.local.y) : null;
+    let c = evalLayers(pl.layers, at ? at[0] : f.local.x, at ? at[1] : f.local.y, sw, look);
     if (f.plane.fills?.length) c = evalLayers(f.plane.fills, f.q.x, f.q.y, sw, look, c);
     return rgbToHex(...c.rgb);
   }
@@ -4560,8 +4771,19 @@ export class PlaneEditor {
     const cmd = e.metaKey || e.ctrlKey;
     const k = e.key.toLowerCase();
     this.setMods(e);
+    // während einer Bewegung wie in Blender gehören alle Tasten ihr
+    if (this.xf) {
+      this.xformKey(k, e.shiftKey);
+      e.preventDefault();
+      return;
+    }
     let handled = true;
-    if (!cmd && isPathTool(this.tool) && this.paths.key(k)) handled = true;
+    // Punkte bewegen wie in Blender (Direktauswahl, Lasso, Netz): G, R, S; O Einflusskreis, Umschalt+O seine Abfallkurve
+    if (!cmd && this.pointEditing() && (k === 'g' || k === 'r' || k === 's')) this.startXform(k === 'g' ? 'grab' : k === 'r' ? 'rotate' : 'scale', this.hoverPt, null);
+    else if (!cmd && this.pointEditing() && k === 'o') this.propKey(e.shiftKey);
+    else if (!cmd && this.tool === 'mesh' && this.meshTool.key(k)) handled = true;
+    else if (cmd && k === 'a' && this.tool === 'mesh') this.meshTool.selectAll();
+    else if (!cmd && isPathTool(this.tool) && this.paths.key(k)) handled = true;
     // Anstrich kopieren und einfügen wie Figma (Cmd+Wahl+C/V; mit Wahltaste liefert e.key Sonderzeichen, darum e.code)
     else if (cmd && e.altKey && e.code === 'KeyC') this.styleCommand('copy');
     else if (cmd && e.altKey && e.code === 'KeyV') this.styleCommand('paste');
@@ -4582,6 +4804,7 @@ export class PlaneEditor {
     else if (k === 'v') this.setTool('select');
     else if (k === 'a') this.setTool('direct');
     else if (k === 'q') this.setTool('lasso');
+    else if (k === 'w') this.setTool('mesh');
     else if (k === 'p') this.setTool(e.shiftKey ? 'curve' : 'pen');
     else if (k === 'o') this.setTool('band');
     else if (k === 'b') this.setTool('brush');
@@ -4671,6 +4894,7 @@ export class PlaneEditor {
     this.host.world.viewCamera = null;
     this.host.world.viewFog = null;
     this.sketches.dispose();
+    this.host.world.planes.restMeshes = new Set();
     this.ui.destroy();
   }
 }

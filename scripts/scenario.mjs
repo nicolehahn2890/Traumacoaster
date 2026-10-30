@@ -2643,6 +2643,175 @@ if (want('32')) {
   rmSync(`public/zones/${ZONE}`, { recursive: true, force: true });
 }
 
+// 33. Netz wie Spine (Werkzeug W) und Bewegen wie Blender (G, R, S, O mit Einflusskreis, Mausrad), in einer eigenen
+// Zone, die danach wieder verschwindet; Maus und Tasten wie von Hand
+if (want('33')) {
+  const ZONE = 'szenario-netz';
+  rmSync(`public/zones/${ZONE}`, { recursive: true, force: true });
+  await page.goto(`${BASE}?zone=${ZONE}&editor=2&dev=1`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  const ctxBtn = (text) => page.locator('.ze-context .ze-btn', { hasText: new RegExp(`^${text}`) });
+  const draw = () => page.evaluate(() => {
+    const g = window.tcGame;
+    if (g.current.view?.paper) g.current.view.paper.visible = false;
+    for (let i = 0; i < 3; i++) g.app.ticker.update(performance.now());
+  });
+  /** Farbe am Bildpunkt, ohne die Linien des Netzes darüber */
+  const pixel = async ([x, y]) => {
+    await page.evaluate(() => (document.querySelector('.ze-overlay').style.visibility = 'hidden'));
+    await draw();
+    const shot = await page.screenshot({ clip: { x: Math.round(x) - 1, y: Math.round(y) - 1, width: 3, height: 3 } });
+    await page.evaluate(() => (document.querySelector('.ze-overlay').style.visibility = ''));
+    const { data } = await sharp(shot).raw().toBuffer({ resolveWithObject: true });
+    return [data[12], data[13], data[14]];
+  };
+  const green = (c) => c[1] > 140 && c[0] < 110 && c[2] < 110;
+  // Ebene, eine gemalte Bildschicht 20 × 10 m (oben grün, unten durchsichtig) und ein Hügel als Vektorform darunter
+  const plane = await page.evaluate(async () => {
+    const N = await import('/src/zone/nodes.ts');
+    const e = window.tcGame.current.planeEditor;
+    let p = null;
+    e.edit(() => {
+      p = N.newPlane(e.nodes, 8, 'Probe');
+      e.nodes.push(p);
+    });
+    e.active = p.id;
+    window.tcGame.current.view.camera.setTarget(0, -3, 12);
+    return p.id;
+  });
+  const img = await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"><rect width="400" height="100" fill="#30c040"/></svg>')).png().toBuffer();
+  const ids = await page.evaluate(async ([b64, pid]) => {
+    const e = window.tcGame.current.planeEditor;
+    const N = await import('/src/zone/nodes.ts');
+    const I = await import('/src/zoneeditor/images.ts');
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const before = new Set(e.nodes.map((n) => n.id));
+    await I.importImage(e.imageHost, new File([bytes], 'gras.png', { type: 'image/png' }), { plane: pid, at: { x: 0, y: 0 }, width: 20 });
+    const layer = e.nodes.find((x) => x.kind === 'shape' && !before.has(x.id));
+    let hill = null;
+    e.edit(() => {
+      hill = N.newShape(e.nodes, pid, N.ellipsePath(5, 3), 0, -10, '#8a6a4a', 'Hügel');
+      e.nodes.push(hill);
+    });
+    e.setSelection([layer.id]);
+    return { layer: layer.id, hill: hill.id };
+  }, [img.toString('base64'), plane]);
+  await sleep(1500);
+  const screen = (x, y) => page.evaluate(([pid, x, y]) => {
+    const e = window.tcGame.current.planeEditor;
+    const q = e.screenOf(e.nodes.find((n) => n.id === pid), { x, y });
+    return [q.x, q.y];
+  }, [plane, x, y]);
+  const nodeOf = (id) => page.evaluate((id) => JSON.parse(JSON.stringify(window.tcGame.current.planeEditor.nodes.find((n) => n.id === id))), id);
+  // Werkzeug W, Netz automatisch
+  await page.keyboard.press('w');
+  await sleep(200);
+  await ctxBtn('Netz automatisch').click();
+  await sleep(500);
+  let layer = await nodeOf(ids.layer);
+  const m0 = layer.mesh;
+  check(m0 && m0.hull >= 4 && m0.pts.length > m0.hull && layer.path.length === m0.hull, `Netz automatisch: ${m0?.pts.length} Punkte, ${m0?.hull} auf der Hülle, Umriss = Hülle`);
+  // den inneren Punkt nächst der Mitte antippen, G, 2 m nach oben, Klick übernimmt; geprüft knapp über der Mitte des
+  // Bilds: vorher grün (obere Hälfte), danach durchsichtig (die Grenze grün/durchsichtig ist mit dem Punkt gewandert)
+  const pts = m0.pts.map((q) => [q.rx, q.ry]);
+  let mid = m0.hull;
+  for (let i = m0.hull; i < pts.length; i++) if (Math.hypot(pts[i][0], pts[i][1]) < Math.hypot(pts[mid][0], pts[mid][1])) mid = i;
+  const probe = await screen(pts[mid][0], 0.4);
+  const before = await pixel(probe);
+  const at = await screen(pts[mid][0], pts[mid][1]);
+  const up2 = await screen(pts[mid][0], pts[mid][1] + 2);
+  await page.mouse.click(at[0], at[1]);
+  await page.keyboard.press('g');
+  await page.mouse.move(up2[0], up2[1], { steps: 4 });
+  await page.mouse.click(up2[0], up2[1]);
+  await sleep(300);
+  layer = await nodeOf(ids.layer);
+  const q1 = layer.mesh.pts[mid];
+  const after = await pixel(probe);
+  check(Math.abs(q1.y - q1.ry - 2) < 0.15 && q1.rx === pts[mid][0] && green(before) && !green(after), `Verformen mit G: Punkt ${mid} ${(q1.y - q1.ry).toFixed(2)} m hoch, Lage im Bild bleibt; die Grenze grün/durchsichtig wandert mit (vorher ${before.join(',')}, nachher ${after.join(',')})`);
+  // Bearbeiten zeigt die Form unverzerrt
+  await ctxBtn('Bearbeiten').click();
+  await sleep(300);
+  const rest = await pixel(probe);
+  const restIds = await page.evaluate(() => [...window.tcGame.world.planes.restMeshes]);
+  check(green(rest) && restIds.includes(ids.layer), `Bearbeiten: unverzerrt gezeichnet (${rest.join(',')})`);
+  await ctxBtn('Verformen').click();
+  await sleep(200);
+  // O an, G, Mausrad vergrößert den Einflusskreis: die Nachbarn gehen mit, ferne nicht ganz
+  await page.keyboard.press('o');
+  await page.mouse.move(up2[0], up2[1]);
+  await page.keyboard.press('g');
+  for (let i = 0; i < 6; i++) await page.mouse.wheel(0, 100);
+  const up3 = await screen(pts[mid][0], pts[mid][1] + 3);
+  await page.mouse.move(up3[0], up3[1], { steps: 4 });
+  const ring = await page.evaluate(() => {
+    const c = document.querySelector('.ze-ring');
+    return c && c.style.display !== 'none' ? Number(c.getAttribute('r')) : 0;
+  });
+  await page.keyboard.press('Enter');
+  await sleep(300);
+  layer = await nodeOf(ids.layer);
+  const prop = await page.evaluate(() => ({ ...window.tcGame.current.planeEditor.prop }));
+  const disp = layer.mesh.pts.map((q) => Math.hypot(q.x - q.rx, q.y - q.ry));
+  const partial = disp.filter((d, i) => i !== mid && d > 0.05 && d < 0.95).length;
+  check(prop.on && prop.radius > 6 && ring > 20 && Math.abs(disp[mid] - 3) < 0.2 && partial >= 3, `Einflusskreis (O, Mausrad ${prop.radius.toFixed(1)} m, Ring ${ring.toFixed(0)} px): Punkt ${disp[mid].toFixed(2)} m, ${partial} Nachbarn teilweise`);
+  // Esc bricht ab, Rechtsklick auch
+  const v0 = JSON.stringify(layer.mesh.pts);
+  await page.keyboard.press('r');
+  await page.mouse.move(up3[0] + 80, up3[1] + 40, { steps: 3 });
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('s');
+  await page.mouse.move(up3[0] + 120, up3[1], { steps: 3 });
+  await page.mouse.click(up3[0] + 120, up3[1], { button: 'right' });
+  await sleep(200);
+  layer = await nodeOf(ids.layer);
+  check(JSON.stringify(layer.mesh.pts) === v0 && (await page.evaluate(() => !window.tcGame.current.planeEditor.xf)), 'R mit Esc und S mit Rechtsklick abgebrochen: das Netz ist wie vorher');
+  // Direktauswahl: Hügel wählen, oberen Anker antippen, G mit Einflusskreis
+  await page.keyboard.press('a');
+  await page.evaluate((id) => window.tcGame.current.planeEditor.setSelection([id]), ids.hill);
+  await sleep(200);
+  const top = await screen(0, -7);
+  const top2 = await screen(0, -6);
+  await page.mouse.click(top[0], top[1]);
+  await page.keyboard.press('g');
+  await page.mouse.move(top2[0], top2[1], { steps: 4 });
+  await page.keyboard.press('Enter');
+  await sleep(300);
+  const hill = await nodeOf(ids.hill);
+  const side = hill.path.find((p) => p.x > 4);
+  check(Math.abs(hill.path[1].y - 4) < 0.1 && side && side.y > 0.02 && side.y < 0.9, `Direktauswahl G mit Einflusskreis: oberer Anker auf ${hill.path[1].y.toFixed(2)}, Seitenanker geht ${side?.y.toFixed(2)} m mit`);
+  // Sichern, im Spiel laden: das Netz zeichnet verzerrt
+  await page.keyboard.press('Meta+s');
+  let saved = null;
+  for (let i = 0; i < 40 && !(saved && saved.includes('"mesh"')); i++) {
+    await sleep(250);
+    if (existsSync(`public/zones/${ZONE}/zone.json`)) saved = readFileSync(`public/zones/${ZONE}/zone.json`, 'utf8');
+  }
+  await page.goto(`${BASE}?zone=${ZONE}`, { waitUntil: 'networkidle' });
+  await sleep(2500);
+  // eine Ecke des Netzes an der verzerrten Lage (Welt), gemalt an der Lage ohne Verzerrung
+  const game = await page.evaluate(([id, mid]) => {
+    const planes = window.tcGame.world.planes;
+    const sh = planes.lastNodes.find((n) => n.id === id);
+    const pl = planes.lastNodes.find((n) => n.id === sh?.parent);
+    const q = sh?.mesh?.pts[mid];
+    if (!q || !pl) return { found: false, rest: planes.restMeshes.size };
+    const X = pl.x + pl.scale * (sh.x + sh.sx * q.x);
+    const Y = pl.y + pl.scale * (sh.y + sh.sy * q.y);
+    let found = false;
+    for (const m of planes.group.children) {
+      const pos = m.geometry?.getAttribute?.('position');
+      const loc = m.geometry?.getAttribute?.('aLocal');
+      if (!pos || !loc || !/^ebenen-(formen|durchsichtig)/.test(m.name)) continue;
+      for (let i = 0; i < pos.count; i++) if (Math.abs(pos.getX(i) - X) < 1e-3 && Math.abs(pos.getY(i) - Y) < 1e-3 && Math.abs(loc.getX(i) - q.rx) < 1e-3 && Math.abs(loc.getY(i) - q.ry) < 1e-3) found = true;
+    }
+    return { found, rest: planes.restMeshes.size, dy: q.y - q.ry };
+  }, [ids.layer, mid]);
+  check(saved?.includes('"mesh"') && game.found && game.rest === 0, `gesichert und im Spiel: Punkt ${mid} an der verzerrten Lage (${game.dy?.toFixed(2)} m), gemalt ohne Verzerrung`);
+  await page.screenshot({ path: 'screenshots/scenario-33-netz.png' });
+  rmSync(`public/zones/${ZONE}`, { recursive: true, force: true });
+}
+
 await browser.close();
 server?.kill('SIGTERM');
 if (errors.length) console.error('Fehler:', errors.join('\n'));

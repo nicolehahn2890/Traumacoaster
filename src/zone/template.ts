@@ -23,6 +23,7 @@ import { faceAt } from './faces';
 import { flattenPath, simplifyPoly, type Poly } from './path';
 import { shapeFaces, shapeLocalPolys, type ZonePlane, type ZoneShape, type ZoneTemplate } from './nodes';
 import { rimLengths, type ZoneRim } from './rims';
+import { meshRestFace } from './mesh';
 import type { ImageFill } from './paint';
 
 /** Rand mit Passmarken (Bildpunkte) */
@@ -79,6 +80,11 @@ export function fingerprint(polys: readonly Poly[]): string {
 
 /** Umriss und Löcher des Ziels in Pfad-Koordinaten: die ganze Form oder die Fläche am Punkt face */
 export function targetPolys(shape: ZoneShape, face?: readonly [number, number]): { outline: Poly; holes: Poly[] } | null {
+  // Netz: gemalt wird in der Lage ohne Verzerrung (src/zone/mesh.ts), Verformen ändert die Vorlage nicht
+  if (shape.mesh) {
+    const f = meshRestFace(shape.mesh);
+    return f ? { outline: f.outline, holes: [] } : null;
+  }
   if (!face) {
     const { outline, holes } = shapeLocalPolys({ ...shape, sx: 1, sy: 1 });
     return outline.length >= 3 ? { outline, holes } : null;

@@ -5,6 +5,7 @@
  */
 import { shapeBounds, type ZoneShape } from './nodes';
 import { cloneFills, mapFillPoints } from './paint';
+import { cloneMesh, mapMeshPoints, meshPath } from './mesh';
 import type { PathPoint, ZonePath } from './path';
 
 interface Pt {
@@ -27,6 +28,8 @@ export function rotateShape(shape: ZoneShape, orig: ZoneShape, pivot: Pt, angle:
     if (!orig.cuts) delete shape.cuts;
     if (!orig.regions) delete shape.regions;
     if (!orig.fills) delete shape.fills;
+    if (orig.mesh) shape.mesh = cloneMesh(orig.mesh);
+    else delete shape.mesh;
     return;
   }
   const c = Math.cos(angle);
@@ -71,6 +74,11 @@ export function rotateShape(shape: ZoneShape, orig: ZoneShape, pivot: Pt, angle:
       const [a, b] = rs(x, y);
       return [r3(a), r3(b)];
     });
+  if (orig.mesh) {
+    shape.mesh = cloneMesh(orig.mesh);
+    mapMeshPoints(shape.mesh, rs);
+    shape.path = meshPath(shape.mesh);
+  }
   const dx = orig.x - pivot.x;
   const dy = orig.y - pivot.y;
   shape.x = r3(pivot.x + c * dx - s * dy);

@@ -44,7 +44,9 @@ import {
   type ZonePlane,
   type ZoneShape,
 } from '@/zone/nodes';
+import { applyXform, applyXformVector, weights } from '@/zone/proportional';
 import type { OverlayState, Pt } from './overlay';
+import type { XformTarget } from './xform';
 
 export type PathTool = 'direct' | 'pen' | 'curve' | 'brush' | 'knife' | 'lasso' | 'band';
 export type RegionForm = 'lasso' | 'rect';
@@ -90,6 +92,8 @@ export interface PathToolHost {
   gridStep(plane: ZonePlane): number | null;
   /** wird die Ebene gerade gezeichnet (ausgeblendet, isoliert)? */
   visible(plane: ZonePlane): boolean;
+  /** Ziehen gewählter Anker: mit Einflusskreis (O an) führt der Editor es wie G in Blender (true), sonst das Werkzeug */
+  propDrag(pointerId: number, p: Pt): boolean;
 }
 
 /** Leiste unten für die Pfad-Werkzeuge */
@@ -1159,7 +1163,7 @@ export class PathTools {
       }
       if (at < 0) this.anchors = [hit];
       else this.anchors.push(...this.anchors.splice(at, 1));
-      this.startAnchorsDrag(pointerId, p);
+      if (!this.host.propDrag(pointerId, p)) this.startAnchorsDrag(pointerId, p);
       this.host.redraw();
       return;
     }
@@ -1170,6 +1174,10 @@ export class PathTools {
       const now = performance.now();
       const twice = now - this.lastTap.t < DOUBLE_TAP && Math.hypot(p.x - this.lastTap.x, p.y - this.lastTap.y) < 20;
       this.lastTap = { x: p.x, y: p.y, t: twice ? 0 : now };
+      if (twice && seg.shape.mesh) {
+        this.host.toast('Netzform: Hüllpunkte im Netz-Werkzeug (W) setzen');
+        return;
+      }
       if (twice) {
         this.host.begin();
         setPath(seg.shape, seg.ref, insertAnchor(seg.path, seg.i, seg.t));
@@ -1219,7 +1227,7 @@ export class PathTools {
     const hit = !mods.shift ? this.anchorHit(p) : null;
     if (hit && this.anchors.some((a) => sameSel(a, hit))) {
       this.anchors.push(...this.anchors.splice(this.anchors.findIndex((a) => sameSel(a, hit)), 1));
-      this.startAnchorsDrag(pointerId, p);
+      if (!this.host.propDrag(pointerId, p)) this.startAnchorsDrag(pointerId, p);
       this.host.redraw();
       return;
     }
@@ -1881,6 +1889,11 @@ export class PathTools {
       const o = this.shapeOf(g.shape);
       const cur = o ? getPath(o.shape, g.ref) : null;
       if (!o || !cur) continue;
+      // die Hülle eines Netzes bleibt eckig (src/zone/mesh.ts)
+      if (o.shape.mesh && g.ref.kind === 'outline') {
+        this.host.toast('Netzform: die Hülle hat keine Griffe');
+        continue;
+      }
       if (!glues.has(g.shape)) glues.set(g.shape, glueOf(o.shape));
       let path = cur.path;
       for (const i of g.idx) if (path[i] && hasHandles(path[i]) !== makeSmooth) path = toggleSmooth(path, cur.closed, i);
@@ -1905,6 +1918,10 @@ export class PathTools {
         if (g.shape !== id) continue;
         const cur = getPath(o.shape, g.ref);
         if (!cur) continue;
+        if (o.shape.mesh && g.ref.kind === 'outline') {
+          this.host.toast('Netzform: Hüllpunkte im Netz-Werkzeug (W) löschen');
+          continue;
+        }
         const idx = [...new Set(g.idx)].sort((a, b) => b - a);
         if (cur.path.length - idx.length < (cur.closed ? 3 : 2)) {
           if (g.ref.kind === 'outline') blocked = true;
@@ -1943,6 +1960,77 @@ export class PathTools {
     this.host.begin();
     setFaceFill(cur.shape, cur.face, fill);
     this.host.commit();
+  }
+
+  /**
+   * Gewählte Anker für G, R, S wie in Blender (src/zoneeditor/xform.ts): alle Anker der gewählten Formen in der Ebene des
+   * Hauptankers; mit Einflusskreis gehen nicht gewählte nach ihrem Abstand mit, Griffe drehen und strecken mit. Angeklebte
+   * Enden von Teilungslinien folgen ihrer Kante, wenn sie nicht selbst mitgehen
+   */
+  xformTarget(): XformTarget | null {
+    const main = this.anchors.at(-1);
+    const mo = main ? this.shapeOf(main.shape) : null;
+    if (!main || !mo) return null;
+    const plane = mo.plane;
+    const chosen = new Set(this.anchors.map((a) => `${a.shape}|${refKey(a.ref)}|${a.i}`));
+    const items: Array<{ shape: ZoneShape; ref: PathRef; key: string; i: number; open: boolean }> = [];
+    const xy: number[] = [];
+    const sel = new Set<number>();
+    const orig = new Map<string, { shape: ZoneShape; ref: PathRef; path: ZonePath }>();
+    const glue = new Map<string, Glue[]>();
+    for (const { shape } of this.editable()) {
+      if (shape.parent !== plane.id) continue;
+      glue.set(shape.id, glueOf(shape));
+      for (const { ref, path, closed } of shapePaths(shape)) {
+        const key = `${shape.id}|${refKey(ref)}`;
+        orig.set(key, { shape, ref, path: copyPath(path) });
+        path.forEach((a, i) => {
+          if (chosen.has(`${key}|${i}`)) sel.add(items.length);
+          items.push({ shape, ref, key, i, open: !closed });
+          xy.push(shape.x + shape.sx * a.x, shape.y + shape.sy * a.y);
+        });
+      }
+    }
+    if (!sel.size) return null;
+    let px = 0;
+    let py = 0;
+    for (const j of sel) {
+      px += xy[j * 2];
+      py += xy[j * 2 + 1];
+    }
+    return {
+      plane,
+      pivot: { x: px / sel.size, y: py / sel.size },
+      apply: (xf, prop) => {
+        const w = weights(xy, sel, prop);
+        const paths = new Map([...orig].map(([k, o]) => [k, copyPath(o.path)]));
+        const skip = new Map<string, Array<{ cut: number; end: 0 | 1 }>>();
+        items.forEach((it, j) => {
+          if (w[j] <= 0) return;
+          const { shape } = it;
+          const base = orig.get(it.key)!.path[it.i];
+          const [X, Y] = applyXform(xy[j * 2], xy[j * 2 + 1], w[j], xf);
+          const a: PathPoint = { ...base, x: round3((X - shape.x) / shape.sx), y: round3((Y - shape.y) / shape.sy) };
+          if (base.inX || base.inY) {
+            const [hx, hy] = applyXformVector((base.inX ?? 0) * shape.sx, (base.inY ?? 0) * shape.sy, w[j], xf);
+            a.inX = round3(hx / shape.sx);
+            a.inY = round3(hy / shape.sy);
+          }
+          if (base.outX || base.outY) {
+            const [hx, hy] = applyXformVector((base.outX ?? 0) * shape.sx, (base.outY ?? 0) * shape.sy, w[j], xf);
+            a.outX = round3(hx / shape.sx);
+            a.outY = round3(hy / shape.sy);
+          }
+          paths.get(it.key)![it.i] = a;
+          // Linienenden, die selbst mitgehen, kleben nicht
+          const n = orig.get(it.key)!.path.length;
+          if (it.ref.kind === 'cut' && it.open && (it.i === 0 || it.i === n - 1)) skip.set(shape.id, [...(skip.get(shape.id) ?? []), { cut: it.ref.i, end: it.i === 0 ? 0 : 1 }]);
+        });
+        // alle Pfade vom Anfang aus (auch die, die diesmal nicht mehr mitgehen), dann die angeklebten Enden
+        for (const [k, o] of orig) setPath(o.shape, o.ref, paths.get(k)!);
+        for (const o of orig.values()) applyGlue(o.shape, glue.get(o.shape.id) ?? [], o.ref, skip.get(o.shape.id) ?? []);
+      },
+    };
   }
 
   /** Hauptanker für die Leiste: seine Form, ob rund, welcher Pfad */

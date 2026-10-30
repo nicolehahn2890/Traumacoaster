@@ -18,6 +18,7 @@ import type { LookName } from '@/world/looks';
 import { parseCrown, parseDotsOff, parseSetDots, serializeCrown, type CrownParams, type DotOff, type SetDot } from './crown';
 import { parseWave, serializeWave, type EdgeWave } from './edgeWave';
 import { parseRims, serializeRim, type RimMode, type ZoneRim } from './rims';
+import { cloneMesh, mapMeshPoints, meshPath, parseMesh, serializeMesh, type ZoneMesh } from './mesh';
 import { LANE_DEPTH } from '@/track/stage';
 import { COIN_SHAPES, type CoinShape } from './groups';
 import type { SliceRole, SliceStack } from './slices';
@@ -184,6 +185,11 @@ export interface ZoneShape {
   dotsOff?: DotOff[];
   /** Säume (Stufe 6, src/zone/rims.ts): gemalte Streifen entlang der Kanten, je Richtung einer */
   rims?: ZoneRim[];
+  /**
+   * Netz wie in Spine (src/zone/mesh.ts): die Form wird ohne Verzerrung gemalt und mit den Dreiecken verzerrt; der Umriss
+   * ist dann die verzerrte Hülle, Löcher, Teilungslinien, Füllpunkte und Kantenwelle wirken nicht
+   */
+  mesh?: ZoneMesh;
   hidden?: boolean;
   locked?: boolean;
 }
@@ -969,6 +975,32 @@ export function transferShape(shape: ZoneShape, from: ZonePlane, to: ZonePlane, 
   return copy;
 }
 
+/**
+ * Netz und Umriss abgleichen, nachdem andere Werkzeuge den Umriss geändert haben (src/zone/mesh.ts): gleich viele Ecken,
+ * dann folgt die verzerrte Hülle dem Umriss (er bleibt ohne Griffe); sonst passt das Netz nicht mehr und fällt weg
+ * (Messer, Vereinfachen, Boolesche Operationen). true, wenn sich etwas geändert hat
+ */
+export function syncMesh(shape: ZoneShape): boolean {
+  const m = shape.mesh;
+  if (!m) return false;
+  const p = shape.path;
+  if (p.length !== m.hull) {
+    delete shape.mesh;
+    return true;
+  }
+  let moved = false;
+  p.forEach((a, i) => {
+    const q = m.pts[i];
+    if (Math.abs(a.x - q.x) <= 5e-4 && Math.abs(a.y - q.y) <= 5e-4) return;
+    q.x = a.x;
+    q.y = a.y;
+    moved = true;
+  });
+  const handles = p.some((a) => a.inX || a.inY || a.outX || a.outY);
+  if (moved || handles) shape.path = meshPath(m);
+  return moved || handles;
+}
+
 /** Form an der Mitte ihrer Grenzen spiegeln (x: waagrecht, y: senkrecht); Pfade, Löcher, Linien und Füllpunkte mit */
 export function flipShape(shape: ZoneShape, axis: 'x' | 'y'): void {
   const b0 = shapeBounds(shape);
@@ -994,6 +1026,10 @@ export function flipShape(shape: ZoneShape, axis: 'x' | 'y'): void {
   if (shape.dockOff) shape.dockOff = shape.dockOff.map(([x, y]) => [x * fx || 0, y * fy || 0]);
   const mirror = (x: number, y: number): [number, number] => [x * fx || 0, y * fy || 0];
   mapFillPoints(shape.fills, mirror);
+  if (shape.mesh) {
+    mapMeshPoints(shape.mesh, mirror);
+    shape.path = meshPath(shape.mesh);
+  }
   for (const r of shape.regions ?? []) mapFillPoints(r.fills, mirror);
   const b1 = shapeBounds(shape);
   shape.x = round(shape.x + (b0.minX + b0.maxX - b1.minX - b1.maxX) / 2, 3);
@@ -1255,6 +1291,11 @@ export function parseNodes(v: unknown): ZoneNode[] {
       if (dotsOff) s.dotsOff = dotsOff;
       const rims = parseRims(o.rims);
       if (rims) s.rims = rims;
+      const mesh = parseMesh(o.mesh);
+      if (mesh) {
+        s.mesh = mesh;
+        s.path = meshPath(mesh);
+      }
       if (o.hidden === true) s.hidden = true;
       if (o.locked === true) s.locked = true;
       out.push(s);
@@ -1373,6 +1414,7 @@ export function serializeNodes(nodes: readonly ZoneNode[]): Array<Record<string,
       if (s.dots?.length) o.dots = s.dots.map(([x, y, sz, k]) => [round(x, 3), round(y, 3), round(sz, 3), k]);
       if (s.dotsOff?.length) o.dotsOff = s.dotsOff.map(([x, y, r]) => [round(x, 3), round(y, 3), round(r, 3)]);
       if (s.rims?.length) o.rims = s.rims.map(serializeRim);
+      if (s.mesh) o.mesh = serializeMesh(s.mesh);
       if (s.hidden) o.hidden = true;
       if (s.locked) o.locked = true;
       out.push(o);
@@ -1428,6 +1470,7 @@ export function cloneNodes(nodes: readonly ZoneNode[]): ZoneNode[] {
       ...(n.dots ? { dots: n.dots.map((d): SetDot => [d[0], d[1], d[2], d[3]]) } : {}),
       ...(n.dotsOff ? { dotsOff: n.dotsOff.map((d): DotOff => [d[0], d[1], d[2]]) } : {}),
       ...(n.rims ? { rims: n.rims.map((r) => ({ ...r })) } : {}),
+      ...(n.mesh ? { mesh: cloneMesh(n.mesh) } : {}),
     };
   });
 }

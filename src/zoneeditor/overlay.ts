@@ -60,9 +60,15 @@ export interface OverlayState {
    * gewählt hervorgehoben, Name an der Stelle at; Coins zusätzlich als Punkte
    */
   play: Array<{ kind: 'station' | 'queue' | 'site' | 'coins'; ring: Pt[]; on: boolean; label: string; at: Pt; dots?: Pt[] }>;
+  /** Netz (Werkzeug W, src/zone/mesh.ts): Kanten und Punkte (gewählt, auf der Hülle) */
+  mesh: { edges: Array<[Pt, Pt]>; pts: Array<Pt & { on: boolean; hull: boolean }> } | null;
+  /** Einflusskreis beim proportionalen Bearbeiten (Mitte, Halbmesser in Bildpunkten) */
+  influence: { c: Pt; r: number } | null;
+  /** Hinweis am Zeiger (Bewegung wie in Blender: was, wie weit, Einfluss) */
+  hint: { at: Pt; text: string } | null;
 }
 
-export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [], target: null, loupe: null, gradient: null, dock: [], hatch: [], station: null, fields: [], frames: [], brush: null, play: [] });
+export const emptyOverlay = (): OverlayState => ({ outlines: [], lines: [], face: null, box: null, handles: [], anchors: [], tangents: [], knobs: [], preview: null, stroke: null, region: null, group: null, snap: null, grid: [], target: null, loupe: null, gradient: null, dock: [], hatch: [], station: null, fields: [], frames: [], brush: null, play: [], mesh: null, influence: null, hint: null });
 
 const ring = (pts: Pt[]): string => (pts.length ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z` : '');
 const open = (pts: Pt[]): string => (pts.length > 1 ? `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}` : '');
@@ -96,6 +102,10 @@ export class EditorOverlay {
   private readonly framePath = document.createElementNS(NS, 'path');
   private readonly labelGroup = document.createElementNS(NS, 'g');
   private readonly playGroup = document.createElementNS(NS, 'g');
+  private readonly meshPath = document.createElementNS(NS, 'path');
+  private readonly meshGroup = document.createElementNS(NS, 'g');
+  private readonly influenceRing = document.createElementNS(NS, 'circle');
+  private readonly hintText = document.createElementNS(NS, 'text');
   /** Kantenlänge der Rahmen-Griffe (Pixel); auf Touch-Geräten größer */
   handleSize = 9;
 
@@ -136,8 +146,11 @@ export class EditorOverlay {
     this.fieldPath.setAttribute('class', 'ze-field');
     this.fieldOnPath.setAttribute('class', 'ze-field on');
     this.framePath.setAttribute('class', 'ze-frame');
+    this.meshPath.setAttribute('class', 'ze-mesh');
+    this.influenceRing.setAttribute('class', 'ze-ring');
+    this.hintText.setAttribute('class', 'ze-flabel');
     this.el.append(defs, this.hatchPaths.solid, this.hatchPaths.dig, this.hatchPaths.airy, this.dockOff, this.dockOn, this.stationPath, this.framePath, this.fieldPath, this.fieldOnPath, this.labelGroup, this.playGroup);
-    this.el.append(this.targetPath, this.gradGroup, this.loupeRing, this.gridPath, this.groupPath, this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.regionPath, this.tangentPath, this.anchorGroup, this.knobGroup, this.handleGroup, this.snapRing, this.brushPath);
+    this.el.append(this.targetPath, this.gradGroup, this.loupeRing, this.gridPath, this.groupPath, this.facePath, this.outlinePath, this.linePath, this.boxPath, this.previewPath, this.strokePath, this.regionPath, this.tangentPath, this.meshPath, this.meshGroup, this.anchorGroup, this.knobGroup, this.handleGroup, this.snapRing, this.brushPath, this.influenceRing, this.hintText);
   }
 
   set visible(on: boolean) {
@@ -271,6 +284,32 @@ export class EditorOverlay {
       r.setAttribute('height', String(a));
       r.setAttribute('class', p.on ? 'ze-anchor on' : 'ze-anchor');
     });
+    this.meshPath.setAttribute('d', s.mesh ? s.mesh.edges.map(([a, b]) => `M${a.x.toFixed(1)} ${a.y.toFixed(1)}L${b.x.toFixed(1)} ${b.y.toFixed(1)}`).join('') : '');
+    const mp = s.mesh?.pts ?? [];
+    this.pool(this.meshGroup, mp.length, 'circle', 'ze-mpt');
+    mp.forEach((p, i) => {
+      const c = this.meshGroup.childNodes[i] as SVGCircleElement;
+      c.setAttribute('cx', p.x.toFixed(1));
+      c.setAttribute('cy', p.y.toFixed(1));
+      c.setAttribute('r', String(Math.max(3, a / 2 - 0.5)));
+      c.setAttribute('class', `ze-mpt${p.hull ? ' hull' : ''}${p.on ? ' on' : ''}`);
+    });
+    this.influenceRing.style.display = s.influence ? '' : 'none';
+    if (s.influence) {
+      this.influenceRing.setAttribute('cx', s.influence.c.x.toFixed(1));
+      this.influenceRing.setAttribute('cy', s.influence.c.y.toFixed(1));
+      this.influenceRing.setAttribute('r', Math.max(1, s.influence.r).toFixed(1));
+    }
+    this.hintText.style.display = s.hint ? '' : 'none';
+    if (s.hint) {
+      this.hintText.textContent = s.hint.text;
+      // am rechten Rand links vom Zeiger
+      const len = this.hintText.getComputedTextLength?.() ?? 0;
+      const flip = s.hint.at.x + len > (this.el.clientWidth || Infinity) - 8;
+      this.hintText.setAttribute('text-anchor', flip ? 'end' : 'start');
+      this.hintText.setAttribute('x', (flip ? s.hint.at.x - 36 : s.hint.at.x).toFixed(1));
+      this.hintText.setAttribute('y', s.hint.at.y.toFixed(1));
+    }
     this.pool(this.knobGroup, s.knobs.length, 'circle', 'ze-cp');
     s.knobs.forEach((p, i) => {
       const c = this.knobGroup.childNodes[i] as SVGCircleElement;

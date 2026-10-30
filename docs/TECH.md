@@ -996,6 +996,65 @@ Bildfüllung in `src/zone/paint.ts`; Renderer `src/world/imageTextures.ts`, `src
   Sichern im Spiel). Nach dem Einsetzen wartet es auf den Zustand der Form (Dekodieren und Hochladen dauern unterschiedlich
   lange; feste zwei Sekunden reichten in einem Lauf nicht).
 
+## 4m. Zonen-Editor: Netz wie Spine, Bewegen wie Blender (Nachtrag zu Stufe 6, 30.10.2026)
+
+Plan: `docs/ZONENEDITOR-PLAN.md`, Nachtrag zu Stufe 6 und 4.3. Ohne DOM: `src/zone/mesh.ts` (Netz), `src/zone/proportional.ts`
+(Bewegen und Einfluss); Renderer `src/world/planeMesh.ts`; Editor `src/zoneeditor/meshTool.ts` (Werkzeug W),
+`src/zoneeditor/xform.ts` (Ziel einer Bewegung), `pathTools.ts` (Anker als Ziel), `planeEditor.ts` (führt die Bewegung).
+
+- **Netz** (`ZoneMesh` in `shape.mesh`): Punkte mit zwei Lagen in Pfad-Koordinaten, ohne Verzerrung (`rx, ry`) und verzerrt
+  (`x, y`); die ersten `hull` Punkte sind die Hülle in Reihenfolge; Dreiecke als Nummern, gerechnet in der Lage ohne
+  Verzerrung. In der Datei eine Zeile `v` („rx,ry,x,y …“, Millimeter) und eine Zeile `t` („a,b,c …“); fehlen die Dreiecke
+  oder sind sie kaputt, rechnet `parseMesh` sie neu. Höchstens `MESH_MAX_POINTS` 1500 Punkte. Der Umriss der Form ist immer die
+  verzerrte Hülle (`meshPath`, Ecken ohne Griffe): Andockkanten, Freiraum, Säume, Punktkrone und Physik sehen die Kante, die
+  man sieht. Löcher, Teilungslinien, Füllpunkte und Kantenwelle wirken an einer Netzform nicht (sie bleiben in der Datei).
+- **Zeichnen** (`planeMesh.ts`): Eine Netzform ist eine Fläche: `meshRestFace` (Umriss ohne Verzerrung, je Hülle dasselbe
+  Objekt, damit der Zwischenspeicher des Kantenabstands auch beim Verformen trifft) gibt Rahmen der Stile und Kantenabstand,
+  `meshTriangles` die Ecken. Die Ecken liegen an der verzerrten Lage (`position`, `aPlane`), gemalt wird an der Lage ohne
+  Verzerrung (`aLocal`, Muster `aPat`, Kantenabstand `aEdge`): so verzerren sich Bild, Verläufe, Lichtkante und Pünktchen wie
+  ein Bild in Spine; die Shader sind unverändert. `PlaneLayer.restMeshes`: Formen, die ohne Verzerrung gezeichnet werden
+  (Bearbeiten, Netz zeichnen). Die Pipette rechnet über `restFromDeformed` zurück, Malvorlagen einer Netzform nehmen den Umriss
+  ohne Verzerrung (`targetPolys`), Verformen ändert ihren Fingerabdruck nicht.
+- **Triangulierung** (`triangulate`): eingeschränkte Delaunay-Triangulierung. Ohren der Hülle (gegen den Uhrzeigersinn
+  gedreht), Lawson-Umklappen mit Stapel bis alle inneren Kanten lokal Delaunay sind, dann jeden inneren Punkt einsetzen (im
+  Dreieck: in drei teilen; auf einer Kante: beide Dreiecke daran teilen) und die Kanten gegenüber prüfen; Hüllkanten klappen nie
+  (gerichtete Kanten in einer Map auf ihr Dreieck). Punkte außerhalb und doppelte bleiben ohne Dreieck (`meshValid` meldet es).
+  Gemessen: ein Punkt mehr in einem Netz mit 700 Punkten 6 ms (vorher mit Durchgängen über alle Kanten 19 ms).
+- **Netze anlegen und ändern:** `autoMesh` (Spines „Generate“: Umriss geglättet, vereinfacht bis höchstens 48 Ecken ohne
+  Kreuzung, lange Kanten auf den Rasterabstand unterteilt, innen ein Wabenraster mit Abstand größere Seite / 4, 7 oder 11, einen
+  halben Abstand vom Rand), `meshFrom` (gezeichnete Hülle), `addMeshPoint` (innen; auf der Hülle zwischen zwei Hüllpunkten; der
+  neue Punkt übernimmt die Verzerrung an seiner Stelle, das Bild bleibt), `removeMeshPoints` (die Hülle behält drei),
+  `refillMesh` (innen neu im Raster, Verzerrung übernommen), `resetDeform`, `mapMeshPoints` (Drehen und Spiegeln der Form
+  nehmen beide Lagen mit, `rotateShape`, `flipShape`). `syncMesh` (nach jeder Änderung im Editor): ändern andere Werkzeuge den
+  Umriss bei gleich vielen Ecken, folgt die verzerrte Hülle; ändert sich die Zahl der Ecken (Messer, Vereinfachen, Boolesche
+  Operationen), fällt das Netz weg. Die Direktauswahl verweigert an der Hülle einer Netzform Anker setzen, löschen und Griffe.
+- **Bewegen wie Blender** (`proportional.ts`): Gewicht 1 für gewählte Punkte, sonst Abfallkurve von t = 1 − d/r (d: Abstand
+  zum nächsten gewählten Punkt in Metern der Ebene, r: Radius), außerhalb 0; Kurven wie in Blender (weich 3t² − 2t³, Kugel,
+  Wurzel, invers quadratisch, spitz, linear, konstant). `applyXform`: Verschieben um den Weg mal Gewicht, Drehen um den
+  Drehpunkt um den Winkel mal Gewicht, Skalieren mit 1 + (Faktor − 1) · Gewicht; Griffe eines Ankers drehen und strecken mit
+  (`applyXformVector`). `xformFrom` aus Zeigerlagen in Ebenen-Koordinaten (Drehen: Winkel zwischen Anfang und jetzt um den
+  Drehpunkt, Skalieren: Verhältnis der Abstände; Achse X oder Y). Radius: Mausrad oder Bild↑/↓ je Stufe mal 1,1 (Trackpad
+  1,02), Rad nach unten größer wie in Blender. Platzhalter: Anfangsradius 4 m, Kurve weich.
+- **Bewegung führen** (`planeEditor.ts`): `startXform` (Taste G, R, S mit der Lage der Maus; Ziehen eines gewählten Punkts mit
+  dem Zeiger, in der Direktauswahl nur mit Einflusskreis, sonst zieht sie wie bisher mit Einrasten), `applyXform` rechnet bei
+  jeder Zeigerbewegung vom Stand beim Beginn aus (ein Schritt im Arbeitsverlauf), `endXform` übernimmt (Klick, Eingabe,
+  Loslassen) oder nimmt zurück (Esc, Rechtsklick; auch wenn das Ziel es so nicht annimmt, `check`). Während der Bewegung
+  gehören alle Tasten ihr (G, R, S wechseln die Art, X und Y halten eine Achse, O und Umschalt+O). Ziele (`XformTarget`):
+  `PathTools.xformTarget` (alle Anker der gewählten Formen in der Ebene des Hauptankers; angeklebte Enden von Teilungslinien
+  folgen ihrer Kante, wenn sie nicht selbst mitgehen) und `MeshTool.xformTarget` (Verformen: verzerrte Lage; Bearbeiten: Lage
+  ohne Verzerrung, die Verzerrung des Punkts bleibt, Dreiecke neu, `check` = `meshValid`). Überlagerung: Netz (`st.mesh`),
+  Einflusskreis (`st.influence`, um die Mitte der Auswahl, beim Verschieben wandert er mit), Hinweis am Zeiger (`st.hint`,
+  klappt am rechten Rand nach links).
+- **Tasten:** W Netz-Werkzeug. In Direktauswahl (A), Lasso (Q) und Netz (W) sind G, R, S Bewegen und O der Einflusskreis
+  (Umschalt+O die Kurve); in den anderen Werkzeugen bleiben G (Verlauf), R (Felder), S (Spielobjekte) und O (Band) wie bisher.
+  Im Netz-Werkzeug löscht Entf ohne gewählte Punkte nicht die Form.
+- **Prüfungen:** `tests/netz.test.ts` (22: Triangulierung mit Delaunay-Prüfung, Kanten-Punkte, Hülle im Uhrzeigersinn, Anlegen,
+  Dichte, Maßstab, Einsetzen mit Verzerrung, Hüllpunkt, Löschen, Rundlauf, Zurückrechnen, Fläche ohne Verzerrung, Renderer-
+  Attribute, Kurven, Gewichte, Bewegungen, Rad), `tests/bewegen.test.ts` (10: Anker mit Einfluss, Drehen mit Griffen, Netzpunkte
+  verformen und bearbeiten, Tippen, Zeichnen, `syncMesh`, Malvorlage); Szenario 33 (7 Prüfungen in einer eigenen Zone, Maus und
+  Tasten wie von Hand: Netz automatisch, G verschiebt die Grenze im Bild, Bearbeiten unverzerrt, O mit Mausrad, Esc und
+  Rechtsklick, Direktauswahl mit Einfluss, nach dem Sichern im Spiel verzerrt).
+
 ## 5. Physik
 - Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).
 - g-Kräfte: f = v²·κ⃗ (Mindestradius 2,5 m; κ⃗ aus `sampleTrack` über ±1,2 m gemittelt, ein Wagen spürt keine kürzeren Spitzen) + a_tan·T + g·ŷ, wobei a_tan die echte Tangentialbeschleunigung des Zugs ist (Hangabtrieb minus Reibung, Kettenzug hält das Tempo, Launch, Booster, Bremse); zerlegt im Wagen-Rahmen (T, U, S) mit Schräglage. So drückt die Kette die Fahrgäste in die Lehne, der Launch in den Sitz, die Bremse nach vorn. Entgleisen bei seitlichem g über dem Limit des Schienentyps (`SKIN_PHYSICS`: Holz 2,0, Hybrid 2,4, Mine 2,2, Stahl 3,0, Gold 3,0, Neon 3,2, Eis 2,6, Geister 2,3, Lava 3,0, Space 3,5), Herausfallen bei kopfüber mit g_v < −0,15 über 0,12 s, Blackout über 7 g (nur ein Merker, kostet den dritten Stern). Entgleisen und Herausfallen übergeben den Zug in den Freiflug (unten), Rückroller und Wasser lassen ihn auf der Schiene ausrollen.

@@ -13,8 +13,11 @@ import type { PathContext } from './pathTools';
 import { VIEW_WORDS, type ViewMode } from './views';
 import { COLOR_CSS, ColorMenu, type ColorMenuHost } from './colorMenu';
 import { STACK_CSS, StackPanel, type StackActions, type StackView } from './stackPanel';
+import { DENSITY_WORDS, MESH_DENSITIES, type MeshDensity } from '@/zone/mesh';
+import { FALLOFF_WORDS, type Proportional } from '@/zone/proportional';
+import type { MeshContext } from './meshTool';
 
-export type Tool = 'select' | 'direct' | 'lasso' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch' | 'gradient' | 'mist' | 'dotbrush' | 'pipette' | 'dock' | 'play' | 'field';
+export type Tool = 'select' | 'direct' | 'lasso' | 'mesh' | 'pen' | 'curve' | 'brush' | 'band' | 'knife' | 'rect' | 'ellipse' | 'arch' | 'gradient' | 'mist' | 'dotbrush' | 'pipette' | 'dock' | 'play' | 'field';
 /** Spielobjekte auf den Ebenen (Werkzeug S) */
 export type PlayKind = 'station' | 'queue' | 'site' | 'coins';
 export const PLAY_WORDS: Record<PlayKind, string> = { station: 'Station', queue: 'Schlange', site: 'Baustelle', coins: 'Coins' };
@@ -142,6 +145,16 @@ export interface UiActions extends StackActions {
   rimAdd(file: File): void;
   traceImage(): void;
   clipMask(release: boolean): void;
+  /**
+   * Netz-Werkzeug (W, wie Spine): Netz automatisch oder zeichnen (schließen, abbrechen), Verformen oder Bearbeiten, Verzerrung
+   * zurücknehmen, Netz entfernen
+   */
+  meshAction(a: 'auto' | 'draw' | 'drawDone' | 'drawCancel' | 'deform' | 'edit' | 'reset' | 'remove'): void;
+  /** innere Punkte des Netzes neu im Raster */
+  meshFill(d: MeshDensity): void;
+  /** proportionales Bearbeiten wie Blender: an oder aus (O), nächste Abfallkurve (Umschalt+O) */
+  propToggle(): void;
+  propFalloff(): void;
   lassoForm(form: 'lasso' | 'rect'): void;
   importSvg(file: File): void;
   tilt(deg: number): void;
@@ -183,6 +196,10 @@ export interface ContextExtra {
   play?: { edges: number; placing: PlayKind | null; station: boolean; sel: PlaySel | null } | null;
   /** Bilder der gewählten Form (Stufe 6): hat sie ein Bild (schneidet es aus), Säume, geht eine Schnittmaske */
   image?: { hasImage: boolean; mask: boolean; rims: number; canClip: boolean } | null;
+  /** Netz-Werkzeug (W) */
+  mesh?: MeshContext | null;
+  /** proportionales Bearbeiten (O) in Direktauswahl, Lasso und Netz-Werkzeug */
+  prop?: Proportional | null;
   /** Werkzeug Felder: Zahl der Felder, das gewählte (Name, Breite, Höhe in Metern, Ziele, Stufen, Schalter, Look) */
   field?: { count: number; sel: { name: string; w: number; h: number; goals: string; stage: string; upgrade: string; switches: string; look: string | null } | null } | null;
 }
@@ -217,6 +234,11 @@ const CSS = `
 .ze-tangent{fill:none;stroke:#8db4ff;stroke-width:1;opacity:.8}
 .ze-anchor{fill:#16181c;stroke:#8db4ff;stroke-width:1.5}
 .ze-anchor.on{fill:#8db4ff}
+.ze-mesh{fill:none;stroke:rgba(141,180,255,.55);stroke-width:1}
+.ze-mpt{fill:#16181c;stroke:#8db4ff;stroke-width:1.3}
+.ze-mpt.hull{stroke-width:2}
+.ze-mpt.on{fill:#8db4ff}
+.ze-ring{fill:none;stroke:#ffffff;stroke-width:1.3;stroke-dasharray:6 4;opacity:.9}
 .ze-cp{fill:#16181c;stroke:#8db4ff;stroke-width:1.2}
 .ze-grid{fill:none;stroke:rgba(255,255,255,.16);stroke-width:1}
 .ze-snap{fill:none;stroke:#ffd27a;stroke-width:2}
@@ -341,6 +363,7 @@ const ICONS: Record<Tool, string> = {
   select: '<svg viewBox="0 0 24 24"><path d="M6 3l12 9-5.5 1.2L15 20l-2.6 1-2.6-6.6L6 18z" fill="currentColor"/></svg>',
   direct: '<svg viewBox="0 0 24 24"><path d="M6 3l12 9-5.5 1.2L15 20l-2.6 1-2.6-6.6L6 18z"/></svg>',
   lasso: '<svg viewBox="0 0 24 24"><path d="M7 16c-3-1.5-4-4-2.5-6.5C7 5 15 4 18.5 7s1 8-5 9c-2 .3-4 .2-5.5-.3" stroke-dasharray="2.5 2"/><path d="M7 16c-1 1.5-.5 3 1 4"/></svg>',
+  mesh: '<svg viewBox="0 0 24 24"><path d="M4 18L9 5l11 3-3 12zM9 5l3 7-8 6M12 12l8-4M12 12l5 8"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg>',
   pen: '<svg viewBox="0 0 24 24"><path d="M12 3l6 9-6 9-6-9z"/><path d="M12 3v7"/><circle cx="12" cy="12" r="1.6"/></svg>',
   curve: '<svg viewBox="0 0 24 24"><path d="M3 17c4-10 8 4 12-6 1.5-3.5 4-4 6-4"/><circle cx="3" cy="17" r="1.6"/><circle cx="12" cy="11" r="1.6"/><circle cx="21" cy="7" r="1.6"/></svg>',
   band: '<svg viewBox="0 0 24 24"><path d="M3 18C6 8 18 8 21 18"/><path d="M6.5 18C9 12 15 12 17.5 18" stroke-dasharray="2 2"/></svg>',
@@ -392,6 +415,7 @@ const TOOL_TITLES: Record<Tool, string> = {
   select: 'Auswahl (V)',
   direct: 'Direktauswahl (A): Punkte, Griffe und Flächen; Umschalt nimmt dazu, aus dem Leeren ziehen wählt im Rechteck',
   lasso: 'Lasso (Q): freihand oder als Rechteck überall im Bild, wählt Punkte in den gewählten Ebenen',
+  mesh: 'Netz (W) wie in Spine: Netz um das Bild einer Form legen oder zeichnen und das Bild damit verzerren; Punkte ziehen, G/R/S bewegen, O Einflusskreis (Mausrad: Größe)',
   pen: 'Zeichenstift (P): tippen gibt eine Ecke, ziehen eine Kurve; Befehlstaste verschiebt, Wahltaste: Ankerpunkt-Werkzeug',
   curve: 'Kurvenstift (Shift+P): jedes Tippen ein Punkt, die Kurve läuft glatt hindurch; doppelt tippen: Ecke oder Rund',
   band: 'Band (O): auf eine Kante der Form drücken und nach innen ziehen, gibt ein Band als eigene Fläche',
@@ -408,7 +432,7 @@ const TOOL_TITLES: Record<Tool, string> = {
   play: 'Spielobjekte (S): Station, Schlange, Baustelle und Coins auf grüne Andockkanten setzen; antippen wählt, ziehen schiebt sie entlang der Kanten',
   field: 'Felder (R): Spielbereich mit Kamerabegrenzung; ein Feld antippen, Ecken und Kanten ziehen, innen verschieben; die Rahmen zeigen, was das Handy quer und hoch höchstens sieht',
 };
-const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse', 'arch', 'gradient', 'mist', 'dotbrush', 'pipette', 'dock', 'play', 'field'];
+const TOOL_ORDER: readonly Tool[] = ['select', 'direct', 'lasso', 'mesh', 'pen', 'curve', 'brush', 'band', 'knife', 'rect', 'ellipse', 'arch', 'gradient', 'mist', 'dotbrush', 'pipette', 'dock', 'play', 'field'];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -1207,6 +1231,44 @@ export class EditorUi {
     input.addEventListener('blur', () => done(true));
   }
 
+  /** Leiste des Netz-Werkzeugs (W): Netz anlegen oder zeichnen, Verformen und Bearbeiten, Punkte innen, zurück, entfernen */
+  private meshBar(mesh: MeshContext, propButtons: () => void): void {
+    const c = this.context;
+    if (mesh.drawing !== null) {
+      c.append(el('span', 'ze-label', `Netz zeichnen: Hüllpunkte um das Bild tippen · ${mesh.drawing} ${mesh.drawing === 1 ? 'Punkt' : 'Punkte'}`));
+      if (mesh.drawing >= 3) c.append(button('Schließen', 'Hülle schließen (Eingabe, oder auf den ersten Punkt tippen)', () => this.a.meshAction('drawDone')));
+      c.append(button('Abbrechen', 'Nicht zeichnen (Esc); Rücktaste nimmt den letzten Punkt', () => this.a.meshAction('drawCancel')));
+      return;
+    }
+    if (!mesh.shape) {
+      c.append(el('span', 'ze-label', 'Netz: erst eine Form wählen, am besten eine mit Bild'));
+      return;
+    }
+    if (!mesh.has) {
+      c.append(
+        el('span', 'ze-label', `${mesh.shape}: kein Netz`),
+        button('Netz automatisch', 'Hülle auf den Umriss, innen ein Raster (wie „Generate“ in Spine)', () => this.a.meshAction('auto')),
+        button('Netz zeichnen', 'Hüllpunkte selbst um das Bild tippen (wie in Spine)', () => this.a.meshAction('draw')),
+      );
+      return;
+    }
+    c.append(
+      button('Verformen', 'Punkte bewegen verzerrt das Bild', () => this.a.meshAction('deform'), mesh.mode === 'deform' ? 'on' : ''),
+      button('Bearbeiten', 'Netz am unverzerrten Bild ändern: ins Netz tippen setzt Punkte, auf die Hülle Hüllpunkte; Wahltaste oder Entf löscht', () => this.a.meshAction('edit'), mesh.mode === 'edit' ? 'on' : ''),
+      el('span', 'ze-label', `${mesh.points} Punkte${mesh.sel ? `, ${mesh.sel} gewählt` : ''}`),
+      el('span', 'ze-sep'),
+      el('span', 'ze-label', 'Innen:'),
+    );
+    for (const d of MESH_DENSITIES) c.append(button(DENSITY_WORDS[d], `Innere Punkte neu im Raster: ${DENSITY_WORDS[d]} (die Verzerrung bleibt)`, () => this.a.meshFill(d), mesh.density === d ? 'on' : ''));
+    c.append(el('span', 'ze-sep'));
+    if (mesh.deformed) c.append(button('Zurücksetzen', mesh.sel ? 'Verzerrung der gewählten Punkte zurücknehmen' : 'Verzerrung ganz zurücknehmen', () => this.a.meshAction('reset')));
+    c.append(
+      button('Neu zeichnen', 'Die Hülle neu um das Bild tippen (das Netz wird ersetzt)', () => this.a.meshAction('draw')),
+      button('Netz entfernen', 'Netz weg, die Form behält die unverzerrte Hülle als Umriss', () => this.a.meshAction('remove')),
+    );
+    propButtons();
+  }
+
   /** Leiste des Werkzeugs Spielobjekte: setzen, oder die Werte des gewählten Objekts */
   private playBar(play: NonNullable<ContextExtra['play']>): void {
     const c = this.context;
@@ -1263,17 +1325,24 @@ export class EditorUi {
    * gewählte Formen Farbe und Reihenfolge, sonst für die gewählten Ebenen Rolle und Isolieren
    */
   setContext(planes: readonly ZonePlane[], shapes: readonly ZoneShape[], isolate: Isolate, path: PathContext | null = null, canPaste = false, extra: ContextExtra = {}): void {
-    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null, filling = null, grad = null, dropChoice = null, material = null, dock = null, play = null, field = null, dotBrush = null, mist = null, image = null } = extra;
+    const { group = null, sketch = null, sketchEdit = false, units = null, nums = null, filling = null, grad = null, dropChoice = null, material = null, dock = null, play = null, field = null, dotBrush = null, mist = null, image = null, mesh = null, prop = null } = extra;
     const plane = planes.at(-1) ?? null;
     const shape = shapes.at(-1) ?? null;
     // nur neu aufbauen, wenn sich der Inhalt ändert: sonst verschwände ein Knopf zwischen Aufsetzen und Abheben
     const pk = !path ? '' : path.kind === 'pen' ? `pen|${path.count}|${path.into}` : path.kind === 'anchor' ? `a|${path.shape.id}|${path.count}|${path.smooth}|${path.line}` : path.kind === 'face' ? `f|${path.shape.id}|${path.fill}` : path.kind === 'band' ? `b|${path.shape}` : `l|${path.form}|${path.count}|${path.smooth}`;
     const gi = units ?? { units: shapes.length, groups: 0, inside: false };
     const numKey = this.sub === 'numbers' && nums ? `${[nums.x, nums.y, nums.w, nums.h].map((v) => v.toFixed(2)).join(',')}|${this.keepRatio}` : `${!!nums}`;
-    const key = dropChoice ? `drop|${dropChoice}` : filling ? `fill|${filling}` : grad ? `grad|${JSON.stringify(grad)}` : dotBrush ? `dots|${JSON.stringify(dotBrush)}` : mist ? `mist|${JSON.stringify(mist)}` : dock ? `dock|${JSON.stringify(dock)}|${this.sub}` : play ? `play|${JSON.stringify(play)}` : field ? `field|${JSON.stringify(field)}` : path ? `${pk}|${material}|${this.sub}` : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}|${JSON.stringify(image)}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
+    const propKey = prop ? `${prop.on}|${prop.radius.toFixed(2)}|${prop.falloff}` : '';
+    const key = dropChoice ? `drop|${dropChoice}` : filling ? `fill|${filling}` : mesh ? `mesh|${JSON.stringify(mesh)}|${propKey}` : grad ? `grad|${JSON.stringify(grad)}` : dotBrush ? `dots|${JSON.stringify(dotBrush)}` : mist ? `mist|${JSON.stringify(mist)}` : dock ? `dock|${JSON.stringify(dock)}|${this.sub}` : play ? `play|${JSON.stringify(play)}` : field ? `field|${JSON.stringify(field)}` : path ? `${pk}|${material}|${this.sub}|${propKey}` : shape ? `s|${shapes.map((s) => `${s.id}:${s.fill}`).join(',')}|${shape.name}|${gi.units}:${gi.groups}:${gi.inside}|${this.sub}|${numKey}|${JSON.stringify(image)}` : plane ? `p|${planes.map((p) => `${p.id}:${p.role}`).join(',')}|${plane.name}|${isolate}|${canPaste}|${group ? `${group.id}:${group.name}` : ''}|${sketch ? `${sketch.id}:${sketch.opacity}:${sketch.blend ?? ''}:${sketch.hidden ? 1 : 0}` : ''}|${sketchEdit}|${this.sub}` : '';
     if (key === this.contextKey) return;
     this.contextKey = key;
     this.context.replaceChildren();
+    // proportionales Bearbeiten wie in Blender: Schalter, Radius, Abfallkurve
+    const propButtons = () => {
+      if (!prop) return;
+      this.context.append(el('span', 'ze-sep'), button(prop.on ? `Einfluss ${prop.radius < 10 ? prop.radius.toFixed(1).replace('.', ',') : Math.round(prop.radius)} m` : 'Einfluss aus', 'Proportional bearbeiten (O): G, R, S und Ziehen nehmen Punkte im Kreis mit, je weiter weg, desto weniger; Mausrad während der Bewegung ändert den Kreis', () => this.a.propToggle(), prop.on ? 'on' : ''));
+      if (prop.on) this.context.append(button(`Kurve: ${FALLOFF_WORDS[prop.falloff]}`, 'Abfallkurve weiterschalten (Umschalt+O)', () => this.a.propFalloff()));
+    };
     const anchorButtons = (smooth: boolean, count: number) => {
       this.context.append(
         button('Ecke', 'Ecke ohne Griffe', () => !smooth || this.a.anchorSmooth(), smooth ? '' : 'on'),
@@ -1281,6 +1350,7 @@ export class EditorUi {
         el('span', 'ze-sep'),
         button(count > 1 ? 'Punkte löschen' : 'Punkt löschen', 'Löschen (Entf)', () => this.a.anchorDelete()),
       );
+      propButtons();
     };
     if (dropChoice) {
       const dot = el('span', 'ze-swatch');
@@ -1292,6 +1362,8 @@ export class EditorUi {
         button('Als Verlaufsstopp', 'Dort, wo die Farbe fiel, einen Stopp mit dieser Farbe in den Verlauf setzen', () => this.a.dropChoice('stop')),
         button('Abbrechen', 'Nichts ändern (Esc)', () => this.a.dropChoice('cancel')),
       );
+    } else if (mesh) {
+      this.meshBar(mesh, propButtons);
     } else if (field) {
       // Werkzeug Felder: das gewählte mit Maßen, sonst ein Hinweis; anlegen immer, umbenennen und entfernen am gewählten
       const f = field.sel;

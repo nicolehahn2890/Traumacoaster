@@ -9,7 +9,8 @@ Der Editor muss zuerst am Mac laufen, iPad und Tablet optimieren wir später (Fl
 `zoneneditor` (gebaut auf `zoneneditor-tor2`); an Tor S5 hat Florian die Werkzeuge freigegeben und Regel 4 neu gefasst, die Testzone bleibt Vorschlag (29.10.2026).
 Stufe 4 ist bis auf die Handy-Messung erfüllt (30.10.2026). Stufe 6 (Bilder, Schnittmasken, Säume, Malvorlagen, KTX2) ist seit
 30.10.2026 gebaut, auf dem Zweig `claude/dreamy-dewdney-c96dd5`; Tor S6 wartet auf Florians Malerei nach den bereitliegenden
-Vorlagen und die Handy-Messung.**
+Vorlagen und die Handy-Messung. Dazu auf Florians Wunsch (30.10.2026): ein Netz um ein Bild wie in Spine (Werkzeug W) und
+Bewegen wie in Blender (G, R, S, O mit Einflusskreis) für Netz- und Vektorpunkte, Nachtrag nach Stufe 6.**
 Gebaut wird Stufe für
 Stufe mit Tor, auf dem Branch `zoneneditor`. Der große Plan (`docs/GROSSER-PLAN.md`)
 ruht seit heute auf Florians Wunsch; Etappe 2 steht nach Schritt 7, dem Freiraumfeld und der Freigabe der Ebenen-Probe,
@@ -513,6 +514,7 @@ Grundsätze:
 |---|---|---|---|
 | Auswahl | V | Pencil tippen und ziehen | Form, Schicht oder Gruppe wählen, verschieben, skalieren (breiter, höher, mit Umschalt gleichmäßig), drehen, spiegeln |
 | Direktauswahl | A | Pencil auf einen Anker | Anker und Griffe bearbeiten, Anker hinzufügen (auf die Linie tippen), löschen, Ecke oder Kurve |
+| Netz | W | – (noch nicht fürs iPad) | Netz um das Bild einer Form legen oder zeichnen und das Bild damit verzerren, wie in Spine (Nachtrag zu Stufe 6) |
 | Zeichenstift | P | Pencil | Kontur mit Ankern zeichnen; tippen gibt eine Ecke, ziehen eine Kurve; eine Linie von Kante zu Kante unterteilt die Form |
 | Kurvenstift | Shift+P | Pencil oder Finger tippen | wie Illustrators Kurvenzeichner: jedes Tippen setzt einen Punkt, die Kurve läuft glatt hindurch, ohne Griffe; doppelt tippen wechselt Ecke und Rundung |
 | Formpinsel | B | Pencil | freihand einen Umriss oder eine Teilungslinie ziehen, wird zur glatten Kurve mit wenigen Ankern |
@@ -524,6 +526,13 @@ Grundsätze:
 | Pipette | I | Finger halten | Farbe aufnehmen; mit Wahltaste den ganzen Stil |
 | Hand und Kamera | Leertaste | zwei Finger | schwenken, zoomen; in der Ansicht Frei umkreisen |
 | Bahn | T | Pencil | Probebahn zeichnen wie im Spiel, danach Testfahrt |
+
+**Bewegen wie in Blender** (Florian, 30.10.2026): In Direktauswahl, Lasso und Netz bewegen G (verschieben), R (drehen) und
+S (skalieren) die gewählten Punkte, die Bewegung folgt der Maus, X oder Y hält eine Achse, Klick oder Eingabe übernimmt, Esc
+oder Rechtsklick bricht ab. O schaltet den Einflusskreis ein (proportional bearbeiten: Punkte im Kreis gehen mit, je weiter weg,
+desto weniger), das Mausrad ändert ihn während der Bewegung, Umschalt+O wechselt die Kurve. In diesen drei Werkzeugen sind G,
+R, S und O darum Bewegungstasten; Verlauf (G), Felder (R), Spielobjekte (S) und Band (O) wählt man dort über die Leiste links
+oder nach V.
 
 Dazu die üblichen Befehle: Kopieren, Einfügen, an Ort einfügen (auch in eine andere Ebene, „Bild halten“), Duplizieren,
 Gruppieren, Schnittmaske (Cmd+7), Vereinen, Abziehen, Schnittmenge, Pfad vereinfachen, Kontur in Fläche, nach vorn und
@@ -606,6 +615,8 @@ Pünktchen) auf eine Fläche ziehen, im Füllstapel umstellen, mit Stil kopieren
 - **Umriss aus Bild** (`trace.ts`): ein gemaltes Teil wird zur Form mit seinem Umriss; danach ist es eine Form mit
   Bildfüllung und lässt sich wie jede Form bearbeiten.
 - **Auflösung:** Der Editor zeigt je Bild, ob es für Tiefe und größten Zoom scharf genug ist.
+- **Netz wie in Spine** (Florian, 30.10.2026; Nachtrag zu Stufe 6): ein Netz um das Bild einer Form zeichnen oder automatisch
+  anlegen und das Bild damit verzerren; was in der Form gemalt ist (Bild, Verläufe, Lichtkante, Pünktchen), verzerrt sich mit.
 
 ### 4.9 Spiel im Editor
 
@@ -1435,6 +1446,38 @@ Draw Calls es verlangen); PSD (B6: später, wenn gewünscht).
 `public/zones/szene-06/vorlagen/` nehmen), in Procreate malen (Vorlage importieren, neue Ebene, über den Umriss bis an den
 gestrichelten Rand malen, Vorlage ausblenden, als PNG teilen), das PNG ins Editorfenster ziehen; dasselbe mit der
 Saum-Vorlage v1 (oder v2) für die Grasnarbe; sichern; am Handy `&earle=messen` und eine Fahrt mit der Bildrate.
+
+**Nachtrag zu Stufe 6 (30.10.2026): Netz wie Spine, Bewegen wie Blender.** Florian: „Ich möchte eine weitere funktion wie bei
+spine 3d. Dort kann man ein mesh um ein bild zeichnen und dieses dann verzerren. Das möchte ich bitte auch so machen können.
+dabei hätte ich gerne zusätzlich, zur bearbeitung der meshpunkte oder auch vektorpunkte ein werkzeug wie in blender. das ich
+mit o einschalte und dann mit dem mausrad einen influenzkreis dynamisch zur bearbeitung ziehen kann und dann mit r: rotieren,
+mit g- verziehen und mit s skalieren kann, smooth innerhalb des dynamischen circle of influence.“ Recherchiert in den Handbüchern
+von Spine (Meshes: Hülle, innere Punkte, automatische Dreiecke, Bearbeiten und Verformen) und Blender (Proportional Editing:
+O, Umschalt+O, Mausrad und Bild↑/↓ während der Bewegung, Abfallkurven aus dem Quelltext). Technik in `docs/TECH.md` 4m.
+**Gebaut** (Zweig `claude/dreamy-dewdney-c96dd5`):
+- *Werkzeug Netz (W)* an der gewählten Form: „Netz automatisch“ (Hülle auf dem Umriss, innen ein Raster: wenige, mittel, viele)
+  oder „Netz zeichnen“ (die Form steht unverzerrt, Hüllpunkte um das Bild tippen, auf den ersten Punkt oder Eingabe schließt).
+  **Verformen:** Punkte antippen (Umschalt nimmt dazu, aus dem Leeren ein Rechteck), ziehen oder G, R, S; das Bild verzerrt sich
+  mit den Dreiecken. **Bearbeiten:** die Form steht unverzerrt wie in Spine; Punkte verschieben ändert, wo sie im Bild sitzen,
+  Tippen ins Netz setzt einen Punkt, Tippen auf die Hülle einen Hüllpunkt, Wahltaste auf einen Punkt oder Entf löscht.
+  „Zurücksetzen“ nimmt die Verzerrung (der gewählten Punkte oder ganz), „Neu zeichnen“ ersetzt das Netz, „Netz entfernen“ lässt
+  die unverzerrte Hülle als Umriss. Der Umriss der Form ist die verzerrte Hülle (Andockkanten, Saum und Physik folgen ihr).
+- *Bewegen wie Blender* in Direktauswahl, Lasso und Netz (4.3): G, R, S, X/Y, Klick/Eingabe, Esc/Rechtsklick; O Einflusskreis
+  mit Mausrad (auch beim Ziehen eines Punkts), Umschalt+O die Kurve (weich, Kugel, Wurzel, invers quadratisch, spitz, linear,
+  konstant). An Vektorpunkten drehen und strecken die Griffe mit; angeklebte Teilungslinien bleiben an ihrer Kante. Die Leiste
+  zeigt „Einfluss … m“ und die Kurve; am Zeiger steht, was gerade passiert.
+- Gemalt wird in der unverzerrten Lage: eine Malvorlage für eine Netzform hat den unverzerrten Umriss, und Verformen meldet
+  kein „Form geändert“. Gesichert wird das Netz in der Zonendatei an der Form; im Spiel zeichnet es verzerrt.
+**Platzhalter:** Aussehen von Netzpunkten, Netzlinien, Einflusskreis, Hinweis am Zeiger und Werkzeugzeichen; Dichte des Rasters
+(Abstand größere Seite / 4, 7, 11), höchstens 48 Ecken für die automatische Hülle, höchstens 1500 Punkte; Einflusskreis zu Beginn
+4 m, Kurve weich, Rad je Stufe mal 1,1. **System:** zwei Lagen je Punkt (ohne Verzerrung, verzerrt), gemalt ohne, gezeichnet
+mit Verzerrung; Dreiecke nach Delaunay in der Lage ohne Verzerrung; Bewegung immer vom Stand beim Beginn aus.
+**Geprüft (30.10.2026):** 595 Tests grün (32 neue in `tests/netz.test.ts` und `tests/bewegen.test.ts`), Typprüfung sauber,
+Szenario 33 (7 Prüfungen mit Maus und Tasten wie von Hand: Netz automatisch, G verschiebt die Grenze im Bild, Bearbeiten
+unverzerrt, O mit Mausrad 7,1 m und 11 Nachbarn teilweise, Esc und Rechtsklick, Direktauswahl mit Einfluss, nach dem Sichern im
+Spiel verzerrt). **Nicht geprüft:** am iPad und am Handy (G, R, S, O brauchen eine Tastatur; Knöpfe dafür fehlen noch); die
+Bildrate am Handy mit verzerrten Netzen (gezeichnet wird wie vorher, nur mit den Dreiecken des Netzes).
+**Offen:** Knöpfe für G, R, S am iPad; Punkte gewichten an Knochen (Spines Weights) gibt es nicht, nur das eine Netz je Form.
 
 **Stufe 7: Portale und Tunnel (L).** Portal-Vorlagen, Portal-Werkstatt, Platzierung beim Zeichnen, Tiefenwechsel durch
 die Öffnung, Loch zur Laufzeit, feste Öffnungen und Baustellen mit Vorlagen, Tunnel-Meter. **Tor S7:** Florian zeichnet

@@ -30,6 +30,7 @@ import { EDGE_IN, EDGE_OUT, faceEdge, type EdgeRaster } from '@/zone/edgeDistanc
 import { EdgeAtlas, grainTexture, rankTexture, RANK_N } from './earleTextures';
 import { cachedCrownPoints, crownColor, CROWN_DEFAULT, CROWN_STRIDE, shapeDots } from '@/zone/crown';
 import { cachedWavyFace } from '@/zone/edgeWave';
+import { meshRestFace, meshTriangles } from '@/zone/mesh';
 import { CrownLayer, type CrownDot } from './crownMesh';
 import { ImageCache } from './imageTextures';
 import { RimLayer } from './rimMesh';
@@ -62,6 +63,8 @@ interface Triangulated {
   pts: Float32Array;
   /** Dreiecke als Eckennummern */
   index: Uint32Array;
+  /** Netz (src/zone/mesh.ts): Lage ohne Verzerrung je Ecke, in ihr wird gemalt; ohne: wie pts */
+  local?: Float32Array;
 }
 
 /** Triangulierung je Fläche; die Flächen selbst speichert shapeFaces zwischen, solange der Pfad derselbe bleibt */
@@ -631,6 +634,8 @@ export class PlaneLayer {
   readonly images = new ImageCache();
   /** Säume (Stufe 6): gemalte Streifen entlang der Kanten, ein Mesh je Bild */
   readonly rims: RimLayer;
+  /** Formen mit Netz, die ohne Verzerrung gezeichnet werden (Netz bearbeiten im Zonen-Editor, wie Spines Bearbeiten) */
+  restMeshes: ReadonlySet<string> = new Set();
   /**
    * Platz je Bild im Shader (uImg0, uImg1 …): bleibt fest, solange die Ebenen leben, sonst entstünden beim Bearbeiten
    * immer neue Shader. Je Bild und Art (Rahmen oder Kachel) einer
@@ -831,14 +836,17 @@ export class PlaneLayer {
             crownInputs.push({ pts, shape, plane, rank, base: facePaint(shape, filled[0]).fill ?? shape.fill, air: airAmount(air, plane), tone: shape.crown?.tone ?? CROWN_DEFAULT.tone, wind: crownOn && shape.crown ? shape.crown.wind : 0 });
           }
         }
-        shapeFaces(shape, fineness(shape, plane)).forEach((face, fi) => {
+        // Netz (src/zone/mesh.ts): eine Fläche ohne Verzerrung, gemalt wie die Form, gezeichnet mit den verzerrten Dreiecken
+        const meshed = shape.mesh?.tris.length ? shape.mesh : null;
+        const restFace = meshed ? meshRestFace(meshed) : null;
+        (restFace ? [restFace] : shapeFaces(shape, fineness(shape, plane))).forEach((face, fi) => {
           // eine Fläche ohne Füllung ist ein Loch: nichts zu zeichnen
-          const paint = facePaint(shape, face);
+          const paint = restFace ? shape : facePaint(shape, face);
           const pl = paintLayers(paint, styles, paint.style ? faceBox(face) : NO_BOX);
           if (!pl) return;
           // Kantenwelle: gezeichnet wird die gewellte Fläche (Dreiecke und Kantenabstand), gefüllt wie die glatte
-          const shown = shape.wave && !shape.wave.hidden && shape.wave.amp > 0 ? cachedWavyFace(face, shape.wave, shape.sx, shape.sy) : face;
-          const tri = triangulateFace(shown);
+          const shown = !meshed && shape.wave && !shape.wave.hidden && shape.wave.amp > 0 ? cachedWavyFace(face, shape.wave, shape.sx, shape.sy) : face;
+          const tri = meshed ? meshTriangles(meshed, this.restMeshes.has(shape.id)) : triangulateFace(shown);
           if (!tri.index.length) return;
           const layers = visibleLayers(pl.layers);
           note(layers);
@@ -1172,12 +1180,13 @@ export class PlaneLayer {
       const [gx, gy] = seedOffset(plane.id);
       const slot = raster ? this.atlas.slot(raster) : undefined;
       for (let i = 0; i < n; i++) {
-        const lx = tri.pts[i * 2];
-        const ly = tri.pts[i * 2 + 1];
+        // gezeichnet an pts, gemalt an local (Netz: Lage ohne Verzerrung; Füllungen, Kantenabstand und Muster gehen mit)
+        const lx = tri.local ? tri.local[i * 2] : tri.pts[i * 2];
+        const ly = tri.local ? tri.local[i * 2 + 1] : tri.pts[i * 2 + 1];
         const rx = shape.sx * lx;
         const ry = shape.sy * ly;
-        const px = shape.x + rx;
-        const py = shape.y + ry;
+        const px = shape.x + shape.sx * tri.pts[i * 2];
+        const py = shape.y + shape.sy * tri.pts[i * 2 + 1];
         const k = (v + i) * 3;
         pos[k] = plane.x + plane.scale * px;
         pos[k + 1] = plane.y + plane.scale * py;
