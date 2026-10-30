@@ -33,6 +33,13 @@ export function withoutEarle(nodes: readonly ZoneNode[]): ZoneNode[] {
   return out;
 }
 
+/** ohne Bilder und Säume (Stufe 6): Bildfüllungen und Säume weg */
+export function withoutImages(nodes: readonly ZoneNode[]): ZoneNode[] {
+  const out = mapFills(nodes, (f) => (f.type === 'image' ? [] : [f]));
+  for (const n of out) if (isShape(n)) delete n.rims;
+  return out;
+}
+
 /** teuerster Farbnebel: auf jeder Form (und jeder Fläche mit eigenem Stapel) einer mit allen MIST_MAX Tupfern über die ganze Form */
 function withMist(nodes: readonly ZoneNode[]): ZoneNode[] {
   const out = structuredClone(nodes) as ZoneNode[];
@@ -110,6 +117,10 @@ export async function startEarleMessung(world: WorldRenderer): Promise<void> {
     await step('ohne Ebenen', null);
     world.planes.group.visible = true;
     await step('Ebenen wie gesichert', saved);
+    // Stufe 6: was Bilder und Säume kosten (Zahl, Grafikspeicher, wie viele als KTX2 gepackt)
+    const st = { ...world.planes.stats };
+    const imageNote = st.images || st.rims ? `\nBilder: ${st.images} (${(st.imageBytes / 1048576).toFixed(1)} MB Grafikspeicher, ${st.ktx2} als KTX2), Säume: ${st.rims}` : '';
+    if (imageNote) await step('  − Bilder und Säume', withoutImages(saved));
     const plain = withoutEarle(saved);
     await step('ohne Earle-Schichten', plain);
     const full = earleZone(plain);
@@ -128,7 +139,7 @@ export async function startEarleMessung(world: WorldRenderer): Promise<void> {
     await step('  + Farbnebel (16 Tupfer)', withMist(full));
     // Kontrolle: dieselbe Zeile wie oben; weicht sie stark ab, schwankt das Gerät (Wärme, Takt), nicht die Schichten
     await step('Earle auf allen Flächen (Kontrolle)', full);
-    show(`\n\nFertig (Earle auf allen Flächen: ${fullStats}). Es gilt wieder die Zone wie gesichert.`);
+    show(`\n\nFertig (Earle auf allen Flächen: ${fullStats}).${imageNote} Es gilt wieder die Zone wie gesichert.`);
   } catch (e) {
     show(`\n\nAbgebrochen: ${(e as Error).message}`);
   } finally {

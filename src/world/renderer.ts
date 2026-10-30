@@ -119,6 +119,8 @@ export class WorldRenderer {
     this.scene.add(this.train.group, this.zoneGroup, this.planes.group);
     this.three = new WebGLRenderer({ canvas: this.canvas, antialias: opts.antialias ?? true, stencil: true, alpha: false, powerPreference: 'high-performance' });
     this.three.outputColorSpace = SRGBColorSpace;
+    // Bilder der Ebenen (Stufe 6): KTX2 braucht die Formate der Grafikkarte
+    this.planes.images.setRenderer(this.three);
     // Pixi hat den Himmel schon gemalt: Three löscht nur Tiefe und Stencil. Die Löschfarbe bleibt transparent schwarz,
     // denn Pixi nimmt nach resetState genau das an und setzt sie nicht neu (sonst würden seine Filter-Texturen und
     // Masken mit deckendem Schwarz gelöscht)
