@@ -1,11 +1,13 @@
 # Trauma Coaster – der große Plan
 
-Stand 24.10.2026, spät. **Dieser Plan ist Paket für Paket mit Florian entstanden und am 24.10.2026 in allen Paketen
+Stand 24.10.2026, spät; ruht seit 27.10.2026, Nachträge bis 30.10.2026. **Dieser Plan ist Paket für Paket mit Florian entstanden und am 24.10.2026 in allen Paketen
 bestätigt** (Tabelle A, Spalte „bestätigt am“). Er wird fortgeschrieben: Was eine Etappe lernt, wird mit Datum im
 betroffenen Paket nachgetragen; was Florian ändert, ebenso. Vorläufig bleiben ausdrücklich die zehn Regeln des Looks
 (bis zur Stilprobe), die Grafikliste (folgt aus der Basiszone), Graben in Stufen (Florians Vorbehalt) und der
-Autoscroll am Tunnel (wird ausprobiert). Eingabe war `docs/UEBERGABE-PLAN.md`; die Technik steht in
-`docs/RICHTLINIE.md` und wird hier nicht neu verhandelt. Der alte Plan `docs/PLAN.md` bleibt als Archiv.
+Autoscroll am Tunnel (wird ausprobiert). Eingabe war die Übergabe vom 24.10. (heute
+`docs/archiv/UEBERGABE-PLAN-2026-10-24.md`); die Technik steht in `docs/RICHTLINIE.md` und wird hier nicht neu verhandelt
+(Teile davon hat die Ebenen-Welt ersetzt, siehe Kopf der Richtlinie). Der alte Plan liegt als Archiv unter
+`docs/archiv/PLAN-2026-10-21.md`.
 
 **Nachtrag 27.10.2026 (Florian): Der Plan ruht.** Nach der Kamerawinkel-Session (Ebenen-Welt aus vielen parallaktischen
 Vektorebenen, Tiefe der Bahn aus den Ebenen) baut Florian zuerst einen eigenen Zonen-Editor; Plan, Befunde, Recherchen
@@ -13,24 +15,46 @@ und Stufen stehen in `docs/ZONENEDITOR-PLAN.md`, gebaut wird auf dem Branch `zon
 dem Freiraumfeld und der Ebenen-Probe (gesichert als `b30bb71`). Viele Pakete behalten ihre Bedeutung; wie sie danach
 weiterlaufen, steht dort in Abschnitt 8.
 
+**Was seit dem 27.10. anders ist (Nachtrag 30.10.2026).** Was der Zonen-Editor ersetzt, steht in
+`docs/ZONENEDITOR-PLAN.md` 1.3, was danach weiterläuft, in Abschnitt 8. Kurz:
+
+- **Editor:** Der Zonen-Editor (`?zone=<name>&editor=2`) ersetzt die Stufen 2 und 3 aus 2.2. Der Klötzchen-Editor
+  (`?editor=1`) ist seit 30.10. entfernt; Station, Schlange, Baustelle, Coins, Felder, Ziele, Stufen und Schalter setzt
+  man im Zonen-Editor.
+- **Welt:** Zone und Höhlen entstehen aus parallaktischen gemalten Ebenen mit runden Formen statt aus Kulissen,
+  Dreiteilern und Höhlenkästen (Pakete 1, 2.1, 5, 8a; Richtlinie 3, 3a, 4). Klötzchen sind nur Platzhalter.
+- **Fels und Portale:** „Fels ist fest“ (5.1, 5.3, 11) gilt seit 27.10. erst einmal nicht mehr, das Material „grabbar“
+  wird gebaut (Entscheidung B2). Portale werden dynamisch gesetzt; wie Durchfahrten entstehen, ist offen (B3, Stufe 7
+  des Zonen-Editors).
+- **Look:** Regel 4 in Paket 0 ist seit 29.10. neu gefasst.
+- **Stützen:** Sie stehen auf Andockkanten der Ebenen; wo keine Kante trägt, hält ein Wand- oder Deckenhalter. Die
+  Formen der Halter sind Platzhalter, die richtigen kommen mit dem Look (Nachtrag in 3.4).
+- **Strich und Aufnahmen:** Der Strich ist seit 29.10. für die Editor-Zeit eingefroren, die Pinsel-Studie ist angehalten
+  (`docs/PINSEL-STUDIE.md`). Aufgenommen wird nur auf Florians Wunsch (`TC_RECORD=1`); die Aufnahmen bis 29.10. sind
+  kein Maßstab. „Replay grün“ wartet an den Toren, bis Florian wieder aufnimmt (Nachtrag in Paket 10).
+- **Etappe 2:** ruht nach Schritt 7, Tor 2b ist offen; der Rest wird auf Ebenen neu geschnitten (Nachtrag in Paket 10).
+- **Geräte:** Der Editor muss zuerst am Mac laufen, iPad und Tablet werden später optimiert (Florian, 27.10.); das Spiel
+  bleibt fürs Handy (60 fps).
+- **Florian, 30.10.2026:** „Alles zur Bahn, wie Baustellen, Strich und so weiter, würde ich dann machen, wenn die Editorwerkzeuge und der Strich final sind.“
+
 ## A. Stand der Abstimmung
 
 | Paket | Inhalt | Stand | bestätigt am |
 |---|---|---|---|
 | Z | Ziel und Zuschnitt des Plans | Florians Vorgabe vom 24.10.; mit Paket 2 und 4 bestätigt (Karte und Morph als Paket 12 ergänzt) | 24.10.2026 |
-| 2 | Zonen-Baukasten: Editor, Zone und Level als Daten | **bestätigt**: Editor im Spiel (A), Fortschritt über Levelnummer, Untergrund gedeckelt bis freigespielt; Datenmodell als Arbeitsgrundlage, wird in Paket 3 und 5 ergänzt | 24.10.2026 |
+| 2 | Zonen-Baukasten: Editor, Zone und Level als Daten | **bestätigt**: Editor im Spiel (A), Fortschritt über Levelnummer, Untergrund gedeckelt bis freigespielt; Datenmodell als Arbeitsgrundlage, wird in Paket 3 und 5 ergänzt; 30.10.: der Editor ist der Zonen-Editor, der Klötzchen-Editor ist entfernt, die Geometrie der Zone sind Ebenen (Kopf, Nachträge in 2.1 und 2.2) | 24.10.2026 |
 | 4 | Levelziele, Sterne, Humor | **bestätigt**: Zielarten-Katalog v1, fünf Umgebungselemente, Schanze, Magnet-Coins, Fangen, Bild im Bild als 2D-Kabine, Sterne A plus C, Rauswurf ohne Fangen = Sternverlust plus Zielart „Alle an Bord“ | 24.10.2026 |
-| 3 | Achterbahn-Features: Bahntypen, Aufwertungen, Startarten, Station, Stützen | **bestätigt**: Fähigkeiten als Schalter, alles geht in der Basiszone; 3D-Wagen mit gemalten Flächen; Station als Anker mit Richtung; Stützen-Werkstatt (Hybrid); Startarten sichtbar | 24.10.2026 |
-| 8a | Teile und Elemente | **bestätigt**: Elementkatalog als Platzhalter-Satz, Ablauf Platzhalter → Auftrag → Grafik; die Grafikliste folgt aus der Basiszone, Referenzen in Paket 0 | 24.10.2026 |
+| 3 | Achterbahn-Features: Bahntypen, Aufwertungen, Startarten, Station, Stützen | **bestätigt**: Fähigkeiten als Schalter, alles geht in der Basiszone; 3D-Wagen mit gemalten Flächen; Station als Anker mit Richtung; Stützen-Werkstatt (Hybrid); Startarten sichtbar; 30.10.: Stützen auf Andockkanten, sonst Wand- oder Deckenhalter, deren Formen mit dem Look kommen (Nachtrag in 3.4) | 24.10.2026 |
+| 8a | Teile und Elemente | **bestätigt**: Elementkatalog als Platzhalter-Satz, Ablauf Platzhalter → Auftrag → Grafik; die Grafikliste folgt aus der Basiszone, Referenzen in Paket 0; 30.10.: Formen auf Ebenen statt Klötzchen, die Form der Aufträge kommt aus dem Zonen-Editor (Nachtrag in 8a) | 24.10.2026 |
 | 6 | Figuren, Schlange, Fahrgäste | **bestätigt**: Rig mit klappendem Oberschädel, zwei Ansichten, Visuals als Stilvorlage, Schlange mit Freiraum, Editor bleibt und wächst, zwei je Wagen gemischt | 24.10.2026 |
-| 5 | Untergrund, Tunnel, Baustellen | **bestätigt**: Fels fest, Baustellen in zwei Varianten, Freilegung auf zwei Wegen, Autoscroll als Schalter zum Ausprobieren, Graben in Stufen (Vorbehalt), Wasser mit Schaltern | 24.10.2026 |
+| 5 | Untergrund, Tunnel, Baustellen | **bestätigt**: Fels fest, Baustellen in zwei Varianten, Freilegung auf zwei Wegen, Autoscroll als Schalter zum Ausprobieren, Graben in Stufen (Vorbehalt), Wasser mit Schaltern; 27.10.: „Fels fest“ gilt erst einmal nicht mehr (B2), Portale werden dynamisch (B3), Nachtrag am Ende von Paket 5 | 24.10.2026 |
 | 0 | Art Direction v2 (Look) | **bestätigt**: alle Visuals als Pool (Stil 04 und 09, Maßstab 15 und 16), zehn Regeln nur vorläufig bis zur Stilprobe, keine Konturen, Punktraster gemalt plus Funkeln-Shader (29.10.: Regel 4 neu, Punktraster und Textur auch als Shader-Schicht im Zonen-Editor), Alpen als erster Look, Stilprobe als Tor; UI-Richtung Baustellen-Brutalismus, Nachtrag: noch viel verrückter, UI-Werkstatt mit drei Varianten | 24.10.2026 |
-| 7 | Werkzeuge und Bedienung | **bestätigt**: 18 Grad, Richtlinien-Größen, drei Lesarten, Spur-Filter und 150 Level weg, Bug-Backlog, HUD in der Sprache der UI; Nachtrag: Kreuzungstausch bleibt als Rückfall im Bogenmenü, „Boden formen“ später als Fähigkeit der Basiszone | 24.10.2026 |
-| 1 | Weltrenderer (Technik, Richtlinie Schritt 2) | **bestätigt**: Technik aus der Richtlinie, Module unter `src/world/`, Tore; Etappe 1 | 24.10.2026 |
+| 7 | Werkzeuge und Bedienung | **bestätigt**: 18 Grad, Richtlinien-Größen, drei Lesarten, Spur-Filter und 150 Level weg, Bug-Backlog, HUD in der Sprache der UI; Nachtrag: Kreuzungstausch bleibt als Rückfall im Bogenmenü, „Boden formen“ später als Fähigkeit der Basiszone; 29.10.: Strich für die Editor-Zeit eingefroren, Aufnahmen nur auf Florians Wunsch (Nachtrag am Ende von Paket 7) | 24.10.2026 |
+| 1 | Weltrenderer (Technik, Richtlinie Schritt 2) | **bestätigt**: Technik aus der Richtlinie, Module unter `src/world/`, Tore; Etappe 1; 30.10.: Klötzchen-Editor entfernt, Welt aus Ebenen (Kopf) | 24.10.2026 |
 | 8b | Asset-Pipeline und Aufträge | **bestätigt**: Session erzeugt über Florians Figma-Konto (am ersten Auftrag geprüft), automatische Prüfung gegen Auftrag und Leitbilder, eigene Teile je Zone, Katalog, Aufträge in Sätzen | 24.10.2026 |
 | 9 | Produktion vieler Level | **bestätigt**: Vorschlag-Generator, Prüfer mit Lösungsbahn in der CI, zweite Zone „Mystischer Neon-Freizeitpark“ ohne neuen Engine-Code | 24.10.2026 |
 | 10 | Etappen und Abnahmen | **bestätigt**: acht Etappen E1 bis E8 mit vier Prüfungen je Tor, Zwischentor nach E2, Stilprobe parallel zu E3; Nachtrag: kein Kalender, Etappe 1 als Arbeitsschritte in Reihenfolge; 25.10.: Etappe 2 als zwölf Arbeitsschritte mit drei Toren bestätigt; **27.10.: Plan ruht, zuerst der Zonen-Editor (`docs/ZONENEDITOR-PLAN.md`)** | 24.10.2026 |
-| 11 | Risiken und Grenzen | **bestätigt**: Risikotabelle mit Gegenmaßnahme und Tor, Liste dessen, was bewusst nicht im Plan ist | 24.10.2026 |
+| 11 | Risiken und Grenzen | **bestätigt**: Risikotabelle mit Gegenmaßnahme und Tor, Liste dessen, was bewusst nicht im Plan ist; 30.10.: die Editor-Oberfläche ist das Hauptrisiko, „Fels bleibt fest“ gilt erst einmal nicht mehr, die Aufnahmen sind kein Maßstab (Nachträge in der Tabelle) | 24.10.2026 |
 | 12 | Karte und Morph (neu auf Florians Wunsch, 24.10.) | **bestätigt**: ein Rad für alle Zonen in Sektoren, Miniaturen und Symbole, Morph in zwei Schritten mit messbaren Kriterien | 24.10.2026 |
 
 Runde 1 (24.10.): offene Einladung, Zone und Level, Levelziele; Pakete Z, 2 und 4 am selben Abend bestätigt. Florians
@@ -65,7 +89,8 @@ Zur Bestätigung so formuliert:
 - **Karte und Morph sind wieder im Plan** (Florian, 24.10.): zuerst muss der Morph vom Glücksrad ins Level sauber sein,
   dann wird die genaue Animation erarbeitet (Paket 12). Nicht im Plan: Audio, Store-Builds, weitere Zonen als Inhalt.
 
-Folge für die Übergabe: Abschnitt 1 der `docs/UEBERGABE-PLAN.md` („erste Zone mit allen Leveln und Levelzielen“) ist
+Folge für die Übergabe: Abschnitt 1 der Übergabe (heute `docs/archiv/UEBERGABE-PLAN-2026-10-24.md`; „erste Zone mit allen
+Leveln und Levelzielen“) ist
 damit enger gefasst; der Levelzielkatalog bleibt Teil des Plans, die konkreten Level nicht.
 
 ## Paket 2: Zonen-Baukasten – Editor, Zone und Level als Daten
@@ -128,6 +153,12 @@ Innenraum, Vorderlippe mit Öffnung, Richtlinie 3); Säule oder Stamm mit unsich
 Lichtquelle; Partikelquelle; Nebelband; Schlangenbereich; Deko ohne Funktion; interaktives Element (Rad, Klappe,
 Glocke, Schalter, Paket 4); Coin-Gruppe; Feldrand.
 
+**Nachtrag 30.10.2026:** Die Geometrie der Zone beschreibt jetzt der Zonen-Editor: Ebenen mit Formen, Rollen, Material
+je Fläche und Andockkanten (`docs/ZONENEDITOR-PLAN.md` 4.4 bis 4.9, Datenmodell 5.2). Kulisse, Dreiteiler, Säule,
+Fundamentfläche und Höhlenkasten werden damit Formen auf Ebenen, Wasser wird eine Fläche mit Wassermaterial; Station,
+Schlange, Baustelle und Coins sind Spielobjekte auf Andockkanten. Feld, Fortschrittsstufe, Aufwertung, Ziele und
+Schalter gelten weiter und stehen im Feldknoten.
+
 ### Vorschlag 2.2: Der Editor
 
 Heute gibt es keinen Editor; Level sind Code (`src/levels/levels.ts`), das Tiefen-Labor ist eine feste Szene.
@@ -160,6 +191,11 @@ Stufe 1 des Editors ist damit gebaut; Tor 1b prüft sie.
 3. **Zonenwerkzeuge**: Varianten und Wachstum je Fortschrittsstufe, Look-Presets je Stufe, Untergrund-Freilegung,
    Schlangenbereiche, interaktive Elemente, später Rezepte und Generator (Paket 9). Tor: die Alpen-Zone als Datei mit
    mehreren Feldern in mehreren Stufen, komplett spielbar.
+
+**Nachtrag 30.10.2026:** Der Zonen-Editor (`docs/ZONENEDITOR-PLAN.md`) ersetzt die Stufen 2 und 3. Der Klötzchen-Editor
+aus Stufe 1 (`?editor=1`) ist seit 30.10. entfernt. Station, Schlange, Baustelle und Coins setzt man im Zonen-Editor mit
+dem Werkzeug Spielobjekte auf Andockkanten, Felder, Ziele, Stufen und Schalter mit dem Werkzeug Felder. Ein Knopf
+„Editor“ in jedem Level und auf der Karte führt hinein.
 
 ### Vorschlag 2.3: Feld und Kamera
 
@@ -383,15 +419,15 @@ optional). Florians „maximal drei, meistens zwei“ passt genau.
    einbauen; ob sie erst in späteren Zonen genutzt wird, entscheidet das Leveldesign.**
 
 **Status: bestätigt am 24.10.2026.** Offen bleibt nur, was ausdrücklich so markiert ist (Schleifen nach Entscheidung
-**Nachtrag 25.10.2026 (Etappe 2, Florian):** Zwei Zielarten kommen in den Katalog v1: „Aufzug-Start“ (Vertikallift als
-Aufzug benutzt) und „Pendel-Start“ (Pendel-Launch benutzt); beide sind gebaut (`src/levels/evaluator.ts`), das echte Pendeln
-folgt in E3.
 4, Flugweite als Bonus-Variante, Zustieg unterwegs); das wird in Paket 3 und 6 geklärt.
 **Stand 25.10.2026 (Etappe 1, Schritt 9):** Ziele lassen sich je Feld der Zone eintragen (Katalog v1 = die Zieltypen,
 die der heutige Prüfer kennt: Ankommen, Höhe, Coins, Loopings, Kurven, Tunnel, Startarten, Booster, Airtime, Tempo,
 Länge, Zeit, Schrauben, g-Kräfte, Splash, Spuren, ohne Bremse, Drop, Abflug, Fangen, Flugweite; Stern = Bonusziel) und
 werden im aktiven Feld live wie im Level gewertet. Platzhalter: die Rätselziele aus 4.2 (Glocke, Mühlrad, Tor, Sprung,
 Durchbruch), Magnet-Coins und das Fangen mit Bild-im-Bild kommen in E2 und E3; die Zieleingabe ist eine Textzeile.
+**Nachtrag 25.10.2026 (Etappe 2, Florian):** Zwei Zielarten kommen in den Katalog v1: „Aufzug-Start“ (Vertikallift als
+Aufzug benutzt) und „Pendel-Start“ (Pendel-Launch benutzt); beide sind gebaut (`src/levels/evaluator.ts`), das echte Pendeln
+folgt in E3.
 
 ## Paket 1: Weltrenderer (Technik gesetzt, Einordnung als Etappe 1)
 
@@ -465,7 +501,7 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
     **Tor 1a bestanden (Florian, 25.10.):** Leistung am Handy reicht, Kantenglättung bleibt an (jederzeit per `?aa=0`
     nachjustierbar), die Berge sind als Platzhalter eingeordnet (Dreiteiler-Prinzip bleibt, Form, Farbe und Staffelung
     kommen aus den Bildern der Basiszone). Regel aus dem Tor für alle Stände: Platzhalter immer dazusagen
-    (`docs/HANDOVER.md`, Abschnitt 5). Weiter mit Schritt 6. Replay `--world` nach den Fixes: 306 Bahnprofile (Florians Handy-Striche vom 25.10. sind aufgezeichnet, 261 → über 300 Aufnahmen), 8835 Stützen, 64 Stellen ohne Fundament (neue Aufnahmen über Wasser), Median 2,0 px, kein Fehler.
+    (heute `docs/ZONENEDITOR-PLAN.md`, Abschnitt „Arbeitsregeln“). Weiter mit Schritt 6. Replay `--world` nach den Fixes: 306 Bahnprofile (Florians Handy-Striche vom 25.10. sind aufgezeichnet, 261 → über 300 Aufnahmen), 8835 Stützen, 64 Stellen ohne Fundament (neue Aufnahmen über Wasser), Median 2,0 px, kein Fehler.
 
 11. Schritt 6 (25.10.): Zonendatei Version 1 und Klötzchen-Editor Stufe 1 (`docs/TECH.md` 4g): Palette der Platzhalter
     aus 8a.1, Setzen, Ziehen in der Spur-Ebene, Tiefe und Maße per Tasten, Löschen, Bahntyp der Zone, Speichern über den
@@ -520,6 +556,9 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
 - Florians Parallelarbeiten (jederzeit, nicht im Tor): Figurenteile in zwei Ansichten, Entwurf der Alpen-Autos,
   Varianten je Zone, Handy-Tests am Ende jeder Woche, Entscheidungen an den Toren, Figma-Konto für den Generator,
   falls die Session diesen Weg wählt (8b.1).
+- **Nachtrag 30.10.2026:** Seit 29.10. wird nur auf Florians Wunsch aufgenommen (`TC_RECORD=1`); die Aufnahmen bis
+  dahin sind kein Maßstab. Das Replay der Aufnahmen (`npm run strokes:replay`) wartet an den Toren, bis Florian wieder
+  aufnimmt, so schon an Tor S4 des Zonen-Editors.
 
 ### Die Etappen
 
@@ -528,7 +567,7 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
 | **E1 Weltrenderer und Klötzchen-Editor** | Three-Szene hinter Schalter, Pixi-HUD im Kontext, Kamera 18 Grad, Boden, Erdschnitt, Kulissen-Platzhalter mit Tiefenpuffer, vier Bahnprofile, Stützenfamilien instanziert, Wagen-Platzhalter, Licht, Schatten, Nebel, Looks aus dem Labor; Editor Stufe 1 (Platzhalter, Metadaten, Felder, Station, Baustelle, Coins, Zonendatei, Testfahrt); Lesarten-Knopf und Spur-Filter raus | Basiszone-Datei v0 mit einem Testfeld, vom Editor geschrieben | 100-Punkte-Test, Replay grün, Handy 60 fps mit Holz unter 150 Draw Calls, Florian baut selbst einen Testausschnitt, Handy zeigt dasselbe | M (Arbeitsschritte unten) | Richtlinie, Labor |
 | **E2 Bahn und Welt** | Fähigkeiten als Schalter (3.1), Startarten sichtbar (Platzhalter), Aufwertungen als Daten, Station mit Vorgabestück, Häuschen, Hebel und Richtung, Schlangenbereich mit Freiraum und Platzhalter-Figuren, Feld mit Kamerabegrenzung, Fels-Regeln (Öffnungen, Baustellen, Stop-Hinweis), Baustellen in zwei Varianten mit Freilegung, Räume mit „offen ab Stufe“, Autoscroll-Schalter, Wasser mit Schaltern, Fortschrittsstufe mit Looks, Kettenzuglinie | Basiszone v1: alle Bahn- und Weltfähigkeiten mit Platzhaltern spielbar | Checkliste je Fähigkeit in je einem Feld, Replay grün, Handy 60 fps, Florians Spieltest | M | E1 |
 | **E3 Ziele, Rätsel, Humor** | Zielarten-Katalog v1 auf der 3D-Bahn, **Pendel-Launch echt** (dreimal durch die Station mit wachsender Kraft, GDD; Florian, 25.10.2026, mit Zielart „Pendel-Start“), Magnet-Coins, Tunnel-Meter, Sprungschanze mit Fangtrichter und Vorab-Fahrt, Fangen mit Magnetwagen, Bild im Bild als 2D-Kabine, Glocke, Mühlrad, Tor mit Schalterplatte, Durchbruch, Sterne A plus C mit „Alle an Bord“, Humor-Regeln (Entgleisen selten und groß), Bug-Backlog (Stabilität, Schräglage automatisch, Strichintelligenz, Bahnende, Kreuzungstausch ins Bogenmenü), 150 Level als Inhalt raus | Basiszone v2: jedes Ziel und jedes Element in einem Feld erlebbar | Prüfer-Vorstufe: jedes Ziel einmal erfüllt im Replay, Handy 60 fps auch mit Vorab-Fahrt und Bild im Bild, Florians Spieltest mit Fokus Humor | M | E2 |
-| **E4 Stilprobe** | Stützen-Werkstatt (drei Wege, Hybrid gegen Florians Studien), UI-Werkstatt (drei Varianten, Florian wählt), Funkeln-Shader, Stilproben-Satz (10 bis 15 Teile über das Figma-Konto mit Prüfung), Florians erste Figurenteile mit Farbmasken im Rig, Looks Tag, Abend, Nacht; ein Feld der Basiszone komplett ohne Platzhalter; Vergleich je Stelle: gemaltes Teil gegen 3D-Teil mit gemalter, per Shader umgefärbter Textur (Florian, 25.10.) | Stilprobe: ein Feld im Alpen-Look, Art Direction v2 als Dokument (ersetzt `docs/ART.md`) | Standbild vom Handy neben Bild 15 und 04, Stützen je Familie neben der Studie, UI-Variante gewählt, Handy 60 fps mit Shadow Map und Funkeln, Florians Freigabe | M (parallel zu E3 möglich, sobald der Erzeugungsweg steht) | E1, Florians Teile, Erzeugungsweg |
+| **E4 Stilprobe** | Stützen-Werkstatt (drei Wege, Hybrid gegen Florians Studien), UI-Werkstatt (drei Varianten, Florian wählt), Funkeln-Shader, Stilproben-Satz (10 bis 15 Teile über das Figma-Konto mit Prüfung), Florians erste Figurenteile mit Farbmasken im Rig, Looks Tag, Abend, Nacht; ein Feld der Basiszone komplett ohne Platzhalter; Vergleich je Stelle: gemaltes Teil gegen 3D-Teil mit gemalter, per Shader umgefärbter Textur (Florian, 25.10.) | Stilprobe: ein Feld im Alpen-Look, Art Direction v2 als Dokument (ersetzt `docs/archiv/ART-v1-2026-10-21.md`) | Standbild vom Handy neben Bild 15 und 04, Stützen je Familie neben der Studie, UI-Variante gewählt, Handy 60 fps mit Shadow Map und Funkeln, Florians Freigabe | M (parallel zu E3 möglich, sobald der Erzeugungsweg steht) | E1, Florians Teile, Erzeugungsweg |
 | **E5 Alpen-Satz, Figuren, Karte** | Alpen-Satz (50 bis 70 Teile in Familien) ersetzt die Platzhalter der Basiszone, Katalog und KTX2, Figuren-Editor Stufe 1, Schlange mit Florians Figuren, Wagen Stufe 2 (Alpen-Autos nach Florians Entwurf, Holzzug und weitere über Generator und Meshy), Karte als ein Rad mit Sektoren, Miniaturen und Symbolen, Morph Schritt 1, Boden formen im Sandkasten | Basiszone komplett im Alpen-Look, Karte und Morph laufen | Zone komplett ohne Platzhalter, Morph-Video vom Handy ohne Sprung bei 60 fps, Replay grün, Prüfung „Platzhalter ohne Teil“ leer, Florians Freigabe | L | E3, E4, Florians Wagenentwurf |
 | **E6 Generator und Prüfer** | Rezepte als Layout-Grammatiken, Seeds, Kandidaten im Editor, Lösungsbahn je Level, Prüfer in der CI, Zonen-Bundles mit Vorladen, Speicher-Messung | Zehn Kandidaten-Level in der Basiszone, vom Prüfer bestanden | CI grün mit Prüfer, Handy 60 fps und Speicher im Rahmen, Florian nimmt zehn Kandidaten an oder ändert sie | M | E5 |
 | **E7 Neon-Freizeitpark** | Zweite Zone nur aus Daten, Neonpark-Satz, Looks Nacht und Neon mit Neon-Nebel, Glühen, Punktlichtern, eigene Stützen- und Stationsvarianten, Kostüme, höchstens ein neues interaktives Element; jede nötige Code-Änderung wird als Befund gegen das System notiert und behoben; danach Morph Schritt 2 mit Florian | Zweite Zone spielbar, Liste der Befunde, Morph-Animation final | Zone ohne neuen Engine-Code (Ausnahmen gelistet), 60 fps, Prüfer grün, Florians Freigabe | L | E6, Neonpark-Satz |
@@ -538,7 +577,7 @@ Basiszone, keine Fehler in der Browserkonsole. Spanne: Etappe 1 (Paket 10).
 
 Jeder Schritt endet mit `npm test`, `npm run build` und dem Replay; nach Schritt 5 und nach Schritt 10 steht ein Tor
 mit Florian. Die Session arbeitet auf einem eigenen Branch und geht am Tor per Pull Request nach `main`
-(`docs/HANDOVER.md`, Abschnitt 4).
+(Übergabe, Abschnitt 4; heute `docs/archiv/HANDOVER-2026-10-27.md`).
 
 1. Three-Szene hinter Schalter im Spiel (`?world=1`), Pixi-HUD im selben Kontext mit Zustands-Reset je Bild,
    Kamera-Adapter (18 Grad, Kamerafahrt, vertikale Streckung), Boden und geschlossener Erdschnitt; 100-Punkte-Test
@@ -559,7 +598,7 @@ mit Florian. Die Session arbeitet auf einem eigenen Branch und geht am Tor per P
 9. Testfahrt aus dem Editor, Ziele je Level eintragen (Katalog v1, statische Ziele live), Fortschritts- und
    Aufwertungsstufe wählen; Prüfung: Zonendatei lädt deterministisch, Standbild-Test.
 10. **Tor 1b:** Florian baut selbst einen Testausschnitt (Station, Hügel, Fenster-Element, Baustelle); das Handy zeigt
-    dasselbe; Fixes; Doku in `docs/TECH.md` und `docs/HANDOVER.md`; Pull Request nach `main`.
+    dasselbe; Fixes; Doku in `docs/TECH.md` und der Übergabe (heute `docs/archiv/HANDOVER-2026-10-27.md`); Pull Request nach `main`.
 
 **Stand:** Schritte 1 bis 4 gebaut am 24.10.2026, Tor 1a bestanden am 25.10.2026, Schritte 6 bis 9 gebaut am 25.10.2026 (Nachträge in Paket 1); Tor 1b bestanden am 25.10.2026, Etappe 1 abgeschlossen, Pull Request nach `main` gestellt.
 
@@ -636,6 +675,13 @@ als Höhe über der Station).
 
 **Stand:** Arbeitsschritte bestätigt am 25.10.2026; Schritte 1 bis 3 und 3b (Aufzug) gebaut am 25.10.2026 (Nachträge in Paket 3, 2 und 4). **Tor 2a bestanden (Florian, 25.10.2026):** Startart-Platzhalter und Aufzug reichen bis zur Stilprobe, der Knopf am Hebel ist verständlich, die Kettenregel passt, das Handy läuft flüssig. Schritte 5 bis 7 gebaut am 25.10.2026 (Nachträge in Paket 5 und 2). Tor 2b, erster Test (Florian, 25.10.2026): Bahn in Räumen und an Berg und Tunnel unschön und springend; Fix (Glättung der Tiefenwahl an Wänden und Räumen, Nachtrag in Paket 5) gebaut am 25.10.2026. Zweiter Test (Florian, 25.10.2026): nicht bestanden, Leitsätze und Vorschlag „Freiraumfeld“ in Paket 5; sofort gebaut: Durchfahrt durch Fenster (Magnet) und Vorschau ohne Wackeln; wartet auf Florians Entscheidung zum Vorschlag und seinen nächsten Test.
 
+**Nachtrag 27. bis 30.10.2026:** Florian hat das Freiraumfeld bestätigt; gebaut sind Feld, Pinsel, Spitze sowie Stützen
+und Fahrt auf dem Feld, dazu Teile der Ebenen-Probe (Paket 5). Seit 27.10. ruht Etappe 2 nach Schritt 7, Tor 2b ist
+offen. Der Rest wird auf Ebenen neu geschnitten (`docs/ZONENEDITOR-PLAN.md` 8): Schritt 8 (Tor 2b) wird durch Tor S4
+ersetzt, Schritt 9 teilt sich in Spielobjekte auf Kanten (S4) und Portale (S7), Schritt 10 wird eine Fläche mit
+Wassermaterial, Schritt 11 baut Florian im Editor aus Formen statt Klötzchen. Alles zur Bahn kommt, wenn
+Editorwerkzeuge und Strich final sind (Florian, 30.10., Kopf).
+
 ### Rückfragen zu Paket 10
 
 1. Spannen und Reihenfolge so annehmen, mit der Stilprobe parallel zu E3, sobald der Figma-Weg steht? **Ja (24.10.);
@@ -654,11 +700,11 @@ als Höhe über der Station).
 | Füllrate auf dem Handy bei vielen großen halbtransparenten Kulissen | E1, E5 | DPR höchstens 2, Kulissen auf Inhaltsgrenzen schneiden, opaker Kern per Alpha-Test, schmaler Blend-Rand, Shadow Map 1024² abschaltbar | Messung jede Etappe |
 | Speicher (Texturen, Räume, zweite Zone) | E5, E7 | KTX2 (UASTC) ab E5, Atlanten je Zone, Master höchstens 2048, Bundles je Abschnitt mit Vorladen und Entladen | Speicher-Messung E6 |
 | Zwei Renderer im selben Kontext | E1 | Zustands-Reset je Bild, Texturen getrennt, Szenarien prüfen Konsole und Bild | Tor 1a |
-| Zeichnen in Perspektive bringt Tiefenfehler | E1, E3 | Replay gegen alle Aufnahmen je Etappe, Fels-Regeln und Freiraum über den Tiefenlöser, Kreuzungstausch als Rückfall | Replay grün |
+| Zeichnen in Perspektive bringt Tiefenfehler | E1, E3 | Replay gegen alle Aufnahmen je Etappe, Fels-Regeln und Freiraum über den Tiefenlöser, Kreuzungstausch als Rückfall (30.10.: die Aufnahmen bis 29.10. sind kein Maßstab, neue nur auf Florians Wunsch) | Replay grün |
 | Vorab-Fahrt (Schanze, Durchbruch, Entgleis-Warnung) kostet beim Zeichnen | E3 | nur nach dem Loslassen, mit Zeitbudget, abschaltbar | Handy-Messung E3 |
-| Graben entwertet Tunnelrätsel oder frisst Zeit | nach E7 | Stufe 2 nur in markierten Grabzonen und nur nach einem Labor-Test; Fels bleibt fest | eigenes Tor |
+| Graben entwertet Tunnelrätsel oder frisst Zeit | nach E7 | Stufe 2 nur in markierten Grabzonen und nur nach einem Labor-Test; Fels bleibt fest (30.10.: gilt seit 27.10. erst einmal nicht mehr, Material „grabbar“, B2) | eigenes Tor |
 | Figurenzahl (Schlange, Zug, Bild im Bild) | E2, E5 | Deckel zwölf in der Schlange, Cut-outs als Instanzen, Bild im Bild in 2D | Messung E3, E5 |
-| Editor-Oberfläche frisst die Etappe | E1 | Stufe 1 nur mit Maus und Tastatur ohne Politur, Pixi-HUD vorhanden, Florian testet am Ende der Woche | Tor 1b |
+| Editor-Oberfläche frisst die Etappe | E1 | Stufe 1 nur mit Maus und Tastatur ohne Politur, Pixi-HUD vorhanden, Florian testet am Ende der Woche (30.10.: mit dem Zonen-Editor das Hauptrisiko, Gegenmaßnahmen in `docs/ZONENEDITOR-PLAN.md` 7) | Tor 1b |
 | Figma-Weg läuft nicht aus der Session | E4 | Rückfall: Florian erzeugt aus demselben Auftragstext; Prüfung und Nacharbeit bleiben bei der Session | vor E4 |
 | Teile sind nicht pixelgenau, Nacharbeit wächst | E4, E5 | automatische Prüfung je Teil, Kontaktbogen, Deckel: zwei Durchläufe je Teil, dann Florian oder Platzhalter bleibt | je Satz |
 | Florians Teile und Entwürfe kommen später als die Etappe | E4, E5 | Platzhalter bleiben spielbar; die Stilprobe wartet, der Rest nicht | Tor E4 |
@@ -667,7 +713,8 @@ als Höhe über der Station).
 | Morph „sauber“ ohne Maßstab | E5 | messbare Kriterien aus 12.2, Video vom Handy, Schritt 2 erst nach Freigabe | Tor E5 |
 | Neonpark braucht doch Code | E7 | jede Änderung als Befund gegen das System, zuerst Daten und Shader-Presets versuchen | Tor E7 |
 
-**Nicht in diesem Plan (bewusst später):** Audio, Store-Builds, Community und Teilen, Spine, Windböe und Wippe,
+**Nicht in diesem Plan (bewusst später):** Audio, Store-Builds, Community und Teilen, Spine für die Figuren (Richtlinie 8; das Werkzeug „Netz wie Spine“ im
+Zonen-Editor seit 30.10. ist ein Editorwerkzeug, keine Spine-Laufzeit), Windböe und Wippe,
 Lawine, Zustieg unterwegs, Graben Stufe 2 (nur nach Test), Rolls und Schrauben vor den finalen Wagen, der Inhalt der
 Veröffentlichung (Startzonen überarbeitet Florian nach E8 neu).
 
@@ -764,6 +811,12 @@ gebaut und gegen Florians Studien gehalten werden:
 
 Empfehlung: C. Tor: jede Familie neben Florians Studie als Standbild aus dem Labor, Florian gibt sie frei; Messung
 auf dem Handy mit dem Holz-Typ (heute 469 Draw Calls, Ziel unter 150 mit Instanzen).
+
+**Nachtrag 30.10.2026:** Stützen stehen jetzt auf den Andockkanten der Ebenen; wo keine Kante trägt, hält die Stütze an
+Wand oder Decke (Wand- und Deckenhalter im Zonen-Editor). Das Prinzip ist gebaut, die Formen sind Platzhalter. Welche
+Formen wir bauen und brauchen, zeigt sich erst mit dem Look (Florian, 30.10.: „Das müssen wir erst herausfinden“); bis
+dahin bleiben Varianten und Mischregel Platzhalter, es gibt nichts zu wählen, und die Session legt keine Variantensätze
+mehr vor. Gemalte oder modellierte Halter gehören zur Stützen-Werkstatt (E4).
 
 ### Vorschlag 3.5: Startarten sichtbar
 
@@ -888,6 +941,11 @@ Meshy-Modelle aus den GPT-Earle-Teilen fand er sehr gut, und eine gemalte Textur
 anpassen. Ob an einer Stelle ein gemaltes Teil oder ein 3D-Teil mit gemalter Textur besser aussieht, bleibt offen und
 wird an der Stilprobe (E4) je Stelle getestet, zum Beispiel ein Hero-Fels mit Tunnel in beiden Bauweisen nebeneinander
 auf dem Handy. Die Richtlinie trägt den Nachtrag in den Abschnitten 0, 3 und 9.
+
+**Nachtrag 30.10.2026:** Der Klötzchen-Editor, in dem der Platzhalter-Satz aus 8a.1 gesetzt wurde, ist entfernt.
+Platzhalter sind jetzt Formen auf Ebenen mit Rollen, Material und Andockkanten (`docs/ZONENEDITOR-PLAN.md` 4.4 bis 4.9).
+Der Ablauf aus 8a.2 bleibt; die genaue Form eines Auftrags geben die SVG und die Malvorlage mit Fingerabdruck aus dem
+Editor vor (`docs/ZONENEDITOR-PLAN.md` 4.8 und 4.10).
 
 ## Paket 6: Figuren, Schlange, Fahrgäste
 
@@ -1017,7 +1075,7 @@ kommt aus dem Pool; die Reihenfolge im Zug ist die Reihenfolge in der Schlange.
 
 ### Vorschlag 5.1: Regeln für Fels, Öffnungen und Baustellen
 
-- **Fels ist fest.** Kulissen mit Volumen (Dreiteiler, Säulen, Höhlenkästen) lassen die Bahn nur durch ihre Öffnungen
+- **Fels ist fest.** (Gilt seit 27.10.2026 erst einmal nicht mehr, Nachtrag am Ende von Paket 5.) Kulissen mit Volumen (Dreiteiler, Säulen, Höhlenkästen) lassen die Bahn nur durch ihre Öffnungen
   (Fenster, Tunnelmünder, Höhlenräume) und durch Baustellen. Zielt der Strich in festen Fels, weicht der Tiefenlöser auf
   eine freie Spur vor oder hinter dem Fels aus, wenn es eine gibt; sonst wird der Abschnitt rot markiert (wie heute die
   Schwachstellen) mit dem Hinweis „Fels“, und beim Loslassen endet die Bahn davor.
@@ -1044,7 +1102,7 @@ kommt aus dem Pool; die Reihenfolge im Zug ist die Reihenfolge in der Schlange.
 Stufe 1 (Basiszone): vorgefertigte Räume, Münder, Kapseln und Baustellen. Stufe 2: Grabzonen in weicher Erde als
 Daten (zwischen Räumen, unter Wiesen), in denen der Strich gräbt: Skalarfeld und Marching Squares (Richtlinie 4),
 Animation beim Ziehen (Erde bricht auf, Randstreifen und Innenschatten im Stil), geprüft um die Fahrzeughülle. Tor
-vor Stufe 2: ein Labor-Test der Grab-Animation im Earle-Rayman-Look und eine Handy-Messung. Fels bleibt immer fest.
+vor Stufe 2: ein Labor-Test der Grab-Animation im Earle-Rayman-Look und eine Handy-Messung. Fels bleibt immer fest (gilt seit 27.10.2026 erst einmal nicht mehr, Nachtrag am Ende von Paket 5).
 Florians Vorbehalt: kann sich noch ändern.
 
 ### Vorschlag 5.4: Wasser mit Schaltern
@@ -1183,6 +1241,14 @@ seit Etappe 1 da) und bekommt den Schalter „Fahrt dahinter gedämpft“; die S
 liegen auf der Wasserfläche. Der Durchbruch wirkt in Etappe 2 nur in der Fahrt (die Wand zersplittert bei Mindesttempo,
 sonst endet die Fahrt davor); die Vorab-Fahrt beim Zeichnen und die Zielart kommen mit E3.
 
+**Nachtrag 27. bis 30.10.2026:** Die Ebenen-Probe ist freigegeben und zum Teil gebaut (Körper aus Kurvenpfaden, SVG
+hin und zurück, Zone `ebenen` aus Szene 06; gesichert als `b30bb71`); der Zonen-Editor setzt sie fort
+(`docs/ZONENEDITOR-PLAN.md` 1.2 und 1.3). „Fels ist fest“ (5.1, 5.3) gilt nach Florians letzten Recherchen erst einmal
+nicht mehr (27.10.): Das Material „grabbar“ wird gebaut; ob es daneben noch „fest“ braucht, zeigt der Test (Entscheidung
+B2). Portale werden dynamisch gesetzt; wie Durchfahrten gemacht werden, ob sie sichtbar sind und ob der Pinsel dynamisch
+gräbt, klären wir später (B3, Stufe 7 des Zonen-Editors). Die Tunnelkapsel aus Etappe 2, Schritt 9, geht damit in den
+Portalen auf, Wasser wird eine Fläche mit Wassermaterial (`docs/ZONENEDITOR-PLAN.md` 8).
+
 ## Paket 0: Art Direction v2 (Look)
 
 ### Bisheriger Stand (Gedächtnisstütze für Runde 4)
@@ -1194,7 +1260,7 @@ sonst endet die Fahrt davor); die Vorab-Fahrt beim Zeichnen und die Zielart komm
   Stahl (K12). Runde 1: der Stil ist einigermaßen festgelegt, die Visuals zeigen ihn am besten, aber nur in
   Ausschnitten. Runde 3: die Visuals sind feste Stilvorlage für die Figuren, etwas flacher und einfacher schattiert.
   Runde 2: Stützen cool und gemalt wie die Studien; Referenzen für Bahn und Station erst herausfinden.
-- **Alter Stil (`docs/ART.md`, wird ersetzt):** drei harte Töne, Punktraster auf Schattenseiten, schwarze Stämme mit
+- **Alter Stil (`docs/archiv/ART-v1-2026-10-21.md`, wird ersetzt):** drei harte Töne, Punktraster auf Schattenseiten, schwarze Stämme mit
   Farbflecken, Hügel als Bänder, Luftperspektive in Stufen, Leuchten nur auf Interaktivem, Tinte-Konturen, Papier-Sticker
   als UI.
 - **GPT-Vorschlag** (`refs/traumacoaster-gpt explore/doc/Art-Direction-Vorschlag.md`): Earle prägt Formen und
@@ -1206,7 +1272,7 @@ sonst endet die Fahrt davor); die Vorab-Fahrt beim Zeichnen und die Zielart komm
   die Visuals 5 bis 8 treffen Detailgrad und Stil, 13 und 52 sind zu dicht.
 - **Übergabe, Paket 0:** eingefrorene Referenzen, zehn Regeln (Formen, Kanten, Detaildichte je Quadratmeter,
   Farbrollen, Lichtrichtung, Bahn als klarste Form, Figuren, UI), Zonen-Looks als Presets, die ersten Dreiteiler, eine
-  Stilprobe als Tor, bevor Assets in Menge entstehen; ersetzt `docs/ART.md`. Entscheidung 3 (Referenzen einfrieren).
+  Stilprobe als Tor, bevor Assets in Menge entstehen; ersetzt `docs/archiv/ART-v1-2026-10-21.md`. Entscheidung 3 (Referenzen einfrieren).
 - **Aus den bestätigten Paketen:** Platzhalter zuerst, Grafiken ersetzen sie (8a); Looks je Fortschrittsstufe (2);
   Figuren nach den Visuals (6); Stützen-Werkstatt gegen Florians Studien (3).
 
@@ -1282,7 +1348,7 @@ und die Basiszone v1 aus Körpern statt Klötzchen.
 Flächen hinter der Bahn, Größe von Bahn und Wagen im Bild). Für Bahn und Station vorläufig Florians Bahnstudien, für
 Figuren die Visuals (Paket 6). Die endgültige Synthese ist das Ergebnis der Stilprobe (0.2), nicht ihre Vorgabe.
 
-**Zehn Regeln als Entwurf** (sie ersetzen `docs/ART.md`, sobald die Stilprobe steht; bis dahin gelten sie als
+**Zehn Regeln als Entwurf** (sie ersetzen `docs/archiv/ART-v1-2026-10-21.md`, sobald die Stilprobe steht; bis dahin gelten sie als
 Arbeitsregeln für Platzhalter-Ersatz und Aufträge):
 
 1. **Keine Konturen.** Weder um Landschaft noch um Figuren noch um die Bahn. Lesbarkeit kommt aus Farbwert,
@@ -1314,6 +1380,11 @@ drei Dreiteiler (Baum mit Fenster, Fels mit Tunnel, Portal), Bahn eines Typs mit
 Häuschen, eine Figur in der Schlange und im Wagen, ein Coin-Satz, dazu Licht, Schatten, Nebel, Funkeln. Abnahme: ein
 Standbild im Hochformat vom Handy neben Bild 15 und 04, Florians Freigabe. Erst danach entstehen Teile in Menge
 (Paket 8b), und aus der Stilprobe wird das Regelwerk (0.1) endgültig.
+
+**Nachtrag 30.10.2026:** Die drei Dreiteiler gehören zur Klötzchen-Welt. In der Ebenen-Welt entstehen gemalte Teile nach
+Malvorlagen aus dem Zonen-Editor (Stufe 6; Florian, 30.10.: „Tor 6 ist vorerst ok.“). Die Stilprobe bleibt das Tor für
+den Look und für den Vergleich gemaltes Teil gegen 3D-Teil; Stufe 5 und 6 liefern die Werkzeuge, Etappe 4 wird dadurch
+kleiner (`docs/ZONENEDITOR-PLAN.md` 8).
 
 ### Vorschlag 0.3: Funkeln-Shader
 
@@ -1418,7 +1489,7 @@ Aufnahmen und Tests der Lesarten bleiben, soweit sie den Pinsel prüfen. Der Les
 
 **Stand 24.10.2026 (Etappe 1, Schritt 4):** Lesart-Knopf und Spur-Filter sind raus; die drei alten Lesarten bleiben
 im Code nur noch per Adresse (`?stage`, `?single`, `?lanes`) für Szenarien und Replay. Die 150 Level liegen weiter in
-`src/levels` und tragen bis zum Zonen-Editor (Schritt 6) die Basiszone-Arbeit; als Inhalt fallen sie mit der Zonendatei.
+`src/levels` und tragen bis zum Klötzchen-Editor (Etappe 1, Schritt 6) die Basiszone-Arbeit; als Inhalt fallen sie mit der Zonendatei.
 
 ### Vorschlag 7.3: Bug-Backlog aus dem Testtag (Entscheidung 5)
 
@@ -1458,6 +1529,14 @@ gebaut nach der Basiszone, zuerst für „Eigene Bahnen“ (Sandkasten, GDD 12),
    gebaut nach der Stilprobe, zuerst im Sandkasten getestet, dann in Leveln, wo die Zone es erlaubt.
 
 **Status: bestätigt am 24.10.2026.**
+
+**Nachtrag 30.10.2026:** Die Arbeit am Strich aus 7.3 (Strichintelligenz, Schleifen, Punkte, Bahnende) lief am 28. und
+29.10. in der Pinsel-Studie (`docs/PINSEL-STUDIE.md`). Florian (29.10.): „Ich würde den Editor jetzt mit dem Strich, den
+wir haben, fertig bauen und dann noch mal versuchen, eine Lösung zu finden.“ Seitdem ist der Strich für die Editor-Zeit
+eingefroren; wie es weitergeht (Strich 1, Strich 2 oder eine Lesart ohne Formregeln), entscheidet Florian später.
+Aufgenommen wird nur auf seinen Wunsch (`TC_RECORD=1`); die Aufnahmen bis 29.10. sind kein Maßstab, die Prüfung gegen
+die Aufnahmen aus 7.3 wartet auf neue. Bis zur Entscheidung stehen Strich 1 und 2, die alten Lesarten und die
+Zeichengrößen im Testmenü des Zonen-Editors.
 
 ## Paket 12: Karte und Morph (neu, 24.10.)
 
@@ -1532,7 +1611,7 @@ Keine; die Kriterien in 12.2 sind Vorschlag und werden am ersten Video geprüft.
 - **Speicher (Richtlinie 2 und 12):** eine 2048er-Textur belegt 16 MiB; KTX2 von Anfang an, Atlanten, Kulissen auf
   Inhaltsgrenzen geschnitten; Labor-Umwandlung: 34 Teile, 2,2 MB WebP, hart freigestellt.
 - **Heute im Repository:** `scripts/art-prep.mjs` (Chroma-Key, Zuschnitt, kachelbar, WebP, Manifest),
-  `scripts/art-kit.json` (Name, Größe, Regel, Prompt je Kachel), `docs/ART-PROMPTS.md` daraus erzeugt; Quellbilder
+  `scripts/art-kit.json` (Name, Größe, Regel, Prompt je Kachel), `docs/archiv/ART-PROMPTS-2026-10-21.md` daraus erzeugt; Quellbilder
   liegen nicht im Repository (lokal, Archiv in einer Figma-Datei); Drop-in über das Manifest; Labor-Assets mit
   `manifest.json` (Breite, Höhe, Seitenverhältnis, Größe).
 - **GPT-Pipeline (Umsetzungsplan 14):** Master-Komposition festlegen, zusammengehörige Körper gemeinsam erzeugen,
@@ -1592,6 +1671,10 @@ Wachstumsstufe), ob eine Farbmaske existiert, Quelle, Prompt und Version. Das Um
 2. **Alpen-Satz:** aus den Platzhaltern der Basiszone (Richtwert 50 bis 70 Teile je Zone, Richtlinie 11), in Familien
    (Landmarken, Füller, Untergrund, Wasser, Station, Deko, interaktive Elemente).
 3. **Neonpark-Satz** für die zweite Zone (Paket 9).
+
+**Nachtrag 30.10.2026:** Für den Stilproben-Satz gilt der Nachtrag zu 0.2. Die genaue Form jedes Auftrags kommt als SVG
+und Malvorlage aus dem Zonen-Editor; die Prüfung „passt es genau“ (8b.2) vergleicht gegen diese Form statt gegen einen
+Klotz (`docs/ZONENEDITOR-PLAN.md` 8).
 
 ### Vorschlag 8b.5: Format und Grenzen
 

@@ -102,7 +102,7 @@ const SECTIONS: Section[] = [
       { key: 'vorlaufm', label: 'Vorlauf, bis die Tiefe fest ist (m)', def: FREEZE },
       { key: 'fest', label: 'fest hinter dem Ende (m)', def: FIX_BEHIND },
       { key: 'freezemax', label: 'steiles offenes Stück bleibt Höhe ab (m)', def: LOOK0.freezeMax },
-      { key: 'lookstart', label: 'Vorschau ab (m)', def: LOOK0.lookStart },
+      { key: 'lookstart', label: 'nach dem Anschluss gleich fest (m)', def: LOOK0.lookStart },
       { key: 'tol', label: 'Fit-Toleranz (Faktor)', def: FIT0.tolScale },
       { key: 'span', label: 'Gleichverteilung: Spanne (m)', def: FIT0.evenSpan },
       { key: 'turn', label: 'Gleichverteilung: Winkel (°)', def: FIT0.evenTurn },

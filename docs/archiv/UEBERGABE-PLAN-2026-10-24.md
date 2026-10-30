@@ -1,6 +1,8 @@
+> **Archiv (30.10.2026):** Eingabe der Plan-Session vom 24.10.2026; ihr Ergebnis ist [GROSSER-PLAN.md](../GROSSER-PLAN.md). Nur noch Geschichte.
+
 # Übergabe für die Plan-Session: der große Plan für die erste Zone
 
-> **Erledigt (24.10.2026, spät):** Der Plan steht in [GROSSER-PLAN.md](GROSSER-PLAN.md), Paket für Paket mit Florian
+> **Erledigt (24.10.2026, spät):** Der Plan steht in [GROSSER-PLAN.md](../GROSSER-PLAN.md), Paket für Paket mit Florian
 > bestätigt. Abschnitt 1 dieser Übergabe (Alpen mit Leveln) ist durch den Zuschnitt in Abschnitt Z des Plans
 > ersetzt (Look und Werkzeuge, Basiszone als Werkstatt, Level später); die Entscheidungen aus Abschnitt 3 sind im
 > Plan beantwortet. Diese Datei bleibt als Geschichte des Plans.

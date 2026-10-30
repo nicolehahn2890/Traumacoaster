@@ -55,7 +55,7 @@ gemalte Ebenen werfen gescherte Kopien; Blob-/Kontakt-Sprites an Pfeilerfüßen.
   Demo mit hoher Auflösung hat ein iPhone 12 neu gestartet (Rat: PCF für Dynamisches, Gebackenes für Statisches).
   Alpha-Test/`discard` senkt auf Apple-GPUs die HSR-Effizienz, im Shadow-Pass unvermeidbar, also wenige Caster.
 - Statisch: `autoUpdate = false`, `needsUpdate` bei Bedarf; bei scrollender Kamera folgt das Frustum, Gewinn gering.
-- Fake-2D: Rayman Legends konnte Schatten nicht in verformbare Sprites backen und erzeugt sie dynamisch aus
+- Fake-2D (*Nachtrag 30.10.2026: richtiggestellt im Zonen-Editor-Plan, Abschnitt 3.2*): Rayman Legends konnte Schatten nicht in verformbare Sprites backen und erzeugt sie dynamisch aus
   Sprite-„Volumen“ (SIGGRAPH-2014-Poster). Umsetzung: dieselbe Textur als zweite Plane, schwarz, Alpha 0,3–0,5,
   gescherte Y-Skalierung in Lichtrichtung, auf die Bodenebene; Weichzeichnen per Mipmap-Bias. Kontaktschatten:
   `ContactShadows` (teuer, `frames = 1` für statische Pfeiler) oder gebackenes AO-Sprite je Fußtyp.

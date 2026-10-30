@@ -1,37 +1,80 @@
 # Trauma Coaster – Technische Umsetzung
 
+Stand 30.10.2026, Zweig `zoneneditor`. Stand und Plan der Arbeit stehen in `docs/ZONENEDITOR-PLAN.md`. Verlauf, alte
+Messungen und abgelöste Regeln stehen wörtlich in `docs/archiv/TECH-VERLAUF.md`, geordnet nach den Abschnitten hier.
+
 ## 1. Stack
 | Bereich | Wahl | Grund |
 |---|---|---|
 | Sprache | TypeScript (strict) | Typsicherheit für Geometrie und Physik, gute Toolchain |
-| Build | Vite 8 | Schnell, `base: './'` für GitHub Pages und Capacitor |
-| Rendering | PixiJS 8 (WebGL, WebGPU-fähig) | Heute: Vektor-Graphics plus prozedurale Canvas-Texturen, keine Shader; der gemalte Look (Texturen, Stipple-/Glow-/Wasser-Shader) kommt mit dem Stil-Update, siehe docs/ART.md |
+| Build | Vite 8 | Schnell, `base: './'` für GitHub Pages und Capacitor; der Dev-Server sichert Zonen und nimmt Bilder an (4g, 4l) |
+| Welt | Three.js r186 (WebGL2) | Weltrenderer (4f): in Zonen immer, in Levels mit `?world=1`. Boden, Bahnprofile, Stützen, Wagen, Kulissen, die Ebenen des Zonen-Editors als Shader-Material, Licht, Schatten, Nebel, Looks |
+| 2D | PixiJS 8 | Bedienelemente, Zeichen-Overlay und Himmel (mit dem Weltrenderer im selben WebGL-Kontext, 4f); ohne Weltrenderer die alte Bühne (Vektor-Graphics, Band-Meshes, prozedurale Canvas-Texturen) |
+| Bilder | PNG, WebP, KTX2 | Bilder der Zonen als KTX2 (Basis Universal mit `ktx2-encoder`, Transcoder aus Three, 4l); gemalter Kachelsatz unter `public/art` (Kapitel 6) |
 | Physik Fahrgäste | Rapier2D (WASM, compat-Build) | Stabile Ragdolls mit Gelenken; compat-Build braucht keinen separaten WASM-Loader |
-| Physik Zug | Eigenes Modell entlang der Bogenlänge | Deterministisch, schnell, exakt steuerbar (Launch, Kette, Bremse) |
-| Tests | Vitest | Geometrie, Gesten-Erkennung, Physik |
-| Screenshots | Playwright (Chromium) | Sichtprüfung in Hoch-/Querformat |
+| Physik Zug | Eigenes Modell entlang der Bogenlänge | Deterministisch, schnell, exakt steuerbar (Launch, Kette, Bremse); Fahrregeln in Kapitel 5 |
+| Tests | Vitest | Reine Module in Node ohne DOM und WebGL: Geometrie, Lesarten, Physik, Zonen, Editor-Logik |
+| Szenarien | Playwright (Chromium, SwiftShader) | 33 Szenarien im Browser (1–10 Spiel, 11–33 Zonen-Editor), Screenshots |
+| Skripte | tsx, sharp | Skripte in TypeScript, Bildaufbereitung (Kachelsatz, Malvorlagen) |
 | Mobile | Capacitor (später) | iOS/Android-Wrapper um denselben Build |
 | Hosting | GitHub Pages | `.github/workflows/deploy.yml` baut `dist/` |
 
 ## 2. Projektstruktur
 ```
 src/
-  main.ts              Einstieg: Pixi-App, SceneManager, Resize, Orientation
-  app/                 Szenen: Splash, Start (Karte als Drehscheibe), Level, Ergebnis, MeineBahnen, Editor
-  core/                math (Bezier, Spline, Bogenlänge, Krümmung), gestures, input, i18n, storage, rng
-  track/               TrackPath-Modell, StrokeToTrack (RDP + Bezier-Fit), Stage (Spuren), Overdraw-Merge
-  physics/             TrainSim (Zug), Forces (g-Kräfte), Passengers (Rapier-Ragdolls), Events
-  render/              Sky (Himmel, Wolken), Terrain, TrackRenderer (Schienen als Band-Mesh), supports/ (Pfeiler je Welt), TrainRenderer, Props, Camera, Effects, shaders/ (Stippling, Leuchten), paint (Canvas-Texturen), palette (Farbtöne)
-  assets/              Manifest mit Drop-in-Logik für echte gemalte Texturen (public/art)
-  levels/              types, worlds, levels (150), goalLabels, GoalEvaluator
-  editor/              Figuren-Editor (Rig-Teile, Varianten, Speichern)
-  ui/                  HUD (Anforderungen), Play, Regal, Chips, Buttons (Pixi-basiert)
-tests/                 Vitest-Tests
-scripts/               gen-levels-doc.ts (LEVELS.md), screenshots.mjs (Playwright)
-docs/                  GDD.md, LEVELS.md, TECH.md, research/
-public/art/            Optionale, echte gemalte Texturen (Drop-in, siehe Kapitel 6)
+  main.ts              Einstieg: Adresse (?zone, ?level, ?scene), Schriften, Kachelsatz, erste Szene
+  app/                 game.ts (App-Shell: Ticker, ein WebGL-Kontext für Three und Pixi, Dev-Overlay, Szenenwechsel),
+                       scene.ts, mapTransition.ts (Übergabe Karte ↔ Level), wheelPhysics.ts (Glücksrad)
+  app/scenes/          splash.ts, start.ts (Karte als Drehscheibe, Übergang), level.ts (Zeichnen, Bearbeiten, Fahrt,
+                       Ergebnis, Zonen; hier hängt sich der Zonen-Editor ein), myTracks.ts (Meine Bahnen),
+                       editor.ts (Figuren-Editor)
+  core/                math.ts, math3.ts, bezierFit.ts, bezierFit3.ts, rdp.ts, segmentGrid.ts, input.ts (Zeiger, Gesten,
+                       Tasten), i18n.ts mit locales/ (de, en), storage.ts, fx.ts, dev.ts (alles frei), devOverlay.ts,
+                       audio.ts (nur Hooks)
+  track/               Strich → Bahn: brush.ts und brushTrack.ts (Pinsel, Strich 1), strich2.ts (Strich 2),
+                       gesture.ts und strokeToTrack.ts (alte Lesarten, Schluss, Fortsetzen), reduceNodes.ts,
+                       model.ts (Modell, Abtastung, Rahmen), stage.ts (Projektion, Kamera), edit.ts, overdraw.ts,
+                       pathSplit.ts, crossings.ts, inspect.ts (Schwachstellen), strokeBuffer.ts, turnCurve.ts
+  physics/             trainSim.ts (Zug, Fahrregeln), flightSim.ts (Freiflug), passengers.ts und belts.ts (Fahrgäste,
+                       Gurte), terrain.ts, interpolate.ts
+  render/              Bühne in Pixi: worldView.ts (Spur-Ebenen), sky.ts und skyMath.ts, terrainRenderer.ts,
+                       trackRenderer.ts, stripMesh.ts, supports/supportStyle.ts, trainRenderer.ts, characterSprite.ts,
+                       cutoutAnimator.ts, shaders/glowLayer.ts, effects.ts, camera.ts, measureOverlay.ts,
+                       paint.ts (Canvas-Texturen), palette.ts, props.ts, mgraphics.ts, geom.ts;
+                       Karte: miniature.ts, bend.ts, unfold.ts
+  world/               Weltrenderer in Three: renderer.ts, camera.ts, ground.ts, textures.ts, light.ts, looks.ts,
+                       trackMesh.ts, trackBuilder.ts, trackTypes.ts, train.ts, supports.ts, foundations.ts,
+                       elements.ts, levelElements.ts, stationElements.ts, startElements.ts;
+                       für den Zonen-Editor: planeMesh.ts, imageTextures.ts, rimMesh.ts, crownMesh.ts,
+                       earleTextures.ts, earleMessung.ts, sliceMesh.ts
+  zone/                Zonendatei und Regeln ohne DOM: types.ts, io.ts, build.ts, groups.ts, abilities.ts, sites.ts,
+                       underground.ts, field.ts (Freiraumfeld); Ebenen und Formen: nodes.ts, path.ts, faces.ts,
+                       faceCurves.ts, shapeOps.ts, shapeGroups.ts, planeGroups.ts, pathfinder.ts, svgPlanes.ts,
+                       svg.ts, trace.ts, paint.ts, gradients.ts, styles.ts, dock.ts, planeStack.ts, playObjects.ts,
+                       rims.ts, template.ts, mesh.ts, proportional.ts, earle.ts, crown.ts, edgeWave.ts,
+                       edgeDistance.ts, slices.ts
+  zoneeditor/          Oberfläche des Zonen-Editors (HTML über dem Spielbild): planeEditor.ts, ui.ts, overlay.ts,
+                       views.ts, history.ts, pathTools.ts, colorMenu.ts, stackPanel.ts, fillParams.ts, sketches.ts,
+                       images.ts, meshTool.ts, xform.ts
+  assets/manifest.ts   Drop-in gemalter Kacheln aus public/art (Kapitel 6)
+  levels/              types.ts, worlds.ts, levels.ts (150 Level), goalLabels.ts, evaluator.ts
+  editor/characters.ts Figuren (Rig-Teile, Varianten)
+  ui/                  widgets.ts (Pixi-Knöpfe, Sticker, Icons), brand.ts, editorLink.ts (Knopf „Editor“),
+                       testMenu.ts (Testmenü, HTML), cameraTiltPanel.ts (Neigung und Tiefen-Lesart, ohne Anzeige)
+  platform/            haptics.ts, safeArea.ts
+tests/                 Vitest (68 Dateien), Node ohne DOM und WebGL
+scripts/               scenario.mjs (33 Szenarien), screenshots.mjs, playtest.mjs, replay-strokes.ts, debug-stroke.ts,
+                       testzonen.ts, ebenen-zone.ts, zone-ktx2.mjs, tor-s6.ts, https-cert.sh, gen-levels-doc.ts,
+                       art-prep.mjs, art-prompts-doc.mjs, art-kit.json, lab-stills.mjs; Messungen: pinsel-messung.ts,
+                       pinsel-bildzeiten.mjs, earle-bildzeiten.mjs; artifact-page.py (Kamerawinkel-Artifact)
+docs/                  ZONENEDITOR-PLAN.md (Stand und Plan), TECH.md, RICHTLINIE.md, GROSSER-PLAN.md (ruht),
+                       PINSEL-STUDIE.md (angehalten), research/, archiv/ (u. a. GDD v1, alte Stil-Bibel)
+public/zones/<name>/   Zonendateien: zone.json, Bilder, ktx2.json, vorlagen/
+public/labs/           Tiefen-Labor (tiefe.html)
+public/art/            gemalter Kachelsatz (Drop-in, Kapitel 6)
 public/brand/          illudiy-Logo (Sticker, WebP 1024 px) für den Splash
-public/fonts/          Lobster (illudiy-Markenschrift, OFL) als woff2 + illudiy.css
+public/fonts/          Fredoka, Nunito, Lobster (OFL) als woff2 + illudiy.css
+public/icons/          App-Symbole; dazu public/manifest.webmanifest (Vollbild-App)
 ```
 
 ## 3. Datenmodell der Bahn
@@ -42,17 +85,23 @@ interface TrackNode {
   z: number;      // Tiefe in Spuren (−2..2, kontinuierlich); Welt-Tiefe = z · 8,4 m (LANE_DEPTH)
   inX, inY, inZ, outX, outY, outZ: number; // 3D-Bezier-Handles relativ zum Knoten (z in Spuren)
   roll: number;   // manueller Rollwinkel (Radiant), NaN = automatische Überhöhung
-  kind: 'normal' | 'loopApex' | 'turn' | 'station' | 'closeTurn' | 'closeReturn';
+  kind: 'normal' | 'loopApex' | 'turn' | 'station' | 'closeTurn' | 'closeReturn' | 'lift'; // lift: oberes Ende des Aufzugs (4h)
 }
-interface TrackPath { nodes: TrackNode[]; elements: TrackElement[]; startType: StartType; templates: Record<string, number>; }
+interface TrackPath {
+  nodes: TrackNode[]; elements: TrackElement[]; startType: StartType; templates: Record<string, number>;
+  closed?: boolean;      // false = offen (Ende nicht an der Station); fehlt = geschlossen
+  closure?: PathClosure; // Protokoll des Rundenschlusses (Kapitel 4, Punkt 7)
+  brush?: boolean;       // mit dem Pinsel gezeichnet: Linie = Bahn, kein Rundenschluss der Bühnen-Lesart
+}
 ```
-- Die Bahn ist ein geschlossener Pfad kubischer Bezier-Segmente in 3D (`src/track/model.ts`). `closure` protokolliert, was der Rundenschluss am gezeichneten Ende entfernt oder überschrieben hat (`PathClosure`), damit `closePath` wiederholbar ist (siehe Kapitel 4, Punkt 7). `sampleTrack` liefert alle 0,25 m Position, 3D-Tangente, 3D-Krümmungsvektor (analytisch aus erster und zweiter Ableitung), Oben-Vektor (Paralleltransport mit Rückzug zur Welt-Senkrechten auf waagerechter Strecke) und Rollwinkel.
+- Die Bahn ist ein Pfad kubischer Bezier-Segmente in 3D (`src/track/model.ts`), geschlossen oder offen (`closed`). `closure` protokolliert, was der Rundenschluss am gezeichneten Ende entfernt oder überschrieben hat (`PathClosure`), damit `closePath` wiederholbar ist (siehe Kapitel 4, Punkt 7). `sampleTrack` liefert alle 0,25 m Position, 3D-Tangente, 3D-Krümmungsvektor (analytisch aus erster und zweiter Ableitung), Oben-Vektor (Paralleltransport mit Rückzug zur Welt-Senkrechten auf waagerechter Strecke) und Rollwinkel.
 - `carFrame(state, v)` gibt den Wagen-Rahmen (T, U, S) mit Schräglage: manuell (`roll`) oder automatisch (`bankAt`: Oben-Vektor zur gefühlten Kraft v²·κ⃗ + g gedreht, max. 80°, keine Neigung bei Airtime).
 - `closeTurn`/`closeReturn` sind automatische Knoten (Rückweg); `trackStats` und die Entgleis-Prüfung ignorieren sie.
-- Oben-Vektor der Schienen (`sampleTrack`, Schritt 4): Parallel-Transport, auf flacher Strecke zur Welt-Senkrechten zurückgedreht (Drehung um die Tangente, höchstens 24° je Meter). Kopfüber bleibt er nur, wo der Transport ihn kopfüber bringt und die Bahn sich nach unten krümmt (oben im Looping); vorher konnte er auf verdrehten 3D-Wegen kopfüber liegen bleiben.
-- Projektion auf die Bühne (`src/track/stage.ts`): `X = x · k(z)`, `Y = y · k(z) + 4,2 · z`, `k(z) = LANE_SCALE^z` mit `LANE_SCALE = 1`: Tiefe läuft auf dem Bild gerade nach hinten, ohne Verkleinerung (mit dem früheren 0,94 lief „gerade nach hinten“ bei 60 m schon 42° schräg über das Bild). Die Kamera rechnet Bühnen-Meter in Pixel um.
+- Oben-Vektor der Schienen (`sampleTrack`): Parallel-Transport, auf flacher Strecke zur Welt-Senkrechten zurückgedreht (Drehung um die Tangente, höchstens 24° je Meter). Seit Studie 17 (29.10.2026) gilt die Regel „aufrecht außer im Looping“ (`framePlan` in `src/track/model.ts`, Test `tests/rahmen.test.ts`): Ein Looping ist ein Durchgang nach oben mit Umkehr, auf den ein Durchgang nach unten mit Umkehr folgt; dazwischen hängt der Wagen innen. Vor jedem anderen Durchgang mit Umkehr dreht sich der Rahmen über 16 m (`TWIST_M`) um eine halbe Drehung und kommt aufrecht heraus. `FRAME_TUNING.upright` schaltet die Regel, `&rahmen=1` zeigt die alte zum Vergleich.
+- Projektion auf die Bühne (`src/track/stage.ts`): `X = x · k(z)`, `Y = y · k(z) + LANE_RISE · z`, `k(z) = LANE_SCALE^z` mit `LANE_SCALE = 1`: Tiefe läuft auf dem Bild gerade nach hinten, ohne Verkleinerung. `LANE_RISE` ist 4,2 bei der Vorgabeneigung (4e). Die Kamera rechnet Bühnen-Meter in Pixel um.
 
-## 4. Strich → Bahn (Pipeline, `src/track/strokeToTrack.ts`)
+## 4. Strich → Bahn in den alten Lesarten (Pipeline, `src/track/strokeToTrack.ts`)
+Bühne und Ein Strich gibt es nur noch per Adresse (`?stage`, `?single`) und im Testmenü (4i); die Spiel-Szenarien zeichnen mit `&stage`. Gezeichnet wird sonst mit dem Pinsel (4b). Bearbeiten (Punkt 10) gilt für alle Striche.
 1. **Aufnahme:** Pointer-Events (Touch und Maus vereinheitlicht), Punkte in Bühnen-Metern.
 2. **Glätten:** Dedupe (0,15 m), Resampling auf 0,15 m, gleitender Mittelwert über 5 Punkte (also über 0,6 m Strich, gleich bei langsamem und schnellem Zeichnen), Resampling auf 0,5 m, Gauß.
 3. **Lesart (`src/track/gesture.ts`, `interpretGesture`):** Ein kausaler Scanner liest den Strich von vorn nach hinten in Abschnitte (`Section`): `floor` (Spur ganzzahlig, mit Spurwechseln), `height` (Spur eingefroren, Höhe aus dem Bild, optional Landespur), `turn` (Halbkreis), `loop` (Kreis). Jede Entscheidung hat begrenzten Vorausblick und wird danach nicht mehr geändert (Vorschau stabil; `tests/gesture.test.ts` prüft: nichts weiter als 30 m hinter dem Finger bewegt sich).
@@ -60,8 +109,8 @@ interface TrackPath { nodes: TrackNode[]; elements: TrackElement[]; startType: S
    - Anstieg: 4-m-Fenster im Mittel steiler als 40° (oder über die Bühne hinaus bei spürbarem Steigen) → Kandidat mit Fuß am Beginn des Steigens; läuft x in den nächsten 8 m nicht um 0,8 m zurück (oder der Strich steigt 2,2 Spuren über den Fuß), ist es ein Anstieg (vorläufig schon Höhe), sonst war es die Beuge einer Bodenkehre. Ausnahme: War das steile Stück eine gerade Rampe (`rampBefore`: über 6 m weniger als 20° Drehung), bleibt es bei x-Umkehr ein Anstieg, und die Umkehr wird eine Steilkurve oben auf der Rampe, statt die Bahn als Bodenkehre auf den Boden zu ziehen.
    - Landung: in der Höhe flach (< 25°) auf der eigenen Bodenlinie (±0,9 m, bzw. ±1,5 m wenn unter der Linie) oder 3 m lang innerhalb ±1 m einer fremden Linie, nachdem der Strich mindestens 1 m herunterkam (oder 6 m lief); dazu die Geste: mindestens 2 m herunter, dann 3 m flach (< 20°) dicht an der eigenen Linie (±1,5 m) → Landung; fremde Linien nur über die 3-m-Regel (±1,2 m). Eine Gerade, die keine Linie trifft, hält ihre Höhe (zwischen den Linien ist jede Höhe nah an irgendeiner Linie; eine Geste „nächste Linie“ zog jede Gerade nach dem Hügel diagonal hinunter). Die Zielspur wird über die letzten 20 m der Abfahrt eingeblendet, die Resthöhe am Landepunkt im selben Fenster abgezogen.
    - Kehre: x-Rücklauf ≥ 2,5 m öffnet die Umkehr (`scanTurn`); festgelegt nach 5 m Rückweg, wenn er gerade ist (Krümmung unter 40 % der Beuge oder unter 0,03 rad/m). Einfahrtsspur = Spur vor der Beuge; Zielspur aus der Spur des Rückwegs (Boden) bzw. gezeichneter Weite (`drawnRadius`, Höhe), mindestens eine Spur, kein Tempo-Zuschlag, in die gezeichnete Richtung (Umkehr nur ohne Platz), begrenzt durch die Bühne; endet der Strich an der Station (`closeAt`, `closeSnap`) und liegt die Kehre in den letzten 40 m, zielt sie auf die Spur der Station. Einfahrt: so weit vor dem Scheitel, wie der Halbkreis weit ist (R·k), in der Höhe aber nie in einer Rampe: steigt der Strich von dort bis zum Scheitel noch über 3 m (`TURN_RAMP_RISE`), rückt die Einfahrt bis 1 m unter den Scheitel, der Bogen beginnt oben. Ausfahrt, sobald der Rückweg um R·k zurück ist, sonst Teilbogen; läuft x vorher wieder 2,5 m vorwärts, ist es keine Kehre (Zickzack): `commitTurn` liefert −(m+1), der vorige Abschnitt wird ab m fortgesetzt (Spurwechsel und Ende wiederhergestellt). Haken und Zickzack setzen den Abschnitt über `scanSection` in einer Schleife fort, nicht rekursiv. Wird der Zickzack gleich dort erkannt, wo die Umkehr gelesen wird (der Strich lief auf derselben Linie zurück und wieder vor, noch weit hinter dem Scheitel), zählt der alte Scheitel nicht mehr (`Resume.fresh`): Sonst fände das Weiterlesen dieselbe Umkehr wieder, ohne Ende (Stapelüberlauf bei 9 von 1004 Lesungen der Aufnahmen, auch mit „Ebenen“ + Auto). Richtung in der Tiefe: am Boden die Spur, die der Rückweg erreicht, in der Höhe nur die Bildhöhe des Rückwegs gegen die Anfahrt (mindestens 1 m tiefer = vorne, sonst hinten). Spurende: Ist in der gewünschten Richtung keine Spur mehr und die Richtung klar gezeichnet (Boden: Rückweg über 1 m jenseits der letzten Linie; Höhe: Rückweg mindestens 1 m höher bzw. tiefer), endet die Lesart am Scheitel (`Scanner.blocked`, `GestureResult.blocked` mit Scheitel, Bogenlänge, Richtung); bei unklarer Richtung nimmt die Kehre die Seite, die geht. Nach der Festlegung wird noch beobachtet, bis der Strich 5 m vorwärts läuft oder 8 m fast gerade: dreht er vorher weiter zur Schleife, wird die Kehre zurückgenommen.
-   - Looping: Drehung seit Beginn der Beuge ≥ 300° in einem Sinn, Strich ≥ 7 m, durchgehend gekrümmt (kein 8-m-Fenster unter 11° Drehung; sonst ist es Kehre plus Rückweg plus Kehre), Höhe/Breite der Schleife 0,45–2,5 (vom Boden aus ≥ 0,7, flache Ovale sind keine Loopings). Schleifenende dort, wo die Drehung nicht mehr zunimmt (spätestens 360°); R = Bogenlänge/Drehung, 3,5–25 m. Ohne Freischaltung wird die Schleife übersprungen. In der Vorschau zeigt eine noch offene Umkehr in der Höhe einen vorläufigen Teilbogen bis zur Maus; ab 200° Drehung (`LOOP_RAW_FROM`) bleibt sie roh (Profil wie gezeichnet), damit die Bahn nicht zwischen Kehre und Looping springt.
-   - Lesart „Ein Strich“ (`single`, Einstellung `strokeMode`, Umschalter `modeBtn` unten links): Der Scanner startet immer in Höhe auf der Spur des Startpunkts, Landungen sind aus. Kehren: Richtung aus dem Vorzeichen des Rückweg-Versatzes (`yDelta`, ab 0,5 m; sonst Drehsinn · Laufrichtung), Spuren = round(|yDelta| / 4,2), eine bis vier; Spurende wie oben, Schluss-Kehre zielt auf die Stationsspur. In Phase 2 liegt die Kehre eben auf Einfahrtshöhe, und nach ihr wird `hOff` so gesetzt, dass die Höhe des Folgeabschnitts (relativ zur neuen Bodenlinie) am Bogenende stetig anschließt; der Offset gilt bis zum Strichende. Loopings unverändert.
+   - Looping: Drehung seit Beginn der Beuge ≥ 300° in einem Sinn, Strich ≥ 7 m, durchgehend gekrümmt (kein 8-m-Fenster unter 11° Drehung; sonst ist es Kehre plus Rückweg plus Kehre), Höhe/Breite der Schleife 0,45–2,5 (vom Boden aus ≥ 0,7, flache Ovale sind keine Loopings). Schleifenende dort, wo die Drehung nicht mehr zunimmt (spätestens 360°); R = Bogenlänge/Drehung, 3,5–25 m. Ohne Freischaltung wird die Schleife übersprungen. In der Vorschau bleibt eine noch offene Umkehr in der Höhe roh (Profil wie gezeichnet), bis entschieden ist (gerader Rückweg = Kehre, volle Drehung = Looping), damit die Bahn nicht zwischen Kehre und Looping springt; am Boden zeigt sie einen Teilbogen bis zur Maus.
+   - Lesart „Ein Strich“ (`single`, nur `?single` und Testmenü): Der Scanner startet immer in Höhe auf der Spur des Startpunkts, Landungen sind aus. Kehren: Richtung aus dem Vorzeichen des Rückweg-Versatzes (`yDelta`, ab 0,5 m; sonst Drehsinn · Laufrichtung), Spuren = round(|yDelta| / 4,2), eine bis vier; Spurende wie oben, Schluss-Kehre zielt auf die Stationsspur. In Phase 2 liegt die Kehre eben auf Einfahrtshöhe, und nach ihr wird `hOff` so gesetzt, dass die Höhe des Folgeabschnitts (relativ zur neuen Bodenlinie) am Bogenende stetig anschließt; der Offset gilt bis zum Strichende. Loopings unverändert.
 4. **Geometrie (Phase 2 in `interpretGesture`):** Die Abschnitte werden zu Punkten (x, Höhe über Boden, Spur, Modus, Strichlänge `s`): Boden mit dem Tiefenverlauf der S-Kurven, Höhe relativ zur Bodenlinie der (ggf. eingeblendeten) Spur, Kehre als Wende mit Übergangsbögen (`src/track/turnCurve.ts`: Einheitskurve mit Smoothstep-Krümmungsrampen über je 20 % der Bogenlänge, tabelliert über den Richtungswinkel θ; `turnPoint(θ, D)` liefert Vorwärts- und Seitversatz für D = Spuren·8,4 m, Ausladung `turnForwardExtent` ≈ 0,69·D, Länge ≈ 1,93·D, engster Radius ≈ D/2; Ein- und Ausfahrt in `commitTurn` messen gegen die Ausladung, Teilbögen über `turnThetaForRetreat`); am Boden eben auf der Bodenhöhe, in der Höhe folgt der Bogen dem gezeichneten Höhenprofil (Strichhöhe über der Linie der jeweils eingeblendeten Spur, Versatz zur Einfahrt über den Bogen ausgeblendet), beides mindestens über dem höchsten Gelände unter dem Bogen (die Anfahrt wird dann über 6 + 16 m angehoben); Looping als Kreis ab dem Einfahrtspunkt mit der Tangente des Strichs, Mitte R·n, Ausfahrt um max(1,2 m, 0,2·R) versetzt (die Schienen kreuzen sich unten wie bei einem gezeichneten Looping). Nach Kehre und Looping baut ein `Carry` den Versatz in x (10 m) und die Höhe (Bodenkehre: 6 m eben, dann max(16 m, √(36·1,5·Fallhöhe)); Kehre in der Höhe: 8 m, der Bogen liegt schon auf dem gezeichneten Profil; Looping 10 m) über die Strichlänge ab. Ereignisse: Kehre (Index des Bogenscheitels, `dir`, `radius`, `floor`), Looping (Scheitel, `from`, `to`).
 5. **Rundenschluss (`snapEndToStart`):** nur beim Loslassen (nicht in der Vorschau): Ende nahe der Station → Einfahrt über 14 m auf die Abfahrtsgerade gelegt oder Schluss-Kehre durch einen Halbkreis um die Station ersetzt (die vom Scanner schon auf die Stationsspur gezielte Kehre liefert dieselbe Form).
 6. **Knoten:** Welt-Punkte (x, Höhe über Boden, z·8,4), als 3D-Linie mit Gauß (σ = 1,5 m, Enden gespiegelt) geglättet (`smoothPolyline3`), dann Bodenhöhe addiert, auf 0,5 m neu abgetastet (`resample3`) und durch `limitVerticalCurvature` auf tempo-gerechte Kuppen- und Talradien gebracht (v² ≈ 2·g·Δh seit dem höchsten Punkt, mindestens 6 m/s; Kuppe R ≥ 1,4·v²/(2g), Tal R ≥ v²/(3g); nur anheben: Kuppen pflanzen die erlaubte Parabel in Laufrichtung fort, Senken werden örtlich aufgefüllt; Loopings und der Anfang bleiben fest, das Ende bei geschlossener Runde). Der Begrenzer misst die Sehnenhöhe senkrecht und rechnet das Gefälle ein (Faktor cos α): ohne ihn ließ er auf steilen Flanken, etwa im Auslauf eines Drops, bis zu doppelt so enge Radien durch (6 g statt der 4 g, für die ein Tal ausgelegt ist). Dann Ecken ab 35° abrunden, RDP 3D (0,04 m), wieder auf 1 m verdichten (damit der Fit Überschwinger auf Geraden erkennt; `densePolyline`) und Knoten wählen (`src/track/reduceNodes.ts`): Schneider-Rekursion in 3D mit festen Tangenten je Knoten (symmetrische Sekante ±1 m, interpoliert, damit ungleiche Punktabstände keinen Knick am Knoten erzeugen), adaptive Toleranz (0,3 m bei Radien unter 25 m, dort entscheidet die Form über die g-Kräfte; bis 1,2 m auf Geraden und in weiten Bögen), Newton-Nachbesserung nur unter dem Vierfachen der Toleranz (sonst zwingt sie lange Segmente in die Toleranz, die in Kurven enger biegen als gezeichnet), Looping- und Kehren-Scheitel als gesetzte Knoten mit Knotenart. Ein Oval braucht so fünf bis sieben Knoten, ein Hügel fünf bis sechs, ein Looping-Strich rund zehn. Knoten genau auf Kuppen und Tälern (`snapApex`) sind abschaltbar und standardmäßig aus: Ein Segment „Flanke plus halber Bogen“ konzentriert die Krümmung am Scheitel, der Wagen spürte dort 5,6 g statt 4,2 g; die Scheitelwahl (`pickApexIndices`, lokale Krümmungsmaxima mit Prominenz) dient Maßband und Bearbeitung. `?fit=legacy` schaltet zum Vergleich auf den Fit ohne Ecken mit 0,3 m überall.
@@ -71,28 +120,29 @@ interface TrackPath { nodes: TrackNode[]; elements: TrackElement[]; startType: S
 9a. **Fortsetzen (`extendTrack`):** Der neue Strich wird auf den Endknoten gesetzt (Versatz über 6 m abgebaut), mit einem 6-m-Einlauf entlang der Endtangente (`lockLength`: der Einlauf wird nicht umgeformt) und angehobenem Boden (wie beim Überzeichnen) gelesen; der Einlauf wird über `s` wieder abgeschnitten, der erste neue Knoten liegt exakt auf dem Ende und gibt seine Ausgangs-Tangente an den Endknoten (`alignOpposite`, G1). Test: 30° schräg ansetzender Strich ohne Knick, Krümmung an der Naht unter 1/4 m.
 10. **Bearbeiten** (`src/track/edit.ts`, `LevelScene`): Knoten-Trefferfläche 32 px, eng liegende Knoten werden für den Treffer auseinandergeschoben (`nodeHitCenters`). Ein Finger auf der Bahn (≤ 24 px) greift das Segment (`trackPending`): quer zur Bahn gezogen wird es gebogen (`bendSegment`: kleinste Änderung der inneren Kontrollpunkte mit Bernstein-Gewichten, sodass die Kurve beim Parameter t durch den Finger läuft; die gegenüberliegenden Handles drehen mit, Länge bleibt, G1), längs gezogen wird überzeichnet. Am leuchtenden offenen Ende (≤ 56 px) hat Fortsetzen Vorrang. Bogenmenü über dem gewählten Knoten (Radius 64 px: Tiefe, Schräglage, Löschen; Treffer 32 px). Langdruck zeigt Tangenten-Handles (`proNode`); der InputManager ruft nach dem Langdruck sofort `dragStart`, deshalb unterdrückt `longPressArmed` diesen einen Strich-Beginn. Live-Ziele und Maßband (`src/render/measureOverlay.ts`): während Strich und Drag wird die Bahn höchstens alle 100 ms bewertet (`evaluate` ohne Fahrt), die Zielleiste ist einmal gebaut und hakt nur um; das Maßband läuft in Bildschirm-Pixeln je Frame aus Bühnenpunkten über die Kamera.
 
-## 4b. Pinsel-Bahn (Spike, `src/track/brush.ts`, `src/track/brushTrack.ts`)
-Die Lesart ist der Pinsel. Die drei älteren Lesarten Bühne (Kapitel 4), Ein Strich (Kapitel 4, Punkt 3) und Ebenen (Kapitel 4c) bleiben im Code für Szenarien und Replay und sind nur noch per Adresse erreichbar (`?stage`, `?single`, `?lanes`; `?brush`); der Umschalter unten links und die Einstellung `strokeMode` sind seit Etappe 1 weg (Plan Paket 7, Entscheidung 7). `LANE_SCALE` ist 1 (für alle): Tiefe ist auf dem Bild nur ein Versatz nach oben (Y = Höhe + 0,5 · Tiefe in Metern), sonst nichts.
+## 4b. Pinsel-Bahn (`src/track/brush.ts`, `src/track/brushTrack.ts`; Strich 1, dazu Strich 2 in Punkt 13)
+Gezeichnet wird mit dem Pinsel: in Levels und in Zonen ohne spielbare Ebenen Strich 1 (dieser Abschnitt), in Zonen mit spielbaren Ebenen Strich 2 (Punkt 13). Die drei älteren Lesarten Bühne (Kapitel 4), Ein Strich (Kapitel 4, Punkt 3) und Ebenen (Kapitel 4c, im Testmenü „Spuren (alt)“) bleiben im Code für Szenarien und Replay und sind nur per Adresse (`?stage`, `?single`, `?lanes`; `?brush`) und im Testmenü (4i) erreichbar; der Umschalter unten links und die Einstellung `strokeMode` sind seit Etappe 1 weg (Plan Paket 7, Entscheidung 7). `LANE_SCALE` ist 1 (für alle): Tiefe ist auf dem Bild nur ein Versatz nach oben (Y = Höhe + tan(Neigung) · Tiefe in Metern, bei der Vorgabeneigung 0,5 · Tiefe), sonst nichts.
 1. **Gummiband-Pinsel** (`RubberBrush`): Die Linienspitze folgt dem Finger erst, wenn er weiter als die Bandlänge (22 px) weg ist (gezogene Schnur). `getCoalescedEvents` liefert alle Touch-Punkte zwischen zwei Bildern. Zurückziehen radiert die Linie wie in den anderen Lesarten (`retractStroke`, danach `resetTip`), Autoscroll am Rand läuft wie dort.
 2. **Spitze** (`drawBrushInk`, `advanceBrush`): Die gezeigte Bahn folgt der Linie zäh (`BRUSH_LAG` 0,14 s, also umso weiter hinterher, je schneller der Finger zieht, höchstens `BRUSH_TAIL_PX` 200 px). Der Rückstand ist eine rosa Schleppe entlang des Wegs der Gummiband-Spitze und des Bands bis zum Finger (alle 3 px abgetastet, einmal Chaikin), am Bahnende 0,8 Linienbreiten breit, zum Tropfen hin spät breiter (Exponent 2,6), dann der Tropfen (17 px). Der Tropfen sitzt an der vorhergesagten Fingerposition (`getPredictedEvents`, sonst 20 ms in Bewegungsrichtung vorausgeschätzt, höchstens 24 px). Mit der Maus ist der Zeiger beim Malen aus (`setDrawCursor`). Die Linie selbst (und damit die Bahn) ändert die Zähigkeit nicht. Gezeichnet wird einmal je Bild, die Linie dafür auf 1,5 px ausgedünnt.
-3. **Live-Schienen** (`previewBrush`, `previewBrushTrack`, höchstens alle 50 ms): die schon gezeigte Bahn mit derselben Tiefenwahl wie beim Loslassen, ohne Streben. Was mehr als 45 m (`PREVIEW_FREE`) vor dem Linienende liegt, behält die Tiefe der letzten Vorschau (dort bewegt sich nichts mehr); die Reihenfolge an Kreuzungen bleibt von Vorschau zu Vorschau (`keepOrder`); Knoten ohne Fit (`previewNodes`, alle 2,5 m); kein Rundenschluss. Tinte nur noch für das Stück, das die Vorschau noch nicht hat. Beim Loslassen hängt die Bahn weich an der Tiefe der letzten Vorschau (`PREVIEW_HOLD` 20, vor dem Rundenschluss über 40 m ausgeblendet; wo die Probefahrten nachbessern, gelöst) und übernimmt deren Reihenfolge an Kreuzungen. Fortsetzen: Die alte Bahn behält ihre Tiefe genau (`trackLineWithDepth`, `keepDepth`). Überzeichnen zeigt nur Tinte. Gemessen an 49 Aufnahmen: Vorschau im Mittel 0,5 ms, höchstens rund 11 ms (Mac); Sprung beim Loslassen im Median 1,4 m Tiefe, bei dichten Kreuzungen und Rundenschluss mehr.
+3. **Live-Schienen** (`previewBrush`, `previewBrushTrack`, höchstens alle 50 ms): die schon gezeigte Bahn mit derselben Tiefenwahl wie beim Loslassen, ohne Streben. Was mehr als 45 m (`PREVIEW_FREE`) vor dem Linienende liegt, behält die Tiefe der letzten Vorschau (dort bewegt sich nichts mehr); die Reihenfolge an Kreuzungen bleibt von Vorschau zu Vorschau (`keepOrder`); Knoten ohne Fit (`previewNodes`, alle 2,5 m); kein Rundenschluss. Tinte nur noch für das Stück, das die Vorschau noch nicht hat. Beim Loslassen hängt die Bahn weich an der Tiefe der letzten Vorschau (`PREVIEW_HOLD` 20, vor dem Rundenschluss über 40 m ausgeblendet; wo die Probefahrten nachbessern, gelöst) und übernimmt deren Reihenfolge an Kreuzungen. Fortsetzen: Die alte Bahn behält ihre Tiefe genau (`trackLineWithDepth`, `keepDepth`). Überzeichnen zeigt nur Tinte. (Messung im Verlauf.)
 4. **Linie** (`prepareBrushLine`): auf 0,25 m abtasten, Gauß 0,5 m, auf 1 m. Kreuzungen auf dem Bild: Segment-Schnitte mit mindestens 8 m Abstand entlang der Linie; sie legen fest, welcher Strang vorne liegt.
-   **Rundenschluss** (`closeBrushLine`): Endet die Linie höchstens `closeSnap` (8 m oder 60 px) vor ihrem Anfang und ist mindestens 40 m lang, wird ihr Ende ohne Knick über eine gerade Einfahrt (3 oder 1,5 m) in Stationsrichtung in die Station geführt. Zwei Arten Schluss: Kommt der Strich ungefähr richtig an, wird sein Ende **eingebogen** (`bendTail`: Drehung und Verschiebung wachsen über 6 bis 30 m sanft an, was übersteht, fällt weg; nicht gestaucht oder gedehnt (Faktor 0,6 bis 1,6), höchstens 0,15/m zusätzliche Krümmung, nirgends enger als gezeichnet oder als 4 m). So bleibt der gezeichnete Bogen, wie er ist. Sonst ein **neuer Weg** von einer ruhigen Stelle der letzten 40 m (höchstens 30 % der Linie; ruhig: Der Strich dreht dort über ±2 m höchstens 40°): Dubins-Wege (Kreisbögen mit 4, 6, 10 oder 16 m und Gerade, auch mit Wende, `dubinsPaths`) und weiche Übergänge (kubisch, nicht enger als 4 m). Kosten: neue Bahn 1 je Meter, weggelassener Strich 2 je Meter, Drehung je Radiant 6 + 30/R (enger als 6 m deutlich teurer), Abstand vom Strich 2 je Meter, jede neue Kreuzung 60, zu kurzer Anstieg 3 je Meter (das Ende liegt auf dem Bild tiefer als die Station, dort muss die Bahn die Tiefe wechseln, `CLOSE_DEPTH_R`); eingebogener Strich: 0,3 je gebogenem Meter, 4 je Meter Verschiebung, 10 je Radiant Drehung, Kreuzungen nur, wenn der gezeichnete Strich sie dort nicht schon hatte. **Grenzen gegen ausufernde Schlüsse:** Kein Schluss entfernt sich weiter als 10 m (`CLOSE_AWAY`) vom Strichende und von der Lücke zur Station; ein neuer Weg dreht von selbst höchstens 240° (eine Wende, `CLOSE_TURN`), auf Tipp bis 300° (kleine Schlaufe, `CLOSE_TURN_TAP`). Geht es so nicht, bleibt die Runde offen (Hinweis auf den Tipp). Bis zum 23.10.2026 entschieden die Kreuzungsstrafe (200) und eine Drehung, die je Radiant bei weiten Bögen kaum weniger kostete als bei engen: In dichten Strichen und bei falsch herum ankommendem Ende gewann ein Vollkreis mit 16 oder 25 m Radius, der weit in den Himmel ragte. Geglättet wird nur die Naht am Strich (±6 m, weich ein- und ausgeblendet, Gauß 0,8 m); Bögen, Einfahrt und Station bleiben genau. Die Station liegt bei einer Runde waagerecht in Zeichenrichtung: Die Bahn fährt 2 m gerade ab (danach geht der gezeichnete Anfang über 4 m weich weiter) und kommt gerade an; ein gleich steigender Anfang ginge nicht, der Schluss käme in seiner Richtung von unten durch den Boden. Die Tiefe bleibt auf den ersten und letzten 2 m die der Station (`seam` in `solveDepth`), sonst käme die Bahn mit anderer Tiefen-Steigung an, als sie abfährt. Kreuzungen, an denen der Schluss der spätere Strang ist, nehmen die Seite, auf der er von selbst läge (`LineCrossing.natural`), statt „später vorne“. Beim Knotenfit bekommt die Naht eine gemeinsame Tangente (`ReduceOptions.closed`). Gemessen an den 113 Aufnahmen (von 221), die nah genug an der Station enden, gegen den Stand davor: Schluss im Median 20 m lang (16 m), höchstens 44 m (122 m); weiter als 12 m vom Strich weg 0 (29, bis 32 m); länger als 60 m 0 (28); 2 dichte Kritzel schließen nur noch auf Tipp; Probefahrten über alle Pinsel-Aufnahmen 61 statt 55 von 210 geschafft, keine schlechter; neue Kreuzungen durch den Schluss 13 (9); Knick am Stationsknoten 0°. Eine Wende kurz vor der Station fährt flach durch die Tiefe (Scheitel von Wenden, Punkt 5): Kopfüber im Schluss nur noch in 2 von 111 Runden (mit den alten Riesenbögen 9, mit dem neuen Schluss allein 12).
+   **Rundenschluss** (`closeBrushLine`): Endet die Linie höchstens `closeSnap` (8 m oder 60 px) vor ihrem Anfang und ist mindestens 40 m lang, wird ihr Ende ohne Knick über eine gerade Einfahrt (3 oder 1,5 m) in Stationsrichtung in die Station geführt. Zwei Arten Schluss: Kommt der Strich ungefähr richtig an, wird sein Ende **eingebogen** (`bendTail`: Drehung und Verschiebung wachsen über 6 bis 30 m sanft an, was übersteht, fällt weg; nicht gestaucht oder gedehnt (Faktor 0,6 bis 1,6), höchstens 0,15/m zusätzliche Krümmung, nirgends enger als gezeichnet oder als 4 m). So bleibt der gezeichnete Bogen, wie er ist. Sonst ein **neuer Weg** von einer ruhigen Stelle der letzten 40 m (höchstens 30 % der Linie; ruhig: Der Strich dreht dort über ±2 m höchstens 40°): Dubins-Wege (Kreisbögen mit 4, 6, 10 oder 16 m und Gerade, auch mit Wende, `dubinsPaths`) und weiche Übergänge (kubisch, nicht enger als 4 m). Kosten: neue Bahn 1 je Meter, weggelassener Strich 2 je Meter, Drehung je Radiant 6 + 30/R (enger als 6 m deutlich teurer), Abstand vom Strich 2 je Meter, jede neue Kreuzung 60, zu kurzer Anstieg 3 je Meter (das Ende liegt auf dem Bild tiefer als die Station, dort muss die Bahn die Tiefe wechseln, `CLOSE_DEPTH_R`); eingebogener Strich: 0,3 je gebogenem Meter, 4 je Meter Verschiebung, 10 je Radiant Drehung, Kreuzungen nur, wenn der gezeichnete Strich sie dort nicht schon hatte. **Grenzen gegen ausufernde Schlüsse:** Kein Schluss entfernt sich weiter als 10 m (`CLOSE_AWAY`) vom Strichende und von der Lücke zur Station; ein neuer Weg dreht von selbst höchstens 240° (eine Wende, `CLOSE_TURN`), auf Tipp bis 300° (kleine Schlaufe, `CLOSE_TURN_TAP`). Geht es so nicht, bleibt die Runde offen (Hinweis auf den Tipp). Geglättet wird nur die Naht am Strich (±6 m, weich ein- und ausgeblendet, Gauß 0,8 m); Bögen, Einfahrt und Station bleiben genau. Die Station liegt bei einer Runde waagerecht in Zeichenrichtung: Die Bahn fährt 2 m gerade ab (danach geht der gezeichnete Anfang über 4 m weich weiter) und kommt gerade an; ein gleich steigender Anfang ginge nicht, der Schluss käme in seiner Richtung von unten durch den Boden. Die Tiefe bleibt auf den ersten und letzten 2 m die der Station (`seam` in `solveDepth`), sonst käme die Bahn mit anderer Tiefen-Steigung an, als sie abfährt. Kreuzungen, an denen der Schluss der spätere Strang ist, nehmen die Seite, auf der er von selbst läge (`LineCrossing.natural`), statt „später vorne“. Beim Knotenfit bekommt die Naht eine gemeinsame Tangente (`ReduceOptions.closed`). Eine Wende kurz vor der Station fährt flach durch die Tiefe (Scheitel von Wenden, Punkt 5). (Stand vor dem 23.10.2026 und Messungen im Verlauf.)
    **Ziel-Radius**: Kommt die Pinsel-Spitze der Station nahe, zeigt ein gestrichelter Kreis (`closeReach`: 20 m oder 150 px) um die Station, wo das Ende landen muss. Endet die Bahn darin offen, steht an der Station ein Knopf (Chip), ein Tipp schließt die Runde mit demselben Verfahren, dann auch mit kleiner Schlaufe (`BrushOptions.closeReach`, `closeBrushTrack`; die Tiefe vor den letzten 60 m bleibt).
-5. **Tiefe** (`solveDepth`): min Σ wH·(z − Ziel)² + Σ λ·(Δ²z)² + Σ wK·[(Y″ − 0,5·z″)² + z″²]. Ziel = Tiefe, bei der die Bahn 4 m über dem Boden läge; λ für 40 m Grenzwellenlänge; wK = 4·(v²/g)² aus dem Tempo der letzten Lösung (Fallhöhe seit dem höchsten Punkt). wH fällt mit der Steilheit des Strichs (unter 15° 1, ab 40° 0,03): steil gezeichnet ist Höhe. An der Station (12 m, dann 20 m Übergang) hält die Tiefe die der Station (wH 50), aber nur, wo die Linie in Stationsrichtung läuft (Anteil der Richtung in x von 0,05 bis 0,35 eingeblendet): In einer Wende vor oder hinter der Station muss die Tiefe frei sein. **Scheitel von Wenden** (die Bildrichtung x kehrt um: davor und danach innerhalb von 12 m je eine deutliche Richtung, |x′| > 0,4; nicht in senkrechten Loopings): Dort bleibt die Höhe flach und die Tiefe nimmt die Bildbewegung, Σ 1500·(1 − |x′|)²·(z(i+1) − z(i−1) − (Y(i+1) − Y(i−1))/0,5)² (`TURN_LEVEL_W`, `BrushPlan.level`). Ohne das stand der Scheitel auf dem Bild senkrecht und in 3D ebenso, wo die Tiefe nicht frei war (an der Station, am Bühnenrand, bei Tempo): Der Oben-Vektor drehte über die Senkrechte, der Zug fuhr kopfüber. Gemessen an 175 Pinsel-Bahnen aus den Aufnahmen: ungewollt kopfüber (außerhalb senkrechter Loopings) in 42 statt 90 Bahnen; Neigung am Scheitel der 1171 Wenden im Median 8° statt 47°, über 90° bei 140 statt 415 (meist Kringel unter 3 m Bildradius); Probefahrten 82 statt 61 von 210 geschafft (gegen den Stand vor dem neuen Rundenschluss 31 mehr und 4 weniger, davon 3 Stillstand). Einrastende Tiefen: Ab dem zweiten Durchgang zieht ein Magnet zur nächsten der fünf Spuren (Gewicht bis 2, quadratisch innerhalb von 3 m), nur wo flach (wH) und gerade (Drehung über ±3 m unter 25°) gezeichnet ist und nicht an der Station. Das System ist eine Bandmatrix (Bandbreite 2) und wird direkt gelöst (`Band2`, L·D·Lᵀ). Schranken: Boden + 0,8 m, Bühne ±16,8 m und die untere Schranke des Nachbesserns als steife Federn (gesetzt, sobald verletzt; losgelassen, sobald sie nach außen ziehen, gemessen an 1 mm Weg, an Wenden ±3 m schon an 0,01 mm: sonst blieb ein Scheitel am Bühnenrand kleben, weil die steife Feder die Gegenkraft der flachen Höhe kaum spürte); feste Tiefen (Station, alte Bahn beim Fortsetzen, ruhiger Teil der Vorschau) wie die Station. Engstellen nach der Kreuzungsregel der Fahrt (Kapitel 5): Für jedes Paar von Linienpunkten, die mindestens 8 m auseinander liegen (bei einer Runde auch über die Station gezählt, ohne Paare zweier fester Punkte), ist ein Tiefenunterschied verboten, bei dem sie in der Draufsicht näher als 2,2 m und in der Höhe näher als 3,5 m lägen (`nearPairs`). Zu nahe Paare werden auf den Rand dieses Bereichs gesetzt, exakt als Bedingung (Schur-Komplement über `Band2`, `solveDense`); Paare, deren Kraft die Stränge zusammenzieht, werden losgelassen. Seite je Engstelle (Paare höchstens 12 Punkte auseinander auf beiden Strängen): an einer Bild-Kreuzung später Gezeichnetes vorne (außer der frühere Strang liegt schon ganz vorne), sonst die nähere Seite, die Boden, Bühne und Station zulassen. Paare, die über ±2 Linienpunkte zusammenhängen (zwei Stränge, die nebeneinander herlaufen), bekommen vorab eine gemeinsame Seite: die Mehrheit der ersten Lösung, an einer Kreuzung die dort gewählte (widersprechen sich zwei, entscheidet jede Engstelle selbst). Sonst wechselte ein Strang mittendrin die Seite und träfe den anderen auf gleicher Höhe (so bei einer Haarnadel, deren Rückweg über die Station läuft, sobald ihre Wende flach lag). Laufzeit danach auf 175 Aufnahmen: Median 16 ms, schlimmster Strich 0,7 s (vorher 19 ms und 1,1 s). Je Runde und Engstelle kommt nur das am stärksten verletzte Paar dazu, weitere ab 0,1 m Verletzung (höchstens 8 je Engstelle). Drückt ein Paar eine festgehaltene Stelle mehr als 0,5 m über ihre Schranke (Knäuel), wird die Engstelle aufgegeben.
-   **Loopings und gerade Hügel** (`findElements`, `applyElements`, auch in der Vorschau): Eine Bild-Kreuzung, zwischen deren Stellen die Linie einmal herum dreht (mindestens 200°, 12 bis 160 m), ist eine Schleife. Ist sie mindestens 0,9-mal so hoch wie breit und liegt die Kreuzung im unteren Teil, wird sie ein senkrechter Looping: Wunschtiefe gerade von Fuß zu Fuß (±4 Punkte), keine Fliehkraft in der Tiefe, Glättung ×30; Ein- und Ausfahrt rücken nur so weit auseinander, wie die Kreuzungsregel verlangt. Flachere Schleifen bleiben Bodenschleifen wie bisher. Ein Hügel (Zickzack der Bildhöhe mit 1 m Hysterese, Kuppe mindestens 5 m über beiden Füßen, ohne Umkehr in x, höchstens 140 m breit, Füße dort, wo Anstieg und Abstieg beginnen) bekommt ebenso eine gerade Wunschtiefe von Fuß zu Fuß (Tiefe der letzten Lösung an den Füßen), Fliehkraft ×0,3 und Glättung ×6. Der Lifthügel an der Station und ein Anstieg am Linienende bleiben auf der Tiefe ihres ersten Fußes. Gemessen an 135 Aufnahmen: 71 von 74 hohen Schleifen fahren über Kopf (vorher 62), die Ausbeulung der Hügel von der Geraden zwischen den Füßen sinkt um 40 %, gleich viele Fahrten geschafft.
+5. **Tiefe** (`solveDepth`): min Σ wH·(z − Ziel)² + Σ λ·(Δ²z)² + Σ wK·[(Y″ − 0,5·z″)² + z″²]. Ziel = Tiefe, bei der die Bahn 4 m über dem Boden läge; λ für 40 m Grenzwellenlänge; wK = 4·(v²/g)² aus dem Tempo der letzten Lösung (Fallhöhe seit dem höchsten Punkt). wH fällt mit der Steilheit des Strichs (unter 15° 1, ab 40° 0,03): steil gezeichnet ist Höhe. An der Station (12 m, dann 20 m Übergang) hält die Tiefe die der Station (wH 50), aber nur, wo die Linie in Stationsrichtung läuft (Anteil der Richtung in x von 0,05 bis 0,35 eingeblendet): In einer Wende vor oder hinter der Station muss die Tiefe frei sein. **Scheitel von Wenden** (die Bildrichtung x kehrt um: davor und danach innerhalb von 12 m je eine deutliche Richtung, |x′| > 0,4; nicht in senkrechten Loopings): Dort bleibt die Höhe flach und die Tiefe nimmt die Bildbewegung, Σ 1500·(1 − |x′|)²·(z(i+1) − z(i−1) − (Y(i+1) − Y(i−1))/0,5)² (`TURN_LEVEL_W`, `BrushPlan.level`). Ohne das stand der Scheitel auf dem Bild senkrecht und in 3D ebenso, wo die Tiefe nicht frei war (an der Station, am Bühnenrand, bei Tempo): Der Oben-Vektor drehte über die Senkrechte, der Zug fuhr kopfüber. Einrastende Tiefen: Ab dem zweiten Durchgang zieht ein Magnet zur nächsten der fünf Spuren (Gewicht bis 2, quadratisch innerhalb von 3 m), nur wo flach (wH) und gerade (Drehung über ±3 m unter 25°) gezeichnet ist und nicht an der Station. Das System ist eine Bandmatrix (Bandbreite 2) und wird direkt gelöst (`Band2`, L·D·Lᵀ). Schranken: Boden + 0,8 m, Bühne ±16,8 m und die untere Schranke des Nachbesserns als steife Federn (gesetzt, sobald verletzt; losgelassen, sobald sie nach außen ziehen, gemessen an 1 mm Weg, an Wenden ±3 m schon an 0,01 mm: sonst blieb ein Scheitel am Bühnenrand kleben, weil die steife Feder die Gegenkraft der flachen Höhe kaum spürte); feste Tiefen (Station, alte Bahn beim Fortsetzen, ruhiger Teil der Vorschau) wie die Station. Engstellen nach der Kreuzungsregel der Fahrt (Kapitel 5): Für jedes Paar von Linienpunkten, die mindestens 8 m auseinander liegen (bei einer Runde auch über die Station gezählt, ohne Paare zweier fester Punkte), ist ein Tiefenunterschied verboten, bei dem sie in der Draufsicht näher als 2,2 m und in der Höhe näher als 3,5 m lägen (`nearPairs`). Zu nahe Paare werden auf den Rand dieses Bereichs gesetzt, exakt als Bedingung (Schur-Komplement über `Band2`, `solveDense`); Paare, deren Kraft die Stränge zusammenzieht, werden losgelassen. Seite je Engstelle (Paare höchstens 12 Punkte auseinander auf beiden Strängen): an einer Bild-Kreuzung später Gezeichnetes vorne (außer der frühere Strang liegt schon ganz vorne), sonst die nähere Seite, die Boden, Bühne und Station zulassen. Paare, die über ±2 Linienpunkte zusammenhängen (zwei Stränge, die nebeneinander herlaufen), bekommen vorab eine gemeinsame Seite: die Mehrheit der ersten Lösung, an einer Kreuzung die dort gewählte (widersprechen sich zwei, entscheidet jede Engstelle selbst). Sonst wechselte ein Strang mittendrin die Seite und träfe den anderen auf gleicher Höhe (so bei einer Haarnadel, deren Rückweg über die Station läuft, sobald ihre Wende flach lag). Je Runde und Engstelle kommt nur das am stärksten verletzte Paar dazu, weitere ab 0,1 m Verletzung (höchstens 8 je Engstelle). Drückt ein Paar eine festgehaltene Stelle mehr als 0,5 m über ihre Schranke (Knäuel), wird die Engstelle aufgegeben. (Messungen im Verlauf.)
+   **Loopings und gerade Hügel** (`findElements`, `applyElements`, auch in der Vorschau): Eine Bild-Kreuzung, zwischen deren Stellen die Linie einmal herum dreht (mindestens 200°, 12 bis 160 m), ist eine Schleife. Ist sie mindestens 0,9-mal so hoch wie breit und liegt die Kreuzung im unteren Teil, wird sie ein senkrechter Looping: Wunschtiefe gerade von Fuß zu Fuß (±4 Punkte), keine Fliehkraft in der Tiefe, Glättung ×30; Ein- und Ausfahrt rücken nur so weit auseinander, wie die Kreuzungsregel verlangt. Flachere Schleifen bleiben Bodenschleifen wie bisher. Ein Hügel (Zickzack der Bildhöhe mit 1 m Hysterese, Kuppe mindestens 5 m über beiden Füßen, ohne Umkehr in x, höchstens 140 m breit, Füße dort, wo Anstieg und Abstieg beginnen) bekommt ebenso eine gerade Wunschtiefe von Fuß zu Fuß (Tiefe der letzten Lösung an den Füßen), Fliehkraft ×0,3 und Glättung ×6. Der Lifthügel an der Station und ein Anstieg am Linienende bleiben auf der Tiefe ihres ersten Fußes. (Messung im Verlauf.)
 6. **Kreuzungen tauschen**: An jeder Bild-Kreuzung einer Pinsel-Bahn sitzt ein Chip (⇅, `chips`, nur solange die Bahn zum Plan passt: `pathStamp`). Tippen kehrt die Reihenfolge um (`swapCrossing`, zuerst zur Probe auf einer Kopie des Plans): Entstehen dadurch Kreuzungen auf gleicher Höhe, bleibt es beim Alten (Hinweis), sonst neue Tiefe und neue Probefahrten.
-7. **Knoten**: `reduceNodes` mit `even` auf den Weltpunkten (x wie gezeichnet, Höhe = Bild-Y − 0,5·z), an Engstellen mit höchstens 0,12 m Toleranz (`ReduceOptions.tolAt`); `path.brush = true`, kein `closePath` beim Bearbeiten. `even` (`evenSplits`): je Punkt die Reichweite (weitestes Ende, bis zu dem ein Segment mit festen Tangenten in der Toleranz bleibt, höchstens 90 m und 120° Drehung, gesucht ab der Reichweite des Vorgängers), daraus die kleinste Segmentzahl und unter allen Verteilungen mit dieser Zahl die mit den gleichmäßigsten Längen (dynamische Programmierung); was doch nicht passt, teilt der bisherige Fit. Auf 159 Aufnahmen 16 % weniger Knoten, Abstände deutlich gleichmäßiger, Fahrten und g-Spitzen wie vorher (ohne Drehungsgrenze wären es 20 % weniger, aber lange Segmente biegen in engen Kurven spitzer als gezeichnet).
+7. **Knoten**: `reduceNodes` mit `even` auf den Weltpunkten (x wie gezeichnet, Höhe = Bild-Y − 0,5·z), an Engstellen mit höchstens 0,12 m Toleranz (`ReduceOptions.tolAt`); `path.brush = true`, kein `closePath` beim Bearbeiten. `even` (`evenSplits`): je Punkt die Reichweite (weitestes Ende, bis zu dem ein Segment mit festen Tangenten in der Toleranz bleibt, höchstens 90 m und 120° Drehung, gesucht ab der Reichweite des Vorgängers), daraus die kleinste Segmentzahl und unter allen Verteilungen mit dieser Zahl die mit den gleichmäßigsten Längen (dynamische Programmierung); was doch nicht passt, teilt der bisherige Fit. (Messung im Verlauf.)
 8. **Probefahrten** (`BrushRefiner`, 6 ms je Bild, vor Play höchstens 400 ms): Fahrt ohne Entgleis-Grenze und ohne Kreuzungsprüfung, Querkraft je Ort mitgeschrieben. An der ersten Problemstelle ein Hebel: Querkraft über der Grenze → Fliehkraft-Gewicht ×8 und Wunschhöhe ×0,3 (±25 m, bis 4×), danach Linie runder (höchstens 8 px, bis 3×); Fahrgäste fallen → Höhe halten (wH ×8, ±30 m); Stillstand → ist es ein gerader Hügel, darf er zuerst wieder nach hinten (`unramp`: Rampe weg, wie ohne Hügel-Erkennung), danach Kuppe davor 3 m nach hinten (bis 5×). Im Looping greift kein Hebel: Er bleibt, wie gezeichnet, zu langsam ist Spiel. Ein Hebel, der den Oben-Vektor auf mehr als 5 % zusätzlicher Bahn kippen lässt (außer `unramp`: was dabei kippt, hätte die Bahn ohne Hügel-Erkennung auch), neue Kreuzungen auf gleicher Höhe schafft oder die Tiefenwahl numerisch scheitern lässt, wird zurückgenommen; das Fliehkraft-Gewicht steigt höchstens auf das 1000-Fache.
-9. **Schwachstellen** (`TrackInspector`, `src/track/inspect.ts`, DEV-Modus, alle Lesarten): 0,3 s nach jeder Änderung der Bahn (Strich, Knoten, Rückgängig, Tausch, Probefahrten fertig) eine Probefahrt in Zeitscheiben; rote Ringe an Stellen über der Querkraft-Grenze (je 20 m einer), an der Stelle, an der die Fahrt scheitert, und an Kreuzungen auf gleicher Höhe. Während einer Änderung sind sie weg.
+9. **Schwachstellen** (`TrackInspector`, `src/track/inspect.ts`, DEV-Modus, alle Lesarten): 0,3 s nach jeder Änderung der Bahn (Strich, Knoten, Rückgängig, Tausch, Probefahrten fertig) eine Probefahrt in Zeitscheiben; rote Ringe an Stellen über der Querkraft-Grenze (je 20 m einer), an der Stelle, an der die Fahrt scheitert, und an Kreuzungen auf gleicher Höhe. Während einer Änderung sind sie weg. Unter den Fahrregeln `drive` (Vorgabe, Kapitel 5) gibt es keine Querkraft-Ringe; es bleiben die Stelle, an der die Fahrt scheitert, und Kreuzungen auf gleicher Höhe.
 10. **Kettenzug** (für alle Lesarten): Beginnt ein Anstieg innerhalb von 30 m nach der Station, zieht die Kette ab der Station bis zum Gipfel des ersten großen Anstiegs (Absätze unter 1,5 m zählen nicht als Gipfel).
 10b. **Bedienung beim Zeichnen** (`fadeHud`, alle Lesarten): Solange der Finger zeichnet, blenden Knöpfe, Ziele, Titel, Hinweistext, Chips, Ebenenleiste und Regal in rund 0,1 s aus (`hud`, ohne Treffer); es bleiben Toasts (Warnungen), die Streckenanzeige, wenn ein Budget gilt, und die Spur-Anzeige außer beim Pinsel.
 10c. **Gurtstufe im DEV-Modus**: Tipp auf das Gurt-Abzeichen schaltet durch (wie im Level → ohne → Beckengurt → Bügel → Schulterbügel → Rennsitz → wie im Level); die Wahl gilt für alle Level (`storage.settings.devBelt`), das Abzeichen zeigt „· DEV“.
 11. **Zeichen-Zoom auf dem Handy** (kürzere Bildschirmseite unter 600 px, `fitCamera`): nie weiter heraus als 7 px je Bühnen-Meter, angelegt an der Station. Doppeltipp auf freie Fläche wechselt zur Übersicht und zurück (`overview`).
 12. **Strich-Rekorder** (nur Dev-Server, `strokeRecorder` in `vite.config.ts`): Jeder Strich geht mit Lesart, Art, gewählter Ebene (Ebenen), Zoom, Bildschirmgröße, Punkten mit Zeitstempel und der Bahn davor an `POST /__strokes` und landet in `recordings/strokes.jsonl` (nicht im Repo). `npm run strokes:replay` (`--last N`) spielt neue Striche in allen vier Lesarten nach und fährt sie. Geschrieben wird nur mit `TC_RECORD=1` (seit 29.10.2026, Florian: Aufnahme erst, wenn er so weit ist); `TC_NO_RECORD=1` schaltet es weiterhin ab.
+13. **Strich 2** (`src/track/strich2.ts`, `tests/strich2.test.ts`; Pinsel-Studie, Bericht in `docs/PINSEL-STUDIE.md`): seit 29.10.2026 die Vorgabe in Zonen mit spielbaren Ebenen (`planeStack`); `&strich=1` nimmt dort Strich 1, `&strich=2` erzwingt Strich 2 auch ohne Ebenen. Strich 2 liest die Tiefe kausal mit kurzem Vorlauf: Ein Linienpunkt ist frei, solange er höchstens `FREEZE` (12 m) hinter der Spitze liegt, wo nichts zu entscheiden ist schon nach 3 m (6 m, wenn ein anderer Strang in Reichweite ist); danach ist seine Tiefe fest, auch beim Loslassen und in den Probefahrten. Je Vorschau wird nur das freie Stück gelöst. Hügel laufen gerade von Fuß zu Fuß, Kehren als Halbkreis durch die Tiefe, Schleifen ab Höhe/Breite 0,7 werden Loopings; vor dem Knotenfit rundet `relaxCurvature` Ecken unter 4 m Radius (Studie 17). Der Rundenschluss ist ein neuer Weg ab dem festen Ende. Der Strich ist für die Editor-Zeit eingefroren (Florian, 29.10.2026; `docs/ZONENEDITOR-PLAN.md`). Schalter in der Adresse und im Testmenü (4i): `&vorlauf=2` (Vorlauf als Schienen statt Tinte), `&vorlaufm=`, `&fest=`, `&freezemax=`, `&lookstart=`, `&schleifen=0`, `&loopaspect=`, `&loopr=`, `&tol=`, `&even=0`, `&span=`, `&turn=`.
 
-## 4c. Lesart „Ebenen“ (`lanesTrack` in `src/track/strokeToTrack.ts`, aus dem Bahnbau-Labor)
-Gezeichnet wird immer auf einer Ebene. Links steht die Ebenenleiste (`buildLanePanel`; hinten oben, vorne unten; die Ebene des Bahnendes rosa, die gewählte gelb). Der Strich ist die Seitenansicht auf dieser Ebene, gelesen wie „Ein Strich“ (`single`): Bildhöhe über der Bodenlinie ist Höhe, ein Kreis ein Looping. Eine Wende im Strich ist keine Kurve (`GestureOptions.noTurns`): Die Bahn bleibt am Scheitel stehen (`BlockedInfo.dir` 0, Hinweis „erst links eine andere Ebene wählen“); der Rundenschluss zur Station bleibt erlaubt. Kurven entstehen nur über die Leiste: Ist eine andere Ebene gewählt und zeigt der neue Strich am Bahnende zurück (Richtung über die ersten 3 m), setzt ein flacher Halbkreis auf Endhöhe an (Radius halber Ebenenabstand, Scheitel als `turn`); zeigt er weiter vorwärts, ein Spurwechsel als S-Kurve (16 m je Ebene), der die ersten Meter des Strichs ersetzt. Danach liest `extendTrack` den Strich auf der neuen Ebene, die Wahl ist verbraucht. Jeder Strich, der nicht auf der Bahn ansetzt (Überzeichnen), setzt eine offene Bahn fort (`strokeKind` 'extend', Anfang weich an das Bahnende geführt mit `startAt`), auch wenn er auf der Höhe einer neu gewählten Ebene oder sonstwo beginnt. Ohne Bahn steht die Station auf der gewählten Ebene (sonst 0). **Auto** (Knopf unter der Leiste, Einstellung `lanesAuto`): Eine Rückkurve im Strich führt von selbst auf die nächste Ebene (höher gezeichnet = hinten, wie „Ein Strich“); auf der hintersten oder vordersten Ebene bleibt die Bahn am Scheitel stehen, mit der Warnung wie bei „Bühne“. `applyBlocked` schneidet den Strich dabei nur einmal am Scheitel ab (`blockedCut`): Läuft der Finger weiter zurück, fände jede Vorschau den Scheitel sonst ein Stück früher. Auf schmalen Bildschirmen steht der Hinweistext rechts neben der Leiste.
+## 4c. Lesart „Ebenen“ (im Testmenü „Spuren (alt)“; `lanesTrack` in `src/track/strokeToTrack.ts`, aus dem Bahnbau-Labor)
+Nur per `?lanes` und im Testmenü (4i); nicht zu verwechseln mit den Ebenen des Zonen-Editors. Gezeichnet wird immer auf einer Ebene. Links steht die Ebenenleiste (`buildLanePanel`; hinten oben, vorne unten; die Ebene des Bahnendes rosa, die gewählte gelb). Der Strich ist die Seitenansicht auf dieser Ebene, gelesen wie „Ein Strich“ (`single`): Bildhöhe über der Bodenlinie ist Höhe, ein Kreis ein Looping. Eine Wende im Strich ist keine Kurve (`GestureOptions.noTurns`): Die Bahn bleibt am Scheitel stehen (`BlockedInfo.dir` 0, Hinweis „erst links eine andere Ebene wählen“); der Rundenschluss zur Station bleibt erlaubt. Kurven entstehen nur über die Leiste: Ist eine andere Ebene gewählt und zeigt der neue Strich am Bahnende zurück (Richtung über die ersten 3 m), setzt ein flacher Halbkreis auf Endhöhe an (Radius halber Ebenenabstand, Scheitel als `turn`); zeigt er weiter vorwärts, ein Spurwechsel als S-Kurve (16 m je Ebene), der die ersten Meter des Strichs ersetzt. Danach liest `extendTrack` den Strich auf der neuen Ebene, die Wahl ist verbraucht. Jeder Strich, der nicht auf der Bahn ansetzt (Überzeichnen), setzt eine offene Bahn fort (`strokeKind` 'extend', Anfang weich an das Bahnende geführt mit `startAt`), auch wenn er auf der Höhe einer neu gewählten Ebene oder sonstwo beginnt. Ohne Bahn steht die Station auf der gewählten Ebene (sonst 0). **Auto** (Knopf unter der Leiste, Einstellung `lanesAuto`): Eine Rückkurve im Strich führt von selbst auf die nächste Ebene (höher gezeichnet = hinten, wie „Ein Strich“); auf der hintersten oder vordersten Ebene bleibt die Bahn am Scheitel stehen, mit der Warnung wie bei „Bühne“. `applyBlocked` schneidet den Strich dabei nur einmal am Scheitel ab (`blockedCut`): Läuft der Finger weiter zurück, fände jede Vorschau den Scheitel sonst ein Stück früher. Auf schmalen Bildschirmen steht der Hinweistext rechts neben der Leiste.
 
 ## 4d. Autoscroll, Streckenlänge
 - **Autoscroll** (`autoscroll` in `src/app/scenes/level.ts`): Randzone mit Nähe 0 bis 1 wie in Editoren (dnd-kit: 20 % der Fläche, tldraw: Nähe mit Kurve), Tempo zusätzlich aus dem Fingertempo (Raymond Chens Autoscroll-Reihe: schneller Zug, schneller Scroll), weich folgend wie eine Spielkamera, ohne Wartezeit. Zone 30 % der Breite und 18 % der Höhe (70 bis 300 px), Tempo am Rand 0,75 Breiten bzw. 0,5 Höhen je Sekunde (220 bis 760 px/s), Nähe hoch 1,6; zieht der Finger auf den Rand zu, zieht die Kamera mit bis zu 80 % seines Tempos mit, zieht er weg (über 60 px/s), bremst sie; Tempo folgt mit 1/7 s; erst ab 12 px Fingerweg. An der Levelgrenze sammelt sich kein Tempo an. `?scroll=0` schaltet ihn ab (die Playwright-Szenarien zeichnen in festen Bildschirmkoordinaten).
@@ -119,17 +169,17 @@ Strichzentrum).
 **Kamera exakt (24.10., Etappe 1, Schritt 1):** Die Perspektive ist seitdem genau die Kamera des Weltrenderers (4f): die um
 `CAMERA_TILT` = atan(4,2 / 8,4) = 26,57° geneigte Lochkamera im Abstand D vor dem Kameraziel, senkrecht um 1/cos gestreckt.
 Ein Weltpunkt erscheint um das Ziel mit D / W skaliert, W = D + DEPTH_VIEW·z − (y − cy)·sin 26,57° (`viewDepth`, `pointScale`):
-Was über dem Ziel liegt, rückt der geneigten Kamera näher. Vorher galt jede Spur-Ebene als bildparallel (W ohne den
-Höhenterm); 10 m über dem Ziel machte das bei D = 170 m rund 2,6 % Maßstab aus. Die Spur-Container skalieren weiter einheitlich
+Was über dem Ziel liegt, rückt der geneigten Kamera näher. Die Spur-Container skalieren weiter einheitlich
 mit dem Maßstab auf Zielhöhe (`viewScale`); `toLaneOf` korrigiert jeden Punkt mit `pointScale(y, z) / viewScale(lane)` nach, also
 auch Punkte auf ganzen Spuren, sobald sie über oder unter dem Ziel liegen (Schienenbreite über `laneRatioFor(z, lane, y)`).
 `rayToWorld` schneidet den Strahl mit der senkrechten Spur-Ebene in geschlossener Form: aus Yi·W = (dy + rise(z))·D folgt
 dy = [Yi·(D + DEPTH_VIEW·z) − rise(z)·D] / (D + Yi·sin 26,57°), daraus W und die Breite. Ohne Perspektive ändert sich nichts.
 
-## 4f. Weltrenderer hinter Schalter (`?world=1`, Etappe 1)
+**Neigung einstellbar** (aus dem Kamerawinkel-Test): 26,57° ist nur die Vorgabe (`DEFAULT_CAMERA_TILT`); `setCameraTilt` ändert die Neigung zur Laufzeit (mit den Reglern des Zonen-Editors, mit `?tilt=` oder je Gerät gemerkt in `tc.kamerawinkel`, `src/ui/cameraTiltPanel.ts`), und `setBrushMode` wählt eine von vier Tiefen-Lesarten des Pinsels: „Tiefe aus Bildhöhe“, „Spur halten“, „Ebenen: landen“, „Ebenen: Bodenhöhe“ (Testmenü, 4i).
+
+## 4f. Weltrenderer (`?world=1` und alle Zonen, Etappe 1)
 Module unter `src/world/` (Richtlinie 2.3, Plan Paket 1). Three.js (r186, `three` als Abhängigkeit) rendert die Welt, Pixi
-bleibt für Himmel, Zeichen-Overlay und HUD. Der Weltrenderer wird nur mit dem Schalter per dynamischem Import geladen (eigener
-Chunk, 527 kB, 132 kB gzip); ohne Schalter ist das Spiel unverändert.
+bleibt für Himmel, Zeichen-Overlay und HUD. Der Weltrenderer wird per dynamischem Import geladen, wenn die Adresse `?world=1` oder `?zone=` enthält (`Game.init`): Zonen laufen immer in der Welt, Levels nur mit dem Schalter.
 - **Ein Kontext, zwei Renderer** (`src/world/renderer.ts`, `Game.init`): Three legt Zeichenfläche und WebGL2-Kontext an
   (`stencil: true` für Pixi-Masken; Kantenglättung wie bisher an, `?aa=0` schaltet sie zum Messen ab), Pixi startet mit `canvas`,
   `context` und `clearBeforeRender: false`. Pixis eigenes Rendern im Ticker ist abgeschaltet; `Game.renderFrame` zeichnet je
@@ -174,8 +224,7 @@ Chunk, 527 kB, 132 kB gzip); ohne Schalter ist das Spiel unverändert.
   Labor), Lambert-Materialien überall; Schatten, Nebel und Looks ab Schritt 4.
 - **Holz und Hängebahn** (Schritt 3, `trackBuilder.ts`): Holz mit Schichtholzstapeln unter Flachstahl-Schienen bei ±0,55 m,
   Schwellen alle 1 m, Laschen alle 3 m, Handlauf hinten mit Pfosten. Hängebahn: Der Tragbalken mit Rippen liegt **auf der
-  Bahnlinie**, also genau auf dem Strich (Tor 1a, 25.10.: Florian will den Strich immer dort, wo er zeichnet; die erste
-  Fassung hatte den Balken 2,4 m über dem Strich und die Gondel auf dem Strich). Die Gondel hängt `HANG_DROP` = 2,4 m
+  Bahnlinie**, also genau auf dem Strich (Tor 1a, 25.10.: Florian will den Strich immer dort, wo er zeichnet). Die Gondel hängt `HANG_DROP` = 2,4 m
   darunter (`src/world/trackTypes.ts`): die Welt versetzt ihre Gondel-Geometrie (`WorldTrain`, Hänger und Laufwerk bis zum
   Balken), die Bühne versetzt die Wagenzustände für ihre Fahrgäste (`WorldView.hangCars`), die Physik fährt unverändert auf
   der Linie. Der Pinsel hält den Strich bei der Hängebahn `HANG_DROP` + 0,8 m über dem Boden (`LevelScene.groundClearance`),
@@ -205,8 +254,7 @@ Chunk, 527 kB, 132 kB gzip); ohne Schalter ist das Spiel unverändert.
   (Band), Portal (Ring um eine Öffnung). `src/world/levelElements.ts` bildet die heutigen Level-Daten darauf ab: Berge als
   Dreiteiler je Spur (Scheibe ±0,45 Spuren um die Spur); ein Berg ohne feste Spur steht wie auf der Bühne gestaffelt auf
   allen fünf Spuren (`buildMountainStack`: Rückwände, Lippen und Böden aller Scheiben zu drei Geometrien verschmolzen,
-  drei Zeichenaufrufe je Berg; Tor 1a: als ein 41 m tiefer Klotz lag seine Vorderseite im geneigten Bild zehn Meter unter
-  der Rückseite, die Bahn schwebte sichtbar dazwischen), mit Öffnungen je Scheibe an den Tunnelportalen der Bahn dieser
+  drei Zeichenaufrufe je Berg), mit Öffnungen je Scheibe an den Tunnelportalen der Bahn dieser
   Spur (`setTunnelPortals` aus `TrackRenderer.draw`, ±0,6 Spuren, Radius 2 m wie der Platzhalter-Kreis der Bühne) und
   einem Portalring davor, hinter dem eine dunkle Scheibe den Tunnelmund als Loch lesbar macht; Seen und Flüsse
   als Wasserflächen (Breite minus 3 m), Wasserfälle als Bänder, Deko-Bauten als beschriftete Flächen. Die Bühne blendet
@@ -219,32 +267,17 @@ Chunk, 527 kB, 132 kB gzip); ohne Schalter ist das Spiel unverändert.
   Helligkeit, Gradient-Map, Tönung). `paintedMaterial()` hängt den Umfärbe-Shader an Lambert-Materialien, alle Flächen
   (Boden, Erdschnitt, Bahn, Stützen, Wagen, Kulissen) teilen die Uniforms. Ein Nacht-Level wählt den Nacht-Look,
   `?look=day|dusk|night|neon` erzwingt einen; der Himmel liegt noch in Pixi und wechselt nur mit dem Nacht-Level.
-- **Lesarten-Knopf und Spur-Filter raus** (Schritt 4, Plan Paket 7): Lesart ist der Pinsel, `?stage|single|lanes` nur
-  noch für Szenarien und Replay; `src/render/shaders/laneFilter.ts` gelöscht, `WorldView.setFx` schaltet nur noch die
-  Leuchtebenen; die Texte `strokeMode.*` sind aus den Sprachdateien.
-- Messung am Mac nach Schritt 4 (800 × 600): Level 32 mit Bahn durch den Berg 106 Zeichenaufrufe, 120 fps; Level 8 Holz 96.
-  Replay `--world` nach Schritt 4: wie nach Schritt 3 (250 Profile, 7410 Stützen, Median 2,0 px, kein Fehler); Kulissen prüft das Replay nicht, sie hängen nur vom Level ab.
-- **Was im Übergang in Pixi bleibt:** Die Bodenstreifen der Spuren sind aus (`WorldView.setWorldMode`); Berge, Wasser, Deko
-  (cover), Stützen, Coins, Elemente, Station, Absperrbänder und Effekte liegen weiter in den Spur-Containern über der Welt,
-  ohne Tiefenpuffer: Sie decken Bahn und Wagen immer, Berge und Wasser skalieren je Spur einheitlich und liegen in
-  Perspektive bis zu ein paar Pixel neben dem exakten Boden (bis Schritt 3 und 4). Karte und Übergang (Miniaturen, Fotos
-  der Ebenen) kennen die Welt noch nicht (Paket 12).
-- Messung am Mac (24.10., 800 × 600, Browser der Entwicklungsumgebung): 120 fps, 54 Zeichenaufrufe ohne Bahn, 108 mit Bahn
-  und Zug (Straße oder Stahl 6, Zug 3, Boden 2). Replay mit Perspektive: 261 Aufnahmen, Pinsel 87 von 250 Fahrten
-  geschafft (vorher mit der bildparallelen Näherung 88, ohne Perspektive 90), kein Fehler; die drei Bühnen-Lesarten laufen
-  ohne Perspektive und sind unverändert. Replay `--world` (wie `--persp`, dazu je Pinsel-Bahn das Profil mit Teilen,
-  Dreiecken und endlichen Werten sowie der Abstand der Bahnknoten zum Strich im Bild der Weltkamera, Median und Maximum, der
-  Rundenschluss zählt mit): 250 Bahnprofile gebaut, keine ungültigen Werte; Abstand der Bahnknoten zum Strich bei 227 Aufnahmen mit fester Kamera im Median der Mediane 2,3 px (das Maximum lag in fortgesetzten Bahnen, deren alte Knoten nicht zum Strich gehören; seit Schritt 3 zählen nur neue Striche).
+- **Pixi im Weltmodus:** Die Bühne blendet aus, was die Welt zeichnet (Bodenstreifen, Schwellen und Band-Meshes, Pfeiler, Wagenkörper, Berge, Wasser und Deko; `setWorldMode`, `cover`). Karte und Übergang (Miniaturen, Fotos der Ebenen) kennen die Welt nicht (Paket 12).
+- Im Verlauf: Lesarten-Knopf und Spur-Filter entfernt (Schritt 4), Pixi im Übergang bis Schritt 4, Messungen am Mac und im Replay (24.10. und nach Schritt 4).
 
-## 4g. Zonendatei und Klötzchen-Editor (Etappe 1, Schritt 6; der Editor ist seit 30.10.2026 entfernt)
-Platzhalter-Werkzeug (Plan Paket 2.2, Stufe 1): Florian baut die Basiszone am Mac mit Maus, Trackpad und Tastatur, ohne
-Politur; alles Gesetzte sind Klötzchen, die später Grafiken ersetzen.
+## 4g. Zonendatei mit Klötzchen (Etappe 1, Schritte 6 bis 9; der Klötzchen-Editor ist seit 30.10.2026 entfernt)
+Die erste Zonendatei (Plan Paket 2.2): Elemente als Klötzchen, die später Grafiken ersetzen.
 - **Zonendatei** (`src/zone/types.ts`): `public/zones/<name>/zone.json`, Version 1 mit Name, Breite, Bahntyp und Elementen
   (Kennung `e1`, `e2`, …, Typ nach Plan 8a.1: Kulisse, Dreiteiler, Säule, Höhlenkasten, Wasser, Wasserfall, Portal; Fußpunkt
   x, y in Metern, Tiefe z in Spuren, Breite, Höhe, Tiefe, Farbe, Beschriftung). `parseZone` prüft beim Lesen und lässt
   kaputte Elemente weg, `serializeZone` schreibt deterministisch (feste Feldreihenfolge, Elemente nach Kennung, zwei
   Nachkommastellen), damit Diffs lesbar bleiben. Platzhalter-Maße je Typ in `KIND_DEFAULTS`. Felder, Station,
-  Schlangenbereich, Baustellen, Coins und Metadaten je Element kommen in den Schritten 7 bis 9.
+  Schlangenbereich, Baustellen, Coins und Metadaten je Element kamen in den Schritten 7 bis 9 dazu (unten).
 - **Laden, Speichern, Hot-Reload** (`src/zone/io.ts`, `vite.config.ts`): Das Spiel lädt die Datei statisch (auch gebaut,
   auch auf dem Handy: `?zone=basiszone` öffnet die Zone als Werkstatt mit flachem Boden, allem freigeschaltet und den
   Elementen in der Welt). Speichern geht nur im Dev-Server am Mac über `POST /__zone/<name>` (Zonen-Speicher in
@@ -253,59 +286,52 @@ Politur; alles Gesetzte sind Klötzchen, die später Grafiken ersetzen.
   sonst lüde er die ganze Seite neu); so sieht man Änderungen von Hand oder aus einer zweiten Sitzung sofort.
 - **Editor** (`src/app/zoneEditor.ts`, `?editor=1`): am 30.10.2026 entfernt (Florian: „dann können der alte Editor 1 und
   die Kamerawinkelanzeige im Game raus“); der Zonen-Editor (4i) ist die einzige Stelle zum Testen. Zonen mit Klötzchen
-  laden und spielen weiter, ihre Elemente baut `src/zone/build.ts`.
+  laden und spielen weiter, ihre Elemente baut `src/zone/build.ts`. Elemente, ihre Metadaten und die Stufentabelle haben
+  seitdem keine Oberfläche; sie stehen nur in der Datei.
 - **Metadaten je Element** (Schritt 7, Plan 2.1 und 8a.1): `foundation` (tragfähige Oberkante: Stützen dürfen darauf stehen,
   wenn die Bahn in der Tiefe höchstens eine halbe Spur entfernt ist; `topAt` kennt die Schultern des Dreiteilers),
   `openings` (Öffnungen in der Lippe des Dreiteilers, relativ zum Fuß, Radius; die Bahn darf dort hindurch), `anchor`
   (Anschluss am Fuß: Station, Tunnelachse, Wasserfallquelle), `growth` (Wachstumsstufe: ab dieser Fortschrittsstufe da),
-  `depthRole` (Rückwand, Mitte, Vorderlippe). Im Editor am gewählten Element: M Fundament, O Öffnung (Dreiteiler), A Anker,
-  G Stufe, R Rolle; Fundament als grüne Oberkante, Anker als Punkt am Fuß, alles in der Statuszeile. Seit Tor 1b (25.10.):
-  Alt+Pfeile verschieben die Öffnung (Shift fein, sie bleibt im Element), Plus und Minus ändern ihren Radius, Shift+Pfeile
-  links/rechts die Dicke (Ausdehnung in der Tiefe) von Dreiteiler, Höhlenkasten und Wasser. Die Wachstumsstufe
+  `depthRole` (Rückwand, Mitte, Vorderlippe). Die Wachstumsstufe
   schaltet seit Schritt 9 Elemente je Feld (unten); die Tiefenrolle bleibt bis zur Stilprobe ein reines Datum.
 - **Felder** (Schritt 7, Plan 2.1 und 2.3): `fields` in der Zonendatei (`f1`, `f2`, …; x0 bis x1, Höhe y0 bis y1 in
-  Zonenkoordinaten, mindestens 20 × 12 m). Werkzeug „Feld“: in der Welt aufziehen (Rechteck auf Spur 0), Klick in ein Feld
-  wählt es, Enter schaltet es aktiv, Entf löscht. Aktives Feld im Spielen (und ohne Editor mit `?field=<Kennung>`, sonst
+  Zonenkoordinaten, mindestens 20 × 12 m). Aktives Feld im Spielen (und ohne Editor mit `?field=<Kennung>`, sonst
   das erste Feld der Zone): weiche Kamerabegrenzung (`Camera.softBounds`: die Ziele bleiben im Feld, beim Ziehen darf die
   Kamera ein Viertel der Sicht darüber hinaus und federt los­gelassen zurück), Zoom-Grenze „Feld passt ins Bild“
   (`Camera.fitZoom` als `minZoom`), Absperrband an den Rändern links, rechts und oben (gelb-schwarz gestrichelt in der
-  Ansicht auf Spur 0, `LevelScene.drawFieldTape`). Im Bauen bleibt die Kamera frei. Hochformat- und Querformat-Rahmen
-  des Felds (Plan 2.3) zeigt der Editor noch nicht.
+  Ansicht auf Spur 0, `LevelScene.drawFieldTape`). Felder legt heute der Zonen-Editor an, mit den Handy-Rahmen quer und hoch (Werkzeug R, 4k).
 - **Station, Schlange, Baustelle, Coins** (Schritt 8; `src/zone/types.ts`, `src/zone/build.ts`, `src/zone/groups.ts`,
   `src/world/stationElements.ts`): eigene Listen der Zonendatei mit Kennungen `s1`, `q1`, `b1`, `c1`. Stationsanker
-  (Plan 3.3): Anfang des geraden Vorgabestücks auf der Bahnlinie, Richtung (D), Länge (Pfeile, Start 14 m); Platzhalter
-  Bahnsteig mit Pfeil, Häuschen mit Drehkreuz-Pfosten und Geländer, Hebel für die Startart (Knopf kommt in E2). Im Spiel
+  (Plan 3.3): Anfang des geraden Vorgabestücks auf der Bahnlinie, Richtung, Länge (Start 14 m); Platzhalter
+  Bahnsteig mit Pfeil, Häuschen mit Drehkreuz-Pfosten und Geländer, Hebel für die Startart (der Knopf daran kam in Etappe 2, Schritt 2, 4h). Im Spiel
   (`LevelScene.resetStationPiece`): Die Station des aktiven Felds (sonst die erste) setzt das Vorgabestück als offene
   Pinsel-Bahn (`stationPath`); jeder Strich setzt sie fort, eine fertige Runde wird nicht durch einen neuen Strich
   ersetzt, Löschen stellt das Vorgabestück wieder her. Schlangenbereich (Plan 6.3): Streifen x0 bis x1 mit Eingang in
   Richtung dir, sechs Platzhalter-Figuren, Freiraum-Volumen fünf Meter als durchscheinender Kasten (das Anheben der Bahn
   kommt in E2). Baustelle (Plan 5.1): Pfosten mit gelb-schwarzem Band um den Anschlusspunkt, Variante Verbinden oder
-  Durchbruch (V) mit Mindesttempo (Pfeile); das Verhalten kommt in E2 und E3. Coin-Gruppen (Plan 4.4): Form Reihe, Bogen,
-  Ring, Säule (C), Zahl und Abstand (Pfeile); `coinsOfGroup` macht daraus die Coins der Bühne (`level.coins`, Fangradius
+  Durchbruch mit Mindesttempo; das Verhalten steht in 4h (Etappe 2, Schritt 6). Coin-Gruppen (Plan 4.4): Form Reihe, Bogen,
+  Ring, Säule, Zahl und Abstand; `coinsOfGroup` macht daraus die Coins der Bühne (`level.coins`, Fangradius
   wie heute), in der Welt eine durchscheinende Marke zum Greifen. Jeder Platzhalter ist eine verschmolzene Geometrie
   mit Farbe je Ecke (ein Zeichenaufruf plus einer je durchscheinendem Teil; als Einzelteile kosteten vier Platzhalter
-  mit Schatten über hundert Aufrufe). Alle Einträge lassen sich wie Elemente wählen, ziehen, in der Tiefe schieben und
-  löschen (Treffer über die Kennung).
-- **Ziele, Stufen und Testfahrt je Feld** (Schritt 9; Plan 2.1, 2.4, 4.1): Ein Feld trägt `goals` (höchstens sechs; Typ
+  mit Schatten über hundert Aufrufe).
+- **Ziele und Stufen je Feld** (Schritt 9; Plan 2.1, 2.4, 4.1): Ein Feld trägt `goals` (höchstens sechs; Typ
   aus `ZONE_GOAL_TYPES`, das sind die Zieltypen des heutigen Prüfers `evaluate`, dazu Wert und Bonus), `stage`
   (Fortschrittsstufe der Zone in diesem Level: Elemente mit größerer Wachstumsstufe fehlen, `WorldRenderer.setStage`;
   ohne Angabe ist alles da) und `upgrade` (Aufwertungsstufe, heute die Gurtstufe 0 bis 4 als `level.restraint`; ohne
-  Angabe die der Welt). Im Editor am gewählten Feld: N Name, Z Ziele als Zeile „finish, height 20, *coins 5“
-  (`parseGoals`, `formatGoals`; Stern = Bonus; Eingabe über den Browser-Dialog), G Stufe (alle, 0 bis 3), U Gurt. Wird ein
+  Angabe die der Welt). Ziele stehen als Zeile „finish, height 20, *coins 5“ (`parseGoals`, `formatGoals`; Stern = Bonus); heute setzt der Zonen-Editor sie am Feld (4k). Wird ein
   Feld aktiv (`LevelScene.setActiveField`), übernimmt das Level seine Ziele: die Zielleiste wertet sie live wie im Level,
   die Ergebnistafel zeigt Sterne und Haken (ohne einen Fortschritt zu speichern); ohne Ziele bleibt die Zone Sandkasten
-  mit Maßband (`hasGoals`). Der Knopf „Testfahrt“ schaltet das gewählte Feld aktiv, wechselt ins Spielen und startet die
-  Fahrt (Tab zurück). Prüfzone `public/zones/probe/zone.json` mit allen Eintragsarten: `tests/zone.test.ts` liest sie und
+  mit Maßband (`hasGoals`). Prüfzone `public/zones/probe/zone.json` mit allen Eintragsarten: `tests/zone.test.ts` liest sie und
   verlangt, dass Lesen und Schreiben die Datei Zeichen für Zeichen wiedergeben (deterministisches Laden); Szenario 10
   (`node scripts/scenario.mjs 10`, in der CI-Matrix) lädt sie mit Weltrenderer, prüft Einträge, Vorgabestück, Coins,
   Feld, Ziele, Gurt, Stufe und Zeichenaufrufe und legt `screenshots/scenario-10-zone.png` als Standbild ab. Platzhalter:
   Der Zielkatalog v1 kennt nur die heutigen Zieltypen (die Rätselziele Glocke, Mühlrad, Tor, Sprung, Durchbruch sowie
-  Magnet-Coins und Fangen kommen mit E2 und E3), die Aufwertung ist nur die Gurtstufe (Fähigkeiten als Schalter in E2),
+  Magnet-Coins und Fangen kommen mit E2 und E3), die Aufwertung war hier nur die Gurtstufe (Fähigkeiten als Schalter seit Etappe 2, 4h),
   die Zieleingabe ist eine Textzeile ohne eigene Oberfläche.
 - Die Bühne nutzt für die Zone das Sandbox-Level (`SandboxConfig.zone`): flacher Boden, Breite der Zone, alle Elemente
   und Startarten frei (Plan Paket 3: die Basiszone kann alles). Tests in `tests/zone.test.ts`.
 
-## 4h. Etappe 2: Bahn und Welt (Branch `etappe-2-bahn-und-welt`)
+## 4h. Etappe 2: Bahn und Welt (Branch `etappe-2-bahn-und-welt`, in `zoneneditor` enthalten; Etappe 2 ruht seit 27.10.2026)
 Arbeitsschritte in `docs/GROSSER-PLAN.md`, Paket 10 („Etappe 2 in Arbeitsschritten“). Die Aufnahmen des Strich-Rekorders liegen
 nur im Haupt-Checkout; ein Worktree spielt sie mit `npm run strokes:replay -- --world <Haupt-Checkout>/recordings/strokes.jsonl`
 nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL=http://localhost:<Port>/ node scripts/scenario.mjs 10`
@@ -320,10 +346,7 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   alles), `zoneUnlocks` daraus die Freischaltungen (nie „Boden formen“: in der Zone wird kein Strich mehr zum Berg, Plan 7.5),
   `allowedStarts` die Startarten für den Knopf. Im Level (`LevelScene.setActiveField`) folgen Regal, Startarten (eine nicht
   erlaubte springt auf die erste erlaubte, `ensureStartAllowed`), Rolle, Tunnel, Gurt, Budget und Höhenlimit dem Feld;
-  Kettenzugstärke und Wagenvariante nutzen Schritt 2 und 3. Editor: U wählt die Stufe (alle → 0 … n → alle), Shift+U
-  bearbeitet die Stufe der Zone als Zeile („kettenzug launch booster, gurt 2, kette 32, wagen rot, name Bügel“; die Tabelle
-  wird damit Teil der Datei), S die Überschreibungen des Felds („+launch -tunnel, gurt 3, kette 30, budget 400, höhe 40“);
-  die Statuszeile zeigt den aufgelösten Satz. Prüfzone mit drei Stufen und einem Feld „Tunnel aus, Budget 400 m, Höhe
+  Kettenzugstärke und Wagenvariante nutzen Schritt 2 und 3. Den Satz eines Felds stellt heute der Zonen-Editor am Feld ein (Stufe, Aufwertung und Schalter als Zeile „+launch -tunnel, gurt 3, kette 30, budget 400, höhe 40“; 4k); die Stufentabelle `upgrades` steht nur in der Datei. Prüfzone mit drei Stufen und einem Feld „Tunnel aus, Budget 400 m, Höhe
   40 m“; Szenario 10 prüft die Schalter im Spiel; Tests in `tests/abilities.test.ts`. Platzhalter: Vorbelegung der Stufen,
   Texteingabe als Browser-Dialog, Wagenvariante als ein Wort.
 - **Startarten sichtbar, Startart-Knopf am Hebel** (Schritt 2; `src/world/startElements.ts`, Plan 3.5, 3.3): Der Weltrenderer
@@ -370,27 +393,7 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   prüfen die Startart (`evaluator.ts`, `ZONE_GOAL_TYPES`). Tests in `tests/lift.test.ts`. Platzhalter: Gerüst, Maschinenhaus,
   der Fahrkorb fährt noch nicht mit, die Aufzug-Knoten sind im Zeichenmodus wie normale Knoten greifbar. Der echte
   Pendel-Launch (dreimal durch die Station) kommt in E3.
-- **Fels-Regeln** (Schritt 5; `src/zone/rock.ts`, Plan 5.1, 5.2, Richtlinie 3): Die Zone baut aus ihren Platzhaltern mit
-  Volumen ein Festigkeitsfeld (`RockField`, je Fortschrittsstufe neu). Ein Dreiteiler ist Rückwand, Innenraum und
-  Vorderlippe: Lippe (vor der Spur des Elements, in Spuren `z − d/2`) und Rückwand (`z + d/2`) sind je ein Band von
-  ±`ROCK_MARGIN` = 0,12 Spuren, die Lippe außer in ihren Öffnungen; der Innenraum dazwischen ist frei und zählt als
-  Tunnel; die Flanken sind offen wie bei den Bergen der Level (die gemalten Teile bringen feste Flanken und echte
-  Öffnungsvolumen als Metadaten). Säulen sind Zylinder, Höhlenkästen haben Wände, Boden und Decke (`CAVE_WALL` 0,6 m) um
-  einen freien Raum, der als Tunnel zählt; Flächen, Wasser, Wasserfall, Portal sind kein Fels. Pinsel: `BrushOptions.rock`
-  liefert je Linienpunkt die verbotenen Tiefen (`spans`, der Punkt wird mit dem Strahl der Kamera in der Tiefe jeder Wand
-  gedeutet); `solveDepth` bildet daraus Läufe und wählt je Lauf nach der ersten Lösung die Seite (vor oder hinter der Wand;
-  geht die eine wegen Boden, Bühne oder Station nicht, die andere), als zusätzliche Schranken `rockUp`/`rockLo`, die
-  dieselben Federn halten wie Boden und Bühne. Geht keine Seite, ist der Punkt blockiert: die Vorschau zeigt rote Marken
-  (`BrushPreview.rock`, Hinweis `rock.blocked`), beim Loslassen schneidet `planBrushTrack` die Linie vor dem ersten Lauf ab
-  und plant neu (`rockCut`, Hinweis `rock.cut`). Stützen: `planWorldSupports` setzt keinen Fuß, wo `solid` gilt
-  (`WorldView.rock`). Fahrt: `TrainSimOptions.insideRock` zählt Tunnel-Meter im Innenraum und in Höhlenräumen wie im
-  Berg. Welt: `ghostTrack` zeichnet den Bahnkörper noch einmal mit umgekehrtem Tiefentest (`GreaterDepth`, Deckung 0,28),
-  also nur dort, wo Fels oder Kulisse ihn verdecken, ein Zeichenaufruf. Der Editor baut das Feld bei jeder Änderung neu
-  (`refreshRock`). Gelernt: Eine Scheibe, die bis auf das Fenster ganz fest ist, macht das Fenster für den Pinsel wertlos
-  (links und rechts davon ist Fels, die Bahn wird um den Berg geschoben); erst Rückwand und Lippe als Wände mit freiem
-  Innenraum geben das Tunnel-Gefühl der Level und von Florians Fenster-Element. Tests in `tests/rock.test.ts` (Feld, Spannen,
-  Ausweichen, Blockade mit Abschneiden, Tunnel-Meter), Szenario 10 prüft das Feld der Prüfzone. Platzhalter: Bänder statt
-  gemalter Wandstärke, runde Öffnungen, offene Flanken, Kästen; der Hinweis ist ein Toast.
+- **Fels-Regeln** (Schritt 5): abgelöst durch das Freiraumfeld (unten); `src/zone/rock.ts` und `RockField` gibt es nicht mehr, der Text steht im Verlauf. Geblieben ist `ghostTrack` (`src/world/trackBuilder.ts`): Er zeichnet den Bahnkörper noch einmal mit umgekehrtem Tiefentest (`GreaterDepth`, Deckung 0,28), also nur dort, wo Fels oder Kulisse ihn verdecken (ein Zeichenaufruf).
 - **Baustellen in zwei Varianten mit Freilegung** (Schritt 6; `src/zone/sites.ts`, Plan 5.1, 5.2, Richtlinie 4). Eine
   Baustelle trägt `variant`, beim Durchbruch `energy` (m/s), beim Verbinden optional `target` (Kennung des Dreiteilers,
   sonst der nächste, dessen Umriss den Punkt enthält und dessen Dicke die Spur trifft, `siteTarget`) und `r`
@@ -408,8 +411,7 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   0,35 Spuren und der Wandhöhe: mit mindestens `energy` zersplittert sie (`stats.breakthroughs`, Ereignis `breakthrough`,
   `WorldRenderer.shatterSite`: Wand aus, 14 Splitter als Instanzen 1,2 s im Flug, Sticker `site.breakthrough`, die
   Baustelle bleibt in der Sitzung offen), sonst steht der Zug und der Fehlgrund heißt `wall` (`fail.wall`, `sticker.wall`).
-  Die Vorab-Fahrt beim Zeichnen und die Zielart kommen in E3. Editor: Plus und Minus ändern den Öffnungsradius, die
-  Statuszeile nennt das Ziel-Element. Prüfzone: Verbinden-Baustelle `b2` auf `e1`, Durchbruch `b1`. Gelernt: Ein fester
+  Die Vorab-Fahrt beim Zeichnen und die Zielart kommen in E3. Prüfzone: Verbinden-Baustelle `b2` auf `e1`, Durchbruch `b1`. Gelernt: Ein fester
   Endpunkt im Fels-Lauf darf die Seitenwahl nicht blockieren (feste Punkte zählen dort nicht mit), sonst meldete der Fang
   „Fels“; und eine Öffnung lädt den Pinsel nicht ein, nur das Verschieben des Bahnendes bringt die Fortsetzung hinter die
   Lippe. Tests in `tests/sites.test.ts`. Platzhalter: Ping, Staub, Splitter, Dauer der Choreografie (Florian prüft sie an
@@ -420,78 +422,17 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   unerreichbar (der Boden darüber ist zu). Offen: `openRooms` liefert Grundfläche (x, Spuren), Boden und Decke; der Boden
   (`buildGround`, `holes`) lässt die Zellen über dem Raum weg und der Erdschnitt ist eine Fläche (`ShapeGeometry`) mit
   einem rechteckigen Fenster vor dem Raum (`groundHoles`, nur für Räume unter dem Boden, Fenster bis 0,3 m unter die
-  Oberfläche); `WorldRenderer.setGroundHoles` baut den Boden neu, wenn sich die Löcher ändern. Der Pinsel sieht über einem
-  offenen Raum den Raumboden als Boden (`LevelScene.groundAt`, `roomAt`) und darf hinab; weil „unten auf dem Bild“ für
-  den Pinsel sonst „vorn“ hieße (und am Bühnenrand der Boden zu ist), hält `BrushOptions.underground` (`roomLanes`) einen
-  unter der Oberfläche gezeichneten Punkt über einem Raum in dessen Spuren, Wunschtiefe in der Raummitte; im Festigkeitsfeld hat ein Raum
-  Wände und Boden, aber keine Decke mehr (der Deckel ist weg), der Raum zählt als Tunnel. Eine Verbinden-Baustelle über
+  Oberfläche); `WorldRenderer.setGroundHoles` baut den Boden neu, wenn sich die Löcher ändern. Wie der Pinsel in einen offenen Raum taucht, regelt seit dem Freiraumfeld `caveAt` (unten); die Raum-Treffer dieses Schritts (`roomLanes`) sind abgelöst. Eine Verbinden-Baustelle über
   einem Raum zielt auf den Raum (`siteTarget`); die Freilegung läuft auf dem Boden (`beginGroundReveal`, Auflösen in der
   Bodenebene, `uRevealXZ`), danach gilt der Raum als offen (`withSiteOpenings` setzt `openFrom` 0 für die Sitzung), Boden
   und Erdschnitt bekommen Loch und Fenster, und das Bahnende taucht in den Raum ab (2 m unter der Decke; der Strich geht
   dort weiter). Looks: `looks` der Zonendatei (Stufe → Tag, Abend, Nacht, Neon); `applyLook` setzt beim Feldwechsel den
   Look der Welt (`?look=` geht vor) und schaltet den Himmel der Bühne für Nacht und Neon auf Nacht (ein eigener Himmel je
-  Look kommt mit dem Himmel in der Welt, Nachtrag zu Schritt 4). Editor: L wechselt den Look der Stufe des Felds, O am
-  Raum die Öffnungsstufe; das Feld meldet nach Regel 2.3 „Untergrund gedeckelt“, wenn es unter den Boden reicht und zur
-  Stufe kein Raum offen ist. Prüfzone: Raum e4 (offen ab Stufe 2), Looks Tag/Abend/Nacht; Tests in
+  Look kommt mit dem Himmel in der Welt, Nachtrag zu Schritt 4). Den Look der Stufe stellt heute der Zonen-Editor am Feld ein (4k); `openFrom` steht nur in der Datei. Prüfzone: Raum e4 (offen ab Stufe 2), Looks Tag/Abend/Nacht; Tests in
   `tests/underground.test.ts`. Platzhalter: rechteckige Löcher und Fenster, Abtauchen als Knick statt Schacht, Himmel nur
   Tag oder Nacht, die Lichtschächte und der Nebel der Räume aus dem Labor fehlen noch.
-- **Glättung der Tiefenwahl an Wänden und Räumen** (Fix zu Tor 2b, 25.10.; `src/track/brushTrack.ts`, `src/zone/rock.ts`,
-  `src/zone/underground.ts`). Florians erster Test an Tor 2b: unschöne, springende Bahnen in Räumen und an Berg und Tunnel.
-  Befund: Die Seitenwahl am Fels fiel je Lauf von Linienpunkten und je Wand (Lippe und Rückwand getrennt) und in jeder
-  Vorschau neu, also kippte sie von Vorschau zu Vorschau und beim Loslassen; die Schranken setzten ohne Anlauf hart an der
-  Wand ein. Über einem offenen Raum war der Raumboden auch für eine Bahn über der Oberfläche der Boden (die Wunschtiefe zog
-  eine Brücke über das Loch bis 3 Spuren nach hinten), die zulässigen Spuren im Raum wanderten mit der Bildhöhe (Wunsch in
-  der Mitte des zulässigen Bereichs, der nahe der Decke auf die hinterste Spur schrumpfte), und der Boden des Höhlenkastens
-  sperrte einen Strich entlang des Raumbodens. Jetzt: (1) Spannen tragen Element und Wand (`RockSpan.id`, `kind`); Läufe
-  desselben Elements, die höchstens `ROCK_RAMP` (8) Punkte auseinanderliegen, bilden eine Passage (ein Vorbeikommen am
-  Element), und je Passage gilt eine Seite (`RockSide`: davor, zwischen Lippe und Rückwand, dahinter), nach der Lage der
-  ersten Lösung. (2) Die Seite bleibt über Vorschauen, Loslassen und Nachbessern (`BrushPreview.rockSides` →
-  `BrushOptions.rockSides` → `BrushPlan.rockSides`; Schlüssel Element@Anfang der Passage, bis 3 Punkte Versatz); geht sie
-  nicht mehr, die nächste, sonst blockiert. Die Seitenwahl misst an den harten Schranken (Bühne, Raum; `hardLow`), nicht am
-  Hebel „nach hinten legen“ der Probefahrten: Der Fels schlägt den Hebel (vorher sperrte der Hebel die Seite, und eine
-  Passage, die frei war, wurde rot). (3) Wunschtiefe `ROCK_GAP` (0,15 Spuren) vor der Wand bzw. in der Korridormitte, mit
-  Anlauf über `ROCK_RAMP` Punkte davor und danach (smoothstep). (4) Räume: `roomLanes` liefert für jeden Punkt über der
-  Grundfläche einen `RoomHit` (Spuren, Raummitte, Höhe h des Strahls auf der Raummitte über der Oberfläche, Raumboden,
-  Oberfläche); der Raum ist bis zur Oberfläche offen (`ROOM_DIVE` 0,3 m; die Decke zählt nicht mehr, der Deckel ist weg).
-  Tauchfahrt (h < −0,3 m): Tiefe in den Spuren des Raums zwischen Raumboden + 1 m und Oberfläche, Wunsch die Raummitte
-  (unter dem Raumboden gemalt: alle Spuren, die Höhe hebt der Boden an), `ROOM_MARGIN` 0,15 Spuren Abstand zu den Wänden,
-  und die Raummitte zieht mit `ROOM_PULL` (2, zusätzlich zum Höhengewicht), sonst bliebe eine Bahn, die von hinten kommt, an
-  der Rückwand hängen. Brücke (h ≥ −0,3 m, Bahn in den Spuren des Raums):
-  Boden ist der Raumboden (weite Schranke), die Wunschtiefe die der Oberfläche, und je näher der Strich der Oberfläche
-  kommt, desto mehr zieht sie auf die Raummitte; davor und danach der Anlauf. Für den Pinsel sind beim Höhlenkasten nur die
-  Seitenwände Fels (`caveSide`), den Boden hält die Boden-Funktion; `solid` (Fahrt, Stützen) kennt Boden und Wände weiter.
-  Messung (`npm run strokes:replay -- --zone probe recordings/strokes.jsonl` auf 71 Aufnahmen aus dem Worktree, 53 davon
-  mit Fels- oder Raumberührung; `--stage N` erzwingt eine Fortschrittsstufe, `TC_DEBUG_ROCK=1` druckt blockierte Läufe und
-  Seiten): Tiefensprünge je berührendem Strich 10,7 statt 12,2, Vorschau-Sprünge 85,3 statt 95,2, Sprung beim Loslassen im
-  Median 1,09 statt 1,14 Spuren, blockierte Läufe 0 statt 6, größte Tiefenänderung je Meter unverändert höchstens 1,57
-  Spuren; ohne Zonenregeln 11,2 / 73,3 / 0,87 (die Aufnahmen entstanden ohne Zone, die Berührungen sind Zufall; mit Stufe
-  2 und offenem Raum dieselben Zahlen, kaum eine Aufnahme taucht). Tests in `tests/rock.test.ts` (Seite bleibt über
-  Vorschauen und beim Loslassen, Hebel gegen Fels) und `tests/underground.test.ts` (Brücke, Tauchfahrt mit Wellen,
-  Raumboden). Platzhalter weiter: Abtauchen ohne Schacht, rechteckige Löcher. **Abgelöst** durch das Freiraumfeld (unten).
-- **Durchfahrt durch Fenster (Magnet) und Vorschau ohne Wackeln** (Tor 2b, zweiter Test, 25.10.; Florians Leitsätze in
-  Plan Paket 5). Fenster: Trifft der Strahl der Lippe eine Öffnung, liefert `RockField.spans` eine Spanne `kind: 'window'`
-  (Tiefe der Lippe, ohne Breite, keine Wand). Trifft eine Passage ein Fenster und liegt der Strich nicht ohnehin im
-  Korridor, ist die Durchfahrt die erste Wahl (`RockSide` `in`: davor vor der Lippe, danach im Korridor; `out`
-  umgekehrt, wenn die Passage an einem festen Punkt hinter der Lippe beginnt, etwa nach einer Freilegung): Schranken an
-  der Lippe vor dem Fenster auf der einen, danach auf der anderen Seite, Rückwand bleibt Schranke, die Wunschtiefe
-  wechselt in einem langen S um das Fenster (`THROUGH_RAMP` 14 Punkte davor und danach; ein kurzer Wechsel bog in der
-  Fahrt zu eng). Beim Malen wächst der Strich ins Fenster hinein, wenn die Passage schon „davor“ gezeigt wird: dann wird
-  aus „davor“ die Durchfahrt (was gezeigt war, bleibt vor der Lippe; der Korridor dahinter ist neu); das Fenster zählt
-  auch an festen Punkten, sonst verlöre die Passage es, sobald es hinter dem freien Teil liegt, und fiele beim Loslassen
-  auf den Korridor zurück. Die natürliche Seite ist, liegt die erste Lösung in einer Wand, die nähere Seite dieser Wand
-  (vorher der Korridor, sobald sie irgendwo zwischen Lippenfront und Rückwand lag). So zieht ein Eingang den Strich wie
-  ein Magnet hindurch; wer das Fenster nicht trifft, fährt wie bisher davor, im Korridor oder dahinter. Vorschau: Im freien Teil
-  (die letzten `PREVIEW_FREE` 45 m) hängt die gezeigte Bahn weich an der Tiefe der letzten Vorschau (`hold`/`holdW`,
-  Gewicht `PREVIEW_HOLD` 20 mit weichem Anstieg ab `PREVIEW_TIP` 15 m vor dem Finger bis zum festen Teil); nur die Spitze
-  wählt frei, Schranken bleiben hart. Gemessen (Replay `--zone probe`, 71 Aufnahmen, 53 mit Berührung): Vorschau-Sprünge
-  an gezeigten Punkten 41,5 je Strich statt 85,8, ohne Zonenregeln 33,0 statt 73,3; Tiefensprünge der fertigen Bahn 11,4
-  statt 10,6 (die Durchfahrt wechselt die Seite), Loslassen 1,07 statt 0,99 Spuren; Fahrten geschafft 30 statt 28 von 71
-  (Aufnahmen ohne Zone, die Berührungen sind Zufall). Varianten, nur mit dem Haltegewicht gemessen: fest ab 25 m statt
-  45 m: Vorschau-Sprünge 15,8, aber fertige Bahn 12,3 Sprünge und Loslassen 1,15 (die alte Bahn kann an Kreuzungen nicht
-  mehr nachgeben); Spitze 20 m mit halbem Gewicht: 61,6 / 10,1 / 0,87. Die verbleibenden Sprünge kommen von Kreuzungen
-  und Engstellen, an denen der frühere Strang nachgibt; dagegen hilft erst die Spitze aus dem Vorschlag „Freiraumfeld“
-  (Plan Paket 5). Tests in `tests/rock.test.ts` (Durchfahrt am Stück und beim Malen, Strich im Korridor bleibt dort).
-  **Abgelöst** durch das Freiraumfeld (unten); die Vorschau ohne Wackeln bleibt.
+- **Glättung der Tiefenwahl an Wänden und Räumen** (Fix zu Tor 2b, 25.10.): abgelöst durch das Freiraumfeld (unten); Text und Messungen im Verlauf.
+- **Durchfahrt durch Fenster (Magnet)** (Tor 2b, 25.10.): abgelöst durch das Freiraumfeld (unten), der Text steht im Verlauf. Geblieben ist die Vorschau ohne Wackeln: Im freien Teil (die letzten `PREVIEW_FREE` 45 m) hängt die gezeigte Bahn weich an der Tiefe der letzten Vorschau (`hold`/`holdW`, Gewicht `PREVIEW_HOLD` 20 mit weichem Anstieg ab `PREVIEW_TIP` 15 m vor dem Finger bis zum festen Teil); nur die Spitze wählt frei, Schranken bleiben hart.
 - **Freiraumfeld statt Sonderregeln** (Plan Paket 5, Vorschlag von Florian am 25.10. bestätigt; `src/zone/field.ts`,
   Pinsel in `src/track/brushTrack.ts`). Ein Feld „fest oder frei“ über die Welt: `FreeField(elements, stage, earth)` mit
   der Erde unter der Oberfläche (`earth(x, Spur)`: Boden, mit den Bergen des Levels, wenn Tunnel verboten sind), offenen
@@ -508,7 +449,7 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   Erde, Fels, Raumboden) und `ceilingAbove` (Decke bis `CEILING` 12 m: Tunnel). `cachedFreeLanes` merkt sich Abschnitte
   je Bühnenpunkt (die Linie wächst beim Malen nur am Ende). Die Fels-Regeln aus Schritt 5 (Lippen- und Rückwandbänder,
   Seitenwahl je Passage, Durchfahrt) und die Raum-Treffer aus Schritt 7 (Tauchfahrt, Brücke, Anlauf) sind damit weg; das
-  Festigkeitsfeld `RockField` (Schritt 5) ist weg. Die Flanken der Dreiteiler sind offen geblieben (siehe Gelernt).
+  Festigkeitsfeld `RockField` (Schritt 5) ist weg. Die Flanken der Dreiteiler sind offen geblieben (Gründe im Verlauf).
   **Stützen und Fahrt auf dem Feld:** `FieldFoundation` (`src/world/foundations.ts`) ist in Zonen das einzige Fundament
   (`WorldRenderer.setFieldFoundation`, über `WorldView.field`): Füße stehen auf dem, was `floorBelow` unter dem
   Anschlusspunkt meldet (Erde, Fels, Raumboden), also auf jedem Element, auch mit organischer Form (Leitsatz 2); Wasser
@@ -520,9 +461,7 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   bleibt beim Loslassen genau so (`fixed` aus der gezeigten Vorschau, wie beim Fortsetzen die alte Bahn); neu gelöst wird
   nur der freie Teil, bei einer Runde dazu der Schluss (dort hält die gezeigte Tiefe weiter nur weich, weil der Schluss die
   Linie am Ende verändert). Beim Malen gilt wie bisher: die letzten 15 m (`PREVIEW_TIP`) wählen frei, davor hält die
-  gezeigte Tiefe, älter als 45 m ist fest. Gemessen (inzwischen 119 Aufnahmen, 94 mit Berührung): Sprung beim Loslassen
-  im Median 0,77 statt 1,17 Spuren, ohne Zonenregeln 0,41 statt 0,94; Tiefensprünge und Vorschau-Sprünge unverändert (12,5
-  und 51,8 je berührendem Strich; ohne Zonenregeln 11,3 und 43,4). Der Rest des Wackelns sind die 15 m der Spitze und
+  gezeigte Tiefe, älter als 45 m ist fest. (Messung im Verlauf.) Der Rest des Wackelns sind die 15 m der Spitze und
   Kreuzungen, an denen der neue Strang vor oder hinter den alten muss; der alte bewegt sich nicht mehr.
   **Freies Gelände wie vor dem Feld** (Florians Rückmeldung 25.10.: Tunnel und Fels besser, das Zeichnen im Freien
   schlechter als davor): Die Erde zählte bis `LIFT_MAX` 2 m unter der Oberfläche als frei (angehoben), damit die Kette
@@ -531,9 +470,7 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   der Erde hart und exakt wie in den Levels (die Enden der Abschnitte werden zwischen zwei Abtastungen genau gesucht,
   `WallKind` nennt, was begrenzt), Erde ist nur bis `LIFT_REACH` 6 m vor und hinter einer Höhle und bis `LIFT_MAX` unter
   der Oberfläche frei, Abstand (`FIELD_GAP`, `CHAIN_MARGIN`) und Anlauf gibt es nur an Elementwänden und Höhlen. Test:
-  ein Strich mit Hügel, Tal und tiefem Stück weit weg von Elementen ergibt mit Feld dieselbe Tiefe wie ohne (unter 5 cm).
-  Gemessen an 159 Aufnahmen: Loslassen im Median 0,46 Spuren mit und 0,40 ohne Zonenregeln (vorher 0,77 und 0,41),
-  Vorschau-Sprünge 55,1 und 48,2, nichts blockiert oder abgeschnitten.
+  ein Strich mit Hügel, Tal und tiefem Stück weit weg von Elementen ergibt mit Feld dieselbe Tiefe wie ohne (unter 5 cm). (Messung im Verlauf.)
   **Pinsel auf dem Feld** (`BrushOptions.field`: `free`, `solid`, `floor`; ohne Feld gilt in den Levels der Boden wie
   bisher): je Linienpunkt die freien Abschnitte, daraus `chooseChain` eine Kette über den ganzen Strich (dynamisches
   Programm): je Punkt kostet ein Abschnitt den Abstand der Wunschtiefe (Bildhöhe über der Erde) zu ihm in Spuren, eine
@@ -555,39 +492,28 @@ nach (nur lesend). Szenarien in einem Worktree gegen den eigenen Server: `TC_URL
   nahe der Oberfläche auf ihre Mitte (`below`, Gewicht wächst bis zur Oberfläche); Ein- und Ausfahrt einer Höhle wandern
   über `CAVE_RAMP` 6 Punkte zwischen Lesung und Mitte. Weltpunkte halten die Mindesthöhe über dem, was unter ihnen trägt
   (`floor`), wer in der Erde steckt, kommt auf die Oberfläche. Die Vorschau meldet je Punkt `cave`, die nächste hält dort
-  schwach. Gelernt: (1) Eine Kette am Stück meidet Sackgassen (ein Innenraum mit nur einem Fenster), beim Malen führt die
-  gezeigte Tiefe hinein; darum sind die Flanken offen geblieben und die Prüfzone hat ein zweites Fenster als Ausfahrt;
-  feste Flanken kommen mit den gemalten Teilen (8a). (2) Die harte Schranke muss berührende Abschnitte zusammenfassen,
-  sonst springt die Bahn am Rand einer Öffnung um die Wanddicke. (3) Erde knapp unter der Oberfläche muss frei bleiben
-  (angehoben), sonst reißt die Kette vor jedem Loch und am vordersten Bühnenrand (Striche auf Bildhöhe −10 waren
-  abgeschnitten). (4) Die Mitte einer Höhle ist die ihres Abschnitts, nicht des verschmolzenen Freiraums (an einem
-  Fenster zog die Mitte sonst nach vorn hinaus). Messung (Replay `--zone probe`, inzwischen 98 Aufnahmen von Florian,
-  76 mit Berührung): Tiefensprünge je berührendem Strich 11,3, Vorschau-Sprünge 51,0, Loslassen 1,17 Spuren, blockiert
-  0, abgeschnitten 0; dieselben
-  Aufnahmen ohne Zonenregeln 11,2 / 40,1 / 0,94 (die Aufnahmen entstanden ohne Zone); Replay `--world` unverändert (475
-  Profile, Median 2,0 px; die Levels laufen ohne Feld). Browser: Strich an der Lippe läuft durch den Innenraum, Tauchfahrt
-  in den Raum (Bahn in der Mitte des Innenraums bzw. des Raums), beide ohne Sprung an gezeigten Punkten und mit höchstens
-  0,06 Spuren je Meter. Tests in
+  schwach. (Gelernt und Messungen im Verlauf.) Tests in
   `tests/field.test.ts`, `tests/rock.test.ts` (Pinsel im Freiraumfeld), `tests/underground.test.ts`.
 
 ## 4i. Zonen-Editor, Stufe 1 und 2 (`?zone=<name>&editor=2`, Branch `zoneneditor`)
 
-Plan: `docs/ZONENEDITOR-PLAN.md`. Der Editor hängt sich in die Level-Szene einer Zone und nutzt deren Weltrenderer und
+Seit 30.10.2026 der einzige Editor. Stand und Plan: `docs/ZONENEDITOR-PLAN.md`; hier stehen die Stufen 1 und 2 (4i),
+3 (4j), 4 (4k), 5 (4n) und 6 (4l, 4m). Der Editor hängt sich in die Level-Szene einer Zone und nutzt deren Weltrenderer und
 Spielkamera; seine Oberfläche ist HTML über dem Spielbild (`src/zoneeditor/ui.ts`).
 
-- **Testmenü und Weg in den Editor** (30.10.2026, bis zur Strich-Entscheidung): „Test ▾“ oben in der Mitte
-  (`src/ui/testMenu.ts`) bietet Strich 1 und 2, die vier Tiefen-Lesarten (`setBrushMode` in `src/ui/cameraTiltPanel.ts`,
-  gelten sofort), die Schalter der Pinsel-Studie, die alten Lesarten und die Zeichengrößen. Die Strich-Schalter liest das
-  Level beim Laden aus der Adresse; das Menü schreibt sie dorthin und lädt neu (vorher schreibt der Editor beim Abbauen
-  seine Sicherungskopie). `src/ui/editorLink.ts`: Knopf „Editor“ in jedem Level und auf der Karte, öffnet die Zone des
-  Levels oder die zuletzt bearbeitete mit den Schaltern der letzten Editor-Sitzung (localStorage `tc.editor.zone`,
-  `tc.editor.schalter`); „Zur Karte“ im Menü. Die Kamera-Anzeige im Spiel ist entfernt, `CameraTiltPanel` setzt nur noch
-  Neigung und Bildwinkel für die Regler des Editors.
+**Testmenü und Weg in den Editor** (30.10.2026, bis zur Strich-Entscheidung): „Test ▾“ oben in der Mitte
+(`src/ui/testMenu.ts`) bietet Strich 1 und 2, die vier Tiefen-Lesarten (`setBrushMode` in `src/ui/cameraTiltPanel.ts`,
+gelten sofort), die Schalter der Pinsel-Studie, die alten Lesarten und die Zeichengrößen. Die Strich-Schalter liest das
+Level beim Laden aus der Adresse; das Menü schreibt sie dorthin und lädt neu (vorher schreibt der Editor beim Abbauen
+seine Sicherungskopie). `src/ui/editorLink.ts`: Knopf „Editor“ in jedem Level und auf der Karte, öffnet die Zone des
+Levels oder die zuletzt bearbeitete mit den Schaltern der letzten Editor-Sitzung (localStorage `tc.editor.zone`,
+`tc.editor.schalter`); „Zur Karte“ im Menü. Die Kamera-Anzeige im Spiel ist entfernt, `CameraTiltPanel` setzt nur noch
+Neigung und Bildwinkel für die Regler des Editors.
 
 - **Daten** (`src/zone/nodes.ts`): Knoten in `zone.nodes` der Zonendatei (Version bleibt 1, das Feld ist optional).
   Ebene: Tiefe `z` in Metern (hinten positiv, Welt-Z = −z), Lage `x`, `y` und Maßstab `scale` ihres Inhalts, Rolle,
   ausgeblendet, gesperrt. Form: Elternebene, Zeichenreihenfolge `order`, Lage `x`, `y`, Maßstab `sx`, `sy`, Pfad aus Ankern
-  mit Griffen (wie `path.ts`), Löcher, Vollton `fill` (Platzhalter bis Stufe 3). Welt = Ebene.(x, y) + Ebene.scale ·
+  mit Griffen (wie `path.ts`), Löcher, Vollton `fill` (seit Stufe 3 ein Anstrich, 4j). Welt = Ebene.(x, y) + Ebene.scale ·
   (Form.(x, y) + Form.(sx, sy) · Pfad).
 - **Abstände** (`setGapBehind`, `movePlaneDepth`, `holdPicture`): Der Griff zwischen zwei Ebenen schiebt alles dahinter
   mit. „Bild halten“ streckt jede verschobene Ebene um den Fußpunkt der Spielkamera (cx, cy + D·sin Neigung) mit
@@ -606,7 +532,7 @@ Spielkamera; seine Oberfläche ist HTML über dem Spielbild (`src/zoneeditor/ui.
 - **Eingabe** (`src/zoneeditor/planeEditor.ts`): Beim Bauen fängt der Editor die Zeiger von `#app` in der Capture-Phase
   ab (das Spiel sieht sie nicht) und alle Tasten am Fenster. Stift und Maus führen die Werkzeuge; zwei Finger schwenken
   und zoomen; ein einzelner Finger wird ignoriert, sobald ein Stift im Spiel war; zwei Finger tippen = rückgängig, drei =
-  wiederholen. Tab oder „Spielen“ gibt alles an das Level zurück (die Bahn kennt die Ebenen erst ab Stufe 4).
+  wiederholen. Tab oder „Spielen“ gibt alles an das Level zurück (seit Stufe 4 baut das Level daraus Kanten, Tiefe und Freiraum, 4k).
 - **Verlauf und Sichern** (`src/zoneeditor/history.ts`): Schnappschüsse je Geste; Sichern über den Dev-Server
   (`saveZone`), Sicherungskopie im `localStorage` (`tc.zoneeditor.<zone>`), beim Start als „Wiederherstellen“ angeboten;
   ändert sich die Datei außen und gibt es nichts Ungesichertes, lädt der Editor neu.
@@ -828,7 +754,7 @@ Plan: `docs/ZONENEDITOR-PLAN.md`, Stufe 4 und 4.9. Ohne DOM: `src/zone/dock.ts`,
   Ebenen-Zonen aus (wie bei den Scheiben). Die Fahrt nutzt `depthPerspective` wie bei den Scheiben.
 - **Station** (`ZoneStationNode`, Kennung `station`): Ebene, x in Ebenen-Koordinaten, Richtung, Länge; `stationOf` gibt die
   `ZoneStation` (x, Höhe der Kante + 1 m, Spur 1 m vor der Ebene) oder null ohne Kante. `zoneStation()` des Levels nimmt
-  sie vor den Stationen des Klötzchen-Editors.
+  sie vor den Stationen der Zonendatei (4g).
 - **Editor:** Werkzeug D (`dockDown`, `dockOverlay`): Kante antippen schaltet, sonst die Fläche darunter (Material in der
   Leiste). Überlagerung: `OverlayState.dock`, `hatch` (SVG-Muster). Handy-Link: Dev-Server `/__lan` (IPv4 im WLAN),
   `ui.togglePhone`.
@@ -838,11 +764,11 @@ Plan: `docs/ZONENEDITOR-PLAN.md`, Stufe 4 und 4.9. Ohne DOM: `src/zone/dock.ts`,
   (`isPlayNode`; fallen mit ihrer Ebene weg). `planePlayObjects(nodes)` rechnet sie in `ZoneQueue`/`ZoneSite`/
   `ZoneCoinGroup` der Welt um (Kante über `groundAt`, Spur `trackLaneOf` = DOCK_GAP vor der Ebene; ohne Kante oder auf
   einer nicht spielbaren Ebene fällt ein Objekt weg). Level: `refreshPlaneObjects` (aus `refreshPlaneStack`) setzt die
-  Platzhalter des Klötzchen-Editors als `ebene-<Kennung>` in die Welt, hängt die Coins an `level.coins` und die
+  Platzhalter aus 4g als `ebene-<Kennung>` in die Welt, hängt die Coins an `level.coins` und die
   Baustellen an `siteWalls` der Fahrt. Editor: `playItems` (Umrisse im Bild), `playDown`/`playMove` (Treffer im Umriss,
   Ziehen rastet über `edgeNearScreen` auf die nächste Kante, auch einer anderen Ebene; Enden der Schlange als Griffe),
   `playPlaceAt`, `playEdit`, `playRemove`; Überlagerung `OverlayState.play`. Am gewählten Feld (Werkzeug R) schreibt
-  `fieldEdit` Ziele, Stufe, Aufwertung und Schalter in den `rest` des Feldknotens (Zeilen wie im Klötzchen-Editor über
+  `fieldEdit` Ziele, Stufe, Aufwertung und Schalter in den `rest` des Feldknotens (Zeilen wie in 4g und 4h über
   `window.prompt`), den Look der Stufe in `zone.looks`.
 - **Freiraumfeld aus Flächen** (`PlaneField` in `planeStack.ts`, Plan 4.9): im Bild gedacht wie „Bild halten“. Ein Punkt
   (Bildpunkt p, Tiefe d) ist fest, wenn die hinterste spielbare Ebene oder Kulisse vor d, die p deckt (`planePoint`),
@@ -870,7 +796,7 @@ Plan: `docs/ZONENEDITOR-PLAN.md`, Stufe 4 und 4.9. Ohne DOM: `src/zone/dock.ts`,
   (nur durch ein Loch geht der Pinsel nach hinten, unten offene Bögen lassen ihn vorn).
 - **Felder** (`ZoneFieldNode`, Kennung `f…`, Plan 4.9): Rechteck in Metern der Spur-0-Ebene wie `ZoneField`; Ziele,
   Stufe und Schalter reisen in `rest` unverändert mit. `fieldsOf(zone)` gibt die Feldknoten als `ZoneField` (über
-  `parseField`), sonst die Felder des Klötzchen-Editors; der Zonen-Editor übernimmt diese beim Laden als Knoten
+  `parseField`), sonst die Felder der Zonendatei (4g); der Zonen-Editor übernimmt diese beim Laden als Knoten
   (`fieldToNode`) und schreibt sie beim Sichern als Spiegel zurück nach `zone.fields`. Werkzeug R (`fieldDown`,
   `fieldMove`, `fieldOverlay`, `fieldAdd`): antippen wählt (das kleinste unter dem Zeiger), acht Griffe und die Kanten
   ziehen, innen verschieben, auf halbe Meter, mindestens `FIELD_MIN` (10 m); Rückgängig über die Knoten. `fieldFrames`
@@ -890,13 +816,15 @@ Plan: `docs/ZONENEDITOR-PLAN.md`, Stufe 4 und 4.9. Ohne DOM: `src/zone/dock.ts`,
   `wallHolder` (V-Konsole, Kragarm, Bogenkonsole) oder `ceilingHolder` (Hänger, Pendel, V-Hänger) mit den Batches der
   Familie; die Variante wechselt mit jedem Lauf einer Art, `&halter=1..3` legt sie fest. `SupportStats` zählt `wall`,
   `ceiling` und merkt sich in `floatAt`, wo nichts hält.
-- **Prüfungen:** `tests/dock.test.ts`, `tests/planeStack.test.ts`, `tests/playObjects.test.ts`, `tests/halter.test.ts`; Szenario 24 (Andockkanten, Material, Handy-Link),
+- **Prüfungen:** `tests/dock.test.ts`, `tests/planeStack.test.ts`, `tests/playObjects.test.ts`, `tests/fields.test.ts`, `tests/halter.test.ts`; Szenario 24 (Andockkanten, Material, Handy-Link),
   25 (Station, Strich über der Kante: Tiefe der Ebene, Stützen auf Kanten, Fahrt), 26 (Höhle: Strich durch den Mund
   landet auf der Rückwand, Stützen auf dem unteren Rand der Öffnung), 27 (die drei Testszenen: Startbild, Station,
   Strich in die erwarteten Tiefen, Stützen, Fahrt; der Strich geht als Zeigerereignisse in der Seite, weil Swiftshader
-  die großen Szenen so langsam zeichnet, dass sonst der Langdruck nach 480 ms auslöst), 29 (Spielobjekte setzen, ziehen und
+  die großen Szenen so langsam zeichnet, dass sonst der Langdruck nach 480 ms auslöst), 28 (Felder mit Werkzeug R: wählen, Kante ziehen, Rückgängig, anlegen und
+  entfernen; beim Spielen gilt das Feld), 29 (Spielobjekte setzen, ziehen und
   ändern, Ziele und Stufe eines Felds, beim Spielen Welt, Coins, Wand und Ziele), 30 (Halter-Probe `test-halter`: Wand-
-  und Deckenhalter, Fahrt).
+  und Deckenhalter, Fahrt), 31 (Tor S4, Szene 06: Startbild mit dem Feld, Station auf dem Bogen, Strich über
+  die Grasdecke durch die große Öffnung in die Höhle, Stützen auf Kanten, Fahrt).
 
 ## 4l. Zonen-Editor, Stufe 6: Bilder, Schnittmasken, Säume, Austausch
 
@@ -1055,9 +983,31 @@ Plan: `docs/ZONENEDITOR-PLAN.md`, Nachtrag zu Stufe 6 und 4.3. Ohne DOM: `src/zo
   Tasten wie von Hand: Netz automatisch, G verschiebt die Grenze im Bild, Bearbeiten unverzerrt, O mit Mausrad, Esc und
   Rechtsklick, Direktauswahl mit Einfluss, nach dem Sichern im Spiel verzerrt).
 
+## 4n. Zonen-Editor, Stufe 5: Earle-Schichten (Kurzfassung)
+
+Plan und Stand: `docs/ZONENEDITOR-PLAN.md`, Stufe 5. An Tor S5 (29.10.2026) hat Florian die Werkzeuge freigegeben und
+Regel 4 neu gefasst: Pünktchen und Textur dürfen Shader-Schichten sein. Die Dateien:
+
+- `src/zone/earle.ts`: Knopf „Earle“. Er legt auf eine Fläche Bänder, Lichtkante, Innenschatten, Pünktchen und Papier oder
+  Gouache, abgeleitet aus ihrer Grundfarbe und dem Licht der Zone. Danach ist jede Schicht eine gewöhnliche Füllung im
+  Füllstapel; ein zweiter Druck ersetzt die Earle-Schichten.
+- `src/zone/edgeDistance.ts`: Kantenabstand einer Fläche als Raster (innen positiv, außen negativ, in Metern der Ebene).
+  Lichtkante, Innenschatten, Kantenverlauf und Pünktchen an Kanten lesen ihn im Shader. `src/world/earleTextures.ts` packt
+  die Raster in einen Atlas, dazu die Rang-Kachel der Pünktchen.
+- `src/zone/edgeWave.ts`: Kantenwelle. Ein ruhiges Rauschfeld verschiebt die Flächen einer Form, nur für das Bild;
+  Andockkanten, Freiraum und Pinsel lesen die glatte Form.
+- `src/zone/crown.ts` und `src/world/crownMesh.ts`: Punktkronen aus echten Punkten (Poisson-Scheibe, dicht an der
+  Lichtkante, drei Tonstufen), in der Welt als Instanzen eines Achtecks in einem Mesh (ein Draw Call), mit Wind.
+- `src/zoneeditor/fillParams.ts`: Wertezeile im Füllstapel (Wort, Einheit, Schritt und Grenzen je Wert).
+- `src/world/earleMessung.ts`: Handy-Messung mit `&earle=messen`; `scripts/earle-bildzeiten.mjs` misst die Bildzeit am Mac.
+- Shader (`src/world/planeMesh.ts`): keine Schleifen in den Flächen-Shadern, die Tupfer sind ausgeschrieben; eine
+  Schleife kostete unter ANGLE/Metal am Mac einige Millisekunden je Bild (gemessen 29.10.).
+- Prüfungen: `tests/earle.test.ts`, `tests/crown.test.ts`, `tests/edgeWave.test.ts`.
+
 ## 5. Physik
-- Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet; passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).
-- g-Kräfte: f = v²·κ⃗ (Mindestradius 2,5 m; κ⃗ aus `sampleTrack` über ±1,2 m gemittelt, ein Wagen spürt keine kürzeren Spitzen) + a_tan·T + g·ŷ, wobei a_tan die echte Tangentialbeschleunigung des Zugs ist (Hangabtrieb minus Reibung, Kettenzug hält das Tempo, Launch, Booster, Bremse); zerlegt im Wagen-Rahmen (T, U, S) mit Schräglage. So drückt die Kette die Fahrgäste in die Lehne, der Launch in den Sitz, die Bremse nach vorn. Entgleisen bei seitlichem g über dem Limit des Schienentyps (`SKIN_PHYSICS`: Holz 2,0, Hybrid 2,4, Mine 2,2, Stahl 3,0, Gold 3,0, Neon 3,2, Eis 2,6, Geister 2,3, Lava 3,0, Space 3,5), Herausfallen bei kopfüber mit g_v < −0,15 über 0,12 s, Blackout über 7 g (nur ein Merker, kostet den dritten Stern). Entgleisen und Herausfallen übergeben den Zug in den Freiflug (unten), Rückroller und Wasser lassen ihn auf der Schiene ausrollen.
+- **Fahrregeln** (Pinsel-Studie, Paket 2; `RIDE_TUNING` in `src/physics/trainSim.ts`, Test `tests/fahrt.test.ts`): Seit 29.10.2026 ist `drive` die Vorgabe (Florian: nachsichtig, mit Antrieb und Stützrädern). Im Rollen wird der Zug nie langsamer als `driveSpeed` (4 m/s, `&antrieb=` ändert es), außer vor dem offenen Ende. Er entgleist nicht, fällt kopfüber nicht heraus, bleibt nicht stehen und rollt nicht zurück; Kreuzungen auf gleicher Höhe prüft die Fahrt nicht. Querkraft, Hängen und Airtime stehen nur in den Werten. Fehlschläge bleiben offenes Ende, Wasser ohne Splash, Wand und Kette. `&fahrt=1` schaltet die strenge Fahrt (`strict`) ein; was unten mit „nur `strict`“ markiert ist, gilt nur dort. Szenario 8 (Entgleisen auf Holz) läuft mit `&fahrt=1`.
+- Zug (`src/physics/trainSim.ts`): fester Schritt 1/120 s, Euler entlang der Bogenlänge. Hangabtrieb aus der 3D-Tangente (Mittel über alle Wagen), Rollreibung je Schienentyp, Luftwiderstand (0,0008·v²). Station schiebt mit 2,0 m/s an; auf ebener Strecke rollt der Zug aus und bleibt stehen (nur `strict`; Stall nach 0,4 s unter 0,03 m/s oder sofort am Hang). Kettenzug nur an einem Anstieg, der innerhalb von 30 m nach der Station beginnt, bis zum ersten Scheitel (6,0 m/s, Vertikallift 5,5 m/s). Launch 26 m mit 12 m/s² (Hydro 24, Pendel 16), Booster +8 m/s², Bremse bremst auf 4 m/s, Splash −3,5 m/s². Rückweg-Abschnitte (`auto`, nur noch über `closeTrack`) bremsen auf 8 m/s (14 m Vorausschau). Offenes Ende: kommt der Zug mit über 6 m/s an, blockieren die Räder 0,3 s lang (−25 m/s², nicht unter 2 m/s, Beginn so, dass die Blockade an der Kante endet; Ereignis `wheelLock`, `TrainSim.wheelLock` für die Funken), an der Kante `fail('openEnd')` mit Freiflug `launch`; langsamer `tip` (kippt über die Vorderkante). `lapDone`/`finish` gibt es nur auf geschlossenen Bahnen. Kreuzungen (`src/track/crossings.ts`, `findCrossings`): Segmente der Abtastung in der Draufsicht (x, z·8,4) über ein `SegmentGrid` geschnitten oder näher als 1 m (`OVERLAP_DIST`, Überlappung auf derselben Spur; eine Marke je 6 m), mindestens 8 m Bahn auseinander (bei geschlossener Bahn auch über den Schluss hinweg), Höhenabstand unter 3,2 m (`CROSS_CLEARANCE`), ausgenommen Paare, zwischen denen die Bahn kopfüber läuft (Looping, bis 180 m Umfang). `TrainSim.crossings` wird im Konstruktor berechnet (nur `strict`); passiert der Zug (`sPrev` → `s`) eine der beiden Stellen, `fail('crossing')` mit Freiflug `derail`. `trackStats.crossings` zählt sie, `TrackRenderer` zeichnet ein rotes ✕-Schild 1,6 m über der oberen Schiene (Ebene `barriers`, auch in der Vorschau).
+- g-Kräfte: f = v²·κ⃗ (Mindestradius 2,5 m; κ⃗ aus `sampleTrack` über ±1,2 m gemittelt, ein Wagen spürt keine kürzeren Spitzen) + a_tan·T + g·ŷ, wobei a_tan die echte Tangentialbeschleunigung des Zugs ist (Hangabtrieb minus Reibung, Kettenzug hält das Tempo, Launch, Booster, Bremse); zerlegt im Wagen-Rahmen (T, U, S) mit Schräglage. So drückt die Kette die Fahrgäste in die Lehne, der Launch in den Sitz, die Bremse nach vorn. Entgleisen (nur `strict`) bei seitlichem g über dem Limit des Schienentyps (`SKIN_PHYSICS`: Holz 2,0, Hybrid 2,4, Mine 2,2, Stahl 3,0, Gold 3,0, Neon 3,2, Eis 2,6, Geister 2,3, Lava 3,0, Space 3,5), Herausfallen (nur `strict`) bei kopfüber mit g_v < −0,15 über 0,12 s, Blackout über 7 g (nur ein Merker, kostet den dritten Stern). Entgleisen und Herausfallen übergeben den Zug in den Freiflug (unten), Rückroller und Wasser lassen ihn auf der Schiene ausrollen.
 - Freiflug (`src/physics/flightSim.ts`, Phase `flying`): Jeder Wagen ist ein starrer Körper in der Welt-Ebene (x, y) mit Neigung und Drehrate, dazu Schräglage (`bank`) und Tiefe (z in Spuren) als eigene Freiheitsgrade. Schwerkraft, Luftwiderstand 0,02·v², Ketten-Federn zwischen den Wagen (Ruhelänge = Wagenlänge, k = 300, c = 20), Bodenkontakt an vier Ecken gegen `terrain.surfaceHeight` (Rückprall 0,25, Stöße unter 0,5 m/s unelastisch, Reibung, Drehimpuls über den Hebelarm der tiefsten Ecke, am Boden eine gedämpfte Drehfeder zur nächsten flachen Lage, auch aufs Dach), Wasser dämpft mit e^(−3t) und meldet einen Platsch. Startzustände: `derail` kippt mit 2,5 rad/s zur Seite der Querkraft (bis 90°) und driftet 0,25 Spuren/s aus der Spur, `fall` überschlägt sich (−1,5 rad/s), `launch`/`tip` für das offene Ende (A5). Aufpräller über 3 m/s senkrecht sind `ImpactEvent`s (0,5 s Sperre je Wagen): die Level-Szene wirft darauf alle Fahrgäste des Wagens aus (`PassengerSim.ejectCar`, Schubs 1,5 + 0,4·v, höchstens 6 m/s) und zeigt Staub bzw. Platsch. `writeTo` schreibt Lage, Rahmen (T aus der Neigung, U/S um T mit der Schräglage gedreht), Geschwindigkeit und Scheinkräfte (Körperbeschleunigung + g, auf 60 m/s² begrenzt) in die `CarState`s; Rendering und Fahrgast-Simulation laufen unverändert weiter. `settled` nach 0,6 s unter 0,3 m/s und 0,2 rad/s; das Ergebnis erscheint frühestens 1,2 s nach dem Fehlschlag und sobald das Wrack liegt, spätestens nach 5 s Simulationszeit.
 - Fahrgäste (`src/physics/passengers.ts`): Rapier2D in der Wagen-Ebene (vorwärts/oben), Schritt 1/60 s. Die Wanne ist statisch, die Ragdolls bekommen die Scheinkraft −m·f (vorwärts, oben) als Kraft; seitliche g lassen sie lehnen und ab `sideEjectG` (2,2 g über 0,15 s) über die Bordwand kippen. Rauswurf = Rumpf verlässt die Wanne (über 1,70 m Höhe oder 1,9 m vor/hinter der Wagenmitte); danach Weltsimulation mit Terrain.
 - Gurte (`src/physics/belts.ts`, `PassengerSim.applyBelt`): Stufe aus `restraintFor(level, world)` (Welt-Standard 0/1/1/2/2/3/3/3/4/4, Level-Override `restraint`). Feder-Dämpfer am Rumpf zum Sitzanker (k = 900·m, kritisch gedämpft) nur für Komponenten aus dem Sitz heraus (dy > 0, dx > 0), Sättigung bei holdG·m_gesamt·g (0,6/1,5/3/5 g), nach 0,2 s Sättigung reißt der Gurt (`onBeltSnap`, `PassengerView.beltBroken`, Figur zeichnet den Gurt lose, HUD-Abzeichen rot mit Pop). Seitliche Grenze `sideG` je Stufe (2,2/2,2/2,8/3,5/4 g) statt der festen 2,2 g.
@@ -1065,9 +1015,12 @@ Plan: `docs/ZONENEDITOR-PLAN.md`, Nachtrag zu Stufe 6 und 4.3. Ohne DOM: `src/zo
 - Inszenierung (`src/ui/widgets.ts` `Sticker`, `Camera.shake`, `Effects.ribbons/dust`, `PassengerView.face`): Sticker (zwei `paintRect`-Papiere ±4°, Slam 1,6 → 1 in 0,18 s, 1,6 s sichtbar) aus `processEvents` (fail nach Grund), `onEject` (negative Level), `onCatch`, `onBeltSnap`; Kamera-Wackeln als Versatz `ox/oy` auf der Weltposition (linear abklingend, stärkeres Wackeln überschreibt), ausgelöst von fail, wheelLock und Aufprällern; Gesichter aus `LevelScene.updateFaces` (über 7 g 2 s `faint`, nach Landung `dizzy`), `CharacterSprite.setFace` zeichnet X-/Spiralaugen, Zunge, kreisende Sterne; Fliegende rudern mit den Armen (`setAngvel ±9` im 12-Hz-Takt). Das Ergebnis wartet auf gelandete Fahrgäste (höchstens 6 s).
 - Cut-out-Animator (`src/render/cutoutAnimator.ts`, `AnimTarget` in `CharacterSprite`): Keyframe-Clips mit Halten bis zum nächsten Key, fester Schritt 1/12 s (Akkumulator, keine Zwischenwerte), Einmal-Clips kehren zum Loop zurück. Ziel-Hooks: `setHeadFlap` (Oberkopf in `headInner` mit Pivot hinten unten), `setEyes` (Pupillengröße, Lider), `setMouth` (Override der g-Mimik), `setArm` (relativ zur Pose aus `setPose`), `setHop` (Pivot), `setTilt`. Stehender Zug: `LevelScene.buildStandingTrain` (Wagen 0 an der Station, Rest dahinter bzw. entlang der Stationsgeraden, `seatedPose` ohne Rapier), `TrainRenderer.setStanding/idleUpdate/playOn/playAll/hitPassenger`; Figuren-Editor nutzt denselben Animator.
 - Interpolation (`src/physics/interpolate.ts`): Zug und Fahrgäste halten den Zustand vor dem letzten Schritt (`prevCars`, `prevParts`). Die Level-Szene zeichnet den Zwischenstand bei alpha = Rest des Akkumulators / Schrittweite; so bleibt die Bewegung in Zeitlupe (0,25×–0,6×) und im Zeitraffer (bis 5×) glatt. Zeitlupen-Regie: Rauswurf 0,25× für 1,2 s mit Kamera auf dem Fliegenden (bis er landet), Entgleisen/Fall/Rückroller 0,35× auf dem betroffenen Wagen, Kuppe 0,6× für 0,5 s.
-- Rendering: Schienen als P ± 0,55·S (projiziert, mit Schräglage für die Entwurfsgeschwindigkeit), Wagen als projizierter 3D-Quader mit Sichtbarkeits-Sortierung, Fahrgäste als Billboards im projizierten Wagen-Rahmen. Schräglage der Schienen (`railBanks`): aus der über ±5 m geglätteten Krümmung, dann als glatte Folge mit wenig Rollen (min Σ (b − Ziel)² + μ·Σ (Δb)², Länge `RAIL_ROLL_SMOOTH` 9 m, tridiagonal gelöst, geschlossen über ein Umlauf-Polster; manuelle Schräglagen exakt). Auf 151 Aufnahmen drehen sich die Schienen 71 % weniger (134 statt 455° je 100 m), schnelle Seitenwechsel (über ±45° in unter 20 m) gibt es nicht mehr (vorher 423). Der Wagen liegt beim Zeichnen mit dieser Schräglage auf den Schienen (`TrackRenderer.railFrame`, `TrainRenderer.update(…, rail)`), solange der Zug nicht fliegt; die Physik rechnet weiter mit der Kraftrichtung über die Wagenlänge (die vorher auch die Darstellung bestimmte und an jedem Haken bis über 2000°/s zuckte).
+- Rendering: Schienen als P ± 0,55·S (projiziert, mit Schräglage für die Entwurfsgeschwindigkeit), Wagen als projizierter 3D-Quader mit Sichtbarkeits-Sortierung, Fahrgäste als Billboards im projizierten Wagen-Rahmen. Schräglage der Schienen (`railBanks`): aus der über ±5 m geglätteten Krümmung, dann als glatte Folge mit wenig Rollen (min Σ (b − Ziel)² + μ·Σ (Δb)², Länge `RAIL_ROLL_SMOOTH` 9 m, tridiagonal gelöst, geschlossen über ein Umlauf-Polster; manuelle Schräglagen exakt). (Messung im Verlauf.) Der Wagen liegt beim Zeichnen mit dieser Schräglage auf den Schienen (`TrackRenderer.railFrame`, `TrainRenderer.update(…, rail)`), solange der Zug nicht fliegt; die Physik rechnet weiter mit der Kraftrichtung über die Wagenlänge.
 
-## 5a. Karte und Übergang
+## 5a. Karte und Übergang ins Level
+- **Ein Boden, zwei Krümmungen** (`src/render/bend.ts`): Alles auf der Karte liegt in flachen Koordinaten (u = Bogenlänge ab der Bildmitte, v = Höhe über dem Boden, in Karten-Pixeln) und wird mit Krümmung k auf den Kreis der Drehscheibe gelegt; k = 0 ist der flache Boden des Levels. Der Übergang dreht nur an k, am Maßstab und am Fokus. Texturen (Miniaturen, das Level-Bild) liegen auf einem Gitter (`BentSheet`), dessen Punkte jedes Bild neu gebogen werden.
+- **Miniaturen** (`src/render/miniature.ts`): Pro Level wird die Bühne mit `WorldView` in eine Textur gerendert (Terrain, Coins, gespeicherte Bahn, Zug in der Station, Ränder weich ausgeblendet), in denselben Bühnen-Metern wie das Level. Die Oberfläche der Scheibe ist die Bodenlinie der hintersten Spur (`HORIZON_Y`); die fünf Spurstreifen der Scheibe haben die Farben und Breiten der Miniatur. Höchstens 28 Texturen bleiben im Speicher; neu gerendert wird, wenn sich die Bahn ändert, höchstens eine Miniatur pro Bild und nicht beim schnellen Drehen.
+- **Übergang** (`src/app/scenes/start.ts`, `src/app/mapTransition.ts`): Die Karte bereitet das Level unsichtbar vor (`Game.prepare`), fotografiert seine Ebenen (Himmel, Bühne, Knöpfe) und biegt die Bühne von der Scheibe gerade, bis sie deckungsgleich mit dem Level liegt; dann übernimmt das Level (`Game.adopt`). Zurück fotografiert das Level seine Ebenen (`LevelScene.transitionLayers`), und die Karte krümmt das Foto zur Scheibe, während die frische Miniatur darunter übernimmt. Der Zoom läuft im Logarithmus um einen festen Punkt, die Krümmung geht etwas früher auf null; Himmel, Wolken und Knöpfe blenden in festen Abschnitten über.
 - Himmel (`src/render/sky.ts`, Rechnung in `src/render/skyMath.ts`): eine Klasse für Karte und Level; `update(dt, view)` nimmt die Level-Kamera oder einen `SkyView` `{x, y, zoom, parallax}` (Karte: x = Fokus/5, Parallaxe 0,3). `exportState()/importState()` übergeben Zeit und Wolkenlage; `setWorld(world, night, fade)` blendet den alten Himmel über eine zweite Sprite aus und tönt die Wolken um (gleiche Wolkenzahl → Lage bleibt). Der Übergang fotografiert nur noch Bühne und Bedienelemente (`LevelSnapshot.skyState` statt Himmel-Textur); `StartScene.skyView(p)` interpoliert Blick und Parallaxe mit `ramp(p, 0,2, 0,9)`, beim `adopt` übernimmt das Level die Wolkenlage (`LevelScene.adoptSky`), beim Rückweg importiert die Karte den Zustand aus dem Foto. Test `tests/sky.test.ts` (Wolken-Versatz pro Frame < 3 px über den ganzen Übergang).
 - Glücksrad (`src/app/wheelPhysics.ts`): `dragStart/dragMove/dragEnd` (Gummiband-Faktor 0,35 außerhalb der Enden), `step(dt)` liefert überfahrene Rastpunkte (das Ziel zählt erst beim Einrasten, nicht beim Überschwingen) und `settled`. Frei: a = −0,8·v − 350·sign(v), Einfang unter 420 px/s auf den nächsten Rastpunkt in Fahrtrichtung (`focus + v·0,2`), langsam losgelassen mit über 60 px Schub ein Rastpunkt weiter; Feder ω0 = √55, ζ = 0,7; Gummiband k = 120 zum letzten Rastpunkt. `StartScene` hält Fokus/Schwung nur noch im Rad (Getter), klickt per `haptics.selection()` (`src/platform/haptics.ts`, navigator.vibrate), lässt Schilder hüpfen und Miniaturen wippen. Tests `tests/wheel.test.ts`.
 - Layout: `layout()` Scheibenoberkante 0,56 h (hoch) bzw. 0,74 h (quer), Textgrenze 176/88 px; `resize()` Play mittig unten in beiden Formaten.
@@ -1077,31 +1030,33 @@ Plan: `docs/ZONENEDITOR-PLAN.md`, Nachtrag zu Stufe 6 und 4.3. Ohne DOM: `src/zo
 - Spur-Filter (Punktraster je Spur-Container als `Filter`): seit Etappe 1 entfernt (Plan Paket 7, Entscheidung 7; das Punktraster kommt gemalt, als Funkeln-Shader und seit Regel 4 neu (29.10.2026) auch als Shader-Schicht des Zonen-Editors, Paket 0). Die Luftperspektive bleibt bei den Renderern (`atmosphere()`).
 - Leuchtebene (`src/render/shaders/glowLayer.ts`): je Spur ein Container zwischen Coins und Zug mit `BlurFilter` (Stärke 6, Qualität 2, halbe Auflösung) und additivem Blend; der Schienen-Renderer zeichnet die Leuchtkante der Nacht-Skins zusätzlich dort hinein (`TrackRenderer.glowTargets`).
 - Schalter: `Settings.fx` ('auto' | 'high' | 'low'; auto = ab sechs Kernen an), `?fx=0/1` überstimmt (Szenarien laufen mit `fx=1`, damit die Shader unter SwiftShader kompiliert werden), `WorldView.setFx(on)` schaltet die Leuchtebenen; Miniaturen rendern ohne Effekte. Dev-Overlay (`src/core/devOverlay.ts`, `?dev=1`): fps, Draw-Calls (Wrapper um drawElements/drawArrays), Partikel, Taste F schaltet die Effekte um.
-- Budget: fünf Spur-Filter in voller Auflösung ≈ 5 Vollbild-Durchgänge (Spuren sind teils leer, die Filterfläche folgt den Bounds) plus fünf Blur-Ebenen in halber Auflösung; Messung auf dem Handy über das Overlay. Wasser- und Himmel-Shader stehen noch aus (D5/D6).
+- Budget: fünf Blur-Ebenen in halber Auflösung; Messung auf dem Handy über das Overlay (`?dev=1`). Wasser- und Himmel-Shader stehen noch aus (D5/D6).
 - Band-Mesh (`src/render/stripMesh.ts`): `buildStrip(points, halfWidth, uScale, uOffset)` legt eine Textur entlang einer Polylinie (2n Punkte, UV.x = Bogenlänge + Versatz), `StripMesh` hält Gitter und Textur und erzwingt den Batch-Modus (lange Bänder landen mit Graphics und Sprites in einem Draw-Call); Konturbänder für Berge über `insetPolygon` (`src/render/geom.ts`, Gehrung begrenzt, Schleifen werden herausgeschnitten). Tests `tests/geom.test.ts`.
 - Schienen (`TrackRenderer.drawRailChunk`): je Spur-Stück zwei Band-Meshes (halbe Breite 0,13 Spur-Meter) mit dem Schienenprofil des Skins (`railProfileTexture` in `paint.ts`: 64 × 16 px, quer Tinte 0,7 – Schiene – Lichtkante – Schiene – Tinte, längs kachelbar, Mipmaps, Holz-Skins mit Maserung der gemalten `wood_beam`-Kachel; eine Kachel je Skin, Spur und Himmelston wegen der Luftperspektive); ein Profil-Durchlauf je 3 Bühnen-Meter, UV-Versatz = Bogenlänge des Stücks. Meshes je Spur in einem Pool, unbenutzte unsichtbar. Schwellen (`railUnder`) liegen unter, Elemente/Station/Leuchtlinie (`railOver`) über den Meshes.
 - Pfeiler (`src/render/supports/supportStyle.ts`): `planSupports(samples, terrain, spacing, kind)` (reine Funktion: alle `postSpacing` · 1,7 Meter ein Fuß (`SUPPORT_THIN`), nicht bei upy < 0,35, nicht im Berg, ab 1 m Höhe, nicht durch ein tieferes Bahnstück hindurch (Draufsicht unter 1,8 m) und nicht dichter als 2,6 m neben einer schon gesetzten Stütze, sonst einen Meter weiter versucht: So bleibt die Bahn auch in einer Schneckennudel sichtbar) und `buildSupport(plan, ctx)` mit einer Form je Welt (`SUPPORT_KINDS`: tree, pole, trestle, aframe, column, pylon, crystal, crooked, basalt, ring). Jeder Pfeiler ist ein Container am Fuß auf der Bodenoberfläche seiner Spur, Einheiten Spur-Meter (y nach oben, Bahn bei h − 0,25), skaliert mit `laneScale`; das Wachsen nach dem Strich (0,3 s) setzt nur `scale.y`. Lichter (`SupportGlow`) sammelt der Bauer, der Renderer zeichnet sie bei voller Höhe in die Leuchtebene. Gemalte Sprites (`lantern`, `crystal`, `neon_sign`) hängen y-gespiegelt im Container, mit gezeichnetem Fallback. Tests `tests/supports.test.ts`; Szenario 2 prüft mit `?dev=1` Draw-Calls < 150 (`Game.dev`).
 
 ## 6. Asset-Pipeline (Drop-in für gemalte Texturen)
-Jede Textur hat einen Namen im Manifest (`src/assets/manifest.ts`, `ART_NAMES`). Beim Start lädt `loadArtOverrides()` die Liste `public/art/manifest.json` und dazu je Name `public/art/<name>.webp` (Fallback `.png`). `art(name, fallback)` liefert die gemalte Textur oder erzeugt die prozedurale; `hasArt(name)` sagt, ob eine gemalte existiert (die Wolken wählen danach Skalierung und Tönung).
+Jede Textur hat einen Namen im Manifest (`src/assets/manifest.ts`, `ART_NAMES`). Beim Start lädt `loadArtOverrides()` die Liste `public/art/manifest.json` und dazu je Name `public/art/<name>.webp` (Fallback `.png`). `art(name, fallback)` liefert die gemalte Textur oder erzeugt die prozedurale; `hasArt(name)` sagt, ob eine gemalte existiert (die Wolken wählen danach Skalierung und Tönung). Geladen wird die ganze Liste (24 Kacheln); verwendet werden heute acht: Wolken a bis c, Papierkorn, Holzmaserung, Laterne, Kristall und Neon-Schild. Himmel, Boden und Schienen je Welt bleiben prozedural.
 
-Der Kachelsatz entsteht so: `scripts/art-kit.json` beschreibt jede Kachel (Name, Zielgröße, Figma-Knoten, Regeln `key`/`fit`/`shadow`/`despill`/`seamless`/`procedural`, Prompt). Die Bilder werden im Figma-Bildgenerator erzeugt (Modell `gpt-image-2.5-sunburst`, Datei „Trauma Coaster – Art Kit“) und als PNG nach `art-src/` gelegt (nicht im Repository). `npm run art:prep` (sharp) stellt frei, schneidet zu, macht kachelbar und schreibt `public/art/<name>.webp` + `manifest.json`; `npm run art:doc` schreibt `docs/ART-PROMPTS.md` aus dem Kit. Stilregeln und Prompt-Vorspann: `docs/ART.md`, `docs/ART-PROMPTS.md`.
+Der Kachelsatz entsteht so: `scripts/art-kit.json` beschreibt jede Kachel (Name, Zielgröße, Figma-Knoten, Regeln `key`/`fit`/`shadow`/`despill`/`seamless`/`procedural`, Prompt). Die Bilder werden im Figma-Bildgenerator erzeugt (Datei „Trauma Coaster – Art Kit“) und als PNG nach `art-src/` gelegt (nicht im Repository). `npm run art:prep` (sharp) stellt frei, schneidet zu, macht kachelbar und schreibt `public/art/<name>.webp` + `manifest.json`; `npm run art:doc` schreibt die Prompt-Liste aus dem Kit nach `docs/archiv/ART-PROMPTS-2026-10-21.md`. Stilregeln: `docs/archiv/ART-v1-2026-10-21.md`.
 
 Namensschema: `<kategorie>_<variante>` (z. B. `cloud_a`, `grass_brush_b`, `tree_ball`) bzw. mit Welt/Skin, wenn es je Welt eigene Kacheln gibt (`sky_w1_day`, `rail_wood_tie`).
 
-## 7. Performance-Budget (Mittelklasse-Handy, 60 fps)
-- Draw Calls < 150 pro Frame (Ziel mit dem Stil-Update: Schienen als Band-Mesh, Streben als Meshes, Punkte und Partikel als ParticleContainer; heute: Graphics pro Spur).
-- Rapier: max. 16 Fahrgäste × 6 Körper = 96 Körper, 1/60 s, 2 Substeps.
-- Texturen: ein Atlas pro Welt (max. 4096 × 4096), Deko-Props im gemeinsamen Atlas.
-- Kein Filter über dem gesamten Bildschirm; das Papierkorn ist ein TilingSprite mit Multiply. Shader des Stil-Updates laufen pro Spur in Renderer-Auflösung, nur die Leuchtebenen in halber (siehe docs/ART.md).
+## 7. Performance-Budget (Handy, stabile 60 fps)
+- Ziel: stabile 60 fps auf einem Mittelklasse-Handy. Gemessen wird mit dem Dev-Overlay (`?dev=1`: fps, Zeichenaufrufe beider Renderer, Partikel) und im Zonen-Editor mit der Handy-Messung (`&earle=messen`, 4l und 4n).
+- Zeichenaufrufe unter 150 je Bild; Szenario 2 prüft das im Zeichenmodus.
+- Bühne (Pixi): Schienen als Band-Meshes, Leuchtebenen mit Blur in halber Auflösung, kein Filter über dem ganzen Bild; das Papierkorn ist ein TilingSprite mit Multiply.
+- Welt (Three): Wiederholtes als Instanzen (Stützen höchstens fünf Zeichenaufrufe je Familie, Kettenglieder und Punktkronen je einer). Alle Ebenen des Zonen-Editors liegen in einem Mesh, Flächen, die durchsichtig werden können, in einem zweiten. Ein Bild kostet je Schichtfolge einen Zeichenaufruf, ein Saum einen je Bild (4l).
+- Texturen: Bilder der Zonen als KTX2 (am Mac und iPhone ASTC 4×4) mit dem Rahmen `IMAGE_BUDGET` (Platzhalter 64 MB); Bilder, die 20 s niemand braucht, verlassen die Grafikkarte. Atlas-Seiten für Bilder gibt es nicht (4l).
+- Rapier: max. 16 Fahrgäste × 6 Körper = 96 Körper, 1/60 s.
 
 ## 8. Kriterien für einen Engine-Wechsel (Godot 4 oder vergleichbar)
 Wechseln, wenn mindestens eines zutrifft:
 1. Unter 50 fps auf einem Mittelklasse-Handy (z. B. iPhone 12, Pixel 6a) bei 3 Wagen und 12 Fahrgästen trotz Optimierung.
 2. Seitliche Kräfte sollen echt simuliert werden (Fahrgäste in 3D), und die Rapier3D-Integration im Web ist zu langsam.
 3. Bedarf an nativen Store-Features (Game Center, Play Games, In-App-Käufe) übersteigt das, was Capacitor-Plugins zuverlässig liefern.
-4. Bedarf an echter 3D-Kamera für Kurven.
-Was beim Wechsel erhalten bleibt: Level-Daten (JSON), Bahn-Format, GDD, Texturen, Gesten-Logik (portierbar), Figuren-Definitionen.
+Die echte 3D-Kamera (früher Punkt 4) gibt es seit dem Weltrenderer in Three.js (Entscheidung in `docs/RICHTLINIE.md`, 24.10.2026); sie ist kein Grund mehr.
+Was beim Wechsel erhalten bleibt: Level-Daten, Bahn-Format, Zonendateien, GDD, Texturen, Gesten-Logik (portierbar), Figuren-Definitionen.
 
 ## 9. Capacitor (Stores)
 ```
@@ -1112,7 +1067,7 @@ npm run build && npx cap add ios && npx cap add android && npx cap sync
 Config-Hinweise: `webDir: 'dist'`, `server.androidScheme: 'https'`, Statusbar overlay, Orientation beide. iOS-Build braucht Xcode auf einem Mac; Android-Build Android Studio.
 
 ## 10. Deployment und CI
-GitHub Pages über `.github/workflows/deploy.yml`: Bei Push auf den Hauptbranch wird getestet, gebaut und `dist/` veröffentlicht. In den Repo-Einstellungen unter Pages muss „GitHub Actions“ als Quelle gewählt sein. `.github/workflows/ci.yml` prüft jeden Push auf andere Branches und jede Pull-Request: ein Job mit Vitest und Typecheck/Build, dazu die sechs Playwright-Szenarien (`scripts/scenario.mjs <Schritt>`) als parallele Matrix im Chromium mit SwiftShader; die Screenshots hängen je Szenario als Artefakt am Lauf. Die Matrix ist nötig, weil jede Mausbewegung beim Zeichnen auf den Software-gerenderten Frame wartet: ein Strich dauert auf dem Runner mehrere Minuten, alle sechs nacheinander liefen ins Job-Timeout.
+GitHub Pages über `.github/workflows/deploy.yml`: Bei Push auf `main` wird getestet, gebaut und `dist/` veröffentlicht; ein Push auf `main` ist damit nach ein paar Minuten online. In den Repo-Einstellungen unter Pages muss „GitHub Actions“ als Quelle gewählt sein. `.github/workflows/ci.yml` prüft jeden Push auf andere Branches und jede Pull-Request: ein Job mit Vitest und Typecheck/Build, dazu die Szenarien 1 bis 10 (`scripts/scenario.mjs <Schritt>`) als parallele Matrix im Chromium mit SwiftShader; die Screenshots hängen je Szenario als Artefakt am Lauf. Die Matrix ist nötig, weil jede Mausbewegung beim Zeichnen auf den Software-gerenderten Frame wartet: Ein Strich dauert auf dem Runner mehrere Minuten, nacheinander liefen die Szenarien ins Job-Timeout. Die Szenarien 11 bis 33 (Zonen-Editor) laufen nicht in der CI, sondern lokal gegen den eigenen Dev-Server (Kapitel 12).
 
 ## 11. Umsetzungsstand und bekannte Eigenheiten
 - Alle Zeichnungen in Metern: Formen mit kleinen Radien (Augen, Räder, Coins) werden über `MGraphics` (src/render/mgraphics.ts) intern in Zentimetern tesselliert, sonst entstehen Vielecke.
@@ -1124,28 +1079,40 @@ GitHub Pages über `.github/workflows/deploy.yml`: Bei Push auf den Hauptbranch 
 - Schriften (Fredoka, Nunito, Lobster) liegen lokal unter `public/fonts/` (variable woff2, OFL); es gibt keinen Google-Fonts-Aufruf, damit das Spiel offline läuft und Screenshots in Tests deterministisch sind.
 - Nicht umgesetzt (siehe README): Vorlagen-Elemente, Weiche/Kippschiene/Rückwärts-Weiche/Fallschacht, Audio, Capacitor-Builds.
 
-## 12. Entwicklungsbefehle
+## 12. Entwicklungsbefehle und Starten
 ```
-npm install
-npm run dev          # http://localhost:5173
-npm run dev:https    # https://<Mac>.local:5180 für das iPad (Zonen-Editor); Zertifikate vorher mit scripts/https-cert.sh
-npm run test         # Vitest
-npm run build        # Typecheck + Build nach dist/
-npm run preview      # Build lokal ansehen
-npm run levels:doc   # docs/LEVELS.md neu erzeugen
-npm run screenshots  # Playwright-Screenshots nach screenshots/
-npm run scenario     # Szenario-Test: Looping, Kurve, Fahrt bis zum Ergebnis
-npm run kompilieren  # Bilder aller Zonen als KTX2 packen (scripts/zone-ktx2.mjs; der Dev-Server tut es nach Hochladen und Sichern selbst)
-npx tsx scripts/tor-s6.ts  # Tor S6: Platzhalter-Saum aus refs/ zerteilen, Malvorlagen v1 bis v4 für Szene 06
+npm ci                    # Abhängigkeiten wie in der CI
+npm run dev               # Dev-Server, http://localhost:5173 (mit --host auch im WLAN)
+npm run dev:https         # https://<Mac>.local:5180 für das iPad (Zonen-Editor); Zertifikate vorher mit scripts/https-cert.sh
+npm test                  # Vitest, alle tests/*.test.ts
+npm run test:watch        # Vitest im Wächter-Modus
+npm run build             # Typecheck + Build nach dist/
+npm run preview           # Build ansehen (Port 4173)
+npx playwright install chromium   # einmalig für Szenarien und Screenshots
+npm run scenario          # alle 33 Szenarien; einzeln: node scripts/scenario.mjs 3 5
+npm run screenshots       # Playwright-Screenshots (Hoch-, Quer-, Desktop-Format) nach screenshots/
+npm run strokes:replay    # aufgezeichnete Striche nachspielen (-- --last 5, --persp, --world, --zone <name>)
+npm run kompilieren       # Bilder aller Zonen als KTX2 packen (scripts/zone-ktx2.mjs; der Dev-Server tut es nach Hochladen und Sichern selbst)
+npm run levels:doc        # Levelliste aus src/levels nach docs/archiv/LEVELS-2026-10-21.md
+npm run art:prep          # Kachelsatz aus art-src/ nach public/art/ (Kapitel 6)
+npm run art:doc           # Prompt-Liste aus scripts/art-kit.json nach docs/archiv/ART-PROMPTS-2026-10-21.md
+npx tsx scripts/testzonen.ts [zone …]   # Testzonen des Zonen-Editors neu erzeugen (ohne Namen alle)
+npx tsx scripts/tor-s6.ts # Tor S6: Platzhalter-Saum aus refs/ zerteilen, Malvorlagen v1 bis v4 für Szene 06
+node scripts/lab-stills.mjs   # Standbilder des Tiefen-Labors (Dev-Server muss laufen)
 ```
+
+**So startest du**
+- Erstes Mal: `npm ci`, `npx playwright install chromium`, dann `npm test` und `npm run build`.
+- Florians Server laufen aus dem Worktree `zoneneditor`: am Mac auf Port 5183, für das iPad auf `https://<Mac>.local:5180` (`npm run dev:https`). Szenarien und eigene Tests laufen nie gegen diese Server.
+- Eigene Arbeit: eigener Worktree, eigener Dev-Server auf einem freien Port mit `TC_NO_RECORD=1`, etwa `TC_NO_RECORD=1 npx vite --host --port 5184 --strictPort`. Szenarien dagegen mit `TC_URL`, etwa `TC_URL=http://localhost:5184/ node scripts/scenario.mjs 24 25`. Ohne `TC_URL` nimmt das Skript einen schon laufenden Server auf Port 4173 (auch einen fremden) oder startet `vite preview` mit dem letzten Build.
+- Szenarien 1 bis 10 prüfen das Spiel (auch in der CI). Sie öffnen Level 8 mit `?scene=start&fast=6&level=8&fx=1&stage&scroll=0`: Lesart Bühne, kein Autoscroll, Shader auch unter SwiftShader; Szenario 2 zusätzlich mit `&dev=1` für das Budget der Zeichenaufrufe. Szenarien 11 bis 33 prüfen den Zonen-Editor und laufen gegen den eigenen Dev-Server; manche sichern Zonen, laden Dateien hoch oder laden `src/zone/*.ts` im Browser. Unter Software-Rendering dauert ein Szenario Minuten: lokal einzeln starten und die Bilder in `screenshots/` ansehen (nicht im Repository).
+- Vitest läuft in Node ohne DOM und WebGL: nur reine Module testen und importieren, keine Renderer-Klassen.
+- Nach jeder Änderung: `npm test`, `npm run build` und die betroffenen Szenarien.
+- Strich-Rekorder: Der Dev-Server schreibt Striche nur mit `TC_RECORD=1`, und nur, wenn Florian es will; automatische Tests laufen mit `TC_NO_RECORD=1`. Die Aufnahmen liegen in `recordings/strokes.jsonl` des Haupt-Checkouts (nicht im Repository; auch Worktrees schreiben dorthin). Die Datei nie bearbeiten; `npm run strokes:replay` liest sie nur.
+
 **HTTPS im WLAN** (Zonen-Editor auf dem iPad, `docs/ZONENEDITOR-PLAN.md` 3.3): `scripts/https-cert.sh` legt eine eigene
 Zertifizierungsstelle (nur für lokale Namen und Heimnetz-Adressen) und ein Server-Zertifikat im Ordner `.certs` des
 Haupt-Checkouts an; der Mac vertraut ihr nicht und braucht es nicht (`localhost` ist dort sicher). Einmal auf dem iPad:
 `/__tc-ca.pem` des Dev-Servers öffnen, Profil installieren und unter Einstellungen › Allgemein › Info ›
 Zertifikatsvertrauenseinstellungen voll vertrauen. Ändert sich die WLAN-Adresse, das Skript erneut ausführen (die
 Stelle bleibt). Striche aus Dev-Servern in Worktrees landen in `recordings/strokes.jsonl` des Haupt-Checkouts.
-
-## 13. Karte und Übergang ins Level
-- **Ein Boden, zwei Krümmungen** (`src/render/bend.ts`): Alles auf der Karte liegt in flachen Koordinaten (u = Bogenlänge ab der Bildmitte, v = Höhe über dem Boden, in Karten-Pixeln) und wird mit Krümmung k auf den Kreis der Drehscheibe gelegt; k = 0 ist der flache Boden des Levels. Der Übergang dreht nur an k, am Maßstab und am Fokus. Texturen (Miniaturen, das Level-Bild) liegen auf einem Gitter (`BentSheet`), dessen Punkte jedes Bild neu gebogen werden.
-- **Miniaturen** (`src/render/miniature.ts`): Pro Level wird die Bühne mit `WorldView` in eine Textur gerendert (Terrain, Coins, gespeicherte Bahn, Zug in der Station, Ränder weich ausgeblendet), in denselben Bühnen-Metern wie das Level. Die Oberfläche der Scheibe ist die Bodenlinie der hintersten Spur (`HORIZON_Y`); die fünf Spurstreifen der Scheibe haben die Farben und Breiten der Miniatur. Höchstens 28 Texturen bleiben im Speicher; neu gerendert wird, wenn sich die Bahn ändert, höchstens eine Miniatur pro Bild und nicht beim schnellen Drehen.
-- **Übergang** (`src/app/scenes/start.ts`, `src/app/mapTransition.ts`): Die Karte bereitet das Level unsichtbar vor (`Game.prepare`), fotografiert seine Ebenen (Himmel, Bühne, Knöpfe) und biegt die Bühne von der Scheibe gerade, bis sie deckungsgleich mit dem Level liegt; dann übernimmt das Level (`Game.adopt`). Zurück fotografiert das Level seine Ebenen (`LevelScene.transitionLayers`), und die Karte krümmt das Foto zur Scheibe, während die frische Miniatur darunter übernimmt. Der Zoom läuft im Logarithmus um einen festen Punkt, die Krümmung geht etwas früher auf null; Himmel, Wolken und Knöpfe blenden in festen Abschnitten über.

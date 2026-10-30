@@ -1,6 +1,7 @@
 /**
- * Erzeugt docs/LEVELS.md aus den Level-Daten (src/levels). Aufruf: npm run levels:doc
- * Damit bleiben GDD-Anhang und Spiel immer identisch.
+ * Erzeugt docs/archiv/LEVELS-2026-10-21.md aus den Level-Daten (src/levels). Aufruf: npm run levels:doc
+ * Die 150 Level sind seit dem großen Plan (7.2) kein Spielinhalt mehr, nur Vorrat für Rezepte (Plan 9); deshalb liegt die
+ * Liste im Archiv.
  */
 import { writeFileSync } from 'node:fs';
 import { LEVELS, unlockedUpTo } from '../src/levels/levels';
@@ -10,6 +11,8 @@ import { BELTS, restraintFor } from '../src/physics/belts';
 import { hasNegativeGoals } from '../src/levels/evaluator';
 
 const lines: string[] = [];
+lines.push('> **Archiv (30.10.2026):** Liste der 150 Level vom 21.10.2026. Seit dem großen Plan (7.2, 24.10.) sind sie kein Spielinhalt mehr; die Daten bleiben als Vorrat für Rezepte (Plan 9).');
+lines.push('');
 lines.push('# Anhang A: Die 150 Level von Trauma Coaster');
 lines.push('');
 lines.push('Automatisch erzeugt aus `src/levels/levels.ts` (`npm run levels:doc`). Jedes Level verlangt zusätzlich immer: Der Zug kommt heil in der Station an und kein Fahrgast fliegt heraus; nur in Leveln mit negativen Zielen (fliegt raus, wieder gefangen, Flug ≥ x m) ist der Rauswurf gewollt. Die Spalte „Gurt“ zeigt die Gurtstufe (Welt-Standard, einzelne Level weichen ab): ohne Gurt, Beckengurt (hält 0,6 g), Bügel (1,5 g), Schulterbügel (3 g), Rennsitz (5 g); darüber reißt der Gurt. Bonusziele (kursiv) zählen für den 2. und 3. Stern.');
@@ -80,5 +83,5 @@ for (const w of WORLDS) {
 }
 lines.push('');
 
-writeFileSync(new URL('../docs/LEVELS.md', import.meta.url), lines.join('\n'), 'utf8');
-console.log(`docs/LEVELS.md geschrieben: ${LEVELS.length} Level, ${WORLDS.length} Welten.`);
+writeFileSync(new URL('../docs/archiv/LEVELS-2026-10-21.md', import.meta.url), lines.join('\n'), 'utf8');
+console.log(`docs/archiv/LEVELS-2026-10-21.md geschrieben: ${LEVELS.length} Level, ${WORLDS.length} Welten.`);

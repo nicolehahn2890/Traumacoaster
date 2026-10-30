@@ -1,5 +1,5 @@
 /**
- * Farbwerkzeuge für den Earle-Stil (docs/ART.md): harte Tonstufen statt weicher Verläufe,
+ * Farbwerkzeuge für den Earle-Stil (docs/archiv/ART-v1-2026-10-21.md): harte Tonstufen statt weicher Verläufe,
  * gestufte Luftperspektive, Leuchten. Alles reine Funktionen auf Hex-Farben.
  */
 import { hexToRgb, mix, rgbToHex, shade } from './paint';

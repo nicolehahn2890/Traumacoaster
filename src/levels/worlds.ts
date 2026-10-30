@@ -5,7 +5,7 @@ const range = (from: number, to: number) => Array.from({ length: to - from + 1 }
 /**
  * Die 10 Welten von Trauma Coaster. Jede Welt hat 15 Level, einen eigenen Look,
  * einen Standard-Schienenstil und eine Palette (Himmel, Boden, Akzent, Tinte, Leuchten, Stippling),
- * siehe docs/ART.md. `sky` und `ground` wiederholen die Palette für bestehende Aufrufer.
+ * siehe docs/archiv/ART-v1-2026-10-21.md. `sky` und `ground` wiederholen die Palette für bestehende Aufrufer.
  */
 export const WORLDS: WorldDef[] = [
   {

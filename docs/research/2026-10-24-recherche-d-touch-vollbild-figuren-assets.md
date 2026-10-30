@@ -83,7 +83,7 @@ wenn handanimierte Expressivität (Meshes, IK) nötig wird.
   0,08 $; Ideogram 0,03–0,09 $ (unsicher). Midjourney ohne offizielle API, Automatisierung verstößt gegen die ToS.
 - **2D→3D:** Meshy Pro 19 €/Mo (1.000 Credits), Premium 38 €, Ultra 95 €; Free nur CC BY 4.0; Export glb/fbx/obj/usdz;
   API ab Pro. Tripo ≈ 20 $/Mo (Drittquelle). Qualität bei gemalten Flachformen: keine Tests gefunden; beide beleuchten
-  „realistisch“ nach – eher für Wagen-/Kulissen-Silhouetten als für den Earle-Look.
+  „realistisch“ nach – eher für Wagen-/Kulissen-Silhouetten als für den Earle-Look. (*Nachtrag 25.10.2026: Diese Einschätzung hat Florian gestrichen; Meshy bleibt je Stelle offen, siehe Richtlinie 0.*)
 - **Freistellen:** rembg MIT, aber Default-Modell `bria-rmbg` (RMBG-2.0) ist CC BY-NC – kommerziell
   `birefnet-general` (MIT) oder `isnet` mit `-vm`/`-dc`. Besser direkt transparent generieren, Matting nur nachputzen.
 - **Umfärbbar:** Graustufen-Index + Paletten-LUT (Wargroove) oder Paletten-Koordinaten in R/G; Teile in neutralem Grau

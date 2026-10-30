@@ -1,3 +1,5 @@
+> **Archiv (30.10.2026):** Prompts des KI-Kachelsatzes vom 21.10.2026. Acht Kacheln lädt die alte Bühne noch; neue Teile entstehen als Malvorlagen aus dem Zonen-Editor (Stufe 6).
+
 # Trauma Coaster – Texturen und Prompts
 
 Diese Datei wird aus `scripts/art-kit.json` erzeugt (`npm run art:doc`); dort stehen Namen, Zielgrößen, Aufbereitungsregeln und Prompts. Der Kachelsatz wurde mit dem Figma-Bildgenerator erzeugt, Modell `gpt-image-2.5-sunburst`, Datei https://www.figma.com/design/aOqgBEtDYgtVoh6osNn16M. Danach `npm run art:prep`: Quellen aus `art-src/<name>.png` werden freigestellt (Chroma-Key), zugeschnitten, kachelbar gemacht und als WebP nach `public/art/` geschrieben; `public/art/manifest.json` listet die vorhandenen Kacheln. Zwei Kacheln (`glow`, `stipple_sheet`) entstehen prozedural.

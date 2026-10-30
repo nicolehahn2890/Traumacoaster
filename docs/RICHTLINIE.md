@@ -1,11 +1,35 @@
 # Richtlinie: Technik und Look für die erste Zone
 
+> **Stand 30.10.2026.** Die Technik dieser Richtlinie gilt weiter: Three.js-Welt mit Pixi-HUD im selben Kontext,
+> geneigte Perspektivkamera (18 Grad, großer Plan Paket 7), Zoom als Kamerafahrt, vertikale Streckung, Tiefenpuffer
+> statt Masken, eine Shadow Map, Umfärben per Shader, die Zeichengrößen, Figuren im Eigenbau und die Leistungsziele mit
+> Florians Handy-Messungen (12.1). Neigung und Bildwinkel stellt jetzt der Zonen-Editor ein; ob sie je Zone oder je Feld
+> gelten, ist offen (Entscheidung B5 in `docs/ZONENEDITOR-PLAN.md`).
+>
+> Seit 27.10.2026 entsteht die Welt aus parallaktischen gemalten Ebenen mit runden Formen, gebaut im Zonen-Editor
+> (`docs/ZONENEDITOR-PLAN.md` 1.3 und 4.4 bis 4.9). Damit ist überholt, was mit „siehe Kopf“ markiert ist:
+>
+> - **0.3 und Abschnitt 3:** Kulissen aus den GPT-Elementen als Dreiteiler (Rückwand, Innenraum, Vorderlippe) und
+>   Stützen aus dem Festigkeitsfeld der Spur. Weiter gelten dort der Tiefenpuffer statt Masken und die sichtbaren
+>   Startarten.
+> - **Abschnitt 3a:** Füße per Alpha-Scan auf Kulissen und das Schlängeln um Kulissen. Stützen stehen jetzt auf
+>   Andockkanten der Ebenen, sonst an Wand- oder Deckenhaltern. Die vier Bahnprofile und Stützenfamilien gelten weiter.
+> - **Abschnitt 4 (und 0.6):** Untergrund und Höhlen entstehen aus den Ebenen. „Fels ist fest“ gilt erst einmal nicht
+>   mehr, das Material „grabbar“ wird gebaut (B2). Portale werden dynamisch gesetzt; wie Durchfahrten entstehen und ob
+>   der Pinsel gräbt, ist offen (B3, Stufe 7 des Zonen-Editors).
+> - **12.4:** der Schnitt der Kulissen in Dreiteiler vor dem großen Assetauftrag. Gemalte Teile entstehen jetzt nach
+>   Malvorlagen aus dem Zonen-Editor (Stufe 6).
+> - **12.2 (seit 29.10.):** Strich-Aufnahmen gibt es nur auf Florians Wunsch (`TC_RECORD=1`); die Aufnahmen bis 29.10.
+>   sind kein Maßstab für den Pinsel. Das betrifft auch die Strich-Statistik in Abschnitt 7; die Zeichengrößen bleiben.
+> - **Abschnitt 13 ist erledigt:** Schritt 1 und Etappe 1 sind gebaut (24. und 25.10.); die Etappen stehen im großen Plan
+>   (Paket 10), der seit 27.10. ruht.
+
 Stand 24.10.2026. Antwort auf die [Klarstellungen und Fragen](research/2026-10-24-klarstellungen-und-fragen.md)
 vom selben Tag. Grundlage: der Code auf `main` (cc7d00b), die GPT-Unterlagen unter `refs/` (lokal), vier
 Recherchen mit Quellen (Abschnitt 13) und das neue **Tiefen-Labor** `public/labs/tiefe.html`, in dem dieselbe
 Szene aus den GPT-Elementen als Bühne (heutige Projektion) und als 3D-Welt mit Perspektive, Schatten, Nebel,
-Umfärben, Höhlenfreilegung und Stresstest läuft. Lokal: `npm run dev` → `/labs/tiefe.html`; nach dem nächsten Push
-auf `main` auch auf dem Handy unter https://nicolehahn2890.github.io/Traumacoaster/labs/tiefe.html.
+Umfärben, Höhlenfreilegung und Stresstest läuft. Lokal: `npm run dev` → `/labs/tiefe.html`; seit dem Push auf `main`
+(24.10.2026) auch auf dem Handy unter https://nicolehahn2890.github.io/Traumacoaster/labs/tiefe.html.
 
 ## 0. Kurzfassung
 
@@ -17,7 +41,7 @@ auf `main` auch auf dem Handy unter https://nicolehahn2890.github.io/Traumacoast
 2. **Perspektive schwach, Zoom als Kamerafahrt (Florians Entscheidung vom 24.10.):** Bildwinkel 15–22°, die Kamera
    fährt beim Zoomen heran, nah gezoomt wird die Perspektive stärker. Gemessen bei 22° und 8 px/m: Spur +2 ist 10 %
    kleiner als Spur −2, Wald 17 % und Berge 24 % langsamer als die Bühne; bei 14 px/m etwa das Doppelte.
-3. **Verdeckung kommt aus dem Tiefenpuffer**, nicht aus Masken: Element = Rückwand + Innenraum + Vorderlippe, die
+3. **Verdeckung kommt aus dem Tiefenpuffer**, nicht aus Masken: Element = Rückwand + Innenraum + Vorderlippe (überholt seit 27.10., siehe Kopf), die
    Bahn fährt mit ihrer echten Tiefe dazwischen. Masken nur für weiche Übergänge (Portaldunkel, Wasserfall).
 4. **Schatten: eine Shadow Map** (Licht von hinten oben, 1024², nur Schiene/Stützen/Wagen werfen, Boden fängt) plus
    gescherte Silhouetten-Kopien für Kulissen als billige Alternative; auf schwachen Geräten abschaltbar.
@@ -119,7 +143,7 @@ Risiken: Füllrate auf iPhone 12/13 bei vielen großen halbtransparenten Kulisse
 auf dem Handy messen; Kulissen auf Inhaltsgrenzen schneiden, opaker Kern per alphaTest + schmaler Blend-Rand);
 Speicher (2048² RGBA = 16 MiB, +30 % Mipmaps; KTX2/UASTC von Anfang an einplanen); zwei Renderer im Kontext.
 
-## 3. Bahn und Landschaft verschmelzen
+## 3. Bahn und Landschaft verschmelzen (überholt seit 27.10., siehe Kopf)
 
 - **Tiefenpuffer statt Masken.** Jede Kulisse ist eine Fläche mit Alpha-Test und Tiefenschreiben. Die Bahn liegt
   mit ihrer echten Tiefe dazwischen; im Labor fährt sie hinter dem großen Bogen, durch sein Fenster und hinter dem
@@ -141,7 +165,7 @@ Speicher (2048² RGBA = 16 MiB, +30 % Mipmaps; KTX2/UASTC von Anfang an einplane
 - **Startarten sichtbar:** Kettenzug als Kettenmesh auf dem Anstieg, Launch als farbiges Band mit Lichtern,
   Hängebahn mit Tragschiene oben, Gondeln darunter, seitliche Ausleger als eigene Stützenfamilie.
 
-## 3a. Bahn-Labor: vier Bahntypen, Stützenfamilien, Füße auf Kulissen (24.10., zweite Runde)
+## 3a. Bahn-Labor: vier Bahntypen, Stützenfamilien, Füße auf Kulissen (24.10., zweite Runde) (überholt seit 27.10., siehe Kopf)
 
 Das Labor baut die Bahn jetzt als echtes Profil entlang der 3D-Kurve (Knopfzeile „Bahn“ und „Stützen“, Adresse
 `?track=road|steel|wood|hanging&sup=normal|crazy|none&feet=1`). Dieselbe Kurve, vier Materialien:
@@ -200,7 +224,7 @@ er sehr gut; eine gemalte Textur lässt sich mit Shadern umfärben und so anpass
 gemaltes Teil oder 3D-Teil mit gemalter Textur, wird an der Stilprobe getestet; die Regel gilt bis dahin sicher nur für
 Funktionsgeometrie und Prüfkörper.
 
-## 4. Untergrund, Höhlen, Tunnel
+## 4. Untergrund, Höhlen, Tunnel (überholt seit 27.10., siehe Kopf)
 
 - **Baustellenpunkt (gesetzt):** markierter Anschluss im Berg mit gelbem Absperrband. Verbindet der Strich ihn,
   läuft eine Choreografie: Ping am Punkt → Kamera fährt 0,6–0,9 s heraus → Lichtsaum/Risse entlang der künftigen
@@ -341,14 +365,14 @@ Spielbarkeit (sein eigener Prüfbericht sagt das).
    großen Kulissen kostet also ungefähr so viel wie die Shadow Map. **Die Shadow Map bleibt** (Florians
    Entscheidung); gespart wird bei den Böcken (Instanzen), bei den Kulissen (Zuschnitt, Atlanten, KTX2) und beim
    Overdraw.
-2. **Zeichnen in Perspektive:** Die Bahn-Deutung per Strahl je Spur muss gegen die 222 Aufnahmen laufen
+2. **Zeichnen in Perspektive** (überholt seit 29.10., siehe Kopf): Die Bahn-Deutung per Strahl je Spur muss gegen die 222 Aufnahmen laufen
    (`npm run strokes:replay`) und darf keine neuen Tiefenfehler bringen.
 3. **Speicher:** Atlanten + KTX2 vor der zweiten Zone.
-4. **Kulissen-Schnitt:** ein Baum mit Fenster, ein Fels mit Tunnel, ein Portal als Dreiteiler produktionsfertig,
+4. **Kulissen-Schnitt** (überholt seit 27.10., siehe Kopf): ein Baum mit Fenster, ein Fels mit Tunnel, ein Portal als Dreiteiler produktionsfertig,
    bevor der große Assetauftrag startet.
 5. **Zwei Renderer:** Pixi-HUD über Three im selben Kontext, Zustands-Reset je Frame, Figma-Kacheln bleiben in Pixi.
 
-## 13. Nächste Etappen (Vorschlag für den „großen Plan“)
+## 13. Nächste Etappen (Vorschlag für den „großen Plan“) (erledigt, siehe Kopf)
 
 Stand 24.10. nach der Bahn-Runde: Von den drei offenen Punkten („Füllrate auf dem iPhone“, „Pinsel-Deutung in
 Perspektive“, „Kulissen als Dreiteiler“) ist der erste mit 48–55 fps beim teuersten Typ beantwortet, die beiden
@@ -411,9 +435,9 @@ Die vier Recherchen mit allen Quellen liegen unter `docs/research/`:
 [D Touch, Vollbild, Figuren, Assets](research/2026-10-24-recherche-d-touch-vollbild-figuren-assets.md).
 
 **Grenzen dieses Labors, selbstkritisch:** Gemessen wurde auf einem M3 Pro und im Software-Renderer, nicht auf
-einem Handy; die Füllraten-Frage ist damit offen. Die Bahn im Labor ist eine handgesetzte Kurve, nicht das
-Spielmodell; die Pinsel-Deutung per Strahl ist noch nicht gebaut, also ist „Zeichnen in Perspektive“ eine Rechnung,
-kein Spielgefühl. Die Höhlenfreilegung ist ein Shader-Effekt ohne Spiellogik, die Fake-Schatten sind grob, die
+einem Handy; die Füllraten-Frage war damit offen (später am Handy gemessen, siehe 12.1). Die Bahn im Labor ist eine handgesetzte Kurve, nicht das
+Spielmodell; die Pinsel-Deutung per Strahl war beim Schreiben noch nicht gebaut (gebaut am 24.10. abends, Abschnitt 13
+„Stand Schritt 1“), also war „Zeichnen in Perspektive“ hier eine Rechnung, kein Spielgefühl. Die Höhlenfreilegung ist ein Shader-Effekt ohne Spiellogik, die Fake-Schatten sind grob, die
 Umfärbe-Presets sind Uniform-Spielereien ohne Masken, und die Kulissen stehen als ganze Bilder, nicht als
 Rückwand/Lippe-Dreiteiler. Das Labor beweist, dass der Weg trägt und wie die Zahlen aussehen, nicht, dass der
 fertige Look erreicht ist.

@@ -159,7 +159,7 @@ export interface LevelDef {
 }
 
 /**
- * Farb-Tokens einer Welt (Stil-Bibel: docs/ART.md). Flächen bekommen drei harte Töne (hell, mittel, dunkel)
+ * Farb-Tokens einer Welt (Stil-Bibel: docs/archiv/ART-v1-2026-10-21.md). Flächen bekommen drei harte Töne (hell, mittel, dunkel)
  * aus `ground`, die Luftperspektive stuft nach hinten in Richtung `sky[1]`, Leuchten nur auf Interaktivem.
  */
 export interface WorldPalette {

@@ -49,7 +49,7 @@ export function hasArt(name: string): boolean {
 
 export const ART_NAMES = {
   sky: (world: number) => `sky_w${world}_day`,
-  /** drei gemalte Wolkenformen a, b, c (docs/ART-PROMPTS.md) */
+  /** drei gemalte Wolkenformen a, b, c (docs/archiv/ART-PROMPTS-2026-10-21.md) */
   cloud: (variant: number) => `cloud_${String.fromCharCode(97 + variant)}`,
   ground: (world: number, lane: number) => `ground_w${world}_lane${lane}`,
   rail: (skin: string, part: 'rail' | 'tie' | 'strut' | 'post') => `rail_${skin}_${part}`,

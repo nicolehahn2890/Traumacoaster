@@ -1,5 +1,5 @@
 /**
- * Erzeugt docs/ART-PROMPTS.md aus scripts/art-kit.json (eine Quelle für Namen, Größen, Prompts).
+ * Erzeugt docs/archiv/ART-PROMPTS-2026-10-21.md aus scripts/art-kit.json (eine Quelle für Namen, Größen, Prompts).
  *   node scripts/art-prompts-doc.mjs
  */
 import { readFile, writeFile } from 'node:fs/promises';
@@ -18,7 +18,9 @@ const kindOf = (a) => {
 
 const rows = KIT.assets.map((a) => `| \`${a.name}\` | ${sizeOf(a)} | ${kindOf(a)} | ${a.node ?? '–'} | ${esc(a.prompt)} |`).join('\n');
 
-const md = `# Trauma Coaster – Texturen und Prompts
+const md = `> **Archiv (30.10.2026):** Prompts des KI-Kachelsatzes vom 21.10.2026. Acht Kacheln lädt die alte Bühne noch; neue Teile entstehen als Malvorlagen aus dem Zonen-Editor (Stufe 6).
+
+# Trauma Coaster – Texturen und Prompts
 
 Diese Datei wird aus \`scripts/art-kit.json\` erzeugt (\`npm run art:doc\`); dort stehen Namen, Zielgrößen, Aufbereitungsregeln und Prompts. Der Kachelsatz wurde mit dem Figma-Bildgenerator erzeugt, Modell \`${KIT.model}\`, Datei ${KIT.figmaFile}. Danach \`npm run art:prep\`: Quellen aus \`art-src/<name>.png\` werden freigestellt (Chroma-Key), zugeschnitten, kachelbar gemacht und als WebP nach \`public/art/\` geschrieben; \`public/art/manifest.json\` listet die vorhandenen Kacheln. Zwei Kacheln (\`glow\`, \`stipple_sheet\`) entstehen prozedural.
 
@@ -37,5 +39,5 @@ ${rows}
 - Neue Kachel: Eintrag in \`scripts/art-kit.json\`, Bild nach \`art-src/\`, Name in \`ART_NAMES\` (\`src/assets/manifest.ts\`), dann \`npm run art:prep\` und \`npm run art:doc\`.
 - Die Quellbilder (\`art-src/\`) liegen nicht im Repository (\`.gitignore\`); die Figma-Datei ist das Archiv.
 `;
-await writeFile(new URL('../docs/ART-PROMPTS.md', import.meta.url), md);
-console.log('docs/ART-PROMPTS.md geschrieben');
+await writeFile(new URL('../docs/archiv/ART-PROMPTS-2026-10-21.md', import.meta.url), md);
+console.log('docs/archiv/ART-PROMPTS-2026-10-21.md geschrieben');
