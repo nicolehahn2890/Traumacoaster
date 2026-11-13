@@ -55,7 +55,7 @@ Empfehlung: **Hybrid.** Gemalte Kacheln (generiert + CC0) als Materialien, Shade
 - **Figuren**: Terrance-&-Phillip-Rig ohne Pups-Gag.
 
 ### Figma-Anbindung (Stand dieser Session, geprüft per `whoami`)
-- Der Figma-Connector dieser Session ist mit dem Konto **„Fisch Rex“ (fischrex@gmail.com)** verbunden: Plan „Fisch Rex's team“, Stufe **Starter**, Sitz **View**. Das ist nicht das Pro-Konto. Mit Starter/View-Sitz sind KI-Bildgenerierung (`generate_image`, verbraucht Figma-KI-Credits) und Dateianlage in Teams nicht oder nur stark begrenzt möglich.
+- Der Figma-Connector dieser Session ist mit dem Konto **„Fisch Rex“** verbunden: Plan „Fisch Rex's team“, Stufe **Starter**, Sitz **View**. Das ist nicht das Pro-Konto. Mit Starter/View-Sitz sind KI-Bildgenerierung (`generate_image`, verbraucht Figma-KI-Credits) und Dateianlage in Teams nicht oder nur stark begrenzt möglich.
 - **Figma Weave** (Figmas KI-Medien-Werkstatt mit Modellen wie Nano Banana, die **Referenzbilder** annehmen, ideal für die Earle-Vorlagen) ist nicht verknüpft: Meldung „You haven't linked your Figma account to Weave yet.“
 - **So wird es angebunden (Nicole):**
   1. Unter https://claude.ai/customize/connectors den Figma-Connector trennen und mit dem **Pro-Konto** neu verbinden (bei der Figma-Anmeldung das Pro-Konto wählen). Alternativ: „Fisch Rex“ als Editor ins Pro-Team einladen (dann reicht ein Pro-Sitz dort).
